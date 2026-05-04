@@ -283,6 +283,64 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
         return fallback
     end
 
+    local playerSquare = player.getCurrentSquare and safeCall(function() return player:getCurrentSquare() end, nil) or nil
+
+    local function getSquareRoom(square)
+        if not square or not square.getRoom then return nil end
+        return safeCall(function() return square:getRoom() end, nil)
+    end
+
+    local function getSquareBuilding(square, room)
+        if square and square.getBuilding then
+            local building = safeCall(function() return square:getBuilding() end, nil)
+            if building then return building end
+        end
+        if room and room.getBuilding then
+            return safeCall(function() return room:getBuilding() end, nil)
+        end
+        return nil
+    end
+
+    local function isSquareOutside(square)
+        if not square then return false end
+        if square.isOutside then
+            local outside = safeCall(function() return square:isOutside() end, nil)
+            if outside ~= nil then return outside == true end
+        end
+        if square.isInARoom then
+            local inRoom = safeCall(function() return square:isInARoom() end, nil)
+            if inRoom ~= nil then return not inRoom end
+        end
+        return getSquareRoom(square) == nil
+    end
+
+    local playerRoom = getSquareRoom(playerSquare)
+    local playerBuilding = getSquareBuilding(playerSquare, playerRoom)
+    local playerOutside = isSquareOutside(playerSquare)
+
+    local function sharesCorpseAir(corpseSquare)
+        if not playerSquare or not corpseSquare then return true end
+
+        local corpseOutside = isSquareOutside(corpseSquare)
+        if playerOutside ~= corpseOutside then
+            return false
+        end
+        if playerOutside then
+            return true
+        end
+
+        local corpseRoom = getSquareRoom(corpseSquare)
+        local corpseBuilding = getSquareBuilding(corpseSquare, corpseRoom)
+        if playerBuilding and corpseBuilding then
+            return playerBuilding == corpseBuilding
+        end
+        if playerRoom and corpseRoom then
+            return playerRoom == corpseRoom
+        end
+
+        return false
+    end
+
     local function getListSize(objects)
         if not objects then return 0 end
         if objects.size then
@@ -317,6 +375,7 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
             corpseSquare = safeCall(function() return corpse:getSquare() end, nil)
         end
         if not corpseSquare then return end
+        if not sharesCorpseAir(corpseSquare) then return end
 
         local cx = corpse.getX and safeCall(function() return corpse:getX() end, nil) or nil
         local cy = corpse.getY and safeCall(function() return corpse:getY() end, nil) or nil

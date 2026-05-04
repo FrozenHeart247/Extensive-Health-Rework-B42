@@ -105,11 +105,218 @@ EHR_MedicalMonitorUI.Colors = {
 }
 
 -- Panel dimensions
-EHR_MedicalMonitorUI.EXPANDED_WIDTH = 500
-EHR_MedicalMonitorUI.EXPANDED_HEIGHT = 650
-EHR_MedicalMonitorUI.COMPACT_WIDTH = 350
-EHR_MedicalMonitorUI.COMPACT_HEIGHT = 180
+EHR_MedicalMonitorUI.EXPANDED_WIDTH = 800
+EHR_MedicalMonitorUI.EXPANDED_HEIGHT = 800
+EHR_MedicalMonitorUI.COMPACT_WIDTH = 550
+EHR_MedicalMonitorUI.COMPACT_HEIGHT = 260
+EHR_MedicalMonitorUI.LINE_HEIGHT = 26
+EHR_MedicalMonitorUI.SMALL_LINE_HEIGHT = 20
+EHR_MedicalMonitorUI.CONTENT_TOP = 40
+EHR_MedicalMonitorUI.FOOTER_HEIGHT = 44
+EHR_MedicalMonitorUI.EXPANDED_MIN_HEIGHT = 360
+EHR_MedicalMonitorUI.EXPANDED_SCREEN_MARGIN = 20
+EHR_MedicalMonitorUI.SECTION_HEADER_HEIGHT = 30
+EHR_MedicalMonitorUI.SCROLL_STEP = 52
 
+function EHR_MedicalMonitorUI:getTextWidth(text, font)
+    text = tostring(text or "")
+    font = font or UIFont.Small
+
+    if getTextManager then
+        local ok, width = pcall(function()
+            return getTextManager():MeasureStringX(font, text)
+        end)
+        if ok and width then
+            return width
+        end
+    end
+
+    return #text * 7
+end
+
+function EHR_MedicalMonitorUI:trimLastCharacter(text)
+    local len = #text
+    if len <= 1 then return "" end
+
+    local cut = len
+    while cut > 1 do
+        local byte = string.byte(text, cut)
+        if not byte or byte < 128 or byte >= 192 then
+            break
+        end
+        cut = cut - 1
+    end
+
+    return text:sub(1, cut - 1)
+end
+
+function EHR_MedicalMonitorUI:truncateText(text, maxWidth, font)
+    text = tostring(text or "")
+    font = font or UIFont.Small
+    if not maxWidth or maxWidth <= 0 then return "" end
+    if self:getTextWidth(text, font) <= maxWidth then return text end
+
+    local suffix = "..."
+    local trimmed = text
+    while #trimmed > 0 and self:getTextWidth(trimmed .. suffix, font) > maxWidth do
+        trimmed = self:trimLastCharacter(trimmed)
+    end
+
+    return trimmed .. suffix
+end
+
+function EHR_MedicalMonitorUI:drawRightTextFit(text, rightX, y, r, g, b, a, font, minX)
+    text = tostring(text or "")
+    font = font or UIFont.Small
+
+    if minX then
+        text = self:truncateText(text, rightX - minX, font)
+    end
+
+    local x = rightX - self:getTextWidth(text, font)
+    if minX and x < minX then
+        x = minX
+    end
+
+    self:drawText(text, x, y, r, g, b, a, font)
+end
+
+function EHR_MedicalMonitorUI:getExpandedMaxHeight()
+    local screenHeight = EHR_MedicalMonitorUI.EXPANDED_HEIGHT
+    if getCore then
+        local ok, height = pcall(function()
+            return getCore():getScreenHeight()
+        end)
+        if ok and height then
+            screenHeight = height
+        end
+    end
+
+    local top = self:getY() or 0
+    local maxHeight = screenHeight - top - self.EXPANDED_SCREEN_MARGIN
+    maxHeight = math.max(self.EXPANDED_MIN_HEIGHT, maxHeight)
+    return math.min(maxHeight, screenHeight - self.EXPANDED_SCREEN_MARGIN)
+end
+
+function EHR_MedicalMonitorUI:getContentClipHeight()
+    return math.max(24, self.height - self.CONTENT_TOP - self.FOOTER_HEIGHT)
+end
+
+function EHR_MedicalMonitorUI:getMaxContentScroll()
+    if not self.isExpanded then return 0 end
+    return math.max(0, (self.contentHeight or 0) - self:getContentClipHeight())
+end
+
+function EHR_MedicalMonitorUI:clampContentScroll()
+    local maxScroll = self:getMaxContentScroll()
+    self.contentScrollY = math.max(0, math.min(self.contentScrollY or 0, maxScroll))
+    return maxScroll
+end
+
+function EHR_MedicalMonitorUI:repositionControls()
+    if self.toggleBtn then
+        self.toggleBtn:setX(self.width - 25)
+    end
+    if self.closeBtn then
+        self.closeBtn:setX(self.width - 50)
+    end
+
+    if self.examineBtn then
+        local btnWidth = 120
+        local btnHeight = 20
+        self.examineBtn:setX(self.width - btnWidth - 20)
+        self.examineBtn:setY(self.height - btnHeight - 8)
+    end
+end
+
+function EHR_MedicalMonitorUI:keepOnScreen()
+    if not getCore then return end
+
+    local screenW = nil
+    local screenH = nil
+    local okW, width = pcall(function()
+        return getCore():getScreenWidth()
+    end)
+    if okW and width then screenW = width end
+
+    local okH, height = pcall(function()
+        return getCore():getScreenHeight()
+    end)
+    if okH and height then screenH = height end
+
+    local margin = self.EXPANDED_SCREEN_MARGIN or 20
+    if screenW then
+        local maxX = math.max(margin, screenW - self.width - margin)
+        local x = self:getX() or 0
+        if x > maxX then
+            self:setX(maxX)
+        elseif x < margin then
+            self:setX(margin)
+        end
+    end
+
+    if screenH then
+        local maxY = math.max(margin, screenH - self.height - margin)
+        local y = self:getY() or 0
+        if y > maxY then
+            self:setY(maxY)
+        elseif y < margin then
+            self:setY(margin)
+        end
+    end
+end
+
+function EHR_MedicalMonitorUI:updateAdaptiveHeight()
+    if not self.isExpanded then
+        if self.height ~= self.COMPACT_HEIGHT then
+            self:setHeight(self.COMPACT_HEIGHT)
+            self:repositionControls()
+        end
+        self.contentScrollY = 0
+        return
+    end
+
+    local contentHeight = self.contentHeight or 0
+    local wantedHeight = math.max(self.EXPANDED_HEIGHT, self.CONTENT_TOP + self.FOOTER_HEIGHT + contentHeight)
+    wantedHeight = math.min(wantedHeight, self:getExpandedMaxHeight())
+    wantedHeight = math.max(self.EXPANDED_MIN_HEIGHT, wantedHeight)
+
+    if math.abs((self.height or 0) - wantedHeight) > 1 then
+        self:setHeight(wantedHeight)
+        self:keepOnScreen()
+        self:repositionControls()
+    end
+
+    self:clampContentScroll()
+end
+
+function EHR_MedicalMonitorUI:renderScrollBar()
+    local maxScroll = self:getMaxContentScroll()
+    if maxScroll <= 0 then return end
+
+    local top = self.CONTENT_TOP
+    local height = self:getContentClipHeight()
+    local trackX = self.width - 7
+    local thumbHeight = math.max(24, height * (height / (height + maxScroll)))
+    local thumbY = top
+    if maxScroll > 0 then
+        thumbY = top + ((self.contentScrollY or 0) / maxScroll) * (height - thumbHeight)
+    end
+
+    self:drawRect(trackX, top, 3, height, 0.25, 0.2, 0.35, 0.28)
+    self:drawRect(trackX - 1, thumbY, 5, thumbHeight, 0.85, self.Colors.border.r, self.Colors.border.g, self.Colors.border.b)
+end
+
+function EHR_MedicalMonitorUI:onMouseWheel(del)
+    if not self.isExpanded then return false end
+
+    local maxScroll = self:getMaxContentScroll()
+    if maxScroll <= 0 then return false end
+
+    self.contentScrollY = (self.contentScrollY or 0) + (del * self.SCROLL_STEP)
+    self:clampContentScroll()
+    return true
+end
 function EHR_MedicalMonitorUI:new(x, y, player)
     local o = ISPanel:new(x, y, EHR_MedicalMonitorUI.COMPACT_WIDTH, EHR_MedicalMonitorUI.COMPACT_HEIGHT)
     setmetatable(o, self)
@@ -132,10 +339,11 @@ function EHR_MedicalMonitorUI:new(x, y, player)
     o.lastUpdate = 0
     o.updateInterval = 500 -- ms
     o.cachedData = {}
+    o.contentScrollY = 0
+    o.contentHeight = 0
 
     return o
 end
-
 function EHR_MedicalMonitorUI:initialise()
     ISPanel.initialise(self)
 end
@@ -164,10 +372,10 @@ function EHR_MedicalMonitorUI:createChildren()
     self:addChild(self.closeBtn)
 
     -- Examine Self button (at bottom-right of panel)
-    local btnWidth = 100
+    local btnWidth = 120
     local btnHeight = 20
     self.examineBtn = ISButton:new(
-        self.width - btnWidth - 10,  -- Right-aligned with 10px margin
+        self.width - btnWidth - 20,  -- Right-aligned with breathing room
         self.height - btnHeight - 8,
         btnWidth, btnHeight,
         getText("UI_EHR_ExamineButton") or "Examine Self",
@@ -183,6 +391,7 @@ end
 
 function EHR_MedicalMonitorUI:onToggleExpand()
     self.isExpanded = not self.isExpanded
+    self.contentScrollY = 0
 
     if self.isExpanded then
         self:setWidth(EHR_MedicalMonitorUI.EXPANDED_WIDTH)
@@ -194,19 +403,11 @@ function EHR_MedicalMonitorUI:onToggleExpand()
         self.toggleBtn:setTitle("+")
     end
 
-    -- Reposition buttons
-    self.toggleBtn:setX(self.width - 25)
-    self.closeBtn:setX(self.width - 50)
-
-    -- Reposition examine button at bottom-right
-    if self.examineBtn then
-        local btnWidth = 100
-        local btnHeight = 20
-        self.examineBtn:setX(self.width - btnWidth - 10)
-        self.examineBtn:setY(self.height - btnHeight - 8)
-    end
+    self:keepOnScreen()
+    self:repositionControls()
+    self:updateAdaptiveHeight()
+    self:keepOnScreen()
 end
-
 function EHR_MedicalMonitorUI:onClose()
     self:setVisible(false)
     EHR.UI.MonitorVisible = false
@@ -452,8 +653,9 @@ function EHR_MedicalMonitorUI:update()
         self:updateCachedData()
         self.lastUpdate = now
     end
-end
 
+    self:updateAdaptiveHeight()
+end
 function EHR_MedicalMonitorUI:updateCachedData()
     if not self.player then return end
 
@@ -954,19 +1156,29 @@ function EHR_MedicalMonitorUI:prerender()
         titleText = string.format(getText("UI_EHR_Examining"), self.targetPlayerName)
     end
 
-    self:drawText(titleText, 10, 8, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    self:drawText("[" .. bloodType .. "]", self.width - 80, 8, c.safe.r, c.safe.g, c.safe.b, c.safe.a, UIFont.Small)
+    local bloodTypeRight = self.width - 85
+    local bloodTypeMinX = self.width - 145
+    local titleMaxWidth = bloodTypeMinX - 18
+    self:drawText(self:truncateText(titleText, titleMaxWidth, UIFont.Small), 10, 8, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    self:drawRightTextFit("[" .. bloodType .. "]", bloodTypeRight, 8, c.safe.r, c.safe.g, c.safe.b, c.safe.a, UIFont.Small, bloodTypeMinX)
 end
 
 function EHR_MedicalMonitorUI:render()
     ISPanel.render(self)
 
-    local y = 35
-
-    -- Blood Section
-    y = self:renderBloodSection(y)
-
     if self.isExpanded then
+        self:clampContentScroll()
+        local clipTop = self.CONTENT_TOP
+        local clipHeight = self:getContentClipHeight()
+        local scrollY = self.contentScrollY or 0
+        local y = clipTop - scrollY
+        local contentStartY = y
+
+        self:setStencilRect(0, clipTop, self.width, clipHeight)
+
+        -- Full blood section is only for expanded view; compact has its own condensed block.
+        y = self:renderBloodSection(y)
+
         -- Dose Alerts Section (urgent retakes shown first)
         y = self:renderDoseAlertsSection(y)
 
@@ -993,9 +1205,16 @@ function EHR_MedicalMonitorUI:render()
 
         -- Lifestyle Healing Bonuses Section (only shows if bonuses active)
         y = self:renderLifestyleBonusesSection(y)
+
+        self.contentHeight = math.max(0, y - contentStartY)
+        self:clearStencilRect()
+        self:renderScrollBar()
+        self:clampContentScroll()
     else
         -- Compact view
-        y = self:renderCompactView(y)
+        self.contentScrollY = 0
+        self.contentHeight = 0
+        self:renderCompactView(self.CONTENT_TOP)
     end
 end
 
@@ -1023,9 +1242,9 @@ function EHR_MedicalMonitorUI:renderDoseAlertsSection(startY)
     end
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_DoseAlerts"), padding, y + 2, c.warning.r, c.warning.g, c.warning.b, c.warning.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     for _, status in ipairs(urgentAlerts) do
         local alertColor = c.warning
@@ -1052,13 +1271,15 @@ function EHR_MedicalMonitorUI:renderDoseAlertsSection(startY)
             alertText = string.format("%s - Due in %.0fm", status.medicationName, status.hoursUntilNextDose * 60)
         end
 
-        self:drawText(icon .. " " .. alertText, padding + 5, y, alertColor.r, alertColor.g, alertColor.b, alertColor.a, UIFont.Small)
+        local rightColumnX = self.width - 95
+        local alertMaxWidth = rightColumnX - (padding + 10)
+        self:drawText(icon .. " " .. self:truncateText(alertText, alertMaxWidth, UIFont.Small), padding + 5, y, alertColor.r, alertColor.g, alertColor.b, alertColor.a, UIFont.Small)
 
         -- Dose progress on right
         local doseProgress = string.format("[%d/%d]", status.doseCount, status.totalDosesNeeded)
-        self:drawText(doseProgress, self.width - 60, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawRightTextFit(doseProgress, self.width - padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, rightColumnX)
 
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
 
     return y + 5
@@ -1076,11 +1297,11 @@ function EHR_MedicalMonitorUI:renderBloodSection(startY)
     local barWidth = self.width - (padding * 2)
 
     -- Section background
-    self:drawRect(5, y, self.width - 10, 70, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, 126, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
 
     -- Section title
     self:drawText(getText("UI_EHR_BloodComposition"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 18
+    y = y + 32
 
     -- Get blood data (use stored values from EHR_Blood system)
     local blood = self.cachedData.blood or {}
@@ -1129,7 +1350,7 @@ function EHR_MedicalMonitorUI:renderBloodSection(startY)
         self:drawRect(pulseX, pulseY + pulseOffset - 1, 4, 2, 1, 0.2, 1, 0.2)
     end
 
-    y = y + barHeight + 5
+    y = y + barHeight + 8
 
     -- Blood stats text
     local bloodPercent = (actualBloodVolume / maxVolume) * 100
@@ -1137,16 +1358,17 @@ function EHR_MedicalMonitorUI:renderBloodSection(startY)
     local salinePercentDisplay = salineRatio * 100
     local salineText = string.format("Saline: %dmL (%.0f%%)", math.floor(transfusedSaline), salinePercentDisplay)
 
-    self:drawText(bloodText, padding, y, c.blood.r, c.blood.g, c.blood.b, c.blood.a, UIFont.Small)
-
-    local salineColor = self:getSalineColor(salineRatio)
-    self:drawText(salineText, padding + 150, y, salineColor.r, salineColor.g, salineColor.b, salineColor.a, UIFont.Small)
+    self:drawText(self:truncateText(bloodText, self.width - padding * 2 - 90, UIFont.Small), padding, y, c.blood.r, c.blood.g, c.blood.b, c.blood.a, UIFont.Small)
 
     -- Saline status indicator
     local statusText, statusColor = self:getSalineStatus(salineRatio)
-    self:drawText(statusText, self.width - 80, y, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small)
+    self:drawRightTextFit(statusText, self.width - padding, y, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small, padding + 240)
+    y = y + self.LINE_HEIGHT
 
-    return y + 25
+    local salineColor = self:getSalineColor(salineRatio)
+    self:drawText(self:truncateText(salineText, self.width - padding * 2, UIFont.Small), padding, y, salineColor.r, salineColor.g, salineColor.b, salineColor.a, UIFont.Small)
+
+    return y + 28
 end
 
 function EHR_MedicalMonitorUI:getSalineColor(ratio)
@@ -1200,9 +1422,9 @@ function EHR_MedicalMonitorUI:renderNarcoticsSection(startY)
     end
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_ActiveSubstances"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     -- Render withdrawal warning first if present
     if withdrawal then
@@ -1216,17 +1438,21 @@ function EHR_MedicalMonitorUI:renderNarcoticsSection(startY)
             a = 1
         }
         local wdText = "! WITHDRAWAL: " .. withdrawal.drugName
-        self:drawText(wdText, padding + 5, y, wdColor.r, wdColor.g, wdColor.b, wdColor.a, UIFont.Small)
+        local wdMaxWidth = self.width - padding * 2
         if withdrawal.blocksHealing then
-            self:drawText("[Blocks Healing]", self.width - 100, y, c.danger.r, c.danger.g, c.danger.b, c.danger.a, UIFont.Small)
+            wdMaxWidth = wdMaxWidth - 125
         end
-        y = y + 16
+        self:drawText(self:truncateText(wdText, wdMaxWidth, UIFont.Small), padding + 5, y, wdColor.r, wdColor.g, wdColor.b, wdColor.a, UIFont.Small)
+        if withdrawal.blocksHealing then
+            self:drawRightTextFit("[Blocks Healing]", self.width - padding, y, c.danger.r, c.danger.g, c.danger.b, c.danger.a, UIFont.Small, self.width - 130)
+        end
+        y = y + self.LINE_HEIGHT
     end
 
     -- Render each active substance
     for _, substance in ipairs(substances) do
         y = self:renderSubstanceEntry(y, substance)
-        if y > self.height - 100 then break end -- Prevent overflow
+        if not self.isExpanded and y > self.height - 100 then break end -- Prevent overflow
     end
 
     return y + 5
@@ -1250,9 +1476,9 @@ function EHR_MedicalMonitorUI:renderOtherSubstancesSection(startY)
     end
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_OtherSubstances") or "OTHER DETECTED SUBSTANCES", padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     -- Render each detected substance
     for _, substance in ipairs(substances) do
@@ -1270,15 +1496,15 @@ function EHR_MedicalMonitorUI:renderOtherSubstancesSection(startY)
 
         -- Substance name
         local displayText = substance.displayName
-        self:drawText(displayText, padding + 5, y, substanceColor.r, substanceColor.g, substanceColor.b, substanceColor.a, UIFont.Small)
+        local valueText = EHR.SubstanceScanner.FormatValue(substance)
+        local valueColumnX = self.width - 110
+        self:drawText(self:truncateText(displayText, valueColumnX - (padding + 10), UIFont.Small), padding + 5, y, substanceColor.r, substanceColor.g, substanceColor.b, substanceColor.a, UIFont.Small)
 
         -- Value on right
-        local valueText = EHR.SubstanceScanner.FormatValue(substance)
-        self:drawText(valueText, self.width - 80, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+        self:drawRightTextFit(valueText, self.width - padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small, valueColumnX)
 
-        y = y + 14
-
-        if y > self.height - 100 then break end -- Prevent overflow
+        y = y + self.LINE_HEIGHT
+        if not self.isExpanded and y > self.height - 100 then break end -- Prevent overflow
     end
 
     return y + 5
@@ -1315,16 +1541,16 @@ function EHR_MedicalMonitorUI:renderSubstanceEntry(startY, substance)
     end
 
     -- Substance name
-    self:drawText(substance.name, padding, y, substanceColor.r, substanceColor.g, substanceColor.b, substanceColor.a, UIFont.Small)
+    local statusColumnX = self.width - 115
+    self:drawText(self:truncateText(substance.name, statusColumnX - padding - 5, UIFont.Small), padding, y, substanceColor.r, substanceColor.g, substanceColor.b, substanceColor.a, UIFont.Small)
 
     -- Status on right
     local statusColor = substanceColor
     if substance.isOverdose then
         statusColor = c.critical
     end
-    self:drawText(substance.status, self.width - 80, y, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small)
-    y = y + 14
-
+    self:drawRightTextFit(substance.status, self.width - padding, y, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small, statusColumnX)
+    y = y + self.LINE_HEIGHT
     -- Intensity bar
     local barWidth = 120
     local barHeight = 6
@@ -1367,15 +1593,15 @@ function EHR_MedicalMonitorUI:renderDiseasesSection(startY)
     local totalConditions = diseaseCount + tempWarningCount + (corpseExposureLevel and 1 or 0)
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_ActiveConditions"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    self:drawText("[" .. totalConditions .. " Active]", self.width - 80, y + 2, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-    y = y + 22
+    self:drawRightTextFit("[" .. totalConditions .. " Active]", self.width - padding, y + 2, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, self.width - 120)
+    y = y + self.SECTION_HEADER_HEIGHT
 
     -- Render temperature warnings FIRST (they're urgent)
     for _, warning in ipairs(tempWarnings) do
         y = self:renderTemperatureWarning(y, warning)
-        if y > self.height - 100 then break end
+        if not self.isExpanded and y > self.height - 100 then break end
     end
 
     if corpseExposureLevel then
@@ -1390,7 +1616,7 @@ function EHR_MedicalMonitorUI:renderDiseasesSection(startY)
     -- Render each disease
     for diseaseId, diseaseData in pairs(diseases) do
         y = self:renderDiseaseEntry(y, diseaseId, diseaseData)
-        if y > self.height - 100 then break end -- Prevent overflow
+        if not self.isExpanded and y > self.height - 100 then break end -- Prevent overflow
     end
 
     return y + 5
@@ -1529,22 +1755,22 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
         end
     end
 
-    -- Disease name and severity on first line
+    -- Disease name first, details below it. This avoids overlap with long condition names.
     local severityColor = self:getSeverityColor(severity)
     local severityBar = self:getSeverityBar(severity)
 
-    self:drawText(displayName, padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    self:drawText(self:truncateText(displayName, self.width - padding * 2, UIFont.Small), padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    y = y + self.LINE_HEIGHT
 
     if showSeverity then
-        self:drawText(getText("UI_EHR_Severity") .. severityBar .. " " .. severity .. "/5", self.width - 130, y,
+        self:drawText(getText("UI_EHR_Severity") .. severityBar .. " " .. severity .. "/5", padding + 5, y,
             severityColor.r, severityColor.g, severityColor.b, severityColor.a, UIFont.Small)
     else
         -- Show vague indicator for clueless players
-        self:drawText(getText("UI_EHR_UnknownSeverity") or "Severity: ???", self.width - 130, y,
+        self:drawText(getText("UI_EHR_UnknownSeverity") or "Severity: ???", padding + 5, y,
             c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     end
-    y = y + 16  -- Move to next line
-
+    y = y + self.LINE_HEIGHT
     -- TREND ARROW: Always visible, even at Tier 0 skill (v2.8.0)
     -- Allows players to tell if they're getting better or worse
     local trendDisplay = self:getTrendDisplay(diseaseId)
@@ -1552,17 +1778,17 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
         local trendText = trendDisplay.symbol .. " " .. trendDisplay.text
         self:drawText(trendText, padding + 5, y,
             trendDisplay.color.r, trendDisplay.color.g, trendDisplay.color.b, trendDisplay.color.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
 
     -- Unknown disease description (flyer-gated)
     if not canIdentify then
         local descText = unknownInfo and unknownInfo.description or (getText("UI_EHR_SomethingWrong") or "Something feels wrong...")
         self:drawText(descText, padding + 5, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
         local requiresText = getText("UI_EHR_DiseaseRequiresFlyer") or "(Read the disease flyer to identify)"
         self:drawText(requiresText, padding + 5, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
 
     -- Symptoms (visible only when identified and disease has symptoms defined)
@@ -1576,7 +1802,7 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
         -- Draw first part with label
         if #symptomText <= charsPerLine then
             self:drawText(symptomText, padding + 5, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-            y = y + 14
+            y = y + self.LINE_HEIGHT
         else
             -- Split into lines at commas
             local remaining = symptomText
@@ -1589,35 +1815,35 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
                 end
                 local xPos = isFirstLine and (padding + 5) or (padding + 10)
                 self:drawText(line, xPos, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-                y = y + 14
+                y = y + self.LINE_HEIGHT
                 remaining = remaining:sub(#line + 1):gsub("^%s+", "")
                 isFirstLine = false
             end
         end
     end
 
-    -- Progress bar (Tier 3+ ONLY - Expert medical skill required)
+    -- Progress (Tier 3+ ONLY - Expert medical skill required)
     if showProgress then
-        local barWidth = 150
-        local barHeight = 8
-        self:drawRect(padding + 5, y, barWidth, barHeight, c.empty.a, c.empty.r, c.empty.g, c.empty.b)
-        self:drawRect(padding + 5, y, barWidth * progress, barHeight,
-            severityColor.a, severityColor.r, severityColor.g, severityColor.b)
-        self:drawRectBorder(padding + 5, y, barWidth, barHeight, c.border.a, c.border.r, c.border.g, c.border.b)
-
+        local statusColumnX = self.width - 170
         local progressText = string.format("%.0f%%", progress * 100)
-        self:drawText(progressText, padding + barWidth + 15, y - 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+        self:drawText(progressText, padding + 5, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
 
         -- Treatment status (Tier 3+)
         if showTreatmentStatus then
             local treatmentStatus = diseaseData.treating and "TREATING" or "UNTREATED"
             local statusColor = diseaseData.treating and c.safe or c.danger
-            self:drawText(treatmentStatus, self.width - 80, y - 2, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small)
+            self:drawRightTextFit(treatmentStatus, self.width - padding, y, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small, statusColumnX)
         end
+        y = y + self.LINE_HEIGHT
 
-        y = y + 12
+        local barWidth = self.width - padding * 2 - 10
+        local barHeight = 7
+        self:drawRect(padding + 5, y + 2, barWidth, barHeight, c.empty.a, c.empty.r, c.empty.g, c.empty.b)
+        self:drawRect(padding + 5, y + 2, barWidth * progress, barHeight,
+            severityColor.a, severityColor.r, severityColor.g, severityColor.b)
+        self:drawRectBorder(padding + 5, y + 2, barWidth, barHeight, c.border.a, c.border.r, c.border.g, c.border.b)
+        y = y + 16
     end
-
     return y + 8
 end
 
@@ -1643,17 +1869,17 @@ function EHR_MedicalMonitorUI:renderTemperatureWarning(startY, warning)
 
     -- Draw warning name with icon
     local displayText = icon .. " " .. warning.name
-    self:drawText(displayText, padding, y, sevColor.r, sevColor.g, sevColor.b, sevColor.a, UIFont.Small)
+    local tempColumnX = self.width - 95
+    self:drawText(self:truncateText(displayText, tempColumnX - padding - 5, UIFont.Small), padding, y, sevColor.r, sevColor.g, sevColor.b, sevColor.a, UIFont.Small)
 
     -- Draw body temperature on the right
     local tempText = string.format("%.1f C", warning.bodyTemp)
-    self:drawText(tempText, self.width - 70, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-    y = y + 18
+    self:drawRightTextFit(tempText, self.width - padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, tempColumnX)
+    y = y + self.LINE_HEIGHT
 
     -- Draw description
-    self:drawText("  " .. warning.description, padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-    y = y + 16
-
+    self:drawText(self:truncateText("  " .. warning.description, self.width - padding * 2, UIFont.Small), padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    y = y + self.LINE_HEIGHT
     -- If at danger stage (4), show time in danger zone
     if warning.stage >= 4 and warning.dangerTime and warning.dangerTime > 0 then
         local dangerText = string.format("  In danger zone: %.1f min", warning.dangerTime * 60)
@@ -1736,10 +1962,10 @@ function EHR_MedicalMonitorUI:renderMedicationsSection(startY)
     local medCount = #displayedMeds
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_ActiveMedications"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    self:drawText("[" .. medCount .. " Active]", self.width - 80, y + 2, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-    y = y + 22
+    self:drawRightTextFit("[" .. medCount .. " Active]", self.width - padding, y + 2, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, self.width - 120)
+    y = y + self.SECTION_HEADER_HEIGHT
 
     if medCount == 0 then
         self:drawText(getText("UI_EHR_NoMedications"), padding + 10, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
@@ -1749,7 +1975,7 @@ function EHR_MedicalMonitorUI:renderMedicationsSection(startY)
     -- Render each medication
     for _, medData in ipairs(displayedMeds) do
         y = self:renderMedicationEntry(y, medData)
-        if y > self.height - 80 then break end
+        if not self.isExpanded and y > self.height - 80 then break end
     end
 
     return y + 5
@@ -1787,32 +2013,36 @@ function EHR_MedicalMonitorUI:renderMedicationEntry(startY, medData)
 
     -- Medication name and tier
     local tierName = self:getTierName(tier)
-    self:drawText(displayName .. " (" .. tierName .. ")", padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    local titleText = displayName .. " (" .. tierName .. ")"
+    local titleMaxWidth = self.width - padding * 2
+    if totalDoses > 0 then
+        titleMaxWidth = titleMaxWidth - 95
+    end
+    self:drawText(self:truncateText(titleText, titleMaxWidth, UIFont.Small), padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
 
     -- Dose count on right side
     if totalDoses > 0 then
         local doseText = string.format("Dose %d/%d", doseCount, totalDoses)
-        self:drawText(doseText, self.width - 80, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawRightTextFit(doseText, self.width - padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, self.width - 110)
     end
-    y = y + 15
-
-    -- Treatment progress bar (only for disease treatment, not symptom relief)
+    y = y + self.LINE_HEIGHT
+    -- Treatment progress (only for disease treatment, not symptom relief)
     if isTreatingDisease and hoursRemaining > 0 then
-        local barWidth = 100
-        local barHeight = 8
-        self:drawRect(padding + 5, y, barWidth, barHeight, c.empty.a, c.empty.r, c.empty.g, c.empty.b)
-        self:drawRect(padding + 5, y, barWidth * progress, barHeight, c.safe.a, c.safe.r, c.safe.g, c.safe.b)
-        self:drawRectBorder(padding + 5, y, barWidth, barHeight, c.border.a, c.border.r, c.border.g, c.border.b)
-
         local timeText = string.format("%.1fh left", hoursRemaining)
-        self:drawText(timeText, padding + barWidth + 15, y - 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-        y = y + 14
+        self:drawText(timeText, padding + 5, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+        y = y + self.SMALL_LINE_HEIGHT
+
+        local barWidth = self.width - padding * 2 - 10
+        local barHeight = 7
+        self:drawRect(padding + 5, y + 2, barWidth, barHeight, c.empty.a, c.empty.r, c.empty.g, c.empty.b)
+        self:drawRect(padding + 5, y + 2, barWidth * progress, barHeight, c.safe.a, c.safe.r, c.safe.g, c.safe.b)
+        self:drawRectBorder(padding + 5, y + 2, barWidth, barHeight, c.border.a, c.border.r, c.border.g, c.border.b)
+        y = y + 16
     else
         -- Symptom relief only - show status text
         self:drawText(getText("UI_EHR_SymptomRelief"), padding + 5, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
-
     -- Next dose timer / Retake indicator
     if totalDoses > 0 and doseCount < totalDoses then
         local retakeColor = c.safe
@@ -1844,7 +2074,7 @@ function EHR_MedicalMonitorUI:renderMedicationEntry(startY, medData)
         end
 
         self:drawText(retakeText, padding + 10, y, retakeColor.r, retakeColor.g, retakeColor.b, retakeColor.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
 
     return y + 4
@@ -1871,9 +2101,9 @@ function EHR_MedicalMonitorUI:renderInteractionsSection(startY)
     local interactions = self:checkDrugInteractions()
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_DrugInteractions"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     if #interactions == 0 then
         self:drawText(getText("UI_EHR_NoInteractions"), padding + 10, y, c.safe.r, c.safe.g, c.safe.b, c.safe.a, UIFont.Small)
@@ -1885,7 +2115,7 @@ function EHR_MedicalMonitorUI:renderInteractionsSection(startY)
         local color = interaction.severity == "danger" and c.danger or c.warning
 
         self:drawText(icon .. " " .. interaction.message, padding + 5, y, color.r, color.g, color.b, color.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
 
     return y + 5
@@ -1932,9 +2162,9 @@ function EHR_MedicalMonitorUI:renderSideEffectsSection(startY)
     end
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_SideEffects"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     for _, effect in ipairs(sideEffects) do
         -- Get translated side effect name
@@ -1951,9 +2181,9 @@ function EHR_MedicalMonitorUI:renderSideEffectsSection(startY)
         end
         local hoursLeft = effect.hoursRemaining or 0
 
-        self:drawText(displayName, padding + 10, y, c.warning.r, c.warning.g, c.warning.b, c.warning.a, UIFont.Small)
-        self:drawText(string.format("%.1fh", hoursLeft), self.width - 50, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-        y = y + 14
+        self:drawText(self:truncateText(displayName, self.width - padding * 2 - 70, UIFont.Small), padding + 10, y, c.warning.r, c.warning.g, c.warning.b, c.warning.a, UIFont.Small)
+        self:drawRightTextFit(string.format("%.1fh", hoursLeft), self.width - padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, self.width - 80)
+        y = y + self.LINE_HEIGHT
     end
 
     return y + 5
@@ -1969,9 +2199,9 @@ function EHR_MedicalMonitorUI:renderHealingSection(startY)
     local padding = 10
 
     -- Section header
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_HealingStatus"), padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     local blood = self.cachedData.blood or {}
     local canHeal = blood.canHeal
@@ -1981,7 +2211,7 @@ function EHR_MedicalMonitorUI:renderHealingSection(startY)
         self:drawText(getText("UI_EHR_HealingActive"), padding + 10, y, c.safe.r, c.safe.g, c.safe.b, c.safe.a, UIFont.Small)
     else
         self:drawText(getText("UI_EHR_HealingBlocked"), padding + 10, y, c.danger.r, c.danger.g, c.danger.b, c.danger.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
         self:drawText(getText("UI_EHR_Reason") .. blockReason, padding + 15, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     end
 
@@ -2004,9 +2234,9 @@ function EHR_MedicalMonitorUI:renderLifestyleBonusesSection(startY)
     local padding = 10
 
     -- Section header - always show when Lifestyle is detected
-    self:drawRect(5, y, self.width - 10, 20, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
+    self:drawRect(5, y, self.width - 10, self.SECTION_HEADER_HEIGHT, c.sectionBg.a, c.sectionBg.r, c.sectionBg.g, c.sectionBg.b)
     self:drawText(getText("UI_EHR_HealingBonuses") or "LIFESTYLE BONUSES", padding, y + 2, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 22
+    y = y + self.SECTION_HEADER_HEIGHT
 
     -- If no bonuses active, show hint
     if not bonusDetails.isActive then
@@ -2027,7 +2257,7 @@ function EHR_MedicalMonitorUI:renderLifestyleBonusesSection(startY)
         end
 
         self:drawText(bonusText, padding + 10, y, bonusColor.r, bonusColor.g, bonusColor.b, bonusColor.a, UIFont.Small)
-        y = y + 14
+        y = y + self.LINE_HEIGHT
     end
 
     -- Total bonus/penalty
@@ -2035,7 +2265,7 @@ function EHR_MedicalMonitorUI:renderLifestyleBonusesSection(startY)
     local totalSign = bonusDetails.totalBonus >= 0 and "+" or ""
     local totalText = string.format("%s %s%d%%", getText("UI_EHR_TotalBonus") or "Total:", totalSign, math.floor(bonusDetails.totalBonus * 100))
     self:drawText(totalText, padding + 10, y, totalColor.r, totalColor.g, totalColor.b, totalColor.a, UIFont.Small)
-    y = y + 14
+    y = y + self.LINE_HEIGHT
 
     -- Note about supported diseases
     local noteText = getText("UI_EHR_BonusNote") or "(Affects disease recovery speed)"
@@ -2052,23 +2282,27 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
     local c = self.Colors
     local y = startY
     local padding = 10
+    local contentRight = self.width - padding
 
     -- Compact blood bar
-    local barWidth = self.width - 20
-    local barHeight = 15
+    local barWidth = self.width - padding * 2
+    local barHeight = 14
 
     local blood = self.cachedData.blood or {}
     local currentVolume = blood.currentVolume or 5000
     local maxVolume = blood.maxVolume or 5000
     local transfusedSaline = blood.transfusedSaline or 0
     local salineRatio = blood.salineRatio or 0
+    local safeMaxVolume = maxVolume > 0 and maxVolume or 5000
 
-    local bloodPercent = (currentVolume - transfusedSaline) / maxVolume
-    local salinePercent = transfusedSaline / maxVolume
+    local bloodPercent = math.max(0, math.min(1, (currentVolume - transfusedSaline) / safeMaxVolume))
+    local salinePercent = math.max(0, math.min(1 - bloodPercent, transfusedSaline / safeMaxVolume))
 
     -- Draw bar
     self:drawRect(padding, y, barWidth, barHeight, c.empty.a, c.empty.r, c.empty.g, c.empty.b)
-    self:drawRect(padding, y, barWidth * bloodPercent, barHeight, c.blood.a, c.blood.r, c.blood.g, c.blood.b)
+    if bloodPercent > 0 then
+        self:drawRect(padding, y, barWidth * bloodPercent, barHeight, c.blood.a, c.blood.r, c.blood.g, c.blood.b)
+    end
 
     if salinePercent > 0 then
         local salineColor = self:getSalineColor(salineRatio)
@@ -2077,18 +2311,19 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
     end
 
     self:drawRectBorder(padding, y, barWidth, barHeight, c.border.a, c.border.r, c.border.g, c.border.b)
-    y = y + barHeight + 5
+    y = y + barHeight + 8
 
-    -- Quick stats
-    local volumeText = string.format("%.0f%% Blood  %.0f%% Saline", bloodPercent * 100, salineRatio * 100)
-    self:drawText(volumeText, padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
-    y = y + 15
+    -- Quick blood stats
+    local bloodText = string.format("%.0f%% Blood", bloodPercent * 100)
+    local salineText = string.format("%.0f%% Saline", salineRatio * 100)
+    self:drawText(bloodText, padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    self:drawRightTextFit(salineText, contentRight, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, padding + 150)
+    y = y + self.LINE_HEIGHT
 
-    -- Disease count
+    -- Condition and medication counts
     local diseaseCount = 0
     for _ in pairs(self.cachedData.diseases or {}) do diseaseCount = diseaseCount + 1 end
 
-    -- Count medications (treatments + active dose statuses)
     local treatments = self.cachedData.medications or {}
     local doseStatuses = self.cachedData.doseStatuses or {}
     local seenMeds = {}
@@ -2103,12 +2338,13 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
         end
     end
 
-    local statusText = diseaseCount .. " Conditions  " .. medCount .. " Meds"
-    self:drawText(statusText, padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-    y = y + 15
+    self:drawText(diseaseCount .. " Conditions", padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    self:drawRightTextFit(medCount .. " Meds", contentRight, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, padding + 150)
+    y = y + self.LINE_HEIGHT
 
-    -- Urgent dose alerts (overdue medications)
-    local doseStatuses = self.cachedData.doseStatuses or {}
+    -- One compact warning line, only if something needs attention.
+    local warningText = nil
+    local warningColor = c.warning
     local overdueCount = 0
     local firstOverdue = nil
     for _, status in ipairs(doseStatuses) do
@@ -2119,69 +2355,32 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
     end
 
     if overdueCount > 0 then
-        local alertColor = c.danger
-        -- Flash effect
-        local flash = (math.sin(self.flashPhase * 2) + 1) / 2
-        alertColor = {
-            r = c.danger.r * flash + c.warning.r * (1 - flash),
-            g = c.danger.g * flash + c.warning.g * (1 - flash),
-            b = c.danger.b * flash + c.warning.b * (1 - flash),
-            a = 1
-        }
-
-        local alertText = ""
+        warningColor = c.danger
         if overdueCount == 1 then
-            -- Truncate medication name to fit
-            local medName = firstOverdue.medicationName or "?"
-            if string.len(medName) > 18 then
-                medName = string.sub(medName, 1, 18) .. ".."
+            warningText = "X " .. self:truncateText(firstOverdue.medicationName or "?", 140, UIFont.Small) .. " OVERDUE!"
+        else
+            warningText = "X " .. overdueCount .. " meds OVERDUE!"
+        end
+    else
+        local interactions = self:checkDrugInteractions()
+        if #interactions > 0 then
+            warningText = string.format("! %d Drug Interactions", #interactions)
+        else
+            local narcotics = self.cachedData.narcotics or {}
+            local withdrawal = self.cachedData.withdrawal
+            if withdrawal then
+                warningColor = c.withdrawal
+                warningText = "! Withdrawal: " .. (withdrawal.drugName or "?")
+            elseif #narcotics > 0 then
+                warningColor = c.stimulant
+                warningText = #narcotics .. " Substance(s) Active"
             end
-            alertText = "X " .. medName .. " OVERDUE!"
-        else
-            alertText = "X " .. overdueCount .. " meds OVERDUE!"
         end
-        self:drawText(alertText, padding, y, alertColor.r, alertColor.g, alertColor.b, alertColor.a, UIFont.Small)
-        y = y + 15
     end
 
-    -- N&C Substances (compact)
-    local narcotics = self.cachedData.narcotics or {}
-    local withdrawal = self.cachedData.withdrawal
-    if #narcotics > 0 or withdrawal then
-        local narcColor = c.stimulant
-        local narcText = ""
-
-        -- Check for overdose first
-        local hasOD = false
-        for _, sub in ipairs(narcotics) do
-            if sub.isOverdose then hasOD = true break end
-        end
-
-        if hasOD then
-            -- Flash for overdose
-            local flash = (math.sin(self.flashPhase * 2) + 1) / 2
-            narcColor = {
-                r = c.critical.r * flash + c.warning.r * (1 - flash),
-                g = c.critical.g * flash + c.warning.g * (1 - flash),
-                b = c.critical.b * flash + c.warning.b * (1 - flash),
-                a = 1
-            }
-            narcText = "X OVERDOSE!"
-        elseif withdrawal then
-            narcColor = c.withdrawal
-            narcText = "! Withdrawal: " .. (withdrawal.drugName or "?")
-        else
-            narcText = #narcotics .. " Substance(s) Active"
-        end
-        self:drawText(narcText, padding, y, narcColor.r, narcColor.g, narcColor.b, narcColor.a, UIFont.Small)
-        y = y + 15
-    end
-
-    -- Warnings
-    local interactions = self:checkDrugInteractions()
-    if #interactions > 0 then
-        self:drawText(string.format(getText("UI_EHR_Compact_DrugInteractions") or "! %d Drug Interactions", #interactions), padding, y, c.warning.r, c.warning.g, c.warning.b, c.warning.a, UIFont.Small)
-        y = y + 15
+    if warningText then
+        self:drawText(self:truncateText(warningText, self.width - padding * 2, UIFont.Small), padding, y, warningColor.r, warningColor.g, warningColor.b, warningColor.a, UIFont.Small)
+        y = y + self.LINE_HEIGHT
     end
 
     -- Healing status
@@ -2190,22 +2389,20 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
     if bloodData.canHeal then
         healText = getText("UI_EHR_Compact_HealingActive") or "Healing: Active"
     else
-        -- Truncate reason to fit in compact view
         local reason = bloodData.healBlockReason or "?"
-        local maxReasonLen = 12
-        if string.len(reason) > maxReasonLen then
-            reason = string.sub(reason, 1, maxReasonLen) .. ".."
-        end
         healText = string.format(getText("UI_EHR_Compact_HealingSlowed") or "Healing: Slowed (%s)", reason)
     end
     local healColor = bloodData.canHeal and c.safe or c.danger
-    self:drawText(healText, padding, y, healColor.r, healColor.g, healColor.b, healColor.a, UIFont.Small)
+    self:drawText(self:truncateText(healText, self.width - padding * 2, UIFont.Small), padding, y, healColor.r, healColor.g, healColor.b, healColor.a, UIFont.Small)
 
-    -- Expand hint
-    y = y + 20
-    self:drawText(getText("UI_EHR_Compact_ClickExpand") or "[Click + to expand]", self.width / 2 - 50, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    -- Expand hint stays above the button instead of flowing into it.
+    local hintText = getText("UI_EHR_Compact_ClickExpand") or "[Click + to expand]"
+    local hintWidth = self:getTextWidth(hintText, UIFont.Small)
+    local hintX = math.max(padding, math.floor((self.width - hintWidth) / 2))
+    local hintY = self.height - 58
+    self:drawText(hintText, hintX, hintY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
 
-    return y + 15
+    return hintY + self.LINE_HEIGHT
 end
 
 -- ============================================
@@ -2240,7 +2437,7 @@ local function createMonitor(player)
 
     local screenW = getCore():getScreenWidth()
 
-    local monitor = EHR_MedicalMonitorUI:new(screenW - 370, 100, player)
+    local monitor = EHR_MedicalMonitorUI:new(screenW - EHR_MedicalMonitorUI.COMPACT_WIDTH - 20, 100, player)
     monitor:initialise()
     monitor:instantiate()
     monitor:addToUIManager()

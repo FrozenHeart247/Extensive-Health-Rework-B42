@@ -1018,21 +1018,28 @@ function EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
 
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
     local history = diseaseData and diseaseData.history
-    local lastBadFood = history and history.lastBadFood
+    local foodMemory = EHR.Disease and EHR.Disease.GetFoodRiskMemory and EHR.Disease.GetFoodRiskMemory(player)
+    local lastBadFood = (history and history.lastBadFood) or (foodMemory and foodMemory.lastBadFood)
     if not lastBadFood then return false end
 
     currentHour = currentHour or getGameTime():getWorldAgeHours()
     local foodCuredTime = history and history.lastFoodCuredTime
     if foodCuredTime and foodCuredTime >= lastBadFood then
-        if EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
+        if EHR.Disease and EHR.Disease.ClearFoodRiskMemory then
+            EHR.Disease.ClearFoodRiskMemory(player)
+        end
+        if history and EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
             EHR.Disease.ClearFoodRiskHistory(history)
-        else
+        elseif history then
             history.lastBadFood = nil
             history.lastFoodRiskReason = nil
-            history.lastFoodRiskChance = nil
-            history.lastFoodAccumulatedRisk = nil
-            history.foodRiskAccumulated = nil
-            history.foodRiskLastTime = nil
+          history.lastFoodRiskChance = nil
+          history.lastFoodAccumulatedRisk = nil
+          history.lastFoodRiskDiseaseId = nil
+          history.foodRiskAccumulated = nil
+          history.foodRiskLastTime = nil
+          history.foodRiskAccumulatedByDisease = nil
+          history.foodRiskLastTimeByDisease = nil
         end
         return false
     end
@@ -1040,17 +1047,65 @@ function EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
     local elapsed = currentHour - lastBadFood
     local graceHours = EHR.CorpseSickness.Config.FOOD_RISK_GRACE_HOURS or 6
     if elapsed >= graceHours then
-        if EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
+        if EHR.Disease and EHR.Disease.ClearFoodRiskMemory then
+            EHR.Disease.ClearFoodRiskMemory(player)
+        end
+        if history and EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
             EHR.Disease.ClearFoodRiskHistory(history)
-        else
+        elseif history then
             history.lastBadFood = nil
             history.lastFoodRiskReason = nil
-            history.lastFoodRiskChance = nil
-            history.lastFoodAccumulatedRisk = nil
-            history.foodRiskAccumulated = nil
-            history.foodRiskLastTime = nil
+          history.lastFoodRiskChance = nil
+          history.lastFoodAccumulatedRisk = nil
+          history.lastFoodRiskDiseaseId = nil
+          history.foodRiskAccumulated = nil
+          history.foodRiskLastTime = nil
+          history.foodRiskAccumulatedByDisease = nil
+          history.foodRiskLastTimeByDisease = nil
         end
         return false
+    end
+
+    local decayPerHour = EHR.Disease
+        and EHR.Disease.FoodRiskAccumulation
+        and EHR.Disease.FoodRiskAccumulation.decayPerHour
+        or 0.20
+    local baseRisk = (history and (history.lastFoodAccumulatedRisk or history.foodRiskAccumulated)) or 0
+    if foodMemory then
+        baseRisk = math.max(baseRisk, foodMemory.accumulated or 0)
+    end
+    local baseRiskElapsed = math.max(0, currentHour - ((history and history.foodRiskLastTime) or (foodMemory and foodMemory.lastTime) or lastBadFood))
+    local accumulatedRisk = math.max(0, baseRisk - (decayPerHour * baseRiskElapsed))
+
+    if history and history.foodRiskAccumulatedByDisease then
+        history.foodRiskLastTimeByDisease = history.foodRiskLastTimeByDisease or {}
+        for diseaseId, risk in pairs(history.foodRiskAccumulatedByDisease) do
+            local lastRiskTime = history.foodRiskLastTimeByDisease[diseaseId] or history.foodRiskLastTime or lastBadFood
+            local riskElapsed = math.max(0, currentHour - lastRiskTime)
+            local decayedRisk = math.max(0, (risk or 0) - (decayPerHour * riskElapsed))
+            history.foodRiskAccumulatedByDisease[diseaseId] = decayedRisk
+            accumulatedRisk = math.max(accumulatedRisk, decayedRisk)
+        end
+    end
+    if foodMemory and foodMemory.accumulatedByDisease then
+        foodMemory.lastTimeByDisease = foodMemory.lastTimeByDisease or {}
+        for diseaseId, risk in pairs(foodMemory.accumulatedByDisease) do
+            local lastRiskTime = foodMemory.lastTimeByDisease[diseaseId] or foodMemory.lastTime or lastBadFood
+            local riskElapsed = math.max(0, currentHour - lastRiskTime)
+            local decayedRisk = math.max(0, (risk or 0) - (decayPerHour * riskElapsed))
+            foodMemory.accumulatedByDisease[diseaseId] = decayedRisk
+            accumulatedRisk = math.max(accumulatedRisk, decayedRisk)
+        end
+    end
+
+    if accumulatedRisk > 0.01 then
+        if history then
+            history.lastFoodAccumulatedRisk = accumulatedRisk
+        end
+        if foodMemory then
+            foodMemory.accumulated = accumulatedRisk
+        end
+        return true
     end
 
     if elapsed > 0.25 and not EHR.CorpseSickness.HasActiveFoodDisease(player) then
@@ -1058,15 +1113,21 @@ function EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
         if stats and CharacterStat and CharacterStat.FOOD_SICKNESS then
             local ok, foodSickness = pcall(function() return stats:get(CharacterStat.FOOD_SICKNESS) end)
             if ok and (foodSickness or 0) <= 0.02 then
-                if EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
+                if EHR.Disease and EHR.Disease.ClearFoodRiskMemory then
+                    EHR.Disease.ClearFoodRiskMemory(player)
+                end
+                if history and EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
                     EHR.Disease.ClearFoodRiskHistory(history)
-                else
+                elseif history then
                     history.lastBadFood = nil
                     history.lastFoodRiskReason = nil
-                    history.lastFoodRiskChance = nil
-                    history.lastFoodAccumulatedRisk = nil
-                    history.foodRiskAccumulated = nil
-                    history.foodRiskLastTime = nil
+                  history.lastFoodRiskChance = nil
+                  history.lastFoodAccumulatedRisk = nil
+                  history.lastFoodRiskDiseaseId = nil
+                  history.foodRiskAccumulated = nil
+                  history.foodRiskLastTime = nil
+                  history.foodRiskAccumulatedByDisease = nil
+                  history.foodRiskLastTimeByDisease = nil
                 end
                 return false
             end

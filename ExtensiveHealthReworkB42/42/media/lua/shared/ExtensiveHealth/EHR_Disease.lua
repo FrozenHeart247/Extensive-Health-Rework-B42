@@ -532,9 +532,12 @@ EHR.Disease.Diseases = {
 
 EHR.Disease.FoodRisks = {
     rotten = 0.70,          -- 70% chance from rotten food
-    uncooked = 0.40,        -- 40% chance from raw meat
     burned = 0.05,          -- 5% chance from burned food
     stale = 0.10,           -- 10% chance from stale food
+    rawWildGameHigh = 0.50,
+    rawWildGameMedium = 0.50,
+    rawWildGameLow = 0.50,
+    rawMeatLow = 0.50,
 }
 
 -- Food poisoning is not a one-frame lottery: repeated risky bites stack up.
@@ -545,6 +548,8 @@ EHR.Disease.FoodRiskAccumulation = {
     pendingSicknessScale = 45,
     pendingSicknessMax = 24,
 }
+
+EHR.Disease.FoodRiskMemory = EHR.Disease.FoodRiskMemory or {}
 
 -- ============================================
 -- TICK MANAGEMENT
@@ -867,9 +872,17 @@ function EHR.Disease.Contract(player, diseaseId)
     -- Record food exposure in history
     if diseaseId == "food_poisoning" or def.category == "food" then
         data.history.lastBadFood = currentHour
-        data.history.foodRiskAccumulated = 0
-        data.history.foodRiskLastTime = nil
-        data.history.lastFoodAccumulatedRisk = nil
+        data.history.lastFoodRiskDiseaseId = diseaseId
+        if EHR.Disease.ClearAccumulatedFoodRisk then
+            EHR.Disease.ClearAccumulatedFoodRisk(data.history, diseaseId)
+        else
+            data.history.foodRiskAccumulated = 0
+            data.history.foodRiskLastTime = nil
+            data.history.lastFoodAccumulatedRisk = nil
+        end
+        if EHR.Disease.ClearFoodRiskMemory then
+            EHR.Disease.ClearFoodRiskMemory(player, diseaseId)
+        end
     end
 end
 
@@ -1065,7 +1078,7 @@ function EHR.Disease.OnRecovery(player, diseaseId)
 
     if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
         EHR.CorpseSickness.ResetAfterCure(player)
-    elseif diseaseId == "food_poisoning" and EHR.Disease.ResetFoodSicknessAfterCure then
+    elseif def and def.category == "food" and EHR.Disease.ResetFoodSicknessAfterCure then
         EHR.Disease.ResetFoodSicknessAfterCure(player, diseaseId)
     end
 end
@@ -1077,56 +1090,558 @@ end
 --[[
     Apply disease effects based on stage and severity
 ]]--
+local function EHR_DiseaseDrainEndurance(stats, amount, floor)
+    if not stats or not amount or amount <= 0 then return end
+    floor = floor or 0.35
+
+    if CharacterStat and CharacterStat.ENDURANCE then
+        local okGet, current = pcall(function()
+            return stats:get(CharacterStat.ENDURANCE)
+        end)
+
+        if okGet then
+            current = current or 1
+            if current <= floor then return end
+
+            local okSet = pcall(function()
+                stats:set(CharacterStat.ENDURANCE, math.max(floor, current - amount))
+            end)
+
+            if okSet then return end
+        end
+    end
+
+    -- B42 can expose endurance only through CharacterStat. If that is unavailable,
+    -- convert a tiny part of the drain into fatigue instead of calling missing APIs.
+    if CharacterStat and CharacterStat.FATIGUE then
+        pcall(function()
+            local current = stats:get(CharacterStat.FATIGUE) or 0
+            stats:set(CharacterStat.FATIGUE, math.min(1, math.max(0, current + (amount * 0.02))))
+        end)
+    end
+end
+
+local function EHR_DiseaseAddStat(stats, stat, amount)
+    if not stats or not stat or not amount or amount == 0 then return end
+
+    pcall(function()
+        local current = stats:get(stat) or 0
+        stats:set(stat, math.min(1, math.max(0, current + amount)))
+    end)
+end
+
+local function EHR_DiseaseRaiseStatToward(stats, stat, target, step, maxValue)
+    if not stats or not stat or not target or not step or step <= 0 then return end
+    maxValue = maxValue or 1
+
+    pcall(function()
+        local current = stats:get(stat) or 0
+        if current >= target then return end
+
+        local nextValue = math.min(target, math.min(current + step, maxValue))
+        stats:set(stat, math.max(0, nextValue))
+    end)
+end
+
+local function EHR_DiseaseRaisePainToward(stats, target, step)
+    if not stats or not target or not step or step <= 0 then return end
+    target = math.min(1, math.max(0, target))
+
+    if stats.getPain and stats.setPain then
+        local okGet, current = pcall(function()
+            return stats:getPain()
+        end)
+
+        if okGet then
+            current = current or 0
+            if current < target then
+                local okSet = pcall(function()
+                    stats:setPain(math.min(target, current + step))
+                end)
+                if okSet then return end
+            else
+                return
+            end
+        end
+    end
+
+    EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.PAIN, target, step, 1)
+end
+
+local function EHR_DiseaseRoll(chance)
+    if not chance or chance <= 0 then return false end
+    if chance >= 1 then return true end
+    if not ZombRand then return false end
+
+    return (ZombRand(1000000) / 1000000) < chance
+end
+
+local function EHR_DiseaseCanTriggerSymptom(disease, key, cooldownHours)
+    if not disease or not key then return true end
+
+    local now = 0
+    local gameTime = getGameTime and getGameTime() or nil
+    if gameTime then
+        local ok, hours = pcall(function() return gameTime:getWorldAgeHours() end)
+        if ok and hours then
+            now = hours
+        end
+    end
+
+    disease.symptomCooldowns = disease.symptomCooldowns or {}
+    if (disease.symptomCooldowns[key] or 0) > now then
+        return false
+    end
+
+    disease.symptomCooldowns[key] = now + (cooldownHours or 0.10)
+    return true
+end
+
+local function EHR_DiseaseSay(player, lines)
+    if not player or not player.Say or not lines or #lines == 0 then return end
+
+    local index = 1
+    if ZombRand then
+        index = ZombRand(#lines) + 1
+    end
+
+    player:Say(lines[index])
+end
+
+local function EHR_DiseaseTriggerVomit(player)
+    if EHR.Environmental and EHR.Environmental.TriggerVomit then
+        local ok = pcall(function() EHR.Environmental.TriggerVomit(player) end)
+        if ok then return end
+    end
+
+    EHR_DiseaseSay(player, {"*vomits*", "*retches*", "*throws up*"})
+end
+
+local function EHR_DiseaseTriggerCough(player, severe)
+    if EHR.Environmental and EHR.Environmental.TriggerCough then
+        local ok = pcall(function() EHR.Environmental.TriggerCough(player, severe) end)
+        if ok then return end
+    end
+
+    if severe then
+        EHR_DiseaseSay(player, {"*coughing fit*", "*coughs hard*", "*can't stop coughing*"})
+    else
+        EHR_DiseaseSay(player, {"*coughs*", "*cough*", "*clears throat*"})
+    end
+end
+
+local function EHR_DiseaseTriggerDizziness(player)
+    if EHR.Environmental and EHR.Environmental.TriggerDizziness then
+        local ok = pcall(function() EHR.Environmental.TriggerDizziness(player) end)
+        if ok then return end
+    end
+
+    EHR_DiseaseSay(player, {"*dizzy*", "*stumbles*", "*sways*"})
+end
+
+local function EHR_DiseaseTriggerCollapse(player)
+    if EHR.Environmental and EHR.Environmental.TriggerCollapse then
+        local ok = pcall(function() EHR.Environmental.TriggerCollapse(player) end)
+        if ok then return end
+    end
+
+    EHR_DiseaseSay(player, {"*collapses*", "*legs give out*", "*falls down*"})
+end
+
+local function EHR_DiseaseTriggerCramp(player)
+    if EHR.Environmental and EHR.Environmental.TriggerCramp then
+        local ok = pcall(function() EHR.Environmental.TriggerCramp(player) end)
+        if ok then return end
+    end
+
+    EHR_DiseaseSay(player, {"*muscle cramp*", "*winces in pain*", "*muscles seize up*"})
+end
+
+local function EHR_DiseaseKillPlayer(player, cause)
+    if not player then return end
+
+    if EHR.RecordDeathCause then
+        EHR.RecordDeathCause(player, cause or "Severe disease complications")
+    end
+
+    if player.Say then
+        player:Say("*collapses*")
+    end
+
+    pcall(function()
+        if player.setHealth then
+            player:setHealth(0)
+        end
+    end)
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if bodyDamage then
+        pcall(function() bodyDamage:setOverallBodyHealth(0) end)
+    end
+end
+
+local function EHR_DiseaseApplyBodyHealthDamage(player, amount, cause)
+    if not player or not amount or amount <= 0 then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return nil end
+
+    local reducedByBodyDamage = false
+    if bodyDamage.ReduceGeneralHealth then
+        reducedByBodyDamage = pcall(function()
+            bodyDamage:ReduceGeneralHealth(amount)
+        end)
+    end
+
+    if reducedByBodyDamage then
+        local okAfter, afterHealth = pcall(function()
+            return bodyDamage:getOverallBodyHealth()
+        end)
+        if okAfter and afterHealth then
+            if afterHealth <= 0 then
+                EHR_DiseaseKillPlayer(player, cause)
+                return 0
+            end
+            return afterHealth
+        end
+    end
+
+    local newHealth = math.max(0, currentHealth - amount)
+    if newHealth <= 0 then
+        EHR_DiseaseKillPlayer(player, cause)
+        return 0
+    end
+
+    local okSet = pcall(function()
+        bodyDamage:setOverallBodyHealth(newHealth)
+    end)
+
+    -- Some UI paths read character health more visibly than BodyDamage overall health.
+    if not okSet then
+        pcall(function()
+            if player.getHealth and player.setHealth then
+                local current = player:getHealth() or newHealth
+                player:setHealth(math.max(0, current - amount))
+            end
+        end)
+    end
+
+    return newHealth
+end
+
+local function EHR_DiseaseClampBodyHealth(player, maxHealth)
+    if not player or not maxHealth then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return nil end
+
+    local healthCap = math.max(1, math.min(100, maxHealth))
+    if currentHealth > healthCap then
+        local clamped = false
+        if bodyDamage.ReduceGeneralHealth then
+            clamped = pcall(function()
+                bodyDamage:ReduceGeneralHealth(currentHealth - healthCap)
+            end)
+        end
+
+        if not clamped then
+            pcall(function()
+                bodyDamage:setOverallBodyHealth(healthCap)
+            end)
+        end
+    end
+
+    return math.min(currentHealth, healthCap)
+end
+
+local function EHR_DiseaseIsMusclePart(partType, part)
+    local partName = nil
+
+    if BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(partType)
+        end)
+    end
+
+    if (not partName or partName == "") and part and part.getType and BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(part:getType())
+        end)
+    end
+
+    partName = tostring(partName or partType or ""):lower()
+    return partName:find("arm", 1, true)
+        or partName:find("hand", 1, true)
+        or partName:find("leg", 1, true)
+        or partName:find("foot", 1, true)
+        or partName:find("torso", 1, true)
+        or partName:find("groin", 1, true)
+end
+
+local function EHR_DiseaseApplyMuscleStrain(player, targetStiffness, step)
+    if not player or not targetStiffness or targetStiffness <= 0 then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    targetStiffness = math.min(100, math.max(0, targetStiffness))
+    step = math.min(6, math.max(0.1, step or 0.5))
+    local changed = false
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and EHR_DiseaseIsMusclePart(partType, part) then
+            local okCurrent, currentStiffness = pcall(function()
+                return part:getStiffness()
+            end)
+
+            currentStiffness = (okCurrent and currentStiffness) or 0
+            if currentStiffness < targetStiffness then
+                local amount = math.min(step, targetStiffness - currentStiffness)
+                local okAdd = false
+
+                if player.addStiffness then
+                    okAdd = pcall(function()
+                        player:addStiffness(partType, amount)
+                    end)
+                end
+
+                if not okAdd and bodyDamage.addStiffness then
+                    okAdd = pcall(function()
+                        bodyDamage:addStiffness(partType, amount)
+                    end)
+                end
+
+                if not okAdd and part.addStiffness then
+                    okAdd = pcall(function()
+                        part:addStiffness(amount)
+                    end)
+                end
+
+                if not okAdd and part.setStiffness then
+                    okAdd = pcall(function()
+                        part:setStiffness(math.min(targetStiffness, currentStiffness + amount))
+                    end)
+                end
+
+                if okAdd then
+                    changed = true
+                end
+            end
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+
+    -- These character-level helpers make the B42 fitness/muscle-strain UI notice systemic stiffness.
+    local systemicAmount = math.min(2.0, step * 0.35)
+    if changed and targetStiffness >= 25 then
+        if player.addBackMuscleStrain then
+            pcall(function() player:addBackMuscleStrain(systemicAmount) end)
+        end
+        if player.addBothArmMuscleStrain then
+            pcall(function() player:addBothArmMuscleStrain(systemicAmount) end)
+        end
+        if player.addRightLegMuscleStrain then
+            pcall(function() player:addRightLegMuscleStrain(systemicAmount) end)
+        end
+    end
+end
+
 function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
     local stats = player:getStats()
     if not stats then return end
 
-    local severity = disease.severity
-    local stage = disease.stage
+    local severity = disease.severity or (def and def.baseSeverity) or 0.5
+    local stage = disease.stage or 1
+    local stageMult = 0.0
+
+    if stage == 2 then
+        stageMult = 0.45
+    elseif stage == 3 then
+        stageMult = 1.0
+    elseif stage == 4 then
+        stageMult = 0.25
+    end
+
+    local function trySymptom(key, chance, cooldownHours, callback)
+        if EHR_DiseaseRoll(chance) and EHR_DiseaseCanTriggerSymptom(disease, key, cooldownHours) then
+            pcall(callback)
+        end
+    end
 
     -- Food Poisoning specific effects
     if diseaseId == "food_poisoning" then
         -- Stage 2: Early symptoms
         if stage == 2 then
-            -- Mild endurance drain
-            if stats.setEndurance then
-                local current = stats:getEndurance() or 1
-                stats:setEndurance(math.max(0, current - (0.02 * severity)))
-            end
+            EHR_DiseaseDrainEndurance(stats, 0.006 * severity, 0.75)
 
         -- Stage 3: Peak symptoms
         elseif stage == 3 then
-            -- Severe endurance drain
-            if stats.setEndurance then
-                local current = stats:getEndurance() or 1
-                stats:setEndurance(math.max(0, current - (0.08 * severity)))
-            end
+            EHR_DiseaseDrainEndurance(stats, 0.018 * severity, 0.55)
 
             -- Increase hunger (vomiting loses food) - reduced by 50%
-            if CharacterStat and CharacterStat.HUNGER then
-                local hunger = stats:get(CharacterStat.HUNGER) or 0
-                -- Slowly increase hunger
-                pcall(function()
-                    stats:set(CharacterStat.HUNGER, math.min(1, hunger + (0.0005 * severity)))
-                end)
-            end
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.0005 * severity)
 
             -- Increase thirst (dehydration from vomiting) - reduced by 50%
-            if CharacterStat and CharacterStat.THIRST then
-                local thirst = stats:get(CharacterStat.THIRST) or 0
-                pcall(function()
-                    stats:set(CharacterStat.THIRST, math.min(1, thirst + (0.001 * severity)))
-                end)
-            end
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.001 * severity)
 
         -- Stage 4: Recovery
         elseif stage == 4 then
-            -- Mild effects, fading
-            if stats.setEndurance then
-                local current = stats:getEndurance() or 1
-                stats:setEndurance(math.max(0, current - (0.01 * severity)))
+            EHR_DiseaseDrainEndurance(stats, 0.002 * severity, 0.85)
+        end
+
+        local vomitChance = (stage == 3 and 0.004 or stage == 2 and 0.0015 or 0.0004) * severity
+        trySymptom("vomit", vomitChance, 0.20, function()
+            EHR_DiseaseTriggerVomit(player)
+        end)
+
+    elseif diseaseId == "gastroenteritis" then
+        -- Dirty-hands illness: nausea, vomiting, dehydration and weakness.
+        EHR_DiseaseDrainEndurance(stats, 0.003 * severity * stageMult, 0.30)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.0011 * severity * stageMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.00045 * severity * stageMult)
+
+        local vomitChance = (stage == 3 and 0.006 or stage == 2 and 0.002 or 0.0006) * severity
+        trySymptom("vomit", vomitChance, 0.18, function()
+            EHR_DiseaseTriggerVomit(player)
+        end)
+
+    elseif diseaseId == "trichinosis" then
+        -- Parasite infection: muscle pain, feverish fatigue and weakness.
+        local enduranceDrain = 0.002 * severity
+        local enduranceFloor = 0.80
+        local fatigueTarget = 0.18 * severity
+        local feverTarget = 0.18 * severity
+        local painTarget = 0.08 * severity
+        local strainTarget = math.max(10, 20 * severity)
+        local strainStep = 0.25 * severity
+
+        if stage == 2 then
+            enduranceDrain = 0.007 * severity
+            enduranceFloor = 0.70
+            fatigueTarget = 0.35 * severity
+            feverTarget = 0.35 * severity
+            painTarget = 0.36 * severity
+            strainTarget = math.max(25, 45 * severity)
+            strainStep = 0.90 * severity
+        elseif stage == 3 then
+            enduranceDrain = 0.016 * severity
+            enduranceFloor = 0.40
+            fatigueTarget = 0.72 * severity
+            feverTarget = 0.70 * severity
+            painTarget = 0.86 * severity
+            strainTarget = math.max(55, 90 * severity)
+            strainStep = 1.80 * severity
+        elseif stage == 4 then
+            enduranceDrain = 0.003 * severity
+            enduranceFloor = 0.82
+            fatigueTarget = 0.22 * severity
+            feverTarget = 0.16 * severity
+            painTarget = 0.16 * severity
+            strainTarget = math.max(8, 20 * severity)
+            strainStep = 0.20 * severity
+        end
+
+        EHR_DiseaseDrainEndurance(stats, enduranceDrain, enduranceFloor)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, fatigueTarget, 0.0035 * severity, 1)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.SICKNESS, feverTarget, 0.004 * severity, 1)
+        EHR_DiseaseRaisePainToward(stats, painTarget, 0.018 * severity)
+        EHR_DiseaseApplyMuscleStrain(player, strainTarget, strainStep)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00055 * severity * stageMult)
+
+        local crampChance = (stage == 3 and 0.009 or stage == 2 and 0.003 or 0.0005) * severity
+        trySymptom("cramp", crampChance, 0.25, function()
+            EHR_DiseaseTriggerCramp(player)
+        end)
+
+        if stage >= 2 then
+            trySymptom("fever", (stage == 3 and 0.004 or 0.0015) * severity, 0.25, function()
+                EHR_DiseaseSay(player, {"I'm burning up...", "This fever is getting bad...", "I'm so weak..."})
+            end)
+        end
+
+        if stage == 3 and disease.trichinosisHealthCap then
+            EHR_DiseaseClampBodyHealth(player, disease.trichinosisHealthCap)
+        elseif stage ~= 3 then
+            disease.trichinosisHealthCap = nil
+        end
+
+        if stage == 3 and EHR_DiseaseCanTriggerSymptom(disease, "trichinosis_health_damage", 1.0) then
+            local damage = 1.4 + (1.3 * severity)
+            local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                player,
+                damage,
+                "Trichinosis complications - untreated parasitic infection caused fever, weakness, and organ failure"
+            )
+
+            if newHealth then
+                disease.trichinosisHealthCap = math.min(disease.trichinosisHealthCap or 100, newHealth)
+                EHR_DiseaseClampBodyHealth(player, disease.trichinosisHealthCap)
+            end
+
+            if newHealth and newHealth <= 20 and EHR_DiseaseRoll(0.035 * severity) then
+                EHR_DiseaseKillPlayer(
+                    player,
+                    "Trichinosis complications - severe untreated parasitic infection became fatal"
+                )
             end
         end
+
+    elseif diseaseId == "corpse_sickness" then
+        -- Current active corpse illness covers old putrefaction gas symptoms and mild spore irritation.
+        EHR_DiseaseDrainEndurance(stats, 0.002 * severity * stageMult, 0.35)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PAIN, 0.00045 * severity * stageMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.00045 * severity * stageMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00025 * severity * stageMult)
+
+        local dizzyChance = (stage == 3 and 0.005 or stage == 2 and 0.002 or 0.0004) * severity
+        trySymptom("dizzy", dizzyChance, 0.18, function()
+            EHR_DiseaseTriggerDizziness(player)
+        end)
+
+        local coughChance = (stage == 3 and 0.003 or stage == 2 and 0.001 or 0.0003) * severity
+        trySymptom("cough", coughChance, 0.16, function()
+            EHR_DiseaseTriggerCough(player, stage == 3)
+        end)
+
+        if stage == 2 then
+            trySymptom("eye_irritation", 0.0015 * severity, 0.25, function()
+                EHR_DiseaseSay(player, {"My eyes are burning...", "My eyes sting...", "Need fresh air..."})
+            end)
+        elseif stage == 3 then
+            trySymptom("collapse", 0.001 * severity, 0.50, function()
+                EHR_DiseaseTriggerCollapse(player)
+            end)
+        end
+
+    elseif diseaseId == "tuberculosis" then
+        EHR_DiseaseDrainEndurance(stats, 0.0015 * severity * stageMult, 0.35)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.FATIGUE, 0.0006 * severity * stageMult)
+
+        local coughChance = (stage == 3 and 0.006 or stage == 2 and 0.003 or 0.001) * severity
+        trySymptom("tb_cough", coughChance, 0.12, function()
+            EHR_DiseaseTriggerCough(player, stage == 3)
+        end)
     end
 end
 
@@ -1187,28 +1702,145 @@ function EHR.Disease.ClearFoodRiskHistory(history)
     history.lastFoodRiskReason = nil
     history.lastFoodRiskChance = nil
     history.lastFoodAccumulatedRisk = nil
+    history.lastFoodRiskDiseaseId = nil
     history.foodRiskAccumulated = nil
     history.foodRiskLastTime = nil
+    history.foodRiskAccumulatedByDisease = nil
+    history.foodRiskLastTimeByDisease = nil
 end
 
-function EHR.Disease.GetAccumulatedFoodRisk(player, addedRisk, riskReason)
+function EHR.Disease.GetFoodRiskMemory(player)
+    if not player then return nil end
+
+    local id = getPlayerId(player) or "0"
+    EHR.Disease.FoodRiskMemory = EHR.Disease.FoodRiskMemory or {}
+
+    local memory = EHR.Disease.FoodRiskMemory[id]
+    if not memory then
+        memory = {
+            accumulatedByDisease = {},
+            lastTimeByDisease = {},
+        }
+        EHR.Disease.FoodRiskMemory[id] = memory
+    end
+
+    memory.accumulatedByDisease = memory.accumulatedByDisease or {}
+    memory.lastTimeByDisease = memory.lastTimeByDisease or {}
+    return memory
+end
+
+function EHR.Disease.ClearFoodRiskMemory(player, diseaseId)
+    local memory = EHR.Disease.GetFoodRiskMemory(player)
+    if not memory then return end
+
+    if diseaseId then
+        if memory.accumulatedByDisease then
+            memory.accumulatedByDisease[diseaseId] = nil
+        end
+        if memory.lastTimeByDisease then
+            memory.lastTimeByDisease[diseaseId] = nil
+        end
+        if memory.lastDiseaseId == diseaseId then
+            memory.accumulated = nil
+            memory.lastTime = nil
+            memory.lastReason = nil
+            memory.lastChance = nil
+            memory.lastDiseaseId = nil
+            memory.lastBadFood = nil
+        end
+        return
+    end
+
+    memory.accumulatedByDisease = {}
+    memory.lastTimeByDisease = {}
+    memory.accumulated = nil
+    memory.lastTime = nil
+    memory.lastReason = nil
+    memory.lastChance = nil
+    memory.lastDiseaseId = nil
+    memory.lastBadFood = nil
+end
+
+function EHR.Disease.ClearAccumulatedFoodRisk(history, diseaseId)
+    if not history then return end
+
+    if diseaseId and history.foodRiskAccumulatedByDisease then
+        history.foodRiskAccumulatedByDisease[diseaseId] = nil
+    end
+    if diseaseId and history.foodRiskLastTimeByDisease then
+        history.foodRiskLastTimeByDisease[diseaseId] = nil
+    end
+
+    if not diseaseId or history.lastFoodRiskDiseaseId == diseaseId then
+        history.foodRiskAccumulated = nil
+        history.foodRiskLastTime = nil
+        history.lastFoodAccumulatedRisk = nil
+    end
+end
+
+function EHR.Disease.GetAccumulatedFoodRisk(player, addedRisk, riskReason, diseaseId)
     local data = EHR.Disease.GetDiseaseData(player)
     local history = data and data.history
-    if not history then return addedRisk or 0 end
+    local memory = EHR.Disease.GetFoodRiskMemory(player)
+    if not history and not memory then return addedRisk or 0 end
 
+    diseaseId = diseaseId or "food_poisoning"
     local cfg = EHR.Disease.FoodRiskAccumulation or {}
     local now = getGameTime():getWorldAgeHours()
-    local previous = history.foodRiskAccumulated or 0
-    local lastTime = history.foodRiskLastTime or now
+    if history then
+        history.foodRiskAccumulatedByDisease = history.foodRiskAccumulatedByDisease or {}
+        history.foodRiskLastTimeByDisease = history.foodRiskLastTimeByDisease or {}
+    end
+
+    local previous = memory and memory.accumulatedByDisease and memory.accumulatedByDisease[diseaseId] or nil
+    if previous == nil and memory and memory.lastDiseaseId == diseaseId then
+        previous = memory.accumulated
+    end
+    if previous == nil and history then
+        previous = history.foodRiskAccumulatedByDisease[diseaseId]
+        if previous == nil and history.lastFoodRiskDiseaseId == diseaseId then
+            previous = history.foodRiskAccumulated
+        end
+    end
+    previous = previous or 0
+
+    local lastTime = memory and memory.lastTimeByDisease and memory.lastTimeByDisease[diseaseId] or nil
+    if lastTime == nil and memory and memory.lastDiseaseId == diseaseId then
+        lastTime = memory.lastTime
+    end
+    if lastTime == nil and history then
+        lastTime = history.foodRiskLastTimeByDisease[diseaseId]
+        if lastTime == nil and history.lastFoodRiskDiseaseId == diseaseId then
+            lastTime = history.foodRiskLastTime
+        end
+    end
+    lastTime = lastTime or now
+
     local elapsed = math.max(0, now - lastTime)
     local decayed = math.max(0, previous - ((cfg.decayPerHour or 0.20) * elapsed))
     local accumulated = math.min(1.0, decayed + (addedRisk or 0))
 
-    history.foodRiskAccumulated = accumulated
-    history.foodRiskLastTime = now
-    history.lastFoodRiskReason = riskReason or history.lastFoodRiskReason
-    history.lastFoodRiskChance = addedRisk or history.lastFoodRiskChance
-    history.lastFoodAccumulatedRisk = accumulated
+    if memory then
+        memory.accumulatedByDisease[diseaseId] = accumulated
+        memory.lastTimeByDisease[diseaseId] = now
+        memory.accumulated = accumulated
+        memory.lastTime = now
+        memory.lastDiseaseId = diseaseId
+        memory.lastReason = riskReason or memory.lastReason
+        memory.lastChance = addedRisk or memory.lastChance
+        memory.lastBadFood = now
+    end
+
+    if history then
+        history.foodRiskAccumulatedByDisease[diseaseId] = accumulated
+        history.foodRiskLastTimeByDisease[diseaseId] = now
+        history.foodRiskAccumulated = accumulated
+        history.foodRiskLastTime = now
+        history.lastFoodRiskDiseaseId = diseaseId
+        history.lastFoodRiskReason = riskReason or history.lastFoodRiskReason
+        history.lastFoodRiskChance = addedRisk or history.lastFoodRiskChance
+        history.lastFoodAccumulatedRisk = accumulated
+    end
 
     return accumulated
 end
@@ -1216,22 +1848,217 @@ end
 function EHR.Disease.GetPendingFoodRiskSickness(player)
     local data = EHR.Disease.GetDiseaseData(player)
     local history = data and data.history
-    if not history or not history.lastBadFood then return 0 end
-    if data.active and data.active["food_poisoning"] then return 0 end
+    local memory = EHR.Disease.GetFoodRiskMemory(player)
+    local lastBadFood = (history and history.lastBadFood) or (memory and memory.lastBadFood)
+    if not lastBadFood then return 0 end
+    if data and data.active then
+        for activeId, _ in pairs(data.active) do
+            local def = EHR.Disease.Diseases[activeId]
+            if activeId == "food_poisoning" or (def and def.category == "food") then
+                return 0
+            end
+        end
+    end
 
     local cfg = EHR.Disease.FoodRiskAccumulation or {}
     local now = getGameTime():getWorldAgeHours()
-    local lastTime = history.foodRiskLastTime or history.lastBadFood
+    local diseaseId = (memory and memory.lastDiseaseId)
+        or (history and history.lastFoodRiskDiseaseId)
+        or "food_poisoning"
+    local memoryAccumulatedByDisease = (memory and memory.accumulatedByDisease) or {}
+    local memoryLastTimeByDisease = (memory and memory.lastTimeByDisease) or {}
+    local historyAccumulatedByDisease = (history and history.foodRiskAccumulatedByDisease) or {}
+    local historyLastTimeByDisease = (history and history.foodRiskLastTimeByDisease) or {}
+    local lastTime = memoryLastTimeByDisease[diseaseId]
+        or (memory and memory.lastTime)
+        or historyLastTimeByDisease[diseaseId]
+        or (history and history.foodRiskLastTime)
+        or lastBadFood
     local elapsed = math.max(0, now - lastTime)
-    local accumulated = math.max(0, (history.foodRiskAccumulated or 0) - ((cfg.decayPerHour or 0.20) * elapsed))
+    local previous = memoryAccumulatedByDisease[diseaseId]
+        or (memory and memory.accumulated)
+        or historyAccumulatedByDisease[diseaseId]
+        or (history and history.foodRiskAccumulated)
+        or 0
+    local accumulated = math.max(0, previous - ((cfg.decayPerHour or 0.20) * elapsed))
 
     if accumulated <= 0 then
-        EHR.Disease.ClearFoodRiskHistory(history)
+        if history then
+            EHR.Disease.ClearAccumulatedFoodRisk(history, diseaseId)
+        end
+        EHR.Disease.ClearFoodRiskMemory(player, diseaseId)
         return 0
     end
 
-    history.lastFoodAccumulatedRisk = accumulated
+    if memory then
+        memory.accumulatedByDisease[diseaseId] = accumulated
+        memory.lastDiseaseId = diseaseId
+        memory.accumulated = accumulated
+    end
+    if history and history.foodRiskAccumulatedByDisease then
+        history.foodRiskAccumulatedByDisease[diseaseId] = accumulated
+    end
+    if history then
+        history.lastFoodAccumulatedRisk = accumulated
+    end
     return math.min(cfg.pendingSicknessMax or 24, accumulated * (cfg.pendingSicknessScale or 45))
+end
+
+function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
+    if not item or isCooked == true or isBurnt == true then return 0, nil end
+
+    if EHR.Food and EHR.Food.CheckTrichinosisRisk then
+        local ok, risk = pcall(function() return EHR.Food.CheckTrichinosisRisk(item) end)
+        if ok and risk and risk > 0 then
+            return risk, "uncooked wild game"
+        end
+    end
+
+    nameLower = nameLower or ""
+    local cookedPatterns = {"cooked", "grilled", "roasted", "fried", "boiled", "burnt", "burned", "charred"}
+    for _, pattern in ipairs(cookedPatterns) do
+        if string.find(nameLower, pattern) then
+            return 0, nil
+        end
+    end
+
+    local highRiskPatterns = {
+        "dead rat", "deadrat", "rat meat", "ratmeat", " rat", "rat ", "^rat$",
+        "dead mouse", "deadmouse", "mouse meat", "mousemeat", " mouse", "mouse ", "^mouse$",
+        "wild boar", "boar meat", "boarmeat", "bear meat", "bearmeat",
+    }
+    for _, pattern in ipairs(highRiskPatterns) do
+        if string.find(nameLower, pattern) then
+            return EHR.Disease.FoodRisks.rawWildGameHigh or 0.40, "uncooked wild game"
+        end
+    end
+
+    local mediumRiskPatterns = {
+        "fox meat", "foxmeat", "raccoon meat", "raccoonmeat", "wolf meat", "wolfmeat",
+        "dead rabbit", "deadrabbit", "rabbit meat", "rabbitmeat", " rabbit", "rabbit ", "^rabbit$",
+        "squirrel meat", "squirrelmeat", "dead squirrel", "deadsquirrel",
+        "venison", "deer meat", "deermeat",
+    }
+    for _, pattern in ipairs(mediumRiskPatterns) do
+        if string.find(nameLower, pattern) then
+            return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
+        end
+    end
+
+    local lowRiskPatterns = {
+        "chicken leg", "chicken wing", "chicken", "turkey",
+        "pork chop", "porkchop", "pork", "bacon",
+        "steak", "beef", "mutton", "lamb",
+    }
+    for _, pattern in ipairs(lowRiskPatterns) do
+        if string.find(nameLower, pattern) then
+            return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+        end
+    end
+
+    return 0, nil
+end
+
+function EHR.Disease.GetGastroenteritisRisk(player)
+    if not player then return 0, nil end
+
+    local risk = 0
+    local hasBlood = false
+    local hasDirt = false
+
+    if EHR.Food and EHR.Food.GetContaminationRisk then
+        local ok, handRisk = pcall(function() return EHR.Food.GetContaminationRisk(player) end)
+        if ok and handRisk and handRisk > risk then
+            risk = handRisk
+        end
+    end
+
+    local okVisual, visual = pcall(function()
+        if player.getHumanVisual then
+            return player:getHumanVisual()
+        end
+        return nil
+    end)
+
+    if okVisual and visual and BloodBodyPartType and BloodBodyPartType.MAX and BloodBodyPartType.FromIndex then
+        local bloodLevel = 0
+        local dirtLevel = 0
+        local handParts = 0
+
+        for i = 1, BloodBodyPartType.MAX:index() do
+            local part = BloodBodyPartType.FromIndex(i - 1)
+            local partName = string.lower(tostring(part))
+            if string.find(partName, "hand") then
+                handParts = handParts + 1
+                local okBlood, blood = pcall(function() return visual:getBlood(part) end)
+                local okDirt, dirt = pcall(function() return visual:getDirt(part) end)
+                bloodLevel = bloodLevel + (okBlood and blood or 0)
+                dirtLevel = dirtLevel + (okDirt and dirt or 0)
+            end
+        end
+
+        if handParts > 0 then
+            bloodLevel = math.min(1, bloodLevel / handParts)
+            dirtLevel = math.min(1, dirtLevel / handParts)
+            hasBlood = bloodLevel > 0.10
+            hasDirt = dirtLevel > 0.10
+            risk = math.max(risk, (bloodLevel * 0.15) + (dirtLevel * 0.08))
+        end
+    end
+
+    if risk <= 0.05 then return 0, nil end
+    if hasBlood and hasDirt then return math.min(1, risk), "bloody and dirty hands" end
+    if hasBlood then return math.min(1, risk), "bloody hands" end
+    if hasDirt then return math.min(1, risk), "dirty hands" end
+    return math.min(1, risk), "contaminated hands"
+end
+
+function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReason, risk)
+    if not player or not diseaseId or not risk or risk <= 0 then return false end
+
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    local now = getGameTime():getWorldAgeHours()
+    if diseaseData and diseaseData.history then
+        diseaseData.history.lastBadFood = now
+        diseaseData.history.lastFoodRiskReason = riskReason
+        diseaseData.history.lastFoodRiskChance = risk
+        diseaseData.history.lastFoodRiskDiseaseId = diseaseId
+    end
+
+    local def = EHR.Disease.Diseases[diseaseId]
+    local diseaseName = (def and def.name) or diseaseId
+
+    if diseaseData and diseaseData.active and diseaseData.active[diseaseId] then
+        EHR.Log(string.format("Risky food consumed: %s (%s -> %s) - %.0f%% base risk (already active)",
+            itemName or "unknown", riskReason or "unknown", diseaseName, risk * 100))
+        return false
+    end
+
+    local accumulatedRisk = EHR.Disease.GetAccumulatedFoodRisk(player, risk, riskReason, diseaseId)
+    local cfg = EHR.Disease.FoodRiskAccumulation or {}
+    local contractChance = math.min(cfg.maxChance or 0.95, accumulatedRisk)
+    local contracted = false
+
+    EHR.Log(string.format("Risky food consumed: %s (%s -> %s) - %.0f%% base risk, %.0f%% accumulated risk",
+        itemName or "unknown", riskReason or "unknown", diseaseName, risk * 100, contractChance * 100))
+
+    if accumulatedRisk >= (cfg.guaranteedThreshold or 0.80) then
+        EHR.Disease.Contract(player, diseaseId)
+        diseaseData = EHR.Disease.GetDiseaseData(player)
+        contracted = diseaseData and diseaseData.active and diseaseData.active[diseaseId] ~= nil
+    else
+        contracted = EHR.Disease.TryContract(player, diseaseId, contractChance)
+    end
+
+    if contracted then
+        diseaseData = EHR.Disease.GetDiseaseData(player)
+        if diseaseData and diseaseData.history then
+            EHR.Disease.ClearAccumulatedFoodRisk(diseaseData.history, diseaseId)
+        end
+        EHR.Disease.ClearFoodRiskMemory(player, diseaseId)
+    end
+
+    return contracted
 end
 
 --[[
@@ -1246,8 +2073,17 @@ function EHR.Disease.CheckFoodRisk(player, item)
     -- Ensure disease data is initialized before checking
     EHR.Disease.InitializePlayer(player)
 
-    local risk = 0
-    local riskReason = nil
+    local risks = {}
+
+    local function addRisk(diseaseId, riskReason, chance)
+        if diseaseId and riskReason and chance and chance > 0 then
+            table.insert(risks, {
+                diseaseId = diseaseId,
+                reason = riskReason,
+                chance = chance,
+            })
+        end
+    end
 
     -- Helper to safely call item methods
     local function safeCall(method)
@@ -1265,6 +2101,10 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local isFresh = safeCall("isFresh")
     local age = safeCall("getAge")
     local offAge = safeCall("getOffAge") or safeCall("getOffAgeMax")
+    local itemName = safeCall("getDisplayName") or safeCall("getName") or "unknown"
+    local itemFullType = safeCall("getFullType") or ""
+    local foodType = safeCall("getFoodType") or safeCall("getEatType") or ""
+    local nameLower = string.lower(itemName .. " " .. itemFullType .. " " .. tostring(foodType))
 
     -- B42 alternative: check if item has "Rotten" in name or category
     if isRotten == nil then
@@ -1276,68 +2116,27 @@ function EHR.Disease.CheckFoodRisk(player, item)
 
     -- Determine risk
     if isRotten == true then
-        risk = EHR.Disease.FoodRisks.rotten
-        riskReason = "rotten"
+        addRisk("food_poisoning", "rotten", EHR.Disease.FoodRisks.rotten)
     elseif isBurnt == true then
-        risk = EHR.Disease.FoodRisks.burned
-        riskReason = "burned"
+        addRisk("food_poisoning", "burned", EHR.Disease.FoodRisks.burned)
     end
 
-    -- Check for raw/uncooked meat (isCooked == false OR nil means not cooked)
-    if risk == 0 and isCooked ~= true then
-        -- Check if it's meat by food type or item name
-        local foodType = safeCall("getFoodType") or safeCall("getEatType") or ""
-        local itemName = safeCall("getDisplayName") or safeCall("getName") or ""
-        local itemFullType = safeCall("getFullType") or ""
-
-        local isMeat = false
-        -- Check food type
-        if type(foodType) == "string" and string.find(string.lower(foodType), "meat") then
-            isMeat = true
-        end
-        -- Check item name for common raw meat indicators
-        local nameLower = string.lower(itemName .. " " .. itemFullType)
-
-        -- BUG-006 FIX: Check for preserved/processed meats first (safe without cooking)
-        local isPreservedMeat = false
-        local preservedMeatPatterns = {"ham", "bacon", "sausage", "salami", "pepperoni", "jerky", "cured", "smoked"}
-        for _, pattern in ipairs(preservedMeatPatterns) do
-            if string.find(nameLower, pattern) then
-                isPreservedMeat = true
-                break
-            end
-        end
-
-        -- Only check raw meat patterns if NOT a preserved meat
-        if not isPreservedMeat then
-            if string.find(nameLower, "mouse") or
-               string.find(nameLower, "rat") or
-               string.find(nameLower, "bird") or
-               string.find(nameLower, "rabbit") or
-               string.find(nameLower, "squirrel") or
-               string.find(nameLower, "fish") or
-               string.find(nameLower, "frog") or
-               string.find(nameLower, "meat") or
-               string.find(nameLower, "steak") or
-               string.find(nameLower, "chicken") or
-               string.find(nameLower, "pork") or
-               string.find(nameLower, "venison") then
-                isMeat = true
-            end
-        end
-
-        if isMeat then
-            risk = EHR.Disease.FoodRisks.uncooked
-            riskReason = "uncooked"
-        end
+    -- Raw or undercooked meat causes trichinosis risk, not generic food poisoning.
+    local trichinosisRisk, trichinosisReason = EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
+    if trichinosisRisk > 0 then
+        addRisk("trichinosis", trichinosisReason, trichinosisRisk)
     end
 
     -- Stale food check (age-based)
-    if risk == 0 and age and offAge then
+    if isRotten ~= true and isBurnt ~= true and age and offAge then
         if age > offAge * 0.8 then  -- More than 80% to spoilage
-            risk = EHR.Disease.FoodRisks.stale
-            riskReason = "stale"
+            addRisk("food_poisoning", "stale", EHR.Disease.FoodRisks.stale)
         end
+    end
+
+    local gastroRisk, gastroReason = EHR.Disease.GetGastroenteritisRisk(player)
+    if gastroRisk > 0 then
+        addRisk("gastroenteritis", gastroReason, gastroRisk)
     end
 
     -- Debug: Log what we found
@@ -1347,46 +2146,14 @@ function EHR.Disease.CheckFoodRisk(player, item)
             age or 0, offAge or 0))
     end
 
-    if risk > 0 then
-        local itemName = safeCall("getDisplayName") or safeCall("getName") or "unknown"
-        local diseaseData = EHR.Disease.GetDiseaseData(player)
-        local now = getGameTime():getWorldAgeHours()
-        if diseaseData and diseaseData.history then
-            diseaseData.history.lastBadFood = now
-            diseaseData.history.lastFoodRiskReason = riskReason
-            diseaseData.history.lastFoodRiskChance = risk
-        end
-
-        if diseaseData and diseaseData.active and diseaseData.active["food_poisoning"] then
-            EHR.Log(string.format("Risky food consumed: %s (%s) - %.0f%% base risk (food poisoning already active)",
-                itemName, riskReason, risk * 100))
-            return
-        end
-
-        local accumulatedRisk = EHR.Disease.GetAccumulatedFoodRisk(player, risk, riskReason)
-        local cfg = EHR.Disease.FoodRiskAccumulation or {}
-        local contractChance = math.min(cfg.maxChance or 0.95, accumulatedRisk)
-        local contracted = false
-
-        EHR.Log(string.format("Risky food consumed: %s (%s) - %.0f%% base risk, %.0f%% accumulated risk",
-            itemName, riskReason, risk * 100, contractChance * 100))
-
-        if accumulatedRisk >= (cfg.guaranteedThreshold or 0.80) then
-            EHR.Disease.Contract(player, "food_poisoning")
-            diseaseData = EHR.Disease.GetDiseaseData(player)
-            contracted = diseaseData and diseaseData.active and diseaseData.active["food_poisoning"] ~= nil
-        else
-            contracted = EHR.Disease.TryContract(player, "food_poisoning", contractChance)
-        end
-
-        if contracted then
-            diseaseData = EHR.Disease.GetDiseaseData(player)
-            if diseaseData and diseaseData.history then
-                diseaseData.history.foodRiskAccumulated = 0
-                diseaseData.history.foodRiskLastTime = nil
-                diseaseData.history.lastFoodAccumulatedRisk = nil
-            end
-        end
+    for _, foodRisk in ipairs(risks) do
+        EHR.Disease.ApplyFoodDiseaseRisk(
+            player,
+            itemName,
+            foodRisk.diseaseId,
+            foodRisk.reason,
+            foodRisk.chance
+        )
     end
 end
 
@@ -1446,10 +2213,13 @@ function EHR.Disease.Cure(player, diseaseId)
 
             EHR.CorpseSickness.ResetAfterCure(player)
 
-        elseif diseaseId == "food_poisoning" and EHR.Disease.ResetFoodSicknessAfterCure then
+        else
+            local def = EHR.Disease.Diseases[diseaseId]
+            if def and def.category == "food" and EHR.Disease.ResetFoodSicknessAfterCure then
 
-            EHR.Disease.ResetFoodSicknessAfterCure(player)
+                EHR.Disease.ResetFoodSicknessAfterCure(player, diseaseId)
 
+            end
         end
 
         EHR.Log("Cured disease: " .. tostring(diseaseId))
@@ -1485,9 +2255,13 @@ function EHR.Disease.CureAll(player)
 
             curedCorpseSickness = true
 
-        elseif diseaseId == "food_poisoning" then
+        else
+            local def = EHR.Disease.Diseases[diseaseId]
+            if def and def.category == "food" then
 
-            curedFoodSickness = true
+                curedFoodSickness = true
+
+            end
 
         end
 
@@ -1715,6 +2489,7 @@ function EHR.Disease.ResetFoodSicknessAfterCure(player, curedDiseaseId)
         EHR.Disease.ClearFoodRiskHistory(data.history)
         data.history.lastFoodCuredTime = getGameTime():getWorldAgeHours()
     end
+    EHR.Disease.ClearFoodRiskMemory(player, curedDiseaseId)
 
     local stats = player:getStats()
     if not stats or not CharacterStat then return end

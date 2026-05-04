@@ -773,6 +773,10 @@ function EHR.Disease.TryContract(player, diseaseId, baseChance)
     -- Calculate actual chance with immunity
     local immunity = EHR.Disease.CalculateImmunity(player)
     local specificImmunity = data.immunity[diseaseId] or 0
+    if diseaseId == "food_poisoning" then
+        specificImmunity = 0
+        data.immunity[diseaseId] = 0
+    end
 
     -- Higher immunity = lower chance
     local actualChance = baseChance / immunity
@@ -851,8 +855,10 @@ function EHR.Disease.Contract(player, diseaseId)
         EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[1])
     end
 
-    -- Record in history
-    data.history.lastBadFood = currentHour
+    -- Record food exposure in history
+    if diseaseId == "food_poisoning" or def.category == "food" then
+        data.history.lastBadFood = currentHour
+    end
 end
 
 -- ============================================
@@ -1020,9 +1026,13 @@ function EHR.Disease.OnRecovery(player, diseaseId)
 
     EHR.Log("Recovered from " .. name)
 
-    -- Build specific immunity (lasts ~30 in-game days worth)
-    -- Immunity decays over time but starts at 0.5 (50% resistance)
-    data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
+    -- Build specific immunity for non-food-poisoning diseases.
+    -- Food poisoning should stay fully risk-based on each bad meal.
+    if diseaseId == "food_poisoning" then
+        data.immunity[diseaseId] = 0
+    else
+        data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
+    end
 
     -- Record recovery
     local gameTime = getGameTime()
@@ -1273,6 +1283,12 @@ function EHR.Disease.CheckFoodRisk(player, item)
 
     if risk > 0 then
         local itemName = safeCall("getDisplayName") or safeCall("getName") or "unknown"
+        local diseaseData = EHR.Disease.GetDiseaseData(player)
+        if diseaseData and diseaseData.history then
+            diseaseData.history.lastBadFood = getGameTime():getWorldAgeHours()
+            diseaseData.history.lastFoodRiskReason = riskReason
+            diseaseData.history.lastFoodRiskChance = risk
+        end
         EHR.Log(string.format("Risky food consumed: %s (%s) - %.0f%% base risk",
             itemName, riskReason, risk * 100))
         EHR.Disease.TryContract(player, "food_poisoning", risk)

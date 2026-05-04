@@ -507,6 +507,30 @@ function EHRDrawBloodAction:perform()
         return
     end
 
+    local inventory = self.character:getInventory()
+    if not inventory then
+        self.character:Say("Something went wrong...")
+        EHR.Log("DrawBlood: No inventory available")
+        ISBaseTimedAction.perform(self)
+        return
+    end
+
+    -- Create the filled bag first, so a script/item error cannot consume blood or the empty bag.
+    local ok, filledBag = pcall(function()
+        return inventory:AddItem(filledBagType)
+    end)
+
+    if not ok or not filledBag then
+        self.character:Say("Something went wrong...")
+        EHR.Log("DrawBlood: Failed to create " .. tostring(filledBagType) .. ": " .. tostring(filledBag))
+        ISBaseTimedAction.perform(self)
+        return
+    end
+
+    pcall(function()
+        filledBag:setAge(0)
+    end)
+
     -- Remove blood from player
     EHR.Blood.ModifyBloodVolume(self.character, -EHR.Transfusion.DrawBloodAmount)
 
@@ -514,15 +538,9 @@ function EHRDrawBloodAction:perform()
     if isClient() then
         sendClientCommand(self.character, "EHR", "RemoveItem", {itemID = self.emptyBag:getID()})
     end
-    self.character:getInventory():Remove(self.emptyBag)
+    inventory:Remove(self.emptyBag)
 
-    -- Create the filled blood bag
-    local filledBag = self.character:getInventory():AddItem(filledBagType)
-    if filledBag then
-        -- Set the bag as freshly filled (reset age for spoilage)
-        filledBag:setAge(0)
-        EHR.Log("DrawBlood: Created " .. filledBagType .. " from player's blood")
-    end
+    EHR.Log("DrawBlood: Created " .. filledBagType .. " from player's blood")
 
     -- Apply effects from blood loss
     self.character:Say(getText("UI_EHR_DrawBlood_Complete") or "That made me lightheaded...")

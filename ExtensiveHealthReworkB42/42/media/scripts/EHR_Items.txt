@@ -21,7 +21,7 @@ module ExtensiveHealth
     item BloodBagONeg
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (O-),
         Icon = BloodBagONeg,
         Weight = 0.5,
@@ -41,7 +41,7 @@ module ExtensiveHealth
     item BloodBagOPos
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (O+),
         Icon = BloodBagOPos,
         Weight = 0.5,
@@ -61,7 +61,7 @@ module ExtensiveHealth
     item BloodBagANeg
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (A-),
         Icon = BloodBagANeg,
         Weight = 0.5,
@@ -81,7 +81,7 @@ module ExtensiveHealth
     item BloodBagAPos
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (A+),
         Icon = BloodBagAPos,
         Weight = 0.5,
@@ -101,7 +101,7 @@ module ExtensiveHealth
     item BloodBagBNeg
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (B-),
         Icon = BloodBagBNeg,
         Weight = 0.5,
@@ -121,7 +121,7 @@ module ExtensiveHealth
     item BloodBagBPos
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (B+),
         Icon = BloodBagBPos,
         Weight = 0.5,
@@ -141,7 +141,7 @@ module ExtensiveHealth
     item BloodBagABNeg
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (AB-),
         Icon = BloodBagABNeg,
         Weight = 0.5,
@@ -161,7 +161,7 @@ module ExtensiveHealth
     item BloodBagABPos
     {
         DisplayCategory = FirstAid,
-        Type = Food,
+        ItemType = base:food,
         DisplayName = Blood Bag (AB+),
         Icon = BloodBagABPos,
         Weight = 0.5,

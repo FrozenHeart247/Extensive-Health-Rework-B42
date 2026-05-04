@@ -472,6 +472,16 @@ local function hasTag(item, tag)
     return tags and tags:contains(tag) == true
 end
 
+local function hasAnyTag(item, tags)
+    if not tags then return false end
+    for _, tag in ipairs(tags) do
+        if hasTag(item, tag) then
+            return true
+        end
+    end
+    return false
+end
+
 local function containsAny(text, terms)
     if not text then return false end
     for _, term in ipairs(terms) do
@@ -500,6 +510,51 @@ local function getItemText(item)
     end
 
     return string.lower(table.concat(parts, " "))
+end
+
+local function getDrainableLevel(item)
+    if not item then return nil end
+
+    local methods = { "getCurrentUsesFloat", "getUsedDelta", "getDelta" }
+    for _, method in ipairs(methods) do
+        if item[method] then
+            local ok, value = pcall(function() return item[method](item) end)
+            if ok and type(value) == "number" then
+                return value
+            end
+        end
+    end
+
+    return nil
+end
+
+local function isFilterlessMask(item)
+    local text = getItemText(item)
+    if containsAny(text, { "nofilter", "no filter", "_nofilter" }) then
+        return true
+    end
+
+    return hasAnyTag(item, {
+        "gasmasknofilter",
+        "base:gasmasknofilter",
+        "GasMaskNoFilter",
+        "respiratornofilter",
+        "base:respiratornofilter",
+        "RespiratorNoFilter",
+    })
+end
+
+local function hasUsableFilter(item)
+    if isFilterlessMask(item) then
+        return false
+    end
+
+    local level = getDrainableLevel(item)
+    if level ~= nil then
+        return level > 0.001
+    end
+
+    return true
 end
 
 local function getBodyLocationText(item)
@@ -550,19 +605,25 @@ local function getFaceProtectionItems(player)
 end
 
 local function getTaggedProtection(item, config)
-    if hasTag(item, "GasMask") or hasTag(item, "NBC") or hasTag(item, "Hazmat") then
-        return config.PROTECTION.gas_mask
-    end
-    if hasTag(item, "Respirator") or hasTag(item, "AirFilter") or hasTag(item, "FilterMask") then
-        return config.PROTECTION.respirator
-    end
-    if hasTag(item, "DustMask") or hasTag(item, "N95") then
+    if hasAnyTag(item, { "GasMask", "gasMask", "gasmask", "base:gasmask", "NBC", "nbc", "Hazmat", "hazmat" }) then
+        if hasUsableFilter(item) then
+            return config.PROTECTION.gas_mask
+        end
         return config.PROTECTION.dust_mask
     end
-    if hasTag(item, "SurgicalMask") or hasTag(item, "MedicalMask") then
+    if hasAnyTag(item, { "Respirator", "respirator", "base:respirator", "AirFilter", "airfilter", "FilterMask", "filtermask" }) then
+        if hasUsableFilter(item) then
+            return config.PROTECTION.respirator
+        end
+        return config.PROTECTION.dust_mask
+    end
+    if hasAnyTag(item, { "DustMask", "dustmask", "base:dustmask", "N95", "n95" }) then
+        return config.PROTECTION.dust_mask
+    end
+    if hasAnyTag(item, { "SurgicalMask", "surgicalmask", "MedicalMask", "medicalmask" }) then
         return config.PROTECTION.surgical_mask
     end
-    if hasTag(item, "Bandana") or hasTag(item, "Scarf") or hasTag(item, "ClothMask") or hasTag(item, "FaceCover") then
+    if hasAnyTag(item, { "Bandana", "bandana", "Scarf", "scarf", "ClothMask", "clothmask", "FaceCover", "facecover" }) then
         return config.PROTECTION.cloth_mask
     end
     return nil
@@ -572,10 +633,16 @@ local function getNamedProtection(item, config)
     local text = getItemText(item)
 
     if containsAny(text, { "gasmask", "gas mask", "hat_gasmask", "nbc", "hazmat" }) then
-        return config.PROTECTION.gas_mask
+        if hasUsableFilter(item) then
+            return config.PROTECTION.gas_mask
+        end
+        return config.PROTECTION.dust_mask
     end
     if containsAny(text, { "respirator", "airfilter", "air filter" }) then
-        return config.PROTECTION.respirator
+        if hasUsableFilter(item) then
+            return config.PROTECTION.respirator
+        end
+        return config.PROTECTION.dust_mask
     end
     if containsAny(text, { "dustmask", "dust mask", "n95", "filtermask", "filter mask" }) then
         return config.PROTECTION.dust_mask
@@ -1057,6 +1124,8 @@ end
 function EHR.CorpseSickness.DecayVanillaSickness(player, exposure, deltaHours)
     if not player or not deltaHours or deltaHours <= 0 then return end
     if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
+    if EHR.CorpseSickness.HasActiveFoodDisease(player) then return end
+    if EHR.CorpseSickness.HasRecentFoodRisk(player) then return end
 
     local stats = player:getStats()
     if not stats or not CharacterStat then return end
@@ -1118,6 +1187,7 @@ function EHR.CorpseSickness.ClampVanillaSickness(player, exposure)
     if not player then return end
     if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
     if EHR.CorpseSickness.HasActiveFoodDisease(player) then return end
+    if EHR.CorpseSickness.HasRecentFoodRisk(player) then return end
 
     local stats = player:getStats()
     if not stats or not CharacterStat then return end

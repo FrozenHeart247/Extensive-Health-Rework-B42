@@ -46,7 +46,10 @@ EHR.CorpseSickness.Config = {
     -- Protection values (reduction percentage)
     PROTECTION = {
         gas_mask = 1.00,
-        surgical_mask = 0.75,
+        respirator = 1.00,
+        dust_mask = 0.80,
+        surgical_mask = 0.65,
+        cloth_mask = 0.50,
         bandana = 0.50,
         none = 0.00,
     },
@@ -131,6 +134,9 @@ function EHR.CorpseSickness.GetExposureData(player)
         lastUpdateHour = 0,
         lastWarningTime = 0,
         lastCorpseCount = 0,
+        vanillaCorpseExposure = 0,
+        lastVanillaSickness = 0,
+        lastVanillaCorpseSignalHour = 0,
         immuneUntil = 0,
     }
     return modData.EHR_CorpseSickness
@@ -145,6 +151,9 @@ function EHR.CorpseSickness.InitializePlayer(player)
         data.lastUpdateHour = data.lastUpdateHour or 0
         data.lastWarningTime = data.lastWarningTime or 0
         data.lastCorpseCount = data.lastCorpseCount or 0
+        data.vanillaCorpseExposure = data.vanillaCorpseExposure or 0
+        data.lastVanillaSickness = data.lastVanillaSickness or 0
+        data.lastVanillaCorpseSignalHour = data.lastVanillaCorpseSignalHour or 0
         data.immuneUntil = data.immuneUntil or 0
     end
 end
@@ -194,6 +203,9 @@ function EHR.CorpseSickness.ResetAfterCure(player)
     data.maxExposure = 0
     data.timeInArea = 0
     data.lastCorpseCount = 0
+    data.vanillaCorpseExposure = 0
+    data.lastVanillaSickness = 0
+    data.lastVanillaCorpseSignalHour = 0
     data.lastWarningTime = 0
     data.lastUpdateHour = getGameTime():getWorldAgeHours()
 
@@ -243,88 +255,260 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
     if not cell then return result end
 
     local currentTime = getGameTime():getWorldAgeHours()
+    local seenCorpses = {}
+
+    local function safeCall(fn, fallback)
+        local ok, value = pcall(fn)
+        if ok then return value end
+        return fallback
+    end
+
+    local function getListSize(objects)
+        if not objects then return 0 end
+        if objects.size then
+            local value = safeCall(function() return objects:size() end, 0)
+            return tonumber(value) or 0
+        end
+        if type(objects) == "table" then
+            return #objects
+        end
+        return 0
+    end
+
+    local function getListItem(objects, index)
+        if not objects then return nil end
+        if objects.get then
+            return safeCall(function() return objects:get(index) end, nil)
+        end
+        if type(objects) == "table" then
+            return objects[index + 1]
+        end
+        return nil
+    end
+
+    local function addCorpse(corpse)
+        if not corpse or not instanceof then return end
+
+        local isDeadBody = safeCall(function() return instanceof(corpse, "IsoDeadBody") end, false)
+        if not isDeadBody then return end
+
+        local corpseSquare = nil
+        if corpse.getSquare then
+            corpseSquare = safeCall(function() return corpse:getSquare() end, nil)
+        end
+        if not corpseSquare then return end
+
+        local cx = corpse.getX and safeCall(function() return corpse:getX() end, nil) or nil
+        local cy = corpse.getY and safeCall(function() return corpse:getY() end, nil) or nil
+        local cz = corpse.getZ and safeCall(function() return corpse:getZ() end, nil) or nil
+
+        if not cx and corpseSquare.getX then cx = safeCall(function() return corpseSquare:getX() end, nil) end
+        if not cy and corpseSquare.getY then cy = safeCall(function() return corpseSquare:getY() end, nil) end
+        if not cz and corpseSquare.getZ then cz = safeCall(function() return corpseSquare:getZ() end, nil) end
+        if not cx or not cy then return end
+        cz = cz or pz
+
+        if math.abs(cx - px) > config.SEARCH_RADIUS or math.abs(cy - py) > config.SEARCH_RADIUS then return end
+        if math.floor(cz) ~= math.floor(pz) then return end
+
+        local corpseKey = string.format("%.0f_%.0f_%.0f", cx, cy, cz)
+        if seenCorpses[corpseKey] then return end
+        seenCorpses[corpseKey] = true
+
+        result.count = result.count + 1
+
+        local deathTime = nil
+        if corpse.getDeathTime then
+            local dt = safeCall(function() return corpse:getDeathTime() end, nil)
+            if dt and dt > 0 then
+                deathTime = dt
+            end
+        end
+
+        if not deathTime then
+            if not EHR.CorpseSickness.FirstSeenCorpses[corpseKey] then
+                EHR.CorpseSickness.FirstSeenCorpses[corpseKey] = currentTime
+            end
+            deathTime = EHR.CorpseSickness.FirstSeenCorpses[corpseKey]
+        end
+
+        local corpseAge = currentTime - deathTime
+        if corpseAge < 0 then corpseAge = 0 end
+
+        if corpseAge < config.CORPSE_AGE_FRESH then
+            result.freshCount = result.freshCount + 1
+            result.totalEmission = result.totalEmission + config.EMISSION_RATE.fresh
+        elseif corpseAge < config.CORPSE_AGE_DECOMPOSING then
+            result.decomposingCount = result.decomposingCount + 1
+            result.totalEmission = result.totalEmission + config.EMISSION_RATE.decomposing
+        else
+            result.rottenCount = result.rottenCount + 1
+            result.totalEmission = result.totalEmission + config.EMISSION_RATE.rotten
+        end
+    end
+
+    local function scanObjectList(objects)
+        local size = getListSize(objects)
+        if size <= 0 then return end
+
+        for i = 0, size - 1 do
+            addCorpse(getListItem(objects, i))
+        end
+    end
 
     for dx = -config.SEARCH_RADIUS, config.SEARCH_RADIUS do
         for dy = -config.SEARCH_RADIUS, config.SEARCH_RADIUS do
-            local sq = cell:getGridSquare(px + dx, py + dy, pz)
+            local sq = safeCall(function()
+                return cell:getGridSquare(math.floor(px + dx), math.floor(py + dy), math.floor(pz))
+            end, nil)
+
             if sq then
-                local objects = sq:getStaticMovingObjects()
-                if objects then
-                    for i = 0, objects:size() - 1 do
-                        local corpse = objects:get(i)
-                        if corpse and instanceof(corpse, "IsoDeadBody") then
-                            local corpseSquare = corpse:getSquare()
-                            if corpseSquare then
-                                result.count = result.count + 1
-
-                                local corpseKey = string.format("%.0f_%.0f_%.0f",
-                                    corpse:getX(), corpse:getY(), corpse:getZ())
-
-                                local deathTime = nil
-                                if corpse.getDeathTime then
-                                    local ok, dt = pcall(function() return corpse:getDeathTime() end)
-                                    if ok and dt and dt > 0 then
-                                        deathTime = dt
-                                    end
-                                end
-
-                                if not deathTime then
-                                    if not EHR.CorpseSickness.FirstSeenCorpses[corpseKey] then
-                                        EHR.CorpseSickness.FirstSeenCorpses[corpseKey] = currentTime
-                                    end
-                                    deathTime = EHR.CorpseSickness.FirstSeenCorpses[corpseKey]
-                                end
-
-                                local corpseAge = currentTime - deathTime
-                                if corpseAge < 0 then corpseAge = 0 end
-
-                                if corpseAge < config.CORPSE_AGE_FRESH then
-                                    result.freshCount = result.freshCount + 1
-                                    result.totalEmission = result.totalEmission + config.EMISSION_RATE.fresh
-                                elseif corpseAge < config.CORPSE_AGE_DECOMPOSING then
-                                    result.decomposingCount = result.decomposingCount + 1
-                                    result.totalEmission = result.totalEmission + config.EMISSION_RATE.decomposing
-                                else
-                                    result.rottenCount = result.rottenCount + 1
-                                    result.totalEmission = result.totalEmission + config.EMISSION_RATE.rotten
-                                end
-                            end
-                        end
-                    end
+                if sq.getStaticMovingObjects then
+                    scanObjectList(safeCall(function() return sq:getStaticMovingObjects() end, nil))
+                end
+                if sq.getMovingObjects then
+                    scanObjectList(safeCall(function() return sq:getMovingObjects() end, nil))
                 end
             end
+        end
+    end
+
+    if result.count == 0 and cell.getObjectListForLua then
+        scanObjectList(safeCall(function() return cell:getObjectListForLua() end, nil))
+    end
+
+    return result
+end
+-- ============================================
+-- PROTECTION + ENVIRONMENT
+-- ============================================
+
+local function hasTag(item, tag)
+    if not item or not tag or not item.getScriptItem then return false end
+
+    local scriptItem = item:getScriptItem()
+    if not scriptItem then return false end
+
+    local tags = scriptItem:getTags()
+    return tags and tags:contains(tag) == true
+end
+
+local function containsAny(text, terms)
+    if not text then return false end
+    for _, term in ipairs(terms) do
+        if text:find(term, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function getItemText(item)
+    if not item then return "" end
+
+    local parts = {}
+    if item.getType then
+        local ok, value = pcall(function() return item:getType() end)
+        if ok and value then table.insert(parts, tostring(value)) end
+    end
+    if item.getFullType then
+        local ok, value = pcall(function() return item:getFullType() end)
+        if ok and value then table.insert(parts, tostring(value)) end
+    end
+    if item.getDisplayName then
+        local ok, value = pcall(function() return item:getDisplayName() end)
+        if ok and value then table.insert(parts, tostring(value)) end
+    end
+
+    return string.lower(table.concat(parts, " "))
+end
+
+local function getBodyLocationText(item)
+    if not item or not item.getBodyLocation then return "" end
+    local ok, value = pcall(function() return item:getBodyLocation() end)
+    if not ok or not value then return "" end
+    return string.lower(tostring(value))
+end
+
+local function isFaceProtectionCandidate(item)
+    if not item then return false end
+
+    local loc = getBodyLocationText(item)
+    if containsAny(loc, { "mask", "mouth", "face", "neck" }) then
+        return true
+    end
+
+    local text = getItemText(item)
+    return containsAny(text, {
+        "mask",
+        "respirator",
+        "bandana",
+        "scarf",
+        "balaclava",
+        "facecover",
+        "face cover",
+        "mouthcover",
+        "mouth cover",
+    })
+end
+
+local function getFaceProtectionItems(player)
+    local result = {}
+    if not player or not player.getWornItems then return result end
+
+    local wornItems = player:getWornItems()
+    if not wornItems then return result end
+
+    local count = wornItems:size()
+    for i = 0, count - 1 do
+        local item = wornItems:getItemByIndex(i)
+        if isFaceProtectionCandidate(item) then
+            table.insert(result, item)
         end
     end
 
     return result
 end
 
--- ============================================
--- PROTECTION + ENVIRONMENT
--- ============================================
-
-local function hasTag(item, tag)
-    if not item or not item.hasTag then return false end
-    local ok, result = pcall(function() return item:hasTag(tag) end)
-    return ok and result == true
+local function getTaggedProtection(item, config)
+    if hasTag(item, "GasMask") or hasTag(item, "NBC") or hasTag(item, "Hazmat") then
+        return config.PROTECTION.gas_mask
+    end
+    if hasTag(item, "Respirator") or hasTag(item, "AirFilter") or hasTag(item, "FilterMask") then
+        return config.PROTECTION.respirator
+    end
+    if hasTag(item, "DustMask") or hasTag(item, "N95") then
+        return config.PROTECTION.dust_mask
+    end
+    if hasTag(item, "SurgicalMask") or hasTag(item, "MedicalMask") then
+        return config.PROTECTION.surgical_mask
+    end
+    if hasTag(item, "Bandana") or hasTag(item, "Scarf") or hasTag(item, "ClothMask") or hasTag(item, "FaceCover") then
+        return config.PROTECTION.cloth_mask
+    end
+    return nil
 end
 
-local function getMaskItem(player)
-    if not player or not player.getWornItems then return nil end
+local function getNamedProtection(item, config)
+    local text = getItemText(item)
 
-    local wornItems = player:getWornItems()
-    if not wornItems then return nil end
-
-    local count = wornItems:size()
-    for i = 0, count - 1 do
-        local item = wornItems:getItemByIndex(i)
-        if item and item.getBodyLocation then
-            local loc = item:getBodyLocation()
-            local locName = loc and tostring(loc) or nil
-            if locName == "Mask" or locName == "MaskEyes" or locName == "MaskFull" then
-                return item
-            end
-        end
+    if containsAny(text, { "gasmask", "gas mask", "hat_gasmask", "nbc", "hazmat" }) then
+        return config.PROTECTION.gas_mask
+    end
+    if containsAny(text, { "respirator", "airfilter", "air filter" }) then
+        return config.PROTECTION.respirator
+    end
+    if containsAny(text, { "dustmask", "dust mask", "n95", "filtermask", "filter mask" }) then
+        return config.PROTECTION.dust_mask
+    end
+    if containsAny(text, { "surgicalmask", "surgical mask", "medicalmask", "medical mask" }) then
+        return config.PROTECTION.surgical_mask
+    end
+    if containsAny(text, { "bandana", "scarf", "balaclava", "clothmask", "cloth mask", "mouthmask", "mouth mask" }) then
+        return config.PROTECTION.cloth_mask
+    end
+    if text:find("mask", 1, true) then
+        return config.PROTECTION.cloth_mask
     end
 
     return nil
@@ -334,36 +518,17 @@ function EHR.CorpseSickness.GetProtectionLevel(player)
     if not player then return 0 end
 
     local config = EHR.CorpseSickness.Config
-    local mask = getMaskItem(player)
+    local protection = config.PROTECTION.none
+    local items = getFaceProtectionItems(player)
 
-    -- Tag-based checks (preferred)
-    if mask then
-        if hasTag(mask, "GasMask") or hasTag(mask, "NBC") then
-            return config.PROTECTION.gas_mask
-        end
-        if hasTag(mask, "SurgicalMask") or hasTag(mask, "MedicalMask") then
-            return config.PROTECTION.surgical_mask
-        end
-        if hasTag(mask, "Bandana") or hasTag(mask, "Scarf") then
-            return config.PROTECTION.bandana
+    for _, item in ipairs(items) do
+        local itemProtection = getTaggedProtection(item, config) or getNamedProtection(item, config)
+        if itemProtection and itemProtection > protection then
+            protection = itemProtection
         end
     end
 
-    -- Slot/type fallback
-    if mask then
-        local maskType = mask.getType and mask:getType() or ""
-        if maskType:find("GasMask") or maskType:find("NBC") then
-            return config.PROTECTION.gas_mask
-        end
-        if maskType:find("SurgicalMask") or maskType:find("MedicalMask") then
-            return config.PROTECTION.surgical_mask
-        end
-        if maskType:find("Bandana") or maskType:find("Scarf") then
-            return config.PROTECTION.bandana
-        end
-    end
-
-    return config.PROTECTION.none
+    return protection
 end
 
 function EHR.CorpseSickness.GetEnvironmentMultiplier(player)
@@ -474,39 +639,38 @@ end
 function EHR.CorpseSickness.UpdateExposure(player)
     if not player then return end
 
+    local data = EHR.CorpseSickness.GetExposureData(player)
+    if not data then return end
+
     if EHR.CorpseSickness.IsImmune(player) then
+        data.vanillaCorpseExposure = 0
         return
     end
 
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
     if diseaseData and diseaseData.active and diseaseData.active["corpse_sickness"] then
+        data.vanillaCorpseExposure = 0
         return
     end
-
-    -- Check if player is safely inside a sealed vehicle
-    if EHR.CorpseSickness.IsProtectedInVehicle(player) then
-        -- Player is protected - decay exposure but don't accumulate
-        local data = EHR.CorpseSickness.GetExposureData(player)
-        if data then
-            local currentHour = getGameTime():getWorldAgeHours()
-            local lastHour = data.lastUpdateHour or currentHour
-            local deltaHours = currentHour - lastHour
-            if deltaHours > 0 and deltaHours <= 1 then
-                local config = EHR.CorpseSickness.Config
-                local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
-                data.currentExposure = math.max(0, data.currentExposure - decay)
-            end
-            data.lastUpdateHour = currentHour
-            data.timeInArea = 0
-            EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
-        end
-        return
-    end
-
-    local data = EHR.CorpseSickness.GetExposureData(player)
-    if not data then return end
 
     local config = EHR.CorpseSickness.Config
+    local currentHour = getGameTime():getWorldAgeHours()
+    local lastHour = data.lastUpdateHour or currentHour
+    local deltaHours = currentHour - lastHour
+    if deltaHours <= 0 or deltaHours > 1 then
+        deltaHours = 5 / 3600
+    end
+    data.lastUpdateHour = currentHour
+
+    if EHR.CorpseSickness.IsProtectedInVehicle(player) then
+        local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
+        data.currentExposure = math.max(0, data.currentExposure - decay)
+        data.vanillaCorpseExposure = 0
+        data.timeInArea = 0
+        EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
+        return
+    end
+
     local corpseInfo = EHR.CorpseSickness.ScanNearbyCorpses(player)
     data.lastCorpseCount = corpseInfo.count
 
@@ -523,21 +687,30 @@ function EHR.CorpseSickness.UpdateExposure(player)
         end
     end
 
+    local hasActiveFoodDisease = EHR.CorpseSickness.HasActiveFoodDisease(player)
+    local hasRecentFoodRisk = EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
+    local lastVanillaSickness = data.lastVanillaSickness or 0
+    local vanillaSicknessRising = vanillaSickness > lastVanillaSickness + 0.005
+    data.lastVanillaSickness = vanillaSickness
 
-    local currentHour = getGameTime():getWorldAgeHours()
-    local lastHour = data.lastUpdateHour or currentHour
-    local deltaHours = currentHour - lastHour
-    if deltaHours <= 0 or deltaHours > 1 then
-        deltaHours = 5 / 3600
+    local rawVanillaCorpseSignal = vanillaSickness > 0.01 and not hasActiveFoodDisease and not hasRecentFoodRisk
+    if rawVanillaCorpseSignal and (corpseInfo.count > 0 or vanillaSicknessRising) then
+        data.lastVanillaCorpseSignalHour = currentHour
     end
-    data.lastUpdateHour = currentHour
+
+    local recentVanillaCorpseSignal = data.lastVanillaCorpseSignalHour
+        and currentHour - data.lastVanillaCorpseSignalHour < 0.25
+    local hasVanillaCorpseSignal = rawVanillaCorpseSignal and (corpseInfo.count > 0 or recentVanillaCorpseSignal)
 
     if corpseInfo.totalEmission <= 0 then
-        if corpseInfo.count > 0 and vanillaSickness > 0.01 then
+        if corpseInfo.count > 0 then
             corpseInfo.totalEmission = math.max(1, math.min(corpseInfo.count, config.CORPSE_COUNT_DANGEROUS))
+        elseif hasVanillaCorpseSignal then
+            corpseInfo.totalEmission = 0
         else
             local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
             data.currentExposure = math.max(0, data.currentExposure - decay)
+            data.vanillaCorpseExposure = 0
             data.timeInArea = 0
             EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
             return
@@ -547,6 +720,10 @@ function EHR.CorpseSickness.UpdateExposure(player)
     local envMultiplier = EHR.CorpseSickness.GetEnvironmentMultiplier(player)
     local protection = EHR.CorpseSickness.GetProtectionLevel(player)
     if protection >= 1.0 then
+        local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
+        data.currentExposure = math.max(0, data.currentExposure - decay)
+        data.vanillaCorpseExposure = 0
+        data.timeInArea = 0
         EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
         return
     end
@@ -555,11 +732,28 @@ function EHR.CorpseSickness.UpdateExposure(player)
     local effectiveExposure = baseExposure * envMultiplier * (1 - protection) * getSpeedMultiplier()
 
     data.currentExposure = data.currentExposure + effectiveExposure
-    data.maxExposure = math.max(data.maxExposure, data.currentExposure)
+    data.vanillaCorpseExposure = 0
+
+    if hasVanillaCorpseSignal then
+        local vanillaExposure = (vanillaSickness / 0.6) * config.EXPOSURE_THRESHOLD_HIGH
+        vanillaExposure = math.min(config.EXPOSURE_THRESHOLD_HIGH, math.max(0, vanillaExposure))
+
+        if vanillaSickness >= 0.55 then
+            vanillaExposure = math.max(vanillaExposure, config.EXPOSURE_THRESHOLD_HIGH)
+        elseif vanillaSickness >= 0.35 then
+            vanillaExposure = math.max(vanillaExposure, config.EXPOSURE_THRESHOLD_MEDIUM)
+        elseif vanillaSickness >= 0.15 then
+            vanillaExposure = math.max(vanillaExposure, config.EXPOSURE_THRESHOLD_LOW)
+        end
+
+        data.vanillaCorpseExposure = vanillaExposure
+    end
+
+    local effectiveExposureLevel = math.max(data.currentExposure, data.vanillaCorpseExposure or 0)
+    data.maxExposure = math.max(data.maxExposure, effectiveExposureLevel)
     data.timeInArea = data.timeInArea + deltaHours
 
-    -- Only show smell warnings after sufficient exposure AND time
-    local shouldWarn = data.currentExposure >= config.MIN_EXPOSURE_FOR_WARNING
+    local shouldWarn = effectiveExposureLevel >= config.MIN_EXPOSURE_FOR_WARNING
         and data.timeInArea >= config.MIN_TIME_FOR_WARNING
         and currentHour - (data.lastWarningTime or 0) > 0.5
 
@@ -568,17 +762,17 @@ function EHR.CorpseSickness.UpdateExposure(player)
         data.lastWarningTime = currentHour
     end
 
-    if data.currentExposure >= config.EXPOSURE_THRESHOLD_HIGH then
+    if effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_HIGH then
         if data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS then
             EHR.CorpseSickness.TriggerSickness(player)
         end
-    elseif data.currentExposure >= config.EXPOSURE_THRESHOLD_MEDIUM then
+    elseif effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_MEDIUM then
         if data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS and ZombRand(100) < 30 then
             EHR.CorpseSickness.TriggerSickness(player)
         end
     end
 
-    EHR.CorpseSickness.ApplyNauseaMoodle(player, data.currentExposure)
+    EHR.CorpseSickness.ApplyNauseaMoodle(player, effectiveExposureLevel)
 end
 
 -- ============================================
@@ -613,6 +807,32 @@ function EHR.CorpseSickness.HasOtherActiveDisease(player)
         end
     end
     return false
+end
+
+function EHR.CorpseSickness.HasActiveFoodDisease(player)
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
+    if not diseaseData or not diseaseData.active then return false end
+
+    for diseaseId, disease in pairs(diseaseData.active) do
+        local def = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId]
+        if disease and (diseaseId == "food_poisoning" or (def and def.category == "food")) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
+    if not player then return false end
+
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
+    local history = diseaseData and diseaseData.history
+    local lastBadFood = history and history.lastBadFood
+    if not lastBadFood then return false end
+
+    currentHour = currentHour or getGameTime():getWorldAgeHours()
+    return currentHour - lastBadFood < 24
 end
 
 function EHR.CorpseSickness.DecayVanillaSickness(player, exposure, deltaHours)
@@ -674,6 +894,8 @@ function EHR.CorpseSickness.TriggerSickness(player)
         if data then
             data.currentExposure = 0
             data.timeInArea = 0
+            data.vanillaCorpseExposure = 0
+            data.lastVanillaCorpseSignalHour = 0
         end
         if player.Say then
             player:Say("I don't feel so good... must be the corpses.")
@@ -691,11 +913,12 @@ function EHR.CorpseSickness.GetExposureDisplay(player)
     if not data then return "None" end
 
     local config = EHR.CorpseSickness.Config
-    if data.currentExposure >= config.EXPOSURE_THRESHOLD_HIGH then
+    local exposure = math.max(data.currentExposure or 0, data.vanillaCorpseExposure or 0)
+    if exposure >= config.EXPOSURE_THRESHOLD_HIGH then
         return "High"
-    elseif data.currentExposure >= config.EXPOSURE_THRESHOLD_MEDIUM then
+    elseif exposure >= config.EXPOSURE_THRESHOLD_MEDIUM then
         return "Medium"
-    elseif data.currentExposure >= config.EXPOSURE_THRESHOLD_LOW then
+    elseif exposure >= config.EXPOSURE_THRESHOLD_LOW then
         return "Low"
     end
     return "None"

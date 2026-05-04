@@ -1043,6 +1043,8 @@ function EHR.Disease.OnRecovery(player, diseaseId)
 
     if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
         EHR.CorpseSickness.ResetAfterCure(player)
+    elseif diseaseId == "food_poisoning" and EHR.Disease.ResetFoodSicknessAfterCure then
+        EHR.Disease.ResetFoodSicknessAfterCure(player, diseaseId)
     end
 end
 
@@ -1333,6 +1335,10 @@ function EHR.Disease.Cure(player, diseaseId)
 
             EHR.CorpseSickness.ResetAfterCure(player)
 
+        elseif diseaseId == "food_poisoning" and EHR.Disease.ResetFoodSicknessAfterCure then
+
+            EHR.Disease.ResetFoodSicknessAfterCure(player)
+
         end
 
         EHR.Log("Cured disease: " .. tostring(diseaseId))
@@ -1360,12 +1366,17 @@ function EHR.Disease.CureAll(player)
     local count = 0
 
     local curedCorpseSickness = false
+    local curedFoodSickness = false
 
     for diseaseId, _ in pairs(data.active) do
 
         if diseaseId == "corpse_sickness" then
 
             curedCorpseSickness = true
+
+        elseif diseaseId == "food_poisoning" then
+
+            curedFoodSickness = true
 
         end
 
@@ -1379,6 +1390,12 @@ function EHR.Disease.CureAll(player)
     if curedCorpseSickness and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
         EHR.CorpseSickness.ResetAfterCure(player)
+
+    end
+
+    if curedFoodSickness and EHR.Disease.ResetFoodSicknessAfterCure then
+
+        EHR.Disease.ResetFoodSicknessAfterCure(player)
 
     end
 
@@ -1543,7 +1560,7 @@ local cachedSicknessTargets = {}  -- playerID -> {target, lastSetTime}
 --[[
     Get what vanilla sickness level should be based on our disease state
 ]]--
-function EHR.Disease.GetTargetVanillaSickness(player)
+function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
     local data = EHR.Disease.GetDiseaseData(player)
     if not data or not data.active then return 0 end
 
@@ -1552,8 +1569,9 @@ function EHR.Disease.GetTargetVanillaSickness(player)
     local worstSeverity = 0
 
     for diseaseId, disease in pairs(data.active) do
-        -- Only sync food-related diseases to vanilla food sickness
-        if diseaseId == "food_poisoning" then
+        local def = EHR.Disease.Diseases[diseaseId]
+        local isFoodDisease = diseaseId == "food_poisoning" or (def and def.category == "food")
+        if isFoodDisease and diseaseId ~= ignoreDiseaseId then
             if disease.stage > worstStage then
                 worstStage = disease.stage
                 worstSeverity = disease.severity or 0.5
@@ -1571,6 +1589,59 @@ function EHR.Disease.GetTargetVanillaSickness(player)
 
     -- Cap at safe level
     return math.min(adjustedLevel, EHR.Disease.VANILLA_SICKNESS_CAP)
+end
+
+function EHR.Disease.ResetFoodSicknessAfterCure(player, curedDiseaseId)
+    if not player then return end
+
+    local stats = player:getStats()
+    if not stats or not CharacterStat then return end
+
+    local data = EHR.Disease.GetDiseaseData(player)
+    local active = data and data.active or {}
+    if active["corpse_sickness"] then return end
+
+    local targetB42 = EHR.Disease.GetTargetVanillaSickness(player, curedDiseaseId) / 100
+
+    if EHR.CorpseSickness and EHR.CorpseSickness.GetVanillaSicknessTarget then
+        local modData = player:getModData()
+        local corpseData = modData and modData.EHR_CorpseSickness
+        local exposure = corpseData and (corpseData.currentExposure or 0) or 0
+        if exposure > 0 then
+            targetB42 = math.max(targetB42, EHR.CorpseSickness.GetVanillaSicknessTarget(exposure))
+        end
+    end
+
+    if CharacterStat.FOOD_SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+            if current > targetB42 then
+                stats:set(CharacterStat.FOOD_SICKNESS, targetB42)
+            end
+        end)
+    end
+
+    if CharacterStat.SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.SICKNESS) or 0
+            if current > targetB42 then
+                stats:set(CharacterStat.SICKNESS, targetB42)
+            end
+        end)
+    end
+
+    if CharacterStat.POISON then
+        pcall(function() stats:set(CharacterStat.POISON, 0) end)
+    end
+
+    local playerID = player:getUsername() or "default"
+    cachedSicknessTargets[playerID] = { target = targetB42, lastSetTime = getGameTime():getWorldAgeHours() }
+
+    if player.transmitModData then
+        pcall(function() player:transmitModData() end)
+    end
+
+    EHR.Log("Food sickness reset after cure")
 end
 
 --[[
@@ -1633,30 +1704,25 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     -- Get our target level based on disease state (returns 0-100)
     local targetLevel = EHR.Disease.GetTargetVanillaSickness(player)
 
-    -- Vanilla corpse sickness can surface through FOOD_SICKNESS before EHR's
-    -- corpse exposure reaches its own disease threshold. Do not flatten that
-    -- vanilla buildup when no EHR food disease is active yet.
-    if targetLevel == 0 and currentVanilla > 0.01 and EHR.CorpseSickness then
-        local hasNearbyCorpses = false
-        local modData = player:getModData()
-        local corpseData = modData and modData.EHR_CorpseSickness
-        local exposure = corpseData and (corpseData.currentExposure or 0) or 0
-        local lowThreshold = EHR.CorpseSickness.Config and EHR.CorpseSickness.Config.EXPOSURE_THRESHOLD_LOW or 30
-        if exposure >= lowThreshold then
-            hasNearbyCorpses = true
-        elseif EHR.CorpseSickness.ScanNearbyCorpses then
-            local ok, corpseInfo = pcall(function() return EHR.CorpseSickness.ScanNearbyCorpses(player) end)
-            if ok and corpseInfo and (corpseInfo.count or 0) > 0 then
-                hasNearbyCorpses = true
+    if targetLevel == 0 and currentVanilla > 0.01 then
+        local vanillaCap01 = EHR.Disease.VANILLA_SICKNESS_CAP / 100
+        if currentVanilla > vanillaCap01 and CharacterStat.FOOD_SICKNESS then
+            pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, vanillaCap01) end)
+        end
+        if CharacterStat.SICKNESS then
+            local currentSickness = 0
+            local ok, value = pcall(function() return stats:get(CharacterStat.SICKNESS) end)
+            if ok and value then currentSickness = value end
+            if currentSickness > vanillaCap01 then
+                pcall(function() stats:set(CharacterStat.SICKNESS, vanillaCap01) end)
+            elseif currentSickness < currentVanilla then
+                pcall(function() stats:set(CharacterStat.SICKNESS, math.min(currentVanilla, vanillaCap01)) end)
             end
         end
-
-        if hasNearbyCorpses then
-            if EHR.DEBUG then
-                EHR.Log(string.format("SyncVanilla: Preserved corpse-driven FOOD_SICKNESS %.3f", currentVanilla))
-            end
-            return
+        if EHR.DEBUG then
+            EHR.Log(string.format("SyncVanilla: Preserved external FOOD_SICKNESS %.3f", currentVanilla))
         end
+        return
     end
 
     -- If vanilla is way higher than our target, player might have eaten something

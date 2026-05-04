@@ -276,6 +276,15 @@ function EHR.Environmental.SuppressVanillaCold(player)
     local hasModPneumonia = active["pneumonia"] ~= nil
     local hasModCorpseSickness = active["corpse_sickness"] ~= nil
     local hasModTuberculosis = active["tuberculosis"] ~= nil
+    local hasModFoodDisease = false
+
+    for diseaseId, disease in pairs(active) do
+        local def = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId]
+        if disease and (diseaseId == "food_poisoning" or (def and def.category == "food")) then
+            hasModFoodDisease = true
+            break
+        end
+    end
 
     local hasAnyModRespiratory = hasModCold or hasModPneumonia or hasModCorpseSickness or hasModTuberculosis
 
@@ -283,6 +292,15 @@ function EHR.Environmental.SuppressVanillaCold(player)
 
     local success, currentSickness = pcall(function() return stats:get(CharacterStat.SICKNESS) end)
     if not success or not currentSickness then return end
+
+    local currentFoodSickness = 0
+    if CharacterStat.FOOD_SICKNESS then
+        local okFood, foodValue = pcall(function() return stats:get(CharacterStat.FOOD_SICKNESS) end)
+        if okFood and foodValue then
+            currentFoodSickness = foodValue
+        end
+    end
+    local hasFoodSicknessSignal = hasModFoodDisease or currentFoodSickness > 0.01
 
     local hasCorpseExposure = false
     if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureDisplay then
@@ -301,7 +319,7 @@ function EHR.Environmental.SuppressVanillaCold(player)
         local lowThreshold = EHR.CorpseSickness.Config and EHR.CorpseSickness.Config.EXPOSURE_THRESHOLD_LOW or 30
         if exposure >= lowThreshold then
             hasCorpseExposure = true
-        elseif currentSickness > 0.01 and EHR.CorpseSickness.ScanNearbyCorpses then
+        elseif currentSickness > 0.01 and not hasFoodSicknessSignal and EHR.CorpseSickness.ScanNearbyCorpses then
             local ok, corpseInfo = pcall(function() return EHR.CorpseSickness.ScanNearbyCorpses(player) end)
             if ok and corpseInfo and (corpseInfo.count or 0) > 0 then
                 hasCorpseExposure = true
@@ -336,7 +354,7 @@ function EHR.Environmental.SuppressVanillaCold(player)
     else
         -- No mod respiratory disease - if vanilla SICKNESS is elevated (from vanilla cold), suppress it
         -- This prevents vanilla coughing moodle when mod shows "0 Conditions"
-        if not hasCorpseExposure and currentSickness > 0.15 then
+        if not hasCorpseExposure and not hasFoodSicknessSignal and currentSickness > 0.15 then
             pcall(function() stats:set(CharacterStat.SICKNESS, 0) end)
             if EHR.DEBUG then
                 EHR.Log(string.format("SuppressVanillaCold: Suppressed vanilla SICKNESS %.3f -> 0 (no mod disease)",

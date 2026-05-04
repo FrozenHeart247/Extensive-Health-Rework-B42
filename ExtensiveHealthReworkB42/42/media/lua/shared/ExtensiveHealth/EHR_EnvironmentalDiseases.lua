@@ -327,9 +327,11 @@ function EHR.Environmental.SuppressVanillaCold(player)
         local exposure = corpseData and (corpseData.currentExposure or 0) or 0
         local vanillaExposure = corpseData and (corpseData.vanillaCorpseExposure or 0) or 0
         local residualExposure = math.max(exposure, vanillaExposure)
+        local fullyProtectedFromCorpses = EHR.CorpseSickness.GetProtectionLevel
+            and EHR.CorpseSickness.GetProtectionLevel(player) >= 1.0
         if residualExposure > 0 then
             hasCorpseExposure = true
-        elseif currentSickness > 0.01 and not hasFoodSicknessSignal and EHR.CorpseSickness.ScanNearbyCorpses then
+        elseif not fullyProtectedFromCorpses and currentSickness > 0.01 and not hasFoodSicknessSignal and EHR.CorpseSickness.ScanNearbyCorpses then
             local ok, corpseInfo = pcall(function() return EHR.CorpseSickness.ScanNearbyCorpses(player) end)
             if ok and corpseInfo and (corpseInfo.count or 0) > 0 then
                 hasCorpseExposure = true

@@ -300,7 +300,16 @@ function EHR.Environmental.SuppressVanillaCold(player)
             currentFoodSickness = foodValue
         end
     end
-    local hasFoodSicknessSignal = hasModFoodDisease or currentFoodSickness > 0.01
+    local corpseSuppressesFoodSickness = EHR.CorpseSickness
+        and EHR.CorpseSickness.ShouldSuppressFoodSickness
+        and EHR.CorpseSickness.ShouldSuppressFoodSickness(player)
+
+    if corpseSuppressesFoodSickness and EHR.CorpseSickness.SuppressFoodSicknessComponent then
+        EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+    end
+
+    local hasFoodSicknessSignal = hasModFoodDisease
+        or (currentFoodSickness > 0.01 and not corpseSuppressesFoodSickness)
 
     local hasCorpseExposure = false
     if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureDisplay then
@@ -316,8 +325,9 @@ function EHR.Environmental.SuppressVanillaCold(player)
     if not hasCorpseExposure and EHR.CorpseSickness then
         local corpseData = modData.EHR_CorpseSickness
         local exposure = corpseData and (corpseData.currentExposure or 0) or 0
-        local lowThreshold = EHR.CorpseSickness.Config and EHR.CorpseSickness.Config.EXPOSURE_THRESHOLD_LOW or 30
-        if exposure >= lowThreshold then
+        local vanillaExposure = corpseData and (corpseData.vanillaCorpseExposure or 0) or 0
+        local residualExposure = math.max(exposure, vanillaExposure)
+        if residualExposure > 0 then
             hasCorpseExposure = true
         elseif currentSickness > 0.01 and not hasFoodSicknessSignal and EHR.CorpseSickness.ScanNearbyCorpses then
             local ok, corpseInfo = pcall(function() return EHR.CorpseSickness.ScanNearbyCorpses(player) end)

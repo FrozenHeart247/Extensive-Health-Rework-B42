@@ -72,6 +72,14 @@ EHR.CorpseSickness.Config = {
     -- How quickly corpse-driven vanilla sickness fades after leaving corpses (0-1 stat scale per hour)
     VANILLA_SICKNESS_DECAY_PER_HOUR = 0.75,
 
+
+    -- Smooth vanilla corpse-sickness bridge so B42 vanilla spikes do not instantly become Medium/High EHR exposure
+    VANILLA_BRIDGE_RISE_PER_HOUR = 20,
+    VANILLA_BRIDGE_DECAY_PER_HOUR = 60,
+    VANILLA_SICKNESS_CLAMP_BUFFER = 0.005,
+    VANILLA_SICKNESS_CLEAR_THRESHOLD = 0.005,
+    VANILLA_SICKNESS_CLEAR_EXPOSURE = 1,
+    FOOD_SICKNESS_SUPPRESS_DURATION = 0.5,
     -- Dialogue lines for smell warning
     SMELL_DIALOGUES = {
         "Ugh, that smell...",
@@ -137,6 +145,7 @@ function EHR.CorpseSickness.GetExposureData(player)
         vanillaCorpseExposure = 0,
         lastVanillaSickness = 0,
         lastVanillaCorpseSignalHour = 0,
+        suppressFoodSicknessUntil = 0,
         immuneUntil = 0,
     }
     return modData.EHR_CorpseSickness
@@ -154,6 +163,7 @@ function EHR.CorpseSickness.InitializePlayer(player)
         data.vanillaCorpseExposure = data.vanillaCorpseExposure or 0
         data.lastVanillaSickness = data.lastVanillaSickness or 0
         data.lastVanillaCorpseSignalHour = data.lastVanillaCorpseSignalHour or 0
+        data.suppressFoodSicknessUntil = data.suppressFoodSicknessUntil or 0
         data.immuneUntil = data.immuneUntil or 0
     end
 end
@@ -206,6 +216,7 @@ function EHR.CorpseSickness.ResetAfterCure(player)
     data.vanillaCorpseExposure = 0
     data.lastVanillaSickness = 0
     data.lastVanillaCorpseSignalHour = 0
+    data.suppressFoodSicknessUntil = 0
     data.lastWarningTime = 0
     data.lastUpdateHour = getGameTime():getWorldAgeHours()
 
@@ -668,6 +679,11 @@ function EHR.CorpseSickness.UpdateExposure(player)
         data.vanillaCorpseExposure = 0
         data.timeInArea = 0
         EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
+        if data.currentExposure <= (config.VANILLA_SICKNESS_CLEAR_EXPOSURE or 1) then
+            EHR.CorpseSickness.ClearTinyVanillaSickness(player, config.VANILLA_SICKNESS_CLEAR_THRESHOLD or 0.005)
+        end
+        local protectionTarget = EHR.CorpseSickness.GetVanillaSicknessTarget(data.currentExposure)
+        data.lastVanillaSickness = math.min(vanillaSickness, protectionTarget + (config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005))
         return
     end
 
@@ -690,8 +706,7 @@ function EHR.CorpseSickness.UpdateExposure(player)
     local hasActiveFoodDisease = EHR.CorpseSickness.HasActiveFoodDisease(player)
     local hasRecentFoodRisk = EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
     local lastVanillaSickness = data.lastVanillaSickness or 0
-    local vanillaSicknessRising = vanillaSickness > lastVanillaSickness + 0.005
-    data.lastVanillaSickness = vanillaSickness
+    local vanillaSicknessRising = vanillaSickness > lastVanillaSickness + 0.002
 
     local rawVanillaCorpseSignal = vanillaSickness > 0.01 and not hasActiveFoodDisease and not hasRecentFoodRisk
     if rawVanillaCorpseSignal and (corpseInfo.count > 0 or vanillaSicknessRising) then
@@ -702,6 +717,10 @@ function EHR.CorpseSickness.UpdateExposure(player)
         and currentHour - data.lastVanillaCorpseSignalHour < 0.25
     local hasVanillaCorpseSignal = rawVanillaCorpseSignal and (corpseInfo.count > 0 or recentVanillaCorpseSignal)
 
+    if corpseInfo.count > 0 or hasVanillaCorpseSignal or (data.currentExposure or 0) > 0 or (data.vanillaCorpseExposure or 0) > 0 then
+        data.suppressFoodSicknessUntil = currentHour + (config.FOOD_SICKNESS_SUPPRESS_DURATION or 0.5)
+    end
+
     if corpseInfo.totalEmission <= 0 then
         if corpseInfo.count > 0 then
             corpseInfo.totalEmission = math.max(1, math.min(corpseInfo.count, config.CORPSE_COUNT_DANGEROUS))
@@ -710,9 +729,16 @@ function EHR.CorpseSickness.UpdateExposure(player)
         else
             local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
             data.currentExposure = math.max(0, data.currentExposure - decay)
-            data.vanillaCorpseExposure = 0
+            local bridgeDecay = (config.VANILLA_BRIDGE_DECAY_PER_HOUR or config.EXPOSURE_DECAY_PER_HOUR) * deltaHours
+            data.vanillaCorpseExposure = math.max(0, (data.vanillaCorpseExposure or 0) - bridgeDecay)
+            local effectiveExposureLevel = math.max(data.currentExposure, data.vanillaCorpseExposure or 0)
             data.timeInArea = 0
-            EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
+            EHR.CorpseSickness.DecayVanillaSickness(player, effectiveExposureLevel, deltaHours)
+            if effectiveExposureLevel <= (config.VANILLA_SICKNESS_CLEAR_EXPOSURE or 1) then
+                EHR.CorpseSickness.ClearTinyVanillaSickness(player, config.VANILLA_SICKNESS_CLEAR_THRESHOLD or 0.005)
+            end
+            local target = EHR.CorpseSickness.GetVanillaSicknessTarget(effectiveExposureLevel)
+            data.lastVanillaSickness = math.min(vanillaSickness, target + (config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005))
             return
         end
     end
@@ -725,6 +751,11 @@ function EHR.CorpseSickness.UpdateExposure(player)
         data.vanillaCorpseExposure = 0
         data.timeInArea = 0
         EHR.CorpseSickness.DecayVanillaSickness(player, data.currentExposure, deltaHours)
+        if data.currentExposure <= (config.VANILLA_SICKNESS_CLEAR_EXPOSURE or 1) then
+            EHR.CorpseSickness.ClearTinyVanillaSickness(player, config.VANILLA_SICKNESS_CLEAR_THRESHOLD or 0.005)
+        end
+        local protectionTarget = EHR.CorpseSickness.GetVanillaSicknessTarget(data.currentExposure)
+        data.lastVanillaSickness = math.min(vanillaSickness, protectionTarget + (config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005))
         return
     end
 
@@ -732,8 +763,8 @@ function EHR.CorpseSickness.UpdateExposure(player)
     local effectiveExposure = baseExposure * envMultiplier * (1 - protection) * getSpeedMultiplier()
 
     data.currentExposure = data.currentExposure + effectiveExposure
-    data.vanillaCorpseExposure = 0
 
+    local currentVanillaExposure = data.vanillaCorpseExposure or 0
     if hasVanillaCorpseSignal then
         local vanillaExposure = (vanillaSickness / 0.6) * config.EXPOSURE_THRESHOLD_HIGH
         vanillaExposure = math.min(config.EXPOSURE_THRESHOLD_HIGH, math.max(0, vanillaExposure))
@@ -746,7 +777,11 @@ function EHR.CorpseSickness.UpdateExposure(player)
             vanillaExposure = math.max(vanillaExposure, config.EXPOSURE_THRESHOLD_LOW)
         end
 
-        data.vanillaCorpseExposure = vanillaExposure
+        local bridgeStep = (config.VANILLA_BRIDGE_RISE_PER_HOUR or 20) * deltaHours
+        data.vanillaCorpseExposure = math.min(vanillaExposure, currentVanillaExposure + bridgeStep)
+    else
+        local bridgeDecay = (config.VANILLA_BRIDGE_DECAY_PER_HOUR or config.EXPOSURE_DECAY_PER_HOUR) * deltaHours
+        data.vanillaCorpseExposure = math.max(0, currentVanillaExposure - bridgeDecay)
     end
 
     local effectiveExposureLevel = math.max(data.currentExposure, data.vanillaCorpseExposure or 0)
@@ -771,8 +806,16 @@ function EHR.CorpseSickness.UpdateExposure(player)
             EHR.CorpseSickness.TriggerSickness(player)
         end
     end
-
     EHR.CorpseSickness.ApplyNauseaMoodle(player, effectiveExposureLevel)
+
+    local storedVanillaSickness = vanillaSickness
+    if hasVanillaCorpseSignal then
+        EHR.CorpseSickness.ClampVanillaSickness(player, effectiveExposureLevel)
+        EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+        local target = EHR.CorpseSickness.GetVanillaSicknessTarget(effectiveExposureLevel)
+        storedVanillaSickness = math.min(storedVanillaSickness, target + (config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005))
+    end
+    data.lastVanillaSickness = storedVanillaSickness
 end
 
 -- ============================================
@@ -788,16 +831,14 @@ end
 
 function EHR.CorpseSickness.GetVanillaSicknessTarget(exposure)
     local config = EHR.CorpseSickness.Config
-    if exposure >= config.EXPOSURE_THRESHOLD_HIGH then
-        return 0.6
-    elseif exposure >= config.EXPOSURE_THRESHOLD_MEDIUM then
-        return 0.4
-    elseif exposure >= config.EXPOSURE_THRESHOLD_LOW then
-        return 0.2
-    end
-    return 0
-end
+    exposure = exposure or 0
+    if exposure <= 0 then return 0 end
 
+    local highThreshold = config.EXPOSURE_THRESHOLD_HIGH or 100
+    if highThreshold <= 0 then return 0 end
+
+    return math.min(0.6, math.max(0, (exposure / highThreshold) * 0.6))
+end
 function EHR.CorpseSickness.HasOtherActiveDisease(player)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
     if not diseaseData or not diseaseData.active then return false end
@@ -835,6 +876,36 @@ function EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
     return currentHour - lastBadFood < 24
 end
 
+function EHR.CorpseSickness.ShouldSuppressFoodSickness(player, currentHour)
+    if not player then return false end
+    if EHR.CorpseSickness.HasActiveFoodDisease(player) then return false end
+    if EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour) then return false end
+
+    local data = EHR.CorpseSickness.GetExposureData(player)
+    if not data then return false end
+
+    currentHour = currentHour or getGameTime():getWorldAgeHours()
+    if data.suppressFoodSicknessUntil and data.suppressFoodSicknessUntil > currentHour then
+        return true
+    end
+
+    return (data.currentExposure or 0) > 0 or (data.vanillaCorpseExposure or 0) > 0
+end
+
+function EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+    if not player then return end
+    if not EHR.CorpseSickness.ShouldSuppressFoodSickness(player) then return end
+
+    local stats = player:getStats()
+    if not stats or not CharacterStat or not CharacterStat.FOOD_SICKNESS then return end
+
+    pcall(function()
+        local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+        if current > 0 then
+            stats:set(CharacterStat.FOOD_SICKNESS, 0)
+        end
+    end)
+end
 function EHR.CorpseSickness.DecayVanillaSickness(player, exposure, deltaHours)
     if not player or not deltaHours or deltaHours <= 0 then return end
     if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
@@ -857,8 +928,74 @@ function EHR.CorpseSickness.DecayVanillaSickness(player, exposure, deltaHours)
     if CharacterStat.FOOD_SICKNESS then
         pcall(function()
             local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
-            if current > target then
+            if EHR.CorpseSickness.ShouldSuppressFoodSickness(player) then
+                stats:set(CharacterStat.FOOD_SICKNESS, 0)
+            elseif current > target then
                 stats:set(CharacterStat.FOOD_SICKNESS, math.max(target, current - step))
+            end
+        end)
+    end
+end
+
+function EHR.CorpseSickness.ClearTinyVanillaSickness(player, threshold)
+    if not player then return end
+    if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
+    if EHR.CorpseSickness.HasActiveFoodDisease(player) then return end
+    if EHR.CorpseSickness.HasRecentFoodRisk(player) then return end
+
+    local stats = player:getStats()
+    if not stats or not CharacterStat then return end
+
+    threshold = threshold or 0.06
+
+    if CharacterStat.SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.SICKNESS) or 0
+            if current <= threshold then
+                stats:set(CharacterStat.SICKNESS, 0)
+            end
+        end)
+    end
+
+    if CharacterStat.FOOD_SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+            if current <= threshold then
+                stats:set(CharacterStat.FOOD_SICKNESS, 0)
+            end
+        end)
+    end
+end
+function EHR.CorpseSickness.ClampVanillaSickness(player, exposure)
+    if not player then return end
+    if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
+    if EHR.CorpseSickness.HasActiveFoodDisease(player) then return end
+
+    local stats = player:getStats()
+    if not stats or not CharacterStat then return end
+
+    local target = EHR.CorpseSickness.GetVanillaSicknessTarget(exposure or 0)
+    local maxAllowed = target + (EHR.CorpseSickness.Config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005)
+    if target <= 0 then
+        maxAllowed = 0
+    end
+
+    if CharacterStat.SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.SICKNESS) or 0
+            if current > maxAllowed then
+                stats:set(CharacterStat.SICKNESS, maxAllowed)
+            end
+        end)
+    end
+
+    if CharacterStat.FOOD_SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+            if EHR.CorpseSickness.ShouldSuppressFoodSickness(player) then
+                stats:set(CharacterStat.FOOD_SICKNESS, 0)
+            elseif current > maxAllowed then
+                stats:set(CharacterStat.FOOD_SICKNESS, maxAllowed)
             end
         end)
     end
@@ -896,6 +1033,7 @@ function EHR.CorpseSickness.TriggerSickness(player)
             data.timeInArea = 0
             data.vanillaCorpseExposure = 0
             data.lastVanillaCorpseSignalHour = 0
+            data.suppressFoodSicknessUntil = 0
         end
         if player.Say then
             player:Say("I don't feel so good... must be the corpses.")

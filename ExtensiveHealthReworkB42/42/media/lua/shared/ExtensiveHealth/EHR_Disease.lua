@@ -1705,6 +1705,16 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     local targetLevel = EHR.Disease.GetTargetVanillaSickness(player)
 
     if targetLevel == 0 and currentVanilla > 0.01 then
+        if EHR.CorpseSickness and EHR.CorpseSickness.ShouldSuppressFoodSickness and EHR.CorpseSickness.ShouldSuppressFoodSickness(player) then
+            if CharacterStat.FOOD_SICKNESS then
+                pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, 0) end)
+            end
+            if EHR.CorpseSickness.SuppressFoodSicknessComponent then
+                EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+            end
+            return
+        end
+
         local vanillaCap01 = EHR.Disease.VANILLA_SICKNESS_CAP / 100
         if currentVanilla > vanillaCap01 and CharacterStat.FOOD_SICKNESS then
             pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, vanillaCap01) end)

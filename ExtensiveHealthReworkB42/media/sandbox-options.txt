@@ -1,0 +1,467 @@
+VERSION = 1,
+
+option ExtensiveHealthRework.BloodLossMultiplier
+{
+    type = double,
+    min = 0.5,
+    max = 5.0,
+    default = 2.0,
+    page = EHR_Blood,
+    translation = EHR_BloodLossMultiplier,
+}
+
+option ExtensiveHealthRework.BloodThresholdHealthy
+{
+    type = integer,
+    min = 70,
+    max = 100,
+    default = 85,
+    page = EHR_Blood,
+    translation = EHR_BloodThresholdHealthy,
+}
+
+option ExtensiveHealthRework.BloodThresholdMild
+{
+    type = integer,
+    min = 60,
+    max = 95,
+    default = 80,
+    page = EHR_Blood,
+    translation = EHR_BloodThresholdMild,
+}
+
+option ExtensiveHealthRework.BloodThresholdModerate
+{
+    type = integer,
+    min = 50,
+    max = 90,
+    default = 70,
+    page = EHR_Blood,
+    translation = EHR_BloodThresholdModerate,
+}
+
+option ExtensiveHealthRework.BloodRegenEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Blood,
+    translation = EHR_BloodRegenEnabled,
+}
+
+option ExtensiveHealthRework.BloodRegenDelayHours
+{
+    type = double,
+    min = 0.5,
+    max = 12.0,
+    default = 2.0,
+    page = EHR_Blood,
+    translation = EHR_BloodRegenDelayHours,
+}
+
+option ExtensiveHealthRework.BloodRegenRatePerHour
+{
+    type = integer,
+    min = 10,
+    max = 200,
+    default = 50,
+    page = EHR_Blood,
+    translation = EHR_BloodRegenRatePerHour,
+}
+
+option ExtensiveHealthRework.BloodRegenMinimumPercent
+{
+    type = integer,
+    min = 10,
+    max = 70,
+    default = 30,
+    page = EHR_Blood,
+    translation = EHR_BloodRegenMinimumPercent,
+}
+
+option ExtensiveHealthRework.BlackoutEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Blood,
+    translation = EHR_BlackoutEnabled,
+}
+
+option ExtensiveHealthRework.BlackoutCooldownHours
+{
+    type = double,
+    min = 0.5,
+    max = 24.0,
+    default = 1.0,
+    page = EHR_Blood,
+    translation = EHR_BlackoutCooldownHours,
+}
+
+option ExtensiveHealthRework.BlackoutChance
+{
+    type = integer,
+    min = 10,
+    max = 200,
+    default = 50,
+    page = EHR_Blood,
+    translation = EHR_BlackoutChance,
+}
+
+option ExtensiveHealthRework.DiseaseEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_DiseaseEnabled,
+}
+
+option ExtensiveHealthRework.DiseaseSpeed
+{
+    type = double,
+    min = 0.1,
+    max = 10.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_DiseaseSpeed,
+}
+
+option ExtensiveHealthRework.MisdiagnosisConsequences
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_MisdiagnosisConsequences,
+}
+
+option ExtensiveHealthRework.WoundInfectionEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_WoundInfectionEnabled,
+}
+
+option ExtensiveHealthRework.WoundInfectionSpeed
+{
+    type = double,
+    min = 0.1,
+    max = 10.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_WoundInfectionSpeed,
+}
+
+option ExtensiveHealthRework.SepsisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_SepsisEnabled,
+}
+
+option ExtensiveHealthRework.SepsisSpeed
+{
+    type = double,
+    min = 0.1,
+    max = 10.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_SepsisSpeed,
+}
+
+option ExtensiveHealthRework.TetanusEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_TetanusEnabled,
+}
+
+option ExtensiveHealthRework.FoodPoisoningEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_FoodPoisoningEnabled,
+}
+
+option ExtensiveHealthRework.GastroenteritisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_GastroenteritisEnabled,
+}
+
+option ExtensiveHealthRework.TrichinosisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_TrichinosisEnabled,
+}
+
+option ExtensiveHealthRework.DysenteryEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_DysenteryEnabled,
+}
+
+option ExtensiveHealthRework.CommonColdEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_CommonColdEnabled,
+}
+
+option ExtensiveHealthRework.PneumoniaEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_PneumoniaEnabled,
+}
+
+option ExtensiveHealthRework.HypothermiaEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_HypothermiaEnabled,
+}
+
+option ExtensiveHealthRework.HeatExhaustionEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_HeatExhaustionEnabled,
+}
+
+option ExtensiveHealthRework.EnvironmentalDiseaseSpeed
+{
+    type = double,
+    min = 0.1,
+    max = 10.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_EnvironmentalDiseaseSpeed,
+}
+
+option ExtensiveHealthRework.AspergilliosisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_AspergilliosisEnabled,
+}
+
+option ExtensiveHealthRework.PutrefactionSicknessEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_PutrefactionSicknessEnabled,
+}
+
+option ExtensiveHealthRework.TuberculosisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_TuberculosisEnabled,
+}
+
+option ExtensiveHealthRework.CorpseDiseaseSpeed
+{
+    type = double,
+    min = 0.1,
+    max = 10.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_CorpseDiseaseSpeed,
+}
+
+option ExtensiveHealthRework.BodyTemperatureEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Temperature,
+    translation = EHR_BodyTemperatureEnabled,
+}
+
+option ExtensiveHealthRework.TemperatureChangeSpeed
+{
+    type = double,
+    min = 0.25,
+    max = 4.0,
+    default = 1.0,
+    page = EHR_Temperature,
+    translation = EHR_TemperatureChangeSpeed,
+}
+
+option ExtensiveHealthRework.PreDiseaseEffectsEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Temperature,
+    translation = EHR_PreDiseaseEffectsEnabled,
+}
+
+option ExtensiveHealthRework.KnoxCureItemsEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Loot,
+    translation = EHR_KnoxCureItemsEnabled,
+}
+
+option ExtensiveHealthRework.NnCCompatEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Comp,
+    translation = EHR_NnCCompatEnabled,
+}
+
+option ExtensiveHealthRework.NnCStimulantBloodLoss
+{
+    type = double,
+    min = 1.0,
+    max = 3.0,
+    default = 1.5,
+    page = EHR_Comp,
+    translation = EHR_NnCStimulantBloodLoss,
+}
+
+option ExtensiveHealthRework.NnCOpioidInfectionReduction
+{
+    type = double,
+    min = 0.1,
+    max = 1.0,
+    default = 0.5,
+    page = EHR_Comp,
+    translation = EHR_NnCOpioidInfectionReduction,
+}
+
+option ExtensiveHealthRework.NnCWithdrawalBlocksHealing
+{
+    type = boolean,
+    default = true,
+    page = EHR_Comp,
+    translation = EHR_NnCWithdrawalBlocksHealing,
+}
+
+option ExtensiveHealthRework.NnCOverdoseTriggersDisease
+{
+    type = boolean,
+    default = true,
+    page = EHR_Comp,
+    translation = EHR_NnCOverdoseTriggersDisease,
+}
+
+option ExtensiveHealthRework.HealingRequiresFed
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_HealingRequiresFed,
+}
+
+option ExtensiveHealthRework.HealingRequiresHydrated
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_HealingRequiresHydrated,
+}
+
+option ExtensiveHealthRework.HealingRequiresRested
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_HealingRequiresRested,
+}
+
+option ExtensiveHealthRework.HealingRequiresCalm
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_HealingRequiresCalm,
+}
+
+option ExtensiveHealthRework.HealingRequiresNoPain
+{
+    type = boolean,
+    default = false,
+    page = EHR_Other,
+    translation = EHR_HealingRequiresNoPain,
+}
+
+option ExtensiveHealthRework.PainSoundsEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_PainSoundsEnabled,
+}
+
+option ExtensiveHealthRework.PainSoundCooldown
+{
+    type = integer,
+    min = 60,
+    max = 900,
+    default = 300,
+    page = EHR_Other,
+    translation = EHR_PainSoundCooldown,
+}
+
+option ExtensiveHealthRework.ZombieAttractionRadius
+{
+    type = integer,
+    min = 10,
+    max = 100,
+    default = 40,
+    page = EHR_Other,
+    translation = EHR_ZombieAttractionRadius,
+}
+
+option ExtensiveHealthRework.DialogueFrequency
+{
+    type = enum,
+    numValues = 4,
+    default = 2,
+    page = EHR_Other,
+    translation = EHR_DialogueFrequency,
+}
+
+option ExtensiveHealthRework.FirstAidXPEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_FirstAidXPEnabled,
+}
+
+option ExtensiveHealthRework.FirstAidXPMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 10.0,
+    default = 1.0,
+    page = EHR_Other,
+    translation = EHR_FirstAidXPMultiplier,
+}
+
+option ExtensiveHealthRework.DebugMode
+{
+    type = boolean,
+    default = false,
+    page = EHR_Debug,
+    translation = EHR_DebugMode,
+}
+

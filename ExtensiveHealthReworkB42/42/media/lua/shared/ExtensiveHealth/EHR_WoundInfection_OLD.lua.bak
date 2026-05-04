@@ -1,0 +1,963 @@
+--[[
+    Extensive Health Rework B42
+    Wound Infection Module
+
+    Body-part-specific wound infections:
+    - Tracks infection state per limb
+    - Risk accumulates from untreated wounds
+    - Progresses: AT_RISK -> INFECTED -> SEVERE -> triggers Sepsis
+    - Treatment: Disinfectant prevents, Antibiotics cure
+
+    v1.0.0 - Initial implementation
+
+    B42 API Notes:
+    - BodyPartType iteration: BodyPartType.FromIndex(i), ToIndex(BodyPartType.MAX)
+    - BodyPart methods: isScratched(), isCut(), isDeepWounded(), bitten(), bandaged()
+    - Always wrap in pcall for safety
+    - CharacterStat uses 0-1 scale
+]]--
+
+require "ExtensiveHealth/EHR_Main"
+require "ExtensiveHealth/EHR_Disease"
+
+EHR = EHR or {}
+EHR.WoundInfection = {}
+
+-- Helper to get sandbox settings with defaults
+function EHR.WoundInfection.GetSetting(name, default)
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local value = SandboxVars.ExtensiveHealthRework[name]
+        if value ~= nil then
+            return value
+        end
+    end
+    return default
+end
+
+-- Check if wound infection system is enabled
+function EHR.WoundInfection.IsEnabled()
+    return EHR.WoundInfection.GetSetting("WoundInfectionEnabled", true)
+end
+
+-- Get infection speed multiplier
+function EHR.WoundInfection.GetSpeedMultiplier()
+    return EHR.WoundInfection.GetSetting("WoundInfectionSpeed", 1.0)
+end
+
+-- ============================================
+-- STAGE ENUM
+-- ============================================
+
+EHR.WoundInfection.Stage = {
+    CLEAN = 0,          -- No infection, wound healing normally
+    AT_RISK = 1,        -- Wound untreated, infection risk accumulating
+    INFECTED = 2,       -- Infection present, slowed healing
+    SEVERE = 3,         -- Severe infection, no healing, sepsis risk
+    SEPTIC = 4,         -- Transitioned to sepsis (handled by Sepsis module)
+}
+
+-- ============================================
+-- CONFIGURATION
+-- ============================================
+
+-- Risk per hour by wound type (base values)
+-- NOTE: These are TEST values (10x faster). For release, divide by 10.
+EHR.WoundInfection.WoundRisks = {
+    scratch = 0.20,     -- 20% per hour (TEST - normally 2%)
+    cut = 0.40,         -- 40% per hour (TEST - normally 4%)
+    deep = 0.80,        -- 80% per hour (TEST - normally 8%)
+    bite = 1.50,        -- 150% per hour (TEST - normally 15%)
+}
+
+-- Hours at each stage before progression
+-- NOTE: These are TEST values (much faster). For release, use 6/12/24.
+EHR.WoundInfection.StageDuration = {
+    [1] = 0.5,  -- AT_RISK: 30 min before INFECTED (TEST - normally 6 hours)
+    [2] = 1,    -- INFECTED: 1 hour before SEVERE (TEST - normally 12 hours)
+    [3] = 2,    -- SEVERE: 2 hours before triggering SEPSIS (TEST - normally 24 hours)
+}
+
+-- Effects per stage
+EHR.WoundInfection.StageEffects = {
+    [1] = { healingPenalty = 0.0,  painBonus = 0 },     -- AT_RISK
+    [2] = { healingPenalty = 0.5,  painBonus = 5 },     -- INFECTED: 50% slower
+    [3] = { healingPenalty = 1.0,  painBonus = 15 },    -- SEVERE: no healing
+    [4] = { healingPenalty = 1.0,  painBonus = 25 },    -- SEPTIC
+}
+
+-- Disinfection protection duration (hours)
+EHR.WoundInfection.DISINFECT_FULL_PROTECTION = 6
+EHR.WoundInfection.DISINFECT_PARTIAL_PROTECTION = 12
+
+-- Risk threshold to progress from AT_RISK to INFECTED
+EHR.WoundInfection.INFECTION_THRESHOLD = 1.0
+
+-- ============================================
+-- DIALOGUE
+-- ============================================
+
+EHR.WoundInfection.StageEntryDialogue = {
+    [1] = "This wound doesn't look too clean...",
+    [2] = "Ugh, I think this wound is infected...",
+    [3] = "*grimaces* This infection is getting bad... I need antibiotics.",
+    [4] = "I feel terrible... the infection is spreading...",
+}
+
+EHR.WoundInfection.Dialogue = {
+    [1] = { "I should clean this wound...", "This might get infected..." },
+    [2] = { "My arm is throbbing...", "The wound is getting red and swollen..." },
+    [3] = { "I feel feverish...", "The pain is unbearable...", "I need medical supplies..." },
+    [4] = { "I'm burning up...", "Everything hurts...", "I might not make it..." },
+}
+
+-- ============================================
+-- TICK MANAGEMENT
+-- ============================================
+
+local woundCheckCounter = 0
+local WOUND_CHECK_INTERVAL = 900  -- Every 900 ticks (~30 seconds)
+
+local woundDialogueCounter = 0
+local WOUND_DIALOGUE_INTERVAL = 3600  -- Every ~2 minutes
+
+-- Debug: track if tick is running
+local tickDebugCounter = 0
+
+-- ============================================
+-- INITIALIZATION
+-- ============================================
+
+--[[
+    Initialize wound infection data for a player
+]]--
+function EHR.WoundInfection.InitializePlayer(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    if modData.EHR_WoundInfection_Initialized then
+        return
+    end
+
+    EHR.Log("Initializing wound infection data...")
+
+    modData.EHR_WoundInfection = {
+        -- Keyed by body part name (e.g., "Hand_L", "Forearm_R")
+        parts = {},
+        -- Quick stats
+        totalInfectedParts = 0,
+        worstStage = 0,
+        lastGlobalCheck = 0,
+    }
+
+    modData.EHR_WoundInfection_Initialized = true
+    EHR.Log("Wound infection module initialized for player")
+end
+
+-- ============================================
+-- HELPER FUNCTIONS
+-- ============================================
+
+--[[
+    Safe method call wrapper (B42 API safety)
+]]--
+local function safeCall(obj, method)
+    if obj and obj[method] then
+        local success, result = pcall(function() return obj[method](obj) end)
+        if success then return result end
+    end
+    return nil
+end
+
+--[[
+    Get wound infection data for a player
+]]--
+function EHR.WoundInfection.GetData(player)
+    if not player then return nil end
+    local modData = player:getModData()
+    if not modData or not modData.EHR_WoundInfection then return nil end
+    return modData.EHR_WoundInfection
+end
+
+--[[
+    Get body part name from BodyPartType
+]]--
+local function GetPartName(bodyPartType)
+    if not bodyPartType then return nil end
+    local success, name = pcall(function() return tostring(bodyPartType) end)
+    if success then return name end
+    return nil
+end
+
+--[[
+    Get wound status for a body part
+]]--
+function EHR.WoundInfection.GetWoundStatus(bodyPart)
+    local wounds = {
+        isScratched = false,
+        isCut = false,
+        isDeepWound = false,
+        isBitten = false,
+        isBandaged = false,
+        isBleeding = false,
+        hasStitches = false,
+        hasGlass = false,
+        health = 100,
+    }
+
+    if not bodyPart then return wounds end
+
+    -- B42-safe calls
+    wounds.isScratched = safeCall(bodyPart, "isScratched") or false
+    wounds.isCut = safeCall(bodyPart, "isCut") or false
+    wounds.isDeepWound = safeCall(bodyPart, "isDeepWounded") or false
+    wounds.isBitten = safeCall(bodyPart, "bitten") or false
+    wounds.isBandaged = safeCall(bodyPart, "bandaged") or false
+    wounds.isBleeding = safeCall(bodyPart, "bleeding") or false
+    wounds.hasStitches = safeCall(bodyPart, "stitched") or false
+    wounds.hasGlass = safeCall(bodyPart, "haveGlass") or false
+    wounds.health = safeCall(bodyPart, "getHealth") or 100
+
+    -- Deep wound includes glass
+    if wounds.hasGlass then
+        wounds.isDeepWound = true
+    end
+
+    return wounds
+end
+
+--[[
+    Determine worst wound type on a body part
+    Returns: "bite", "deep", "cut", "scratch", or nil
+]]--
+function EHR.WoundInfection.DetermineWoundType(wounds)
+    if wounds.isBitten then return "bite" end
+    if wounds.isDeepWound then return "deep" end
+    if wounds.isCut then return "cut" end
+    if wounds.isScratched then return "scratch" end
+    return nil
+end
+
+--[[
+    Check if a wound exists on body part
+]]--
+function EHR.WoundInfection.HasWound(wounds)
+    return wounds.isScratched or wounds.isCut or wounds.isDeepWound or wounds.isBitten
+end
+
+--[[
+    Count total infected parts
+]]--
+function EHR.WoundInfection.CountInfectedParts(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return 0 end
+
+    local count = 0
+    for _, partData in pairs(data.parts) do
+        if partData.stage >= EHR.WoundInfection.Stage.INFECTED then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+--[[
+    Get worst infection stage across all parts
+]]--
+function EHR.WoundInfection.GetWorstStage(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return 0 end
+
+    local worst = 0
+    for _, partData in pairs(data.parts) do
+        if partData.stage > worst then
+            worst = partData.stage
+        end
+    end
+    return worst
+end
+
+-- ============================================
+-- RISK CALCULATION
+-- ============================================
+
+--[[
+    Calculate infection risk for a wound
+    Returns risk value to add to accumulator (0-1)
+]]--
+function EHR.WoundInfection.CalculateRisk(player, partData, wounds, hoursElapsed)
+    -- Base risk by wound type
+    local woundType = partData.woundType or EHR.WoundInfection.DetermineWoundType(wounds)
+    local baseRiskPerHour = EHR.WoundInfection.WoundRisks[woundType] or 0.02
+
+    -- Modifiers
+    local modifiers = 1.0
+
+    -- 1. Bandaged: 50% risk reduction
+    if wounds.isBandaged then
+        modifiers = modifiers * 0.5
+    end
+
+    -- 2. Disinfected: time-based protection
+    if partData.disinfectedAt then
+        local gameTime = getGameTime()
+        local currentHour = gameTime:getWorldAgeHours()
+        local hoursSinceDisinfect = currentHour - partData.disinfectedAt
+
+        if hoursSinceDisinfect < EHR.WoundInfection.DISINFECT_FULL_PROTECTION then
+            return 0.0  -- Full protection
+        elseif hoursSinceDisinfect < EHR.WoundInfection.DISINFECT_PARTIAL_PROTECTION then
+            modifiers = modifiers * 0.3  -- 70% reduction
+        end
+    end
+
+    -- 3. Immunity modifier (uses existing disease immunity)
+    if EHR.Disease and EHR.Disease.CalculateImmunity then
+        local immunity = EHR.Disease.CalculateImmunity(player)
+        modifiers = modifiers / immunity  -- Higher immunity = lower risk
+    end
+
+    -- 4. Blood level penalty
+    if EHR.Blood and EHR.Blood.GetPercent then
+        local bloodPercent = EHR.Blood.GetPercent(player) / 100
+        if bloodPercent < 0.5 then
+            modifiers = modifiers * (1.5 - bloodPercent)  -- Up to 1.5x at very low blood
+        end
+    end
+
+    -- 5. Existing infection penalty (+10% per infected part)
+    local existingInfections = EHR.WoundInfection.CountInfectedParts(player)
+    if existingInfections > 0 then
+        modifiers = modifiers * (1 + existingInfections * 0.1)
+    end
+
+    -- Calculate final risk (apply sandbox speed multiplier)
+    local speedMultiplier = EHR.WoundInfection.GetSpeedMultiplier()
+    local risk = baseRiskPerHour * hoursElapsed * modifiers * speedMultiplier
+
+    return math.max(0, math.min(1, risk))
+end
+
+-- ============================================
+-- WOUND SCANNING
+-- ============================================
+
+--[[
+    Scan all body parts for wounds and update tracking
+]]--
+function EHR.WoundInfection.ScanWounds(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data then return end
+
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime:getWorldAgeHours()
+
+    -- Iterate all body parts
+    if not BodyPartType then
+        EHR.Log("WoundInfection: BodyPartType is nil!")
+        return
+    end
+
+    -- B42 might use different API - try multiple approaches
+    local maxIndex = nil
+
+    -- Try B42 style first
+    if BodyPartType.MAX then
+        if BodyPartType.ToIndex then
+            maxIndex = BodyPartType.ToIndex(BodyPartType.MAX)
+        elseif BodyPartType.MAX.index then
+            maxIndex = BodyPartType.MAX.index()
+        else
+            -- Try getting max directly
+            maxIndex = BodyPartType.MAX
+        end
+    end
+
+    -- Fallback: count body parts manually (there are typically ~20)
+    if not maxIndex or type(maxIndex) ~= "number" then
+        EHR.Log("WoundInfection: Could not get maxIndex, using fallback of 20")
+        maxIndex = 20
+    end
+
+    EHR.Log("WoundInfection: Scanning " .. tostring(maxIndex) .. " body parts")
+
+    for i = 0, maxIndex - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        if partType then
+            local partName = GetPartName(partType)
+            local bodyPart = bodyDamage:getBodyPart(partType)
+
+            if partName and bodyPart then
+                local wounds = EHR.WoundInfection.GetWoundStatus(bodyPart)
+                local hasWound = EHR.WoundInfection.HasWound(wounds)
+
+                -- Get or create part tracking data
+                local partData = data.parts[partName]
+
+                if hasWound then
+                    -- Wound exists - track or update
+                    if not partData then
+                        -- New wound - start tracking
+                        local woundType = EHR.WoundInfection.DetermineWoundType(wounds)
+                        data.parts[partName] = {
+                            stage = EHR.WoundInfection.Stage.AT_RISK,
+                            stageStartTime = currentHour,
+                            startTime = currentHour,
+                            lastCheck = currentHour,
+                            woundType = woundType,
+                            riskAccumulator = 0.0,
+                            disinfectedAt = nil,
+                            bandagedAt = wounds.isBandaged and currentHour or nil,
+                        }
+
+                        if EHR.DEBUG then
+                            EHR.Log(string.format("New wound tracked: %s (%s)", partName, woundType))
+                        end
+
+                        -- Say dialogue for AT_RISK
+                        if player.Say and EHR.WoundInfection.StageEntryDialogue[1] then
+                            player:Say(EHR.WoundInfection.StageEntryDialogue[1])
+                        end
+                    else
+                        -- Update existing tracking
+                        local newWoundType = EHR.WoundInfection.DetermineWoundType(wounds)
+                        -- Upgrade wound type if worse
+                        local typeRank = { scratch = 1, cut = 2, deep = 3, bite = 4 }
+                        if typeRank[newWoundType] and typeRank[partData.woundType] then
+                            if typeRank[newWoundType] > typeRank[partData.woundType] then
+                                partData.woundType = newWoundType
+                                if EHR.DEBUG then
+                                    EHR.Log(string.format("Wound upgraded: %s -> %s", partName, newWoundType))
+                                end
+                            end
+                        end
+
+                        -- Update bandage status
+                        if wounds.isBandaged and not partData.bandagedAt then
+                            partData.bandagedAt = currentHour
+                        elseif not wounds.isBandaged then
+                            partData.bandagedAt = nil
+                        end
+
+                        partData.lastCheck = currentHour
+                    end
+                else
+                    -- No wound - check if we were tracking this part
+                    if partData then
+                        -- Wound healed - clear tracking if CLEAN or AT_RISK
+                        if partData.stage <= EHR.WoundInfection.Stage.AT_RISK then
+                            data.parts[partName] = nil
+                            if EHR.DEBUG then
+                                EHR.Log(string.format("Wound healed (cleared): %s", partName))
+                            end
+                        end
+                        -- If INFECTED or higher, infection persists even after wound heals!
+                    end
+                end
+            end
+        end
+    end
+
+    -- Update stats
+    data.totalInfectedParts = EHR.WoundInfection.CountInfectedParts(player)
+    data.worstStage = EHR.WoundInfection.GetWorstStage(player)
+    data.lastGlobalCheck = currentHour
+end
+
+-- ============================================
+-- PROGRESSION
+-- ============================================
+
+--[[
+    Update infection progression for all tracked parts
+]]--
+function EHR.WoundInfection.UpdateProgression(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime:getWorldAgeHours()
+
+    local bodyDamage = player:getBodyDamage()
+
+    for partName, partData in pairs(data.parts) do
+        local oldStage = partData.stage
+
+        -- Only process if not already septic (septic handled by Sepsis module)
+        if partData.stage < EHR.WoundInfection.Stage.SEPTIC then
+            -- Calculate time since last check
+            local hoursElapsed = currentHour - (partData.lastCheck or currentHour)
+            if hoursElapsed <= 0 then hoursElapsed = 0.5 end  -- Minimum 30 min equivalent
+            partData.lastCheck = currentHour
+
+            -- Get current wound status for this part
+            local wounds = { isBandaged = partData.bandagedAt ~= nil }
+            if bodyDamage and BodyPartType then
+                -- Try to get actual body part status
+                local partType = nil
+                -- Find BodyPartType by name (iterate to match)
+                local maxIndex = BodyPartType.ToIndex(BodyPartType.MAX)
+                for i = 0, maxIndex - 1 do
+                    local pt = BodyPartType.FromIndex(i)
+                    if pt and GetPartName(pt) == partName then
+                        partType = pt
+                        break
+                    end
+                end
+                if partType then
+                    local bodyPart = bodyDamage:getBodyPart(partType)
+                    if bodyPart then
+                        wounds = EHR.WoundInfection.GetWoundStatus(bodyPart)
+                    end
+                end
+            end
+
+            -- Stage-specific logic
+            if partData.stage == EHR.WoundInfection.Stage.AT_RISK then
+                -- Accumulate risk
+                local riskGain = EHR.WoundInfection.CalculateRisk(player, partData, wounds, hoursElapsed)
+                partData.riskAccumulator = (partData.riskAccumulator or 0) + riskGain
+
+                if EHR.DEBUG and riskGain > 0 then
+                    EHR.Log(string.format("Risk accumulating: %s +%.2f%% (total: %.1f%%)",
+                        partName, riskGain * 100, partData.riskAccumulator * 100))
+                end
+
+                -- Check for progression to INFECTED
+                if partData.riskAccumulator >= EHR.WoundInfection.INFECTION_THRESHOLD then
+                    partData.stage = EHR.WoundInfection.Stage.INFECTED
+                    partData.stageStartTime = currentHour
+                    partData.riskAccumulator = 0  -- Reset for next stage
+                    EHR.Log(string.format("Wound infected: %s", partName))
+                end
+
+            elseif partData.stage == EHR.WoundInfection.Stage.INFECTED then
+                -- Check time-based progression to SEVERE
+                local hoursInStage = currentHour - (partData.stageStartTime or currentHour)
+                local duration = EHR.WoundInfection.StageDuration[2] or 12
+
+                if hoursInStage >= duration then
+                    partData.stage = EHR.WoundInfection.Stage.SEVERE
+                    partData.stageStartTime = currentHour
+                    EHR.Log(string.format("Infection severe: %s", partName))
+                end
+
+            elseif partData.stage == EHR.WoundInfection.Stage.SEVERE then
+                -- Check time-based progression to SEPTIC
+                local hoursInStage = currentHour - (partData.stageStartTime or currentHour)
+                local duration = EHR.WoundInfection.StageDuration[3] or 24
+
+                if hoursInStage >= duration then
+                    partData.stage = EHR.WoundInfection.Stage.SEPTIC
+                    partData.stageStartTime = currentHour
+                    EHR.Log(string.format("Infection septic: %s - TRIGGERING SEPSIS", partName))
+                    -- Sepsis will be triggered by CheckSepsisTrigger
+                end
+            end
+
+            -- Handle stage change dialogue
+            if partData.stage ~= oldStage and partData.stage > oldStage then
+                if player.Say and EHR.WoundInfection.StageEntryDialogue[partData.stage] then
+                    player:Say(EHR.WoundInfection.StageEntryDialogue[partData.stage])
+                end
+            end
+        end
+    end
+
+    -- Update stats
+    data.totalInfectedParts = EHR.WoundInfection.CountInfectedParts(player)
+    data.worstStage = EHR.WoundInfection.GetWorstStage(player)
+end
+
+-- ============================================
+-- EFFECTS
+-- ============================================
+
+--[[
+    Apply wound infection effects (pain, etc.)
+]]--
+function EHR.WoundInfection.ApplyEffects(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return end
+
+    local stats = player:getStats()
+    if not stats then return end
+
+    -- Calculate total pain bonus from all infections
+    local totalPainBonus = 0
+    for partName, partData in pairs(data.parts) do
+        local effects = EHR.WoundInfection.StageEffects[partData.stage]
+        if effects and effects.painBonus then
+            totalPainBonus = totalPainBonus + effects.painBonus
+        end
+    end
+
+    -- Apply pain if any
+    if totalPainBonus > 0 and CharacterStat and CharacterStat.PAIN then
+        local currentPain = 0
+        local success, val = pcall(function() return stats:get(CharacterStat.PAIN) end)
+        if success and val then currentPain = val end
+
+        -- Pain is 0-1 scale in B42, convert our bonus (0-100 intended) to 0-1
+        local painAdd = totalPainBonus / 100
+        local newPain = math.min(1, currentPain + painAdd * 0.01)  -- Gradual increase
+
+        pcall(function() stats:set(CharacterStat.PAIN, newPain) end)
+    end
+end
+
+-- ============================================
+-- SEPSIS TRIGGER CHECK
+-- ============================================
+
+--[[
+    Check if sepsis should be triggered
+    Returns: shouldTrigger (bool), sourcePartName (string)
+]]--
+function EHR.WoundInfection.CheckSepsisTrigger(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return false, nil end
+
+    -- Check for SEPTIC stage parts
+    for partName, partData in pairs(data.parts) do
+        if partData.stage >= EHR.WoundInfection.Stage.SEPTIC then
+            -- Trigger sepsis from this part
+            if EHR.Sepsis and EHR.Sepsis.Trigger then
+                EHR.Sepsis.Trigger(player, partName)
+            else
+                EHR.Log("Sepsis module not loaded - cannot trigger sepsis!")
+            end
+            return true, partName
+        end
+    end
+
+    -- Also check: 3+ infected parts trigger sepsis
+    local infectedCount = 0
+    for partName, partData in pairs(data.parts) do
+        if partData.stage >= EHR.WoundInfection.Stage.INFECTED then
+            infectedCount = infectedCount + 1
+        end
+    end
+
+    if infectedCount >= 3 then
+        if EHR.Sepsis and EHR.Sepsis.Trigger then
+            EHR.Sepsis.Trigger(player, "multiple")
+        else
+            EHR.Log("Sepsis module not loaded - cannot trigger sepsis!")
+        end
+        return true, "multiple"
+    end
+
+    return false, nil
+end
+
+-- ============================================
+-- TREATMENT FUNCTIONS
+-- ============================================
+
+--[[
+    Called when player disinfects a wound
+]]--
+function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data then
+        EHR.WoundInfection.InitializePlayer(player)
+        data = EHR.WoundInfection.GetData(player)
+    end
+    if not data then return end
+
+    local partName = GetPartName(bodyPartType)
+    if not partName then return end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime:getWorldAgeHours()
+
+    local partData = data.parts[partName]
+
+    if not partData then
+        -- No infection tracking, but mark as disinfected for prevention
+        data.parts[partName] = {
+            stage = EHR.WoundInfection.Stage.CLEAN,
+            stageStartTime = currentHour,
+            startTime = currentHour,
+            lastCheck = currentHour,
+            woundType = nil,
+            riskAccumulator = 0,
+            disinfectedAt = currentHour,
+            bandagedAt = nil,
+        }
+        if EHR.DEBUG then
+            EHR.Log(string.format("Disinfected (preventive): %s", partName))
+        end
+        return
+    end
+
+    -- Mark as disinfected
+    partData.disinfectedAt = currentHour
+
+    -- Effect depends on stage
+    if partData.stage == EHR.WoundInfection.Stage.AT_RISK then
+        -- Clear to CLEAN
+        partData.stage = EHR.WoundInfection.Stage.CLEAN
+        partData.riskAccumulator = 0
+        if player.Say then
+            player:Say("Good, the wound looks cleaner now...")
+        end
+        EHR.Log(string.format("Disinfected (cleared AT_RISK): %s", partName))
+
+    elseif partData.stage == EHR.WoundInfection.Stage.INFECTED then
+        -- Reset stage timer but don't reduce stage
+        partData.stageStartTime = currentHour
+        if player.Say then
+            player:Say("That stings... but it should help slow the infection.")
+        end
+        EHR.Log(string.format("Disinfected (slowed INFECTED): %s", partName))
+
+    elseif partData.stage >= EHR.WoundInfection.Stage.SEVERE then
+        -- Too late for just disinfectant
+        if player.Say then
+            player:Say("I need antibiotics... disinfectant won't be enough.")
+        end
+    end
+end
+
+--[[
+    Called when player takes antibiotics
+]]--
+function EHR.WoundInfection.OnTakeAntibiotics(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return false end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime:getWorldAgeHours()
+
+    -- Find worst infected part
+    local worstPart, worstStage = nil, 0
+    for partName, partData in pairs(data.parts) do
+        if partData.stage > worstStage and partData.stage < EHR.WoundInfection.Stage.SEPTIC then
+            worstPart = partName
+            worstStage = partData.stage
+        end
+    end
+
+    if worstPart and worstStage >= EHR.WoundInfection.Stage.INFECTED then
+        local partData = data.parts[worstPart]
+
+        -- Reduce stage by 1
+        partData.stage = partData.stage - 1
+        partData.stageStartTime = currentHour
+        partData.riskAccumulator = 0
+
+        if player.Say then
+            player:Say("The antibiotics should help fight this infection...")
+        end
+
+        EHR.Log(string.format("Antibiotics reduced infection: %s stage %d -> %d",
+            worstPart, worstStage, partData.stage))
+
+        return true  -- Consume item
+    else
+        if player.Say then
+            player:Say("I should save these for when I really need them.")
+        end
+        return false  -- Don't consume
+    end
+end
+
+-- ============================================
+-- QUERY FUNCTIONS (for UI/other modules)
+-- ============================================
+
+--[[
+    Check if healing is blocked for a specific body part
+    Returns: canHeal (bool/"reduced"), reason (string)
+]]--
+function EHR.WoundInfection.CanHealPart(player, bodyPartType)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return true, "ok" end
+
+    local partName = GetPartName(bodyPartType)
+    if not partName then return true, "ok" end
+
+    local partData = data.parts[partName]
+    if not partData then return true, "ok" end
+
+    local stage = partData.stage
+    if stage >= EHR.WoundInfection.Stage.SEVERE then
+        return false, "severe infection"
+    elseif stage >= EHR.WoundInfection.Stage.INFECTED then
+        return "reduced", "infected"  -- 50% healing rate
+    end
+
+    return true, "ok"
+end
+
+--[[
+    Get infection status text for UI
+]]--
+function EHR.WoundInfection.GetStatusText(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return "" end
+
+    local texts = {}
+    local stageNames = {
+        [0] = "Clean",
+        [1] = "At Risk",
+        [2] = "Infected - Mild",
+        [3] = "Infected - Severe",
+        [4] = "Septic",
+    }
+
+    for partName, partData in pairs(data.parts) do
+        if partData.stage >= EHR.WoundInfection.Stage.AT_RISK then
+            local stageName = stageNames[partData.stage] or "Unknown"
+            -- Simplify part name for display (e.g., "Hand_L" -> "Left Hand")
+            local displayName = partName:gsub("_L$", " (L)"):gsub("_R$", " (R)")
+            table.insert(texts, string.format("%s: %s", displayName, stageName))
+        end
+    end
+
+    if #texts == 0 then return "" end
+    return table.concat(texts, ",  ")
+end
+
+--[[
+    Get color for worst infection stage
+]]--
+function EHR.WoundInfection.GetStatusColor(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data then
+        return {r = 0.5, g = 0.5, b = 0.5}  -- Gray
+    end
+
+    local worstStage = data.worstStage or 0
+
+    if worstStage == 0 then
+        return {r = 0.5, g = 0.5, b = 0.5}  -- Gray
+    elseif worstStage == 1 then
+        return {r = 0.8, g = 0.8, b = 0.3}  -- Yellow (AT_RISK)
+    elseif worstStage == 2 then
+        return {r = 0.87, g = 0.53, b = 0.13}  -- Orange (INFECTED)
+    elseif worstStage == 3 then
+        return {r = 0.87, g = 0.13, b = 0.13}  -- Red (SEVERE)
+    else
+        return {r = 0.6, g = 0.07, b = 0.07}  -- Dark red (SEPTIC)
+    end
+end
+
+-- ============================================
+-- DIALOGUE
+-- ============================================
+
+--[[
+    Check if player should say something about wounds
+]]--
+function EHR.WoundInfection.CheckDialogue(player)
+    local data = EHR.WoundInfection.GetData(player)
+    if not data or not data.parts then return end
+    if not player.Say then return end
+
+    for partName, partData in pairs(data.parts) do
+        local stage = partData.stage
+        local dialogueList = EHR.WoundInfection.Dialogue[stage]
+
+        if dialogueList and #dialogueList > 0 then
+            -- Higher chance for worse stages
+            local speakChance = stage * 10  -- 10% for AT_RISK, 20% for INFECTED, etc.
+
+            if ZombRand(100) < speakChance then
+                local line = dialogueList[ZombRand(#dialogueList) + 1]
+                player:Say(line)
+                return  -- Only one line per check
+            end
+        end
+    end
+end
+
+-- ============================================
+-- MAIN TICK HANDLER
+-- ============================================
+
+function EHR.WoundInfection.OnTick()
+    -- Check if wound infection is enabled in sandbox
+    if not EHR.WoundInfection.IsEnabled() then
+        return
+    end
+
+    local player = getSpecificPlayer(0)
+    if not player then return end
+    if not player:isAlive() then return end
+
+    -- Debug: confirm tick is running (once per ~30 sec)
+    tickDebugCounter = tickDebugCounter + 1
+    if tickDebugCounter >= 900 then
+        tickDebugCounter = 0
+        EHR.Log("WoundInfection: Tick running, player alive")
+    end
+
+    -- Initialize if needed
+    local modData = player:getModData()
+    if not modData.EHR_WoundInfection_Initialized then
+        EHR.WoundInfection.InitializePlayer(player)
+        return
+    end
+
+    -- Wound checks (every ~30 seconds)
+    woundCheckCounter = woundCheckCounter + 1
+    if woundCheckCounter >= WOUND_CHECK_INTERVAL then
+        woundCheckCounter = 0
+
+        -- 1. Scan all body parts for wounds
+        EHR.WoundInfection.ScanWounds(player)
+
+        -- 2. Update infection progression
+        EHR.WoundInfection.UpdateProgression(player)
+
+        -- 3. Apply effects (pain)
+        EHR.WoundInfection.ApplyEffects(player)
+
+        -- 4. Check for sepsis trigger
+        EHR.WoundInfection.CheckSepsisTrigger(player)
+    end
+
+    -- Dialogue checks (every ~2 minutes)
+    woundDialogueCounter = woundDialogueCounter + 1
+    if woundDialogueCounter >= WOUND_DIALOGUE_INTERVAL then
+        woundDialogueCounter = 0
+        EHR.WoundInfection.CheckDialogue(player)
+    end
+end
+
+-- ============================================
+-- EVENT HANDLERS
+-- ============================================
+
+function EHR.WoundInfection.OnGameStart()
+    EHR.Log("Wound infection module OnGameStart")
+
+    local player = getSpecificPlayer(0)
+    if player then
+        EHR.WoundInfection.InitializePlayer(player)
+    end
+end
+
+function EHR.WoundInfection.OnCreatePlayer(playerIndex, player)
+    EHR.Log("Wound infection module OnCreatePlayer: " .. playerIndex)
+    EHR.WoundInfection.InitializePlayer(player)
+end
+
+-- ============================================
+-- EVENT REGISTRATION
+-- ============================================
+
+if Events then
+    Events.OnTick.Add(EHR.WoundInfection.OnTick)
+    Events.OnGameStart.Add(EHR.WoundInfection.OnGameStart)
+    Events.OnCreatePlayer.Add(EHR.WoundInfection.OnCreatePlayer)
+
+    EHR.Log("Wound infection module events registered")
+end
+
+EHR.Log("Wound infection module loaded v1.0.0")

@@ -1,0 +1,250 @@
+--[[
+    EHR Wound Infection Technical Spike
+
+    This file validates the vanilla wound infection API integration approach.
+    It's a proof-of-concept, NOT production code.
+
+    RESEARCH FINDINGS (from PZ B42 source):
+
+    1. VANILLA BACTERIAL WOUND INFECTION (different from Knox virus):
+       - bodyPart:isInfectedWound() - Check if wound is bacterially infected
+       - bodyPart:setInfectedWound(bool) - Set wound infection status
+       - bodyPart:getWoundInfectionLevel() - Get numeric level (0-10+)
+       - bodyPart:setWoundInfectionLevel(value) - Set level (-1 clears)
+
+    2. KNOX (ZOMBIE) INFECTION (separate system):
+       - bodyPart:SetInfected() - Set Knox infection
+       - bodyPart:bitten() - Check if bitten
+       - bodyDamage:IsInfected() - Check Knox infection status
+
+    3. VANILLA INFECTION TRIGGERS:
+       - Stitching: 1 in (5 + doctorLevel * 2.5) chance
+       - Dirty bandages: Apply Knox infection (NOT bacterial)
+
+    4. TREATMENT METHODS:
+       - setAlcoholLevel(value) - Disinfection
+       - setGarlicFactor(value) - Herbal remedy
+       - setPlantainFactor(value) - Herbal remedy
+       - setComfreyFactor(value) - Herbal remedy
+
+    Version: Technical Spike for v2.8.0
+]]--
+
+EHR = EHR or {}
+EHR.WoundInfectionSpike = {}
+
+-- ============================================
+-- VANILLA API WRAPPERS (with pcall safety)
+-- ============================================
+
+--[[
+    Check if a body part has vanilla bacterial wound infection.
+    @param bodyPart (BodyPart) - The body part to check
+    @return boolean - True if infected, false otherwise
+]]--
+function EHR.WoundInfectionSpike.IsVanillaInfected(bodyPart)
+    if not bodyPart then return false end
+
+    local success, infected = pcall(function()
+        return bodyPart:isInfectedWound()
+    end)
+
+    return success and infected or false
+end
+
+--[[
+    Get the vanilla wound infection level (0-10+ scale).
+    @param bodyPart (BodyPart) - The body part to check
+    @return number - Infection level (0 = none, higher = worse)
+]]--
+function EHR.WoundInfectionSpike.GetVanillaInfectionLevel(bodyPart)
+    if not bodyPart then return 0 end
+
+    local success, level = pcall(function()
+        return bodyPart:getWoundInfectionLevel()
+    end)
+
+    return success and (level or 0) or 0
+end
+
+--[[
+    Clear vanilla wound infection on a body part.
+    @param bodyPart (BodyPart) - The body part to clear
+]]--
+function EHR.WoundInfectionSpike.ClearVanillaInfection(bodyPart)
+    if not bodyPart then return end
+
+    pcall(function()
+        bodyPart:setWoundInfectionLevel(-1)
+        bodyPart:setInfectedWound(false)
+    end)
+end
+
+--[[
+    Set vanilla wound infection on a body part.
+    @param bodyPart (BodyPart) - The body part to infect
+    @param level (number) - Infection level (default 10)
+]]--
+function EHR.WoundInfectionSpike.SetVanillaInfection(bodyPart, level)
+    if not bodyPart then return end
+    level = level or 10
+
+    pcall(function()
+        bodyPart:setInfectedWound(true)
+        bodyPart:setWoundInfectionLevel(level)
+    end)
+end
+
+-- ============================================
+-- PROPOSED EHR STAGE SYSTEM (for discussion)
+-- ============================================
+
+--[[
+    Proposed stage mapping for v2.8.0:
+
+    Stage 0 (CLEAN): No infection
+    - Vanilla: isInfectedWound() = false
+    - EHR: Normal healing
+
+    Stage 1 (INFECTED): Vanilla infection detected
+    - Vanilla: isInfectedWound() = true, level < 5
+    - EHR: 50% slower healing, antibiotics help
+    - Duration before worsening: 6 hours
+
+    Stage 2 (WORSENING): Infection spreading
+    - Vanilla: level >= 5
+    - EHR: 75% slower healing, need stronger treatment
+    - Duration before severe: 12 hours
+
+    Stage 3 (SEVERE): Pre-sepsis, critical
+    - Vanilla: level >= 10
+    - EHR: No healing, sepsis risk
+    - Duration before sepsis: 24 hours
+
+    Stage 4 (SEPTIC): Triggers sepsis module
+    - Vanilla: Cleared by EHR, sepsis takes over
+    - EHR: Hands off to EHR_Sepsis.lua
+]]--
+
+EHR.WoundInfectionSpike.Stage = {
+    CLEAN = 0,
+    INFECTED = 1,
+    WORSENING = 2,
+    SEVERE = 3,
+    SEPTIC = 4,
+}
+
+--[[
+    Map vanilla infection level to EHR stage.
+    @param bodyPart (BodyPart) - The body part to check
+    @return number - EHR stage (0-4)
+]]--
+function EHR.WoundInfectionSpike.GetEHRStageFromVanilla(bodyPart)
+    if not EHR.WoundInfectionSpike.IsVanillaInfected(bodyPart) then
+        return EHR.WoundInfectionSpike.Stage.CLEAN
+    end
+
+    local level = EHR.WoundInfectionSpike.GetVanillaInfectionLevel(bodyPart)
+
+    if level >= 10 then
+        return EHR.WoundInfectionSpike.Stage.SEVERE
+    elseif level >= 5 then
+        return EHR.WoundInfectionSpike.Stage.WORSENING
+    else
+        return EHR.WoundInfectionSpike.Stage.INFECTED
+    end
+end
+
+-- ============================================
+-- DEBUG COMMAND (for testing in-game)
+-- ============================================
+
+--[[
+    Debug command to test wound infection API.
+    Usage: In debug console, call EHR.WoundInfectionSpike.TestAPI()
+]]--
+function EHR.WoundInfectionSpike.TestAPI()
+    local player = getPlayer()
+    if not player then
+        print("[EHR Spike] No player found")
+        return
+    end
+
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then
+        print("[EHR Spike] No bodyDamage found")
+        return
+    end
+
+    print("[EHR Spike] === WOUND INFECTION API TEST ===")
+
+    -- Iterate all body parts
+    local bodyPartTypes = BodyPartType.values()
+    for i = 0, bodyPartTypes:size() - 1 do
+        local bpType = bodyPartTypes:get(i)
+        local bodyPart = bodyDamage:getBodyPart(bpType)
+
+        if bodyPart then
+            local isInfected = EHR.WoundInfectionSpike.IsVanillaInfected(bodyPart)
+            local level = EHR.WoundInfectionSpike.GetVanillaInfectionLevel(bodyPart)
+            local ehrStage = EHR.WoundInfectionSpike.GetEHRStageFromVanilla(bodyPart)
+
+            if isInfected or level > 0 then
+                print(string.format("[EHR Spike] %s: Infected=%s, Level=%.2f, EHR_Stage=%d",
+                    tostring(bpType), tostring(isInfected), level, ehrStage))
+            end
+        end
+    end
+
+    print("[EHR Spike] === TEST COMPLETE ===")
+end
+
+--[[
+    Debug command to infect a body part for testing.
+    Usage: EHR.WoundInfectionSpike.DebugInfect("Hand_R", 5)
+]]--
+function EHR.WoundInfectionSpike.DebugInfect(bodyPartName, level)
+    local player = getPlayer()
+    if not player then return end
+
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return end
+
+    local bpType = BodyPartType[bodyPartName]
+    if not bpType then
+        print("[EHR Spike] Unknown body part: " .. tostring(bodyPartName))
+        return
+    end
+
+    local bodyPart = bodyDamage:getBodyPart(bpType)
+    if not bodyPart then return end
+
+    EHR.WoundInfectionSpike.SetVanillaInfection(bodyPart, level or 5)
+    print(string.format("[EHR Spike] Infected %s with level %d", bodyPartName, level or 5))
+end
+
+--[[
+    Debug command to clear infection on a body part.
+    Usage: EHR.WoundInfectionSpike.DebugClear("Hand_R")
+]]--
+function EHR.WoundInfectionSpike.DebugClear(bodyPartName)
+    local player = getPlayer()
+    if not player then return end
+
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return end
+
+    local bpType = BodyPartType[bodyPartName]
+    if not bpType then
+        print("[EHR Spike] Unknown body part: " .. tostring(bodyPartName))
+        return
+    end
+
+    local bodyPart = bodyDamage:getBodyPart(bpType)
+    if not bodyPart then return end
+
+    EHR.WoundInfectionSpike.ClearVanillaInfection(bodyPart)
+    print(string.format("[EHR Spike] Cleared infection on %s", bodyPartName))
+end
+
+print("[EHR] WoundInfection Technical Spike loaded - Use EHR.WoundInfectionSpike.TestAPI() to test")

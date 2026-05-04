@@ -1,0 +1,1600 @@
+--[[
+    Extensive Health Rework B42
+    Corpse Diseases Module
+
+    Handles disease transmission from corpse exposure:
+    - Cadaveric Aspergillosis: Fungal infection in cold/wet/damp environments
+    - Putrefaction Sickness: H₂S gas poisoning in enclosed spaces
+
+    Key mechanics:
+    - Corpse proximity detection (10m radius)
+    - Environmental routing (damp -> fungal, enclosed -> gas)
+    - Acute gas poisoning with "knockdown" effect
+    - Olfactory fatigue (stop smelling = most dangerous)
+
+    B42 API Notes:
+    - getCell():getObjectList() for corpse detection
+    - IsoDeadBody class for corpses
+    - player:getCurrentSquare():getRoom() for room detection
+
+    v1.0.0 - Initial implementation
+]]--
+
+require "ExtensiveHealth/EHR_Disease"
+require "ExtensiveHealth/EHR_DiseaseDefinitions"
+require "ExtensiveHealth/EHR_EnvironmentalDiseases"
+require "ExtensiveHealth/EHR_Dialogue"
+
+EHR = EHR or {}
+EHR.Corpse = {}
+
+-- ============================================
+-- CONFIGURATION
+-- ============================================
+
+EHR.Corpse.Config = {
+    -- Detection radius (tiles)
+    detectionRadius = 10,
+
+    -- Minimum corpse age before it starts emitting (hours)
+    -- Corpses need significant time to decompose before they release dangerous gases
+    -- 24 in-game hours = ~24 real-life minutes at default time scale
+    minimumCorpseAge = 24,          -- 24 hours minimum before corpse affects player
+
+    -- Exposure thresholds (increased for slower progression)
+    fungalExposureThreshold = 200,      -- Points needed for aspergillosis check
+    gasExposureThreshold = 150,         -- Points needed for putrefaction check
+
+    -- Exposure rates (points per corpse per minute)
+    -- Age categories now start at 24 hours
+    exposureRate = {
+        fresh = 0,          -- Fresh corpse (<24 hours) - no emission yet
+        young = 0.3,        -- Young decomposition (24-48 hours) - just starting
+        decomposing = 1.0,  -- Active decomposition (48-96 hours / 2-4 days)
+        rotten = 2.0,       -- Badly decomposed (4+ days)
+    },
+
+    -- Environmental multipliers
+    indoorMultiplier = 1.3,         -- Indoors = 1.3x exposure
+    enclosedMultiplier = 1.5,       -- No ventilation = 1.5x exposure
+    dampMultiplier = 1.3,           -- Damp = 1.3x exposure (fungal)
+
+    -- Protection
+    gasMaskProtection = 0.95,       -- 95% reduction
+    bandanaProtection = 0.50,       -- 50% reduction
+    surgicalMaskProtection = 0.60,  -- 60% reduction
+
+    -- Acute gas poisoning thresholds (increased for more gradual buildup)
+    acuteExposure = {
+        low = 50,           -- Eye irritation, mild nausea
+        medium = 100,       -- Headache, dizziness
+        high = 180,         -- "Knockdown" - collapse
+        extreme = 250,      -- Death risk
+    },
+
+    -- Olfactory fatigue (stop smelling after this many seconds)
+    olfactoryFatigueTime = 120,     -- 2 minutes
+
+    -- Tuberculosis (long-term cumulative exposure)
+    tbExposureThreshold = 5000,     -- Cumulative points for TB risk
+    tbDailyCheckChance = 0.05,      -- 5% per day check once above threshold
+
+    -- Gradual fatigue system (replaces instant knockdown)
+    gradualFatigue = {
+        enabled = true,
+        baseGrowthRate = 0.01,        -- Multiplier increase per minute while exposed
+        gasExposureBonus = 0.005,     -- Additional growth per acute level
+        maxMultiplier = 3.0,          -- Cap at 3x fatigue rate
+        decayRate = 0.03,             -- Multiplier decrease per minute when safe
+        protectedDecayRate = 0.02,    -- Slower decay when protected but still near corpses
+    },
+}
+
+-- ============================================
+-- EXPOSURE TRACKING
+-- ============================================
+
+EHR.Corpse.ExposureData = {}
+
+--[[
+    Initialize corpse exposure tracking for a player
+]]--
+function EHR.Corpse.InitializePlayer(player)
+    if not player then return end
+
+    local playerID = tostring(player:getUsername() or player:getPlayerNum())
+
+    if EHR.Corpse.ExposureData[playerID] then
+        return
+    end
+
+    EHR.Corpse.ExposureData[playerID] = {
+        -- Exposure tracking
+        fungalExposure = 0,         -- For aspergillosis
+        gasExposure = 0,            -- For putrefaction
+        acuteGasExposure = 0,       -- Current acute exposure (resets when leaving)
+
+        -- Tuberculosis (cumulative, never fully resets)
+        tbCumulativeExposure = 0,   -- Lifetime corpse exposure for TB
+        lastTBCheck = 0,            -- Last day we checked for TB
+
+        -- Olfactory fatigue
+        exposureStartTime = nil,    -- When exposure started
+        canSmellCorpses = true,     -- False after olfactory fatigue
+
+        -- Acute symptoms
+        hasAcuteSymptoms = false,
+        acuteLevel = 0,             -- 0=none, 1=low, 2=medium, 3=high, 4=extreme
+
+        -- Gradual fatigue system
+        fatigueMultiplier = 1.0,    -- Current fatigue rate multiplier (1.0 = normal)
+
+        -- Tracking
+        lastCorpseCount = 0,
+        lastCheckTime = 0,
+    }
+
+    EHR.Log("Corpse diseases: Initialized tracking for player " .. playerID)
+end
+
+--[[
+    Get exposure data for a player
+]]--
+function EHR.Corpse.GetExposureData(player)
+    if not player then return nil end
+    local playerID = tostring(player:getUsername() or player:getPlayerNum())
+    return EHR.Corpse.ExposureData[playerID]
+end
+
+-- ============================================
+-- CORPSE DETECTION
+-- ============================================
+
+-- Track when we first saw each corpse (fallback for missing getDeathTime)
+EHR.Corpse.FirstSeenCorpses = {}
+
+--[[
+    Count corpses within radius of player
+    Returns: count, freshCount, youngCount, decomposingCount, rottenCount
+
+    Age categories (matching config):
+    - fresh: < 2 hours (no emission - corpse hasn't started decomposing yet)
+    - young: 2-24 hours (just starting to emit)
+    - decomposing: 24-72 hours (actively decomposing)
+    - rotten: > 72 hours (badly decomposed, peak emission)
+
+    SEALED BUILDING PROTECTION:
+    If player is inside a sealed building (all windows/doors closed), corpses
+    OUTSIDE the building are ignored. Only corpses inside the same building
+    can affect the player. This prevents unrealistic scenarios where corpses
+    in the yard affect someone inside a fully sealed house.
+]]--
+function EHR.Corpse.CountNearbyCorpses(player)
+    local count = 0
+    local freshCount = 0
+    local youngCount = 0
+    local decomposingCount = 0
+    local rottenCount = 0
+
+    local config = EHR.Corpse.Config
+    local minAge = config.minimumCorpseAge or 2  -- Hours before corpse emits
+
+    local px = player:getX()
+    local py = player:getY()
+    local pz = player:getZ()
+    local radius = config.detectionRadius
+
+    -- Get the cell
+    local cell = getCell()
+    if not cell then return 0, 0, 0, 0, 0 end
+
+    local gameTime = getGameTime()
+    local currentWorldHours = gameTime:getWorldAgeHours()
+
+    -- SEALED BUILDING CHECK: If player is in a sealed building, only count corpses inside
+    local isBuildingSealed = EHR.Corpse.IsBuildingSealed(player)
+    local skippedOutsideCorpses = 0
+
+    if EHR.DEBUG and isBuildingSealed then
+        EHR.Log("Corpse detection: Player in SEALED building - filtering outside corpses")
+    end
+
+    -- Scan area for corpses
+    for dx = -radius, radius do
+        for dy = -radius, radius do
+            local square = cell:getGridSquare(px + dx, py + dy, pz)
+            if square then
+                -- Check for corpses on this square
+                local objects = square:getStaticMovingObjects()
+                if objects then
+                    for i = 0, objects:size() - 1 do
+                        local obj = objects:get(i)
+                        if obj and instanceof(obj, "IsoDeadBody") then
+                            -- BUG-004 FIX: Get corpse position and validate before counting
+                            local corpseX = obj:getX()
+                            local corpseY = obj:getY()
+                            local corpseZ = obj:getZ()
+
+                            -- Check if corpse is on a valid square (ghost corpses have nil)
+                            local corpseSquare = obj:getSquare()
+
+                            if corpseSquare then
+                                -- SEALED BUILDING FILTER: Skip outside corpses if building is sealed
+                                local shouldSkip = false
+                                if isBuildingSealed then
+                                    local corpseInSameBuilding = EHR.Corpse.IsCorpseInSameBuilding(player, corpseSquare)
+                                    if not corpseInSameBuilding then
+                                        -- Corpse is outside or in different building - skip it
+                                        skippedOutsideCorpses = skippedOutsideCorpses + 1
+                                        if EHR.DEBUG then
+                                            EHR.Log(string.format("Corpse at %.0f,%.0f,%.0f SKIPPED (outside sealed building)",
+                                                corpseX, corpseY, corpseZ))
+                                        end
+                                        shouldSkip = true
+                                    end
+                                end
+
+                                if not shouldSkip then
+                                    -- VALID CORPSE - count it now
+                                    count = count + 1
+
+                                    -- Get a unique ID for this corpse (position-based)
+                                    local corpseKey = string.format("%.0f_%.0f_%.0f", corpseX, corpseY, corpseZ)
+
+                                    -- Determine decomposition state based on age
+                                    local ageCategory = "fresh"  -- Default to FRESH (safe default)
+                                    local hoursSinceDeath = 0
+                                    local ageSource = "default"
+
+                                    -- Try to get death time from the corpse object
+                                    local deathTime = nil
+                                    if obj.getDeathTime then
+                                        local success, dt = pcall(function() return obj:getDeathTime() end)
+                                        if success and dt and dt > 0 then
+                                            deathTime = dt
+                                            ageSource = "getDeathTime"
+                                        end
+                                    end
+
+                                    -- Fallback: use our own tracking of when we first saw this corpse
+                                    if not deathTime then
+                                        if not EHR.Corpse.FirstSeenCorpses[corpseKey] then
+                                            -- First time seeing this corpse - record current time
+                                            EHR.Corpse.FirstSeenCorpses[corpseKey] = currentWorldHours
+                                            ageSource = "firstSeen-new"
+                                        else
+                                            ageSource = "firstSeen-tracked"
+                                        end
+                                        deathTime = EHR.Corpse.FirstSeenCorpses[corpseKey]
+                                    end
+
+                                    -- Calculate hours since death
+                                    hoursSinceDeath = currentWorldHours - deathTime
+
+                                    -- Sanity checks for invalid values
+                                    if hoursSinceDeath < 0 then
+                                        -- Negative age = corrupted data, treat as fresh
+                                        hoursSinceDeath = 0
+                                        ageCategory = "fresh"
+                                        ageSource = ageSource .. "-NEGATIVE"
+                                    elseif hoursSinceDeath > 720 then
+                                        -- More than 30 days old = likely corrupted, cap it
+                                        hoursSinceDeath = 720
+                                        ageSource = ageSource .. "-CAPPED"
+                                    end
+
+                                    -- Categorize by age (matching config exposure rates)
+                                    -- With minimumCorpseAge = 24:
+                                    -- fresh: <24h, young: 24-48h, decomposing: 48-96h, rotten: >96h
+                                    if hoursSinceDeath < minAge then
+                                        ageCategory = "fresh"      -- Too fresh, no emission (<24h)
+                                    elseif hoursSinceDeath < 48 then
+                                        ageCategory = "young"      -- Just starting to emit (24-48h)
+                                    elseif hoursSinceDeath < 96 then
+                                        ageCategory = "decomposing" -- Active decomposition (2-4 days)
+                                    else
+                                        ageCategory = "rotten"     -- Badly decomposed (4+ days)
+                                    end
+
+                                    if ageCategory == "fresh" then
+                                        freshCount = freshCount + 1
+                                    elseif ageCategory == "young" then
+                                        youngCount = youngCount + 1
+                                    elseif ageCategory == "decomposing" then
+                                        decomposingCount = decomposingCount + 1
+                                    else
+                                        rottenCount = rottenCount + 1
+                                    end
+
+                                    if EHR.DEBUG then
+                                        EHR.Log(string.format("Corpse [%s]: age=%.2fh -> %s (source: %s)",
+                                            corpseKey, hoursSinceDeath, ageCategory, ageSource))
+                                    end
+                                end
+                            else
+                                -- BUG-004: Skip ghost corpse (no valid square)
+                                if EHR.DEBUG then
+                                    EHR.Log(string.format("BUG-004: Skipping ghost corpse at %.0f,%.0f,%.0f (no valid square)",
+                                        corpseX, corpseY, corpseZ))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Log summary (only in debug mode)
+    if EHR.DEBUG then
+        if isBuildingSealed and skippedOutsideCorpses > 0 then
+            EHR.Log(string.format("Corpse summary: %d counted, %d SKIPPED (outside sealed building)",
+                count, skippedOutsideCorpses))
+        end
+        if count > 0 then
+            EHR.Log(string.format("Corpse summary: %d total (fresh=%d, young=%d, decomp=%d, rotten=%d)",
+                count, freshCount, youngCount, decomposingCount, rottenCount))
+        end
+    end
+
+    return count, freshCount, youngCount, decomposingCount, rottenCount
+end
+
+-- ============================================
+-- ENVIRONMENT DETECTION
+-- ============================================
+
+--[[
+    Check if current location favors fungal growth
+    Returns: true if cold/wet/damp environment
+]]--
+function EHR.Corpse.IsFungalEnvironment(player)
+    if not EHR.Environmental then return false end
+
+    local airTemp = EHR.Environmental.GetAirTemperature()
+    local wetness = EHR.Environmental.GetWetness(player)
+    local isIndoors = EHR.Environmental.IsIndoors(player)
+
+    local config = EHR.Environmental.Config
+
+    -- Check for fungal-favorable conditions
+    local isCold = airTemp < config.coldTemp
+    local isWet = wetness > config.wetThreshold
+    local isRaining = isRaining and isRaining() or false
+
+    -- Basements are naturally damp
+    local square = player:getCurrentSquare()
+    local isBasement = false
+    if square then
+        local z = square:getZ()
+        if z < 0 then isBasement = true end
+    end
+
+    -- Near water check (simplified)
+    local nearWater = false
+    -- Could check for water tiles nearby
+
+    return isCold or isWet or isRaining or isBasement or nearWater
+end
+
+--[[
+    Check if current location is enclosed (poor ventilation)
+    Returns: true if enclosed space (for gas accumulation)
+]]--
+function EHR.Corpse.IsEnclosedSpace(player)
+    local square = player:getCurrentSquare()
+    if not square then return false end
+
+    -- Must be indoors
+    local room = nil
+    if square.getRoom then
+        local success, r = pcall(function() return square:getRoom() end)
+        if success then room = r end
+    end
+
+    if not room then return false end
+
+    -- Check for windows and doors (simplified)
+    -- In a real implementation, we'd iterate room squares to check for open windows/doors
+    -- For now, small rooms are considered enclosed
+
+    -- Try to get room size
+    local isSmallRoom = true  -- Default to enclosed
+    if room.getAreaSquares then
+        local success, area = pcall(function() return room:getAreaSquares() end)
+        if success and area then
+            isSmallRoom = area < 20  -- Small room = under 20 squares
+        end
+    end
+
+    return isSmallRoom
+end
+
+--[[
+    Check if the building the player is in is sealed (all windows and doors closed)
+    Returns: true if player is indoors AND all windows/doors are closed
+
+    This is used to protect players from OUTSIDE corpse exposure.
+    If the building is sealed, corpses outside cannot affect the player.
+    Corpses INSIDE the building still affect the player normally.
+]]--
+function EHR.Corpse.IsBuildingSealed(player)
+    local square = player:getCurrentSquare()
+    if not square then return false end
+
+    -- Must be indoors first
+    local room = nil
+    if square.getRoom then
+        local success, r = pcall(function() return square:getRoom() end)
+        if success then room = r end
+    end
+
+    if not room then return false end  -- Not in a room = not sealed
+
+    -- Get the building this room belongs to
+    local building = nil
+    if room.getBuilding then
+        local success, b = pcall(function() return room:getBuilding() end)
+        if success then building = b end
+    end
+
+    if not building then return false end
+
+    -- Check all rooms in the building for open windows/doors
+    local rooms = nil
+    if building.getRooms then
+        local success, r = pcall(function() return building:getRooms() end)
+        if success then rooms = r end
+    end
+
+    if not rooms then return false end
+
+    -- Iterate through all rooms in the building
+    for roomIdx = 0, rooms:size() - 1 do
+        local checkRoom = rooms:get(roomIdx)
+        if checkRoom then
+            -- Get all squares in this room
+            local roomSquares = nil
+            if checkRoom.getSquares then
+                local success, sq = pcall(function() return checkRoom:getSquares() end)
+                if success then roomSquares = sq end
+            end
+
+            if roomSquares then
+                for sqIdx = 0, roomSquares:size() - 1 do
+                    local roomSquare = roomSquares:get(sqIdx)
+                    if roomSquare then
+                        -- Check for open windows on this square
+                        if EHR.Corpse.HasOpenWindowOrDoor(roomSquare) then
+                            if EHR.DEBUG then
+                                EHR.Log(string.format("Building NOT sealed: open window/door at %.0f,%.0f,%.0f",
+                                    roomSquare:getX(), roomSquare:getY(), roomSquare:getZ()))
+                            end
+                            return false
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- All windows and doors are closed
+    if EHR.DEBUG then
+        EHR.Log("Building is SEALED - all windows and doors closed")
+    end
+    return true
+end
+
+--[[
+    Check if a square has an open window or door
+    Returns: true if there's an open window or door on this square
+]]--
+function EHR.Corpse.HasOpenWindowOrDoor(square)
+    if not square then return false end
+
+    -- Get all objects on this square
+    local objects = square:getObjects()
+    if not objects then return false end
+
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        if obj then
+            -- Check for windows
+            if instanceof(obj, "IsoWindow") then
+                -- Check if window is open or broken
+                local isOpen = false
+                local isBroken = false
+
+                if obj.IsOpen then
+                    local success, result = pcall(function() return obj:IsOpen() end)
+                    if success then isOpen = result end
+                end
+
+                if obj.isDestroyed then
+                    local success, result = pcall(function() return obj:isDestroyed() end)
+                    if success then isBroken = result end
+                end
+
+                -- Also check isSmashed for broken windows
+                if obj.isSmashed then
+                    local success, result = pcall(function() return obj:isSmashed() end)
+                    if success and result then isBroken = true end
+                end
+
+                -- Also check if glass is broken (GlassHealth <= 0)
+                if obj.getGlassHealth then
+                    local success, health = pcall(function() return obj:getGlassHealth() end)
+                    if success and health <= 0 then isBroken = true end
+                end
+
+                if isOpen or isBroken then
+                    return true
+                end
+            end
+
+            -- Check for doors
+            if instanceof(obj, "IsoDoor") then
+                local isOpen = false
+
+                if obj.IsOpen then
+                    local success, result = pcall(function() return obj:IsOpen() end)
+                    if success then isOpen = result end
+                end
+
+                -- Also check isDestroyed for broken doors
+                if obj.isDestroyed then
+                    local success, result = pcall(function() return obj:isDestroyed() end)
+                    if success and result then isOpen = true end  -- Broken door = open
+                end
+
+                if isOpen then
+                    return true
+                end
+            end
+
+            -- Check for thumpable objects that might be doors/windows (player-built)
+            if instanceof(obj, "IsoThumpable") then
+                -- Check if it's a door
+                if obj.isDoor then
+                    local success, isDoor = pcall(function() return obj:isDoor() end)
+                    if success and isDoor then
+                        local isOpen = false
+                        if obj.IsOpen then
+                            local success2, result = pcall(function() return obj:IsOpen() end)
+                            if success2 then isOpen = result end
+                        end
+                        if isOpen then return true end
+                    end
+                end
+
+                -- Check if it's a window
+                if obj.isWindow then
+                    local success, isWindow = pcall(function() return obj:isWindow() end)
+                    if success and isWindow then
+                        local isOpen = false
+                        if obj.IsOpen then
+                            local success2, result = pcall(function() return obj:IsOpen() end)
+                            if success2 then isOpen = result end
+                        end
+                        if isOpen then return true end
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+--[[
+    Check if a corpse is inside the same building as the player
+    Returns: true if corpse is in the same building, false if outside or different building
+]]--
+function EHR.Corpse.IsCorpseInSameBuilding(player, corpseSquare)
+    if not player or not corpseSquare then return false end
+
+    local playerSquare = player:getCurrentSquare()
+    if not playerSquare then return false end
+
+    -- Get player's building
+    local playerRoom = nil
+    if playerSquare.getRoom then
+        local success, r = pcall(function() return playerSquare:getRoom() end)
+        if success then playerRoom = r end
+    end
+
+    if not playerRoom then return false end  -- Player not in a building
+
+    local playerBuilding = nil
+    if playerRoom.getBuilding then
+        local success, b = pcall(function() return playerRoom:getBuilding() end)
+        if success then playerBuilding = b end
+    end
+
+    if not playerBuilding then return false end
+
+    -- Get corpse's building
+    local corpseRoom = nil
+    if corpseSquare.getRoom then
+        local success, r = pcall(function() return corpseSquare:getRoom() end)
+        if success then corpseRoom = r end
+    end
+
+    if not corpseRoom then return false end  -- Corpse not in a building (outside)
+
+    local corpseBuilding = nil
+    if corpseRoom.getBuilding then
+        local success, b = pcall(function() return corpseRoom:getBuilding() end)
+        if success then corpseBuilding = b end
+    end
+
+    if not corpseBuilding then return false end
+
+    -- Compare building references
+    return playerBuilding == corpseBuilding
+end
+
+-- ============================================
+-- PROTECTION CHECK
+-- ============================================
+
+--[[
+    Calculate protection factor from equipped items
+    Returns: 0-1 (0 = no protection, 1 = full protection)
+]]--
+function EHR.Corpse.GetProtectionFactor(player)
+    local protection = 0
+    local protectiveItemFound = nil
+
+    -- Check for gas mask or respirator using multiple methods
+    -- Method 1: getWornItems()
+    local wornItems = player:getWornItems()
+    local itemCount = 0
+
+    if wornItems then
+        itemCount = wornItems:size()
+        if EHR.DEBUG then
+            EHR.Log(string.format("Corpse protection: Checking %d worn items via getWornItems()", itemCount))
+        end
+
+        for i = 0, itemCount - 1 do
+            local item = wornItems:get(i)
+            if item then
+                local itemType = ""
+                local fullType = ""
+                local displayName = ""
+
+                -- Safely get item properties (check method exists before calling)
+                if item.getType then
+                    local success, result = pcall(function() return item:getType() end)
+                    if success and result then itemType = tostring(result):lower() end
+                end
+                if item.getFullType then
+                    local success, result = pcall(function() return item:getFullType() end)
+                    if success and result then fullType = tostring(result):lower() end
+                end
+                if item.getDisplayName then
+                    local success, result = pcall(function() return item:getDisplayName() end)
+                    if success and result then displayName = tostring(result):lower() end
+                end
+
+                -- Log worn items only in debug mode
+                if EHR.DEBUG then
+                    EHR.Log(string.format("  Worn[%d]: type='%s' full='%s' name='%s'",
+                        i, itemType, fullType, displayName))
+                end
+
+                -- Check for protective items
+                local foundProtection = 0
+                local foundItem = nil
+
+                -- Gas mask (95% protection) - check multiple variations
+                if string.find(itemType, "gasmask") or string.find(fullType, "gasmask") or
+                   string.find(displayName, "gas mask") or string.find(displayName, "gasmask") or
+                   string.find(itemType, "respirator") or string.find(fullType, "respirator") or
+                   string.find(displayName, "respirator") or
+                   string.find(itemType, "hat_gasmask") or string.find(fullType, "hat_gasmask") then
+                    foundProtection = EHR.Corpse.Config.gasMaskProtection
+                    foundItem = displayName
+                -- Surgical mask (60% protection)
+                elseif string.find(itemType, "surgicalmask") or string.find(fullType, "surgicalmask") or
+                       string.find(displayName, "surgical") then
+                    foundProtection = EHR.Corpse.Config.surgicalMaskProtection
+                    foundItem = displayName
+                -- Bandana (50% protection)
+                elseif string.find(itemType, "bandana") or string.find(fullType, "bandana") or
+                       string.find(displayName, "bandana") then
+                    foundProtection = EHR.Corpse.Config.bandanaProtection
+                    foundItem = displayName
+                -- Any other mask (50% protection as fallback)
+                elseif string.find(itemType, "mask") or string.find(fullType, "mask") or
+                       string.find(displayName, "mask") then
+                    foundProtection = EHR.Corpse.Config.bandanaProtection
+                    foundItem = displayName
+                end
+
+                if foundProtection > protection then
+                    protection = foundProtection
+                    protectiveItemFound = foundItem
+                end
+            end
+        end
+    else
+        if EHR.DEBUG then
+            EHR.Log("Corpse protection: getWornItems() returned nil!")
+        end
+    end
+
+    -- Method 2: Check specific body locations for masks (fallback)
+    if protection == 0 then
+        -- Check mask slot directly
+        local maskItem = nil
+        pcall(function()
+            -- Try to get item from mask/face slot
+            local inv = player:getInventory()
+            if inv then
+                -- Check for equipped mask in inventory
+                local items = inv:getItems()
+                for i = 0, items:size() - 1 do
+                    local item = items:get(i)
+                    if item and item:isEquipped() then
+                        local ft = tostring(item:getFullType() or ""):lower()
+                        local dn = tostring(item:getDisplayName() or ""):lower()
+                        if string.find(ft, "mask") or string.find(dn, "mask") then
+                            if EHR.DEBUG then
+                                EHR.Log(string.format("Corpse protection (inv scan): Found equipped mask '%s'", dn))
+                            end
+                            if string.find(ft, "gasmask") or string.find(dn, "gas") then
+                                protection = EHR.Corpse.Config.gasMaskProtection
+                                protectiveItemFound = dn
+                            else
+                                protection = EHR.Corpse.Config.bandanaProtection
+                                protectiveItemFound = dn
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- Final result logging (only in debug mode to avoid spam)
+    if EHR.DEBUG then
+        if protectiveItemFound then
+            EHR.Log(string.format("Corpse: PROTECTION ACTIVE - '%s' = %.0f%% reduction",
+                protectiveItemFound, protection * 100))
+        else
+            EHR.Log(string.format("Corpse: NO PROTECTION - checked %d items, none were masks", itemCount))
+        end
+    end
+
+    return protection
+end
+
+-- ============================================
+-- EXPOSURE CALCULATION
+-- ============================================
+
+--[[
+    Update corpse exposure for a player
+    @param deltaMinutes - Time elapsed in game minutes
+]]--
+function EHR.Corpse.UpdateExposure(player, deltaMinutes)
+    -- Safety checks
+    if not player then return end
+    if not deltaMinutes or deltaMinutes <= 0 then return end
+
+    local exposure = EHR.Corpse.GetExposureData(player)
+    if not exposure then return end
+
+    local config = EHR.Corpse.Config
+
+    -- Count nearby corpses (now includes young category)
+    local total, fresh, young, decomposing, rotten = EHR.Corpse.CountNearbyCorpses(player)
+
+    -- No corpses = reset acute exposure, decay chronic exposure and fatigue multiplier
+    if total == 0 then
+        exposure.acuteGasExposure = math.max(0, exposure.acuteGasExposure - deltaMinutes * 2)
+        -- BUG-008 FIX: Increase decay rate from 0.5 to 2.0 (matches accumulation rate)
+        exposure.fungalExposure = math.max(0, exposure.fungalExposure - deltaMinutes * 2.0)
+        exposure.gasExposure = math.max(0, exposure.gasExposure - deltaMinutes * 2.0)
+        exposure.canSmellCorpses = true
+        exposure.exposureStartTime = nil
+        exposure.hasAcuteSymptoms = false
+        exposure.acuteLevel = 0
+        exposure.lastCorpseCount = 0
+        -- Decay fatigue multiplier when away from corpses
+        local decayRate = EHR.Corpse.Config.gradualFatigue.decayRate or 0.03
+        exposure.fatigueMultiplier = math.max(1.0, (exposure.fatigueMultiplier or 1.0) - decayRate * deltaMinutes)
+        return
+    end
+
+    -- Count only corpses that emit (not fresh ones)
+    local emittingCorpses = young + decomposing + rotten
+    exposure.lastCorpseCount = emittingCorpses
+
+    -- If all corpses are fresh (<24 hours), no exposure yet - treat like no corpses
+    if emittingCorpses == 0 then
+        if EHR.DEBUG then
+            EHR.Log(string.format("Corpse: %d nearby but all fresh (<%.0fh) - no emission yet",
+                total, config.minimumCorpseAge))
+        end
+        -- Reset exposure tracking since no corpses are emitting
+        exposure.acuteGasExposure = math.max(0, exposure.acuteGasExposure - deltaMinutes * 2)
+        -- BUG-008 FIX: Increase decay rate from 0.5 to 2.0 (matches accumulation rate)
+        exposure.fungalExposure = math.max(0, exposure.fungalExposure - deltaMinutes * 2.0)
+        exposure.gasExposure = math.max(0, exposure.gasExposure - deltaMinutes * 2.0)
+        exposure.canSmellCorpses = true
+        exposure.exposureStartTime = nil
+        exposure.hasAcuteSymptoms = false
+        exposure.acuteLevel = 0
+        -- Decay fatigue multiplier since corpses aren't emitting
+        local decayRate = config.gradualFatigue.decayRate or 0.03
+        exposure.fatigueMultiplier = math.max(1.0, (exposure.fatigueMultiplier or 1.0) - decayRate * deltaMinutes)
+        return
+    end
+
+    -- Calculate base exposure points (fresh = 0, so they don't contribute)
+    local basePoints = (fresh * config.exposureRate.fresh) +
+                       (young * config.exposureRate.young) +
+                       (decomposing * config.exposureRate.decomposing) +
+                       (rotten * config.exposureRate.rotten)
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Corpse exposure calc: %d fresh(x0) + %d young(x%.1f) + %d decomp(x%.1f) + %d rotten(x%.1f) = %.2f base pts/min",
+            fresh, young, config.exposureRate.young, decomposing, config.exposureRate.decomposing,
+            rotten, config.exposureRate.rotten, basePoints))
+    end
+
+    -- Apply sandbox speed multiplier
+    local speedMultiplier = EHR.Corpse.GetSpeedMultiplier()
+    basePoints = basePoints * speedMultiplier
+
+    -- Apply protection - ALWAYS check and log
+    local protection = EHR.Corpse.GetProtectionFactor(player)
+    local pointsBeforeProtection = basePoints
+    basePoints = basePoints * (1 - protection)
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Corpse: Protection=%.0f%%, points %.2f -> %.2f (deltaMin=%.3f)",
+            protection * 100, pointsBeforeProtection, basePoints, deltaMinutes))
+    end
+
+    -- Determine environment type
+    local isFungal = EHR.Corpse.IsFungalEnvironment(player)
+    local isEnclosed = EHR.Corpse.IsEnclosedSpace(player)
+    local isIndoors = EHR.Environmental and EHR.Environmental.IsIndoors(player) or false
+
+    -- Apply environmental multipliers
+    local fungalMultiplier = 1.0
+    local gasMultiplier = 1.0
+
+    if isIndoors then
+        gasMultiplier = gasMultiplier * config.indoorMultiplier
+    end
+    if isEnclosed then
+        gasMultiplier = gasMultiplier * config.enclosedMultiplier
+    end
+    if isFungal then
+        fungalMultiplier = fungalMultiplier * config.dampMultiplier
+    end
+
+    -- Accumulate exposure based on environment
+    if isFungal then
+        exposure.fungalExposure = exposure.fungalExposure + (basePoints * fungalMultiplier * deltaMinutes)
+    end
+
+    -- REALISM: Putrefaction (H2S gas) only accumulates INDOORS
+    -- Outdoors, wind disperses the gas - only mild nausea from the smell
+    if isEnclosed or isIndoors then
+        exposure.gasExposure = exposure.gasExposure + (basePoints * gasMultiplier * deltaMinutes)
+        exposure.acuteGasExposure = exposure.acuteGasExposure + (basePoints * gasMultiplier * deltaMinutes)
+    else
+        -- OUTDOORS: Only mild nausea, no dangerous gas accumulation
+        -- Decay any existing gas exposure (wind disperses it)
+        exposure.gasExposure = math.max(0, exposure.gasExposure - deltaMinutes * 3.0)
+        exposure.acuteGasExposure = math.max(0, exposure.acuteGasExposure - deltaMinutes * 3.0)
+
+        -- Apply mild nausea based on corpse count (the smell is unpleasant but not dangerous)
+        EHR.Corpse.ApplyOutdoorNausea(player, emittingCorpses, deltaMinutes)
+    end
+
+    -- BUG-008 FIX: Cap exposure at 3x threshold to prevent unbounded growth
+    local maxFungal = config.fungalExposureThreshold * 3
+    local maxGas = config.gasExposureThreshold * 3
+    exposure.fungalExposure = math.min(maxFungal, exposure.fungalExposure)
+    exposure.gasExposure = math.min(maxGas, exposure.gasExposure)
+
+    -- Track exposure start time for olfactory fatigue
+    local currentWorldHours = getGameTime():getWorldAgeHours()
+    if not exposure.exposureStartTime then
+        exposure.exposureStartTime = currentWorldHours
+        if EHR.DEBUG then
+            EHR.Log(string.format("Corpse: Exposure started at world hour %.2f", currentWorldHours))
+        end
+    end
+
+    -- Check for olfactory fatigue (stop smelling after ~2 minutes)
+    local exposureDurationMinutes = (currentWorldHours - exposure.exposureStartTime) * 60
+    local fatigueThresholdMinutes = config.olfactoryFatigueTime / 60
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Corpse: Exposure duration=%.2f min, threshold=%.2f min, canSmell=%s",
+            exposureDurationMinutes, fatigueThresholdMinutes, tostring(exposure.canSmellCorpses)))
+    end
+
+    if exposureDurationMinutes > fatigueThresholdMinutes and exposure.canSmellCorpses then
+        exposure.canSmellCorpses = false
+        if EHR.DEBUG then
+            EHR.Log(string.format("Corpse: OLFACTORY FATIGUE triggered after %.2f minutes", exposureDurationMinutes))
+        end
+
+        -- Olfactory fatigue is a significant warning (stage change)
+        EHR.Dialogue.SayStageChange(player, "Wait... the smell stopped. That can't be good...")
+    end
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Corpse exposure: %d corpses, fungal=%.1f, gas=%.1f, acute=%.1f",
+            total, exposure.fungalExposure, exposure.gasExposure, exposure.acuteGasExposure))
+    end
+
+    -- Accumulate TB exposure (cumulative, never fully resets)
+    -- All corpse exposure adds to TB risk, regardless of environment
+    local tbPoints = basePoints * deltaMinutes * 0.1  -- Slower accumulation for TB
+    exposure.tbCumulativeExposure = exposure.tbCumulativeExposure + tbPoints
+
+    if EHR.DEBUG and tbPoints > 0 then
+        EHR.Log(string.format("TB cumulative exposure: %.1f (lifetime)", exposure.tbCumulativeExposure))
+    end
+
+    -- Check for disease contraction and acute effects
+    EHR.Corpse.CheckDiseaseContraction(player, exposure)
+    EHR.Corpse.CheckAcuteEffects(player, exposure, deltaMinutes)
+    EHR.Corpse.CheckTBContraction(player, exposure)
+end
+
+-- ============================================
+-- ACUTE GAS EFFECTS (Gradual Fatigue System)
+-- ============================================
+
+--[[
+    Check and apply acute H₂S gas poisoning effects using GRADUAL fatigue system
+    Instead of instant knockdown, this now uses a fatigue multiplier that increases
+    over time while exposed and decreases when safe.
+
+    @param player - The player character
+    @param exposure - Player's exposure data
+    @param deltaMinutes - Time elapsed in game minutes
+]]--
+function EHR.Corpse.CheckAcuteEffects(player, exposure, deltaMinutes)
+    -- Safety checks
+    if not player then return end
+    if not exposure then return end
+    deltaMinutes = deltaMinutes or 0.067  -- Default ~4 seconds
+
+    -- Only apply if Putrefaction is enabled
+    if not EHR.Corpse.IsPutrefactionEnabled() then
+        exposure.acuteGasExposure = 0
+        exposure.acuteLevel = 0
+        exposure.hasAcuteSymptoms = false
+        exposure.fatigueMultiplier = 1.0
+        return
+    end
+
+    -- REALISM: Acute H2S effects only apply INDOORS
+    -- Outdoors, the wind disperses the gas too quickly for dangerous concentrations
+    local isIndoors = EHR.Environmental and EHR.Environmental.IsIndoors(player) or false
+    local isEnclosed = EHR.Corpse.IsEnclosedSpace(player)
+    if not isIndoors and not isEnclosed then
+        -- Outdoors: decay acute effects, no dangerous symptoms
+        exposure.acuteLevel = 0
+        exposure.hasAcuteSymptoms = false
+        return
+    end
+
+    local config = EHR.Corpse.Config
+    local gradualConfig = config.gradualFatigue
+    local acute = exposure.acuteGasExposure
+
+    -- Determine acute level (for dialogue and tracking)
+    local oldLevel = exposure.acuteLevel
+    local newLevel = 0
+
+    if acute >= config.acuteExposure.extreme then
+        newLevel = 4
+    elseif acute >= config.acuteExposure.high then
+        newLevel = 3
+    elseif acute >= config.acuteExposure.medium then
+        newLevel = 2
+    elseif acute >= config.acuteExposure.low then
+        newLevel = 1
+    end
+
+    exposure.acuteLevel = newLevel
+
+    -- Get protection factor
+    local protection = EHR.Corpse.GetProtectionFactor(player)
+
+    -- Update fatigue multiplier based on exposure and protection
+    if gradualConfig.enabled then
+        if newLevel > 0 and protection < 0.9 then
+            -- Exposed without adequate protection - INCREASE multiplier
+            local growthRate = gradualConfig.baseGrowthRate + (gradualConfig.gasExposureBonus * newLevel)
+            growthRate = growthRate * (1 - protection)  -- Protection reduces growth
+            exposure.fatigueMultiplier = math.min(
+                gradualConfig.maxMultiplier,
+                exposure.fatigueMultiplier + (growthRate * deltaMinutes)
+            )
+        elseif newLevel > 0 and protection >= 0.9 then
+            -- Protected (gas mask) but near corpses - slow decay
+            exposure.fatigueMultiplier = math.max(
+                1.0,
+                exposure.fatigueMultiplier - (gradualConfig.protectedDecayRate * deltaMinutes)
+            )
+        else
+            -- Not near dangerous corpses OR low exposure - normal decay
+            exposure.fatigueMultiplier = math.max(
+                1.0,
+                exposure.fatigueMultiplier - (gradualConfig.decayRate * deltaMinutes)
+            )
+        end
+
+        -- Apply gradual fatigue effect
+        EHR.Corpse.ApplyGradualFatigueEffect(player, exposure, deltaMinutes)
+    end
+
+    -- Apply dialogue when level changes (but NOT instant knockdown)
+    -- BUG FIX: Add cooldown to prevent rapid dialogue spam when exposure bounces around thresholds
+    if newLevel >= 1 then
+        exposure.hasAcuteSymptoms = true
+        if oldLevel ~= newLevel then
+            local currentTime = getGameTime():getWorldAgeHours()
+            local lastDialogueTime = exposure.lastAcuteDialogueTime or 0
+            local dialogueCooldownHours = 0.033  -- ~2 minutes cooldown between dialogue triggers
+
+            if (currentTime - lastDialogueTime) >= dialogueCooldownHours then
+                EHR.Corpse.ApplyAcuteDialogue(player, newLevel)
+                exposure.lastAcuteDialogueTime = currentTime
+            elseif EHR.DEBUG then
+                EHR.Log(string.format("Corpse dialogue suppressed: cooldown active (%.1f min remaining)",
+                    (dialogueCooldownHours - (currentTime - lastDialogueTime)) * 60))
+            end
+        end
+    else
+        exposure.hasAcuteSymptoms = false
+    end
+
+    -- Level 4 still has death risk over time
+    if newLevel == 4 then
+        EHR.Corpse.ApplyExtremeDanger(player, deltaMinutes)
+    end
+end
+
+--[[
+    Apply gradual fatigue effect based on fatigue multiplier
+    Instead of instant knockdown, this slowly increases fatigue over time
+]]--
+function EHR.Corpse.ApplyGradualFatigueEffect(player, exposure, deltaMinutes)
+    local stats = player:getStats()
+    if not stats then return end
+
+    local multiplier = exposure.fatigueMultiplier
+    if multiplier <= 1.0 then return end
+
+    -- Apply extra fatigue proportional to (multiplier - 1)
+    -- This means at 2x multiplier, you get double fatigue gain
+    -- At 3x multiplier, you get triple fatigue gain
+    local extraFatigue = (multiplier - 1.0) * 0.002 * deltaMinutes
+
+    if CharacterStat and CharacterStat.FATIGUE then
+        local current = stats:get(CharacterStat.FATIGUE) or 0
+        -- Cap at 0.9 to prevent instant collapse - player will be VERY tired but can still move
+        local newFatigue = math.min(0.9, current + extraFatigue)
+        pcall(function() stats:set(CharacterStat.FATIGUE, newFatigue) end)
+    end
+
+    -- At high multipliers (>2x), also drain endurance slightly
+    if multiplier >= 2.0 and CharacterStat and CharacterStat.ENDURANCE then
+        local current = stats:get(CharacterStat.ENDURANCE) or 1
+        local drain = (multiplier - 1.5) * 0.0005 * deltaMinutes
+        pcall(function() stats:set(CharacterStat.ENDURANCE, math.max(0.1, current - drain)) end)
+    end
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Gradual fatigue: multiplier=%.2fx, extraFatigue=%.4f/min", multiplier, extraFatigue / deltaMinutes))
+    end
+end
+
+--[[
+    Apply dialogue when acute level changes (NO instant effects)
+]]--
+function EHR.Corpse.ApplyAcuteDialogue(player, level)
+    -- Check if dialogue is disabled
+    if EHR.Dialogue.IsDisabled() then return end
+
+    local lines = {
+        [1] = {"My eyes are stinging...", "Ugh, the smell...", "*eyes watering*"},
+        [2] = {"Getting dizzy... need air.", "Head is pounding.", "*coughing*"},
+        [3] = {"Can barely stay focused...", "*heavy breathing* Need to get out...", "Everything's blurry..."},
+        [4] = {"*choking* Can't... breathe...", "*gasping*"}
+    }
+
+    local levelLines = lines[level]
+    if levelLines then
+        -- Stage change - acute gas level changed
+        EHR.Dialogue.SayStageChange(player, levelLines[ZombRand(#levelLines) + 1])
+    end
+
+    -- Minor immediate effects (stress, mild pain) but NO instant fatigue/knockdown
+    local stats = player:getStats()
+    if stats and level >= 2 then
+        if CharacterStat and CharacterStat.STRESS then
+            local current = stats:get(CharacterStat.STRESS) or 0
+            pcall(function() stats:set(CharacterStat.STRESS, math.min(1, current + 0.01 * level)) end)
+        end
+        if CharacterStat and CharacterStat.PAIN and level >= 3 then
+            local current = stats:get(CharacterStat.PAIN) or 0
+            pcall(function() stats:set(CharacterStat.PAIN, math.min(1, current + 0.01 * level)) end)
+        end
+    end
+end
+
+--[[
+    Apply extreme danger effects (Level 4) - blackout/incapacitation
+
+    REALISM UPDATE: H2S from corpses rarely reaches lethal levels unless:
+    - Mass grave scenario (30+ corpses in enclosed space)
+    - Industrial accident (not applicable here)
+
+    Instead of instant death, player blacks out and wakes up with severe debuffs.
+    Death only possible in truly extreme scenarios (mass graves).
+]]--
+function EHR.Corpse.ApplyExtremeDanger(player, deltaMinutes)
+    -- Safety checks
+    if not player then return end
+    if not deltaMinutes or deltaMinutes <= 0 then return end
+
+    -- Don't apply if player already has the disease (disease mechanics handle it)
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(player)
+    if diseaseData and diseaseData.active and diseaseData.active["putrefaction_sickness"] then
+        return
+    end
+
+    local exposure = EHR.Corpse.GetExposureData(player)
+    if not exposure then return end
+
+    -- Check if already blacked out recently (cooldown)
+    local currentTime = getGameTime():getWorldAgeHours()
+    if exposure.lastBlackoutTime and (currentTime - exposure.lastBlackoutTime) < 24 then
+        return  -- 24 hour cooldown between blackouts
+    end
+
+    -- Blackout chance (replaces death for normal scenarios)
+    -- ~10% chance per minute at extreme exposure
+    local blackoutChancePerMinute = 0.10
+    local roll = ZombRand(1000) / 1000
+
+    if roll < (blackoutChancePerMinute * deltaMinutes) then
+        EHR.Corpse.TriggerBlackout(player, exposure)
+    end
+
+    -- DEATH only possible in mass grave scenarios (30+ emitting corpses)
+    local corpseCount = exposure.lastCorpseCount or 0
+    if corpseCount >= 30 then
+        -- Even then, only 2% chance per minute
+        local deathChancePerMinute = 0.02
+        local deathRoll = ZombRand(1000) / 1000
+
+        if deathRoll < (deathChancePerMinute * deltaMinutes) then
+            local acuteLevel = exposure.acuteGasExposure or 0
+            EHR.RecordDeathCause(player, string.format(
+                "H2S Gas Poisoning (Mass Grave) - %d corpses, acute level %.1f, overwhelmed by toxic gas concentration",
+                corpseCount, acuteLevel))
+
+            EHR.Log(string.format("Corpse: Player died from MASS GRAVE H2S poisoning (%d corpses)!", corpseCount))
+            if player.setHealth then
+                pcall(function() player:setHealth(0) end)
+            end
+        end
+    end
+end
+
+--[[
+    Trigger blackout from H2S exposure
+    Player collapses, wakes up later with severe debuffs
+]]--
+function EHR.Corpse.TriggerBlackout(player, exposure)
+    if not player then return end
+
+    EHR.Log("Corpse: Player blacking out from H2S exposure!")
+
+    -- Record blackout time for cooldown
+    exposure.lastBlackoutTime = getGameTime():getWorldAgeHours()
+
+    -- Dialogue
+    if not EHR.Dialogue.IsDisabled() then
+        EHR.Dialogue.SayStageChange(player, "*vision fading* Can't... breathe...")
+    end
+
+    local stats = player:getStats()
+    if not stats then return end
+
+    -- Force collapse via max fatigue
+    if CharacterStat and CharacterStat.FATIGUE then
+        pcall(function() stats:set(CharacterStat.FATIGUE, 1.0) end)
+    end
+
+    -- Severe debuffs when they wake up
+    if CharacterStat then
+        -- Exhaustion
+        if CharacterStat.ENDURANCE then
+            pcall(function() stats:set(CharacterStat.ENDURANCE, 0.1) end)
+        end
+        -- Headache/pain
+        if CharacterStat.PAIN then
+            local current = stats:get(CharacterStat.PAIN) or 0
+            pcall(function() stats:set(CharacterStat.PAIN, math.min(0.8, current + 0.4)) end)
+        end
+        -- Nausea
+        if CharacterStat.FOOD_SICKNESS then
+            local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+            pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, math.min(0.6, current + 0.3)) end)
+        end
+        -- Stress
+        if CharacterStat.STRESS then
+            local current = stats:get(CharacterStat.STRESS) or 0
+            pcall(function() stats:set(CharacterStat.STRESS, math.min(0.9, current + 0.3)) end)
+        end
+    end
+
+    -- Small health damage (not lethal)
+    local bodyDamage = player:getBodyDamage()
+    if bodyDamage then
+        local currentHealth = bodyDamage:getOverallBodyHealth()
+        local newHealth = math.max(30, currentHealth - 15)  -- Lose 15% health, minimum 30%
+        pcall(function() bodyDamage:setOverallBodyHealth(newHealth) end)
+    end
+
+    -- Reset acute exposure after blackout (you've "paid the price")
+    exposure.acuteGasExposure = exposure.acuteGasExposure * 0.5  -- Halve it
+    exposure.acuteLevel = math.max(0, exposure.acuteLevel - 2)
+end
+
+--[[
+    Apply mild nausea when outdoors near corpses
+    The smell is unpleasant but not dangerous - wind disperses the H2S
+
+    @param player - The player character
+    @param corpseCount - Number of emitting corpses nearby
+    @param deltaMinutes - Time elapsed in game minutes
+]]--
+function EHR.Corpse.ApplyOutdoorNausea(player, corpseCount, deltaMinutes)
+    if not player or not corpseCount or corpseCount <= 0 then return end
+
+    local stats = player:getStats()
+    if not stats then return end
+
+    -- Nausea scales slowly with corpse count
+    -- 1-3 corpses: barely noticeable
+    -- 4-10 corpses: mild discomfort
+    -- 10+ corpses: unpleasant but still manageable
+    local nauseaRate = 0
+    if corpseCount >= 10 then
+        nauseaRate = 0.003  -- Noticeable nausea
+    elseif corpseCount >= 4 then
+        nauseaRate = 0.001  -- Mild nausea
+    elseif corpseCount >= 1 then
+        nauseaRate = 0.0003  -- Barely noticeable
+    end
+
+    if nauseaRate > 0 and CharacterStat and CharacterStat.FOOD_SICKNESS then
+        local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+        -- Cap outdoor nausea at 0.3 (queasy but not vomiting)
+        local maxOutdoorNausea = 0.3
+        local newNausea = math.min(maxOutdoorNausea, current + (nauseaRate * deltaMinutes))
+        pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, newNausea) end)
+
+        if EHR.DEBUG and nauseaRate > 0.001 then
+            EHR.Log(string.format("Outdoor nausea: %d corpses, rate=%.4f, current=%.3f",
+                corpseCount, nauseaRate, newNausea))
+        end
+    end
+
+    -- Occasional dialogue about the smell (rare, only with many corpses)
+    if corpseCount >= 5 and ZombRand(500) == 0 then
+        if not EHR.Dialogue.IsDisabled() then
+            local lines = {
+                "Ugh, that smell...",
+                "*wrinkles nose*",
+                "The stench out here...",
+            }
+            EHR.Dialogue.SayRandom(player, lines[ZombRand(#lines) + 1], 100)
+        end
+    end
+end
+
+-- ============================================
+-- DISEASE CONTRACTION
+-- ============================================
+
+--[[
+    Check if specific corpse disease is enabled in sandbox
+]]--
+function EHR.Corpse.IsAspergilliosisEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end  -- Default enabled
+    if options.AspergilliosisEnabled == nil then return true end
+    return options.AspergilliosisEnabled
+end
+
+function EHR.Corpse.IsPutrefactionEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end  -- Default enabled
+    if options.PutrefactionSicknessEnabled == nil then return true end
+    return options.PutrefactionSicknessEnabled
+end
+
+function EHR.Corpse.GetSpeedMultiplier()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return 1.0 end
+    return options.CorpseDiseaseSpeed or 1.0
+end
+
+function EHR.Corpse.IsTBEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end  -- Default enabled
+    if options.TuberculosisEnabled == nil then return true end
+    return options.TuberculosisEnabled
+end
+
+--[[
+    Check if long-term corpse exposure should cause tuberculosis
+    TB is a cumulative disease - it takes weeks/months of exposure
+]]--
+function EHR.Corpse.CheckTBContraction(player, exposure)
+    if not EHR.Corpse.IsTBEnabled() then return end
+
+    local config = EHR.Corpse.Config
+
+    -- Check if above threshold
+    if exposure.tbCumulativeExposure < config.tbExposureThreshold then
+        return
+    end
+
+    -- Only check once per day
+    local currentDay = getGameTime():getDay()
+    if currentDay <= exposure.lastTBCheck then
+        return
+    end
+    exposure.lastTBCheck = currentDay
+
+    -- Don't contract if already have TB
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    if diseaseData and diseaseData.active and diseaseData.active["tuberculosis"] then
+        return
+    end
+
+    -- Calculate chance based on cumulative exposure
+    local exposureRatio = exposure.tbCumulativeExposure / config.tbExposureThreshold
+    local baseChance = config.tbDailyCheckChance * math.min(3, exposureRatio)  -- Cap at 3x threshold
+
+    -- Immunity reduces chance
+    if EHR.Disease and EHR.Disease.CalculateImmunity then
+        local immunity = EHR.Disease.CalculateImmunity(player)
+        baseChance = baseChance / immunity
+    end
+
+    EHR.Log(string.format("TB check: cumulative=%.0f, threshold=%d, daily chance=%.1f%%",
+        exposure.tbCumulativeExposure, config.tbExposureThreshold, baseChance * 100))
+
+    if EHR.Disease and EHR.Disease.TryContract then
+        if EHR.Disease.TryContract(player, "tuberculosis", baseChance) then
+            EHR.Log("Player contracted TUBERCULOSIS from long-term corpse exposure!")
+
+            -- Contracting TB is a significant stage change
+            EHR.Dialogue.SayStageChange(player, "*chronic cough* This cough has been going on for weeks now...")
+
+            -- Don't reset exposure - damage is done
+        end
+    end
+end
+
+--[[
+    Check if corpse exposure should cause disease
+    BUG FIX: Removed early returns that prevented checking both diseases
+]]--
+function EHR.Corpse.CheckDiseaseContraction(player, exposure)
+    local config = EHR.Corpse.Config
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+
+    -- Check for aspergillosis (fungal)
+    if EHR.Corpse.IsAspergilliosisEnabled() and exposure.fungalExposure >= config.fungalExposureThreshold then
+        -- Only contract if don't already have it
+        local hasAspergillosis = diseaseData and diseaseData.active and diseaseData.active["aspergillosis"]
+        if not hasAspergillosis then
+            local exposureRatio = exposure.fungalExposure / config.fungalExposureThreshold
+            local baseChance = math.min(0.4, 0.15 * exposureRatio)
+
+            if EHR.DEBUG then
+                EHR.Log(string.format("Corpse: Aspergillosis check - exposure %.1f, chance %.0f%%",
+                    exposure.fungalExposure, baseChance * 100))
+            end
+
+            if EHR.Disease.TryContract(player, "aspergillosis", baseChance) then
+                exposure.fungalExposure = 0  -- Reset
+            end
+        end
+    end
+
+    -- Check for putrefaction sickness (gas) - ALWAYS check, not early return
+    if EHR.Corpse.IsPutrefactionEnabled() and exposure.gasExposure >= config.gasExposureThreshold then
+        local hasPutrefaction = diseaseData and diseaseData.active and diseaseData.active["putrefaction_sickness"]
+        if not hasPutrefaction then
+            local exposureRatio = exposure.gasExposure / config.gasExposureThreshold
+            local baseChance = math.min(0.5, 0.2 * exposureRatio)
+
+            if EHR.DEBUG then
+                EHR.Log(string.format("Corpse: Putrefaction check - exposure %.1f, chance %.0f%%",
+                    exposure.gasExposure, baseChance * 100))
+            end
+
+            if EHR.Disease.TryContract(player, "putrefaction_sickness", baseChance) then
+                exposure.gasExposure = 0  -- Reset
+                -- BUG FIX: Also reset acute exposure when contracting disease
+                -- Otherwise the acute exposure keeps triggering death checks even after disease is contracted
+                exposure.acuteGasExposure = 0
+                exposure.acuteLevel = 0
+            end
+        end
+    end
+end
+
+-- ============================================
+-- DISEASE EFFECT HANDLERS
+-- ============================================
+
+--[[
+    Apply corpse disease effects (coughing, headaches, etc.)
+    Called from main tick for active corpse diseases
+]]--
+function EHR.Corpse.ApplyDiseaseEffects(player, diseaseId, disease, def)
+    local stage = disease.stage
+    local effects = def.effects and def.effects[stage]
+    if not effects then return end
+
+    -- Coughing (both diseases)
+    if effects.coughingChance and effects.coughingChance > 0 then
+        if ZombRand(1000) / 1000 < effects.coughingChance then
+            if EHR.Environmental and EHR.Environmental.TriggerCough then
+                EHR.Environmental.TriggerCough(player, stage >= 3)
+            end
+        end
+    end
+
+    -- Headache (putrefaction)
+    if effects.headacheChance and effects.headacheChance > 0 then
+        if ZombRand(1000) / 1000 < effects.headacheChance then
+            local stats = player:getStats()
+            if stats and CharacterStat and CharacterStat.PAIN then
+                local current = stats:get(CharacterStat.PAIN) or 0
+                pcall(function() stats:set(CharacterStat.PAIN, math.min(1, current + 0.02)) end)
+            end
+
+            -- Random headache dialogue (20% chance = 1 in 5)
+            EHR.Dialogue.SayRandom(player, "*winces* Head's pounding...", 5)
+        end
+    end
+
+    -- Confusion (putrefaction recovery)
+    if effects.confusionChance and effects.confusionChance > 0 then
+        if ZombRand(1000) / 1000 < effects.confusionChance then
+            if EHR.Environmental and EHR.Environmental.TriggerConfusion then
+                EHR.Environmental.TriggerConfusion(player)
+            end
+        end
+    end
+end
+
+-- ============================================
+-- TICK MANAGEMENT
+-- ============================================
+
+local corpseTickCounter = 0
+local CORPSE_TICK_INTERVAL = 120  -- Every 120 ticks (~4 seconds)
+
+local lastCorpseCheckHour = 0
+
+--[[
+    Main tick handler for corpse diseases
+]]--
+function EHR.Corpse.OnTick()
+    -- Check if disease system is enabled
+    if EHR.Disease and not EHR.Disease.IsEnabled() then return end
+
+    -- Check if either corpse disease is enabled
+    if not EHR.Corpse.IsAspergilliosisEnabled() and not EHR.Corpse.IsPutrefactionEnabled() then
+        return
+    end
+
+    local player = getSpecificPlayer(0)
+    if not player then return end
+    if not player:isAlive() then return end
+
+    -- Initialize if needed
+    EHR.Corpse.InitializePlayer(player)
+
+    -- Throttle updates
+    corpseTickCounter = corpseTickCounter + 1
+    if corpseTickCounter < CORPSE_TICK_INTERVAL then
+        return
+    end
+    corpseTickCounter = 0
+
+    -- Calculate delta time in minutes
+    -- TICK_INTERVAL is 120 ticks, and PZ runs at ~30 ticks/second
+    -- So this runs every ~4 seconds = 4/3600 hours = ~0.00111 hours
+    local gameTime = getGameTime()
+    local currentHour = gameTime:getWorldAgeHours()
+    local deltaHours = currentHour - lastCorpseCheckHour
+
+    -- BUG FIX: 0.067 hours = 4 MINUTES, not 4 seconds!
+    -- 4 seconds = 4/3600 = 0.00111 hours
+    -- This was causing 60x faster exposure accumulation
+    if deltaHours > 1 or deltaHours < 0 then
+        deltaHours = 4 / 3600  -- ~4 seconds = 0.00111 hours (NOT 0.067!)
+    end
+    lastCorpseCheckHour = currentHour
+
+    local deltaMinutes = deltaHours * 60  -- ~0.067 minutes per tick
+
+    -- Update corpse exposure
+    EHR.Corpse.UpdateExposure(player, deltaMinutes)
+
+    -- Apply effects for active corpse diseases
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    if diseaseData and diseaseData.active then
+        for diseaseId, disease in pairs(diseaseData.active) do
+            if diseaseId == "aspergillosis" or diseaseId == "putrefaction_sickness" then
+                local def = EHR.Disease.Diseases[diseaseId]
+                if def then
+                    EHR.Corpse.ApplyDiseaseEffects(player, diseaseId, disease, def)
+                end
+            end
+        end
+    end
+end
+
+-- ============================================
+-- EVENT HANDLERS
+-- ============================================
+
+function EHR.Corpse.OnGameStart()
+    EHR.Log("Corpse diseases module OnGameStart")
+
+    local player = getSpecificPlayer(0)
+    if player then
+        EHR.Corpse.InitializePlayer(player)
+    end
+end
+
+function EHR.Corpse.OnCreatePlayer(playerIndex, player)
+    EHR.Log("Corpse diseases module OnCreatePlayer: " .. playerIndex)
+    EHR.Corpse.InitializePlayer(player)
+end
+
+-- ============================================
+-- EVENT REGISTRATION
+-- ============================================
+
+-- Guard against double registration
+if Events and not EHR.Corpse._eventsRegistered then
+    EHR.Corpse._eventsRegistered = true
+
+    Events.OnTick.Add(EHR.Corpse.OnTick)
+    Events.OnGameStart.Add(EHR.Corpse.OnGameStart)
+    Events.OnCreatePlayer.Add(EHR.Corpse.OnCreatePlayer)
+
+    EHR.Log("Corpse diseases module events registered")
+end
+
+EHR.Log("Corpse diseases module loaded v1.0.0")

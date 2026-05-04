@@ -1,0 +1,257 @@
+﻿UI_IT = {
+    -- Keybind Options
+    UI_EHR_ToggleMedicalMonitor = "Attiva Monitor Medico",
+    UI_EHR_ToggleMedicalMonitor_tt = "Apre/chiude il Monitor Medico con sangue, malattie e farmaci.",
+    UI_EHR_ToggleDebugMenu = "Attiva Menu Debug",
+    UI_EHR_ToggleDebugMenu_tt = "Apre/chiude il Menu Debug EHR (richiede debug o admin).",
+    UI_EHR_ToggleMedicalJournal = "Attiva Diario Medico",
+    UI_EHR_ToggleMedicalJournal_tt = "Apre/chiude il Diario Medico con storico diagnosi e precisione.",
+    UI_EHR_NotBound = "Non assegnato",
+
+    -- Medical Monitor UI Headers
+    UI_EHR_MonitorTitle = "MONITOR MEDICO EHR",
+    UI_EHR_DoseAlerts = "AVVISI DOSI",
+    UI_EHR_BloodComposition = "COMPOSIZIONE DEL SANGUE",
+    UI_EHR_ActiveSubstances = "SOSTANZE ATTIVE (N&C)",
+    UI_EHR_ActiveConditions = "CONDIZIONI ATTIVE",
+    UI_EHR_ActiveMedications = "FARMACI ATTIVI",
+    UI_EHR_DrugInteractions = "INTERAZIONI FARMACI",
+    UI_EHR_SideEffects = "EFFETTI COLLATERALI",
+    UI_EHR_HealingStatus = "STATO DI GUARIGIONE",
+
+    -- Blood Status
+    UI_EHR_BloodVolume = "Sangue: %dmL (%.0f%%)",
+    UI_EHR_SalineVolume = "Soluzione: %dmL (%.0f%%)",
+    UI_EHR_SalineStatus_Lethal = "LETALE!",
+    UI_EHR_SalineStatus_Danger = "PERICOLO",
+    UI_EHR_SalineStatus_Warning = "AVVISO",
+    UI_EHR_SalineStatus_Safe = "SICURO",
+
+    -- Conditions/Medications
+    UI_EHR_NoConditions = "Nessuna condizione attiva",
+    UI_EHR_NoMedications = "Nessun farmaco attivo",
+    UI_EHR_NoInteractions = "Nessuna interazione rilevata",
+    UI_EHR_Severity = "Gravita: ",
+    UI_EHR_Symptoms = "Sintomi: ",
+    UI_EHR_Withdrawal = "! ASTINENZA: ",
+    UI_EHR_BlocksHealing = "[Rallenta la guarigione]",
+
+    -- Medication Status
+    UI_EHR_DoseCount = "Dose %d/%d",
+    UI_EHR_TimeLeft = "%.1fh rimaste",
+    UI_EHR_SymptomRelief = "Sollievo sintomi attivo",
+    UI_EHR_RetakeOverdueMinutes = "ASSUMI ORA! (%.0fm in ritardo)",
+    UI_EHR_RetakeOverdueHours = "ASSUMI ORA! (%.1fh in ritardo)",
+    UI_EHR_RetakeIn = "Assumi tra %.0fm",
+    UI_EHR_NextDose = "Prossima dose tra %.1fh",
+
+    -- Medication Tiers
+    UI_EHR_TierBasic = "Base",
+    UI_EHR_TierOTC = "OTC",
+    UI_EHR_TierRx = "Rx",
+    UI_EHR_TierClinical = "Clinico",
+
+    -- Healing Status
+    UI_EHR_HealingActive = "Guarigione: ATTIVA",
+    UI_EHR_HealingBlocked = "Guarigione: LENTA",
+    UI_EHR_Reason = "Motivo: ",
+
+    -- Side Effects
+    UI_SideEffect_Nausea = "Nausea",
+    UI_SideEffect_Headache = "Mal di testa",
+    UI_SideEffect_Dizziness = "Vertigini",
+    UI_SideEffect_Fatigue = "Fatica",
+    UI_SideEffect_Insomnia = "Insonnia",
+    UI_SideEffect_MetallicTaste = "Sapore metallico",
+    UI_SideEffect_OrangeUrine = "Urina arancione (innocuo)",
+    UI_SideEffect_InjectionPain = "Dolore da iniezione",
+    UI_SideEffect_AbdominalPain = "Dolore addominale",
+    UI_SideEffect_Fever = "Febbre indotta",
+    UI_SideEffect_SevereFatigue = "Fatica grave",
+    UI_SideEffect_TendonWeakness = "Debolezza tendinea",
+    UI_SideEffect_RedManSyndrome = "Sindrome dell'uomo rosso",
+    UI_SideEffect_Immunosuppression = "Immunosoppressione",
+    UI_SideEffect_KidneyStress = "Stress renale",
+    UI_SideEffect_LiverStress = "Stress epatico",
+
+    -- Player Dialogue - Blood Loss
+    UI_EHR_Dialogue_Blackout_Start = "Sta diventando buio...",
+    UI_EHR_Dialogue_Blackout_Wake = "*geme* ...mi pulsa la testa...",
+    UI_EHR_Dialogue_Blood_Lightheaded = "Mi sento stordito...",
+    UI_EHR_Dialogue_Blood_Unconscious = "Non riesco... a restare cosciente...",
+    UI_EHR_Dialogue_Blood_Collapse = "*crolla*",
+    UI_EHR_Dialogue_Blood_HeartStops = "*il cuore si ferma*",
+
+    -- Player Dialogue - Blood Loss Stages
+    UI_EHR_Dialogue_Blood_Stage3 = "Ho perso sangue... devo stare attento.",
+    UI_EHR_Dialogue_Blood_Stage2 = "Sto perdendo troppo sangue... mi sento debole.",
+    UI_EHR_Dialogue_Blood_Stage1 = "A malapena sto in piedi... ho bisogno di aiuto...",
+
+    -- Player Dialogue - Transfusion
+    UI_EHR_Dialogue_Transfusion_Bad = "*si sente molto male* Il sangue... non e compatibile!",
+    UI_EHR_Dialogue_Transfusion_Good = "La trasfusione aiuta... mi sento meglio.",
+    UI_EHR_Dialogue_Saline_Warning = "Devo stare attento... troppo soluzione puo essere pericolosa.",
+    UI_EHR_Dialogue_Saline_Good = "La soluzione aiuta a ripristinare i fluidi.",
+
+    -- Player Dialogue - Body Temperature (Cold)
+    UI_EHR_Temp_Chilly1 = "Inizio ad avere freddo...",
+    UI_EHR_Temp_Chilly2 = "Dovrei trovare un posto piu caldo.",
+    UI_EHR_Temp_Cold1 = "*rabbrividisce* Fa molto freddo...",
+    UI_EHR_Temp_Cold2 = "Devo scaldarmi presto...",
+    UI_EHR_Temp_VeryCold1 = "*denti che battono* N-non smetto di tremare...",
+    UI_EHR_Temp_VeryCold2 = "Ho bisogno di calore... ora...",
+    UI_EHR_Temp_Freezing1 = "*tremori forti* Sto gelando...",
+    UI_EHR_Temp_Freezing2 = "Se non mi scaldo... moriro qui...",
+
+    -- Player Dialogue - Body Temperature (Hot)
+    UI_EHR_Temp_Warm1 = "Inizio ad avere caldo...",
+    UI_EHR_Temp_Warm2 = "Dovrei trovare un po' d'ombra.",
+    UI_EHR_Temp_Hot1 = "*suda* Fa troppo caldo...",
+    UI_EHR_Temp_Hot2 = "Mi serve acqua... e ombra...",
+    UI_EHR_Temp_VeryHot1 = "*ansima* Non reggo piu il caldo...",
+    UI_EHR_Temp_VeryHot2 = "Mi batte la testa... troppo caldo...",
+    UI_EHR_Temp_Overheating1 = "*ansima* Tutto gira... troppo caldo...",
+    UI_EHR_Temp_Overheating2 = "Sto per svenire dal caldo...",
+
+    -- Medical Monitor - Temperature Warning Display Names
+    UI_EHR_Temp_Chilly = "Fresco",
+    UI_EHR_Temp_ChillyDesc = "Senso di freddo",
+    UI_EHR_Temp_Cold = "Freddo",
+    UI_EHR_Temp_ColdDesc = "Fa freddo, cerca calore",
+    UI_EHR_Temp_VeryCold = "Molto freddo",
+    UI_EHR_Temp_VeryColdDesc = "Pericolosamente freddo!",
+    UI_EHR_Temp_HypoRisk = "Rischio ipotermia",
+    UI_EHR_Temp_HypoRiskDesc = "CRITICO: Scaldati subito!",
+    UI_EHR_Temp_Warm = "Caldo",
+    UI_EHR_Temp_WarmDesc = "Senso di caldo",
+    UI_EHR_Temp_Hot = "Molto caldo",
+    UI_EHR_Temp_HotDesc = "Fa caldo, cerca ombra",
+    UI_EHR_Temp_VeryHot = "Troppo caldo",
+    UI_EHR_Temp_VeryHotDesc = "Pericolosamente caldo!",
+    UI_EHR_Temp_HeatRisk = "Rischio colpo di calore",
+    UI_EHR_Temp_HeatRiskDesc = "CRITICO: Rinfrescati subito!",
+
+    -- Context Menu
+    UI_EHR_Context_UseBloodBag = "Usa sacca di sangue",
+    UI_EHR_Context_UseSaline = "Usa soluzione IV",
+    UI_EHR_Context_ExamineHealth = "Esamina salute",
+    UI_EHR_Context_ExamineHealthDesc = "Vedi salute, malattie e farmaci del giocatore.",
+    UI_EHR_Context_OpenMonitor = "Apri Monitor Medico",
+    UI_EHR_Context_TooFar = "Troppo lontano",
+    UI_EHR_Context_TooFarDesc = "Devi essere entro %d caselle per esaminare questo giocatore.",
+
+    -- MP Examination
+    UI_EHR_Examining = "Esaminando: %s",
+
+    -- Medical Journal UI (keys must match EHR_MedicalJournalUI.lua exactly)
+    UI_EHR_MedicalJournal_Title = "DIARIO MEDICO",
+    UI_EHR_Close = "Chiudi",
+    UI_EHR_Refresh = "Aggiorna",
+    UI_EHR_Journal_Tab_Entries = "Voci",
+    UI_EHR_Journal_Tab_Statistics = "Statistiche",
+    UI_EHR_Journal_Filter_All = "Tutto",
+    UI_EHR_Journal_Filter_Correct = "Corretto",
+    UI_EHR_Journal_Filter_Wrong = "Sbagliato",
+    UI_EHR_Journal_Correct = "CORRETTO",
+    UI_EHR_Journal_Wrong = "SBAGLIATO",
+
+    -- Medical Journal Statistics
+    UI_EHR_Journal_Stats_Title = "Statistiche diagnosi",
+    UI_EHR_Journal_Stat_Total = "Diagnosi totali",
+    UI_EHR_Journal_Stat_Correct = "Corrette",
+    UI_EHR_Journal_Stat_Wrong = "Sbagliate",
+    UI_EHR_Journal_Stat_Accuracy = "Precisione",
+    UI_EHR_Journal_Stats_Diseases = "Storico malattie",
+    UI_EHR_Journal_Stat_Contracted = "Contratte",
+    UI_EHR_Journal_Stat_Cured = "Guarite",
+
+    -- Medical Skill Dialogue Tier Groups
+    UI_EHR_Skill_Clueless = "Ignaro",
+    UI_EHR_Skill_Novice = "Novizio",
+    UI_EHR_Skill_Intermediate = "Intermedio",
+    UI_EHR_Skill_Expert = "Esperto",
+    UI_EHR_Skill_Master = "Maestro",
+
+    -- Skill-based disease display
+    UI_EHR_UnknownCondition = "Condizione sconosciuta",
+    UI_EHR_SomethingWrong = "C'e qualcosa che non va...",
+    UI_EHR_UnknownSeverity = "Gravita: ???",
+
+    -- Compact view
+    UI_EHR_Compact_HealingActive = "Guarigione: Attiva",
+    UI_EHR_Compact_HealingSlowed = "Guarigione: Lenta (%s)",
+    UI_EHR_Compact_DrugInteractions = "! %d interazioni farmaci",
+    UI_EHR_Compact_ClickExpand = "[Clicca + per espandere]",
+
+    -- Self-Examination
+    UI_EHR_ExamineButton = "Esamina se stesso",
+    UI_EHR_ExamineButton_tt = "Esamina il tuo stato di salute",
+    UI_EHR_Examine_Healthy = "Mi sento bene. Nulla di strano.",
+    UI_EHR_Examine_HealthyDetailed = "Tutti i parametri sono ok. Sangue normale, nessuna infezione.",
+    UI_EHR_Examine_SomethingWrong = "Qualcosa non va...",
+    UI_EHR_Examine_FeelSick = "Mi sento malato... ma non so cosa.",
+    UI_EHR_Examine_BloodLow = "Ho perso sangue... mi sento debole.",
+    UI_EHR_Examine_BloodCritical = "Ho perso troppo sangue! Serve una trasfusione!",
+    UI_EHR_Examine_BloodDetailed = "Volume sangue circa %d%%. %s",
+    UI_EHR_Examine_DiseaseVague = "Penso di avere qualcosa...",
+    UI_EHR_Examine_DiseaseIdentified = "Credo di avere %s.",
+    UI_EHR_Examine_DiseaseDetailed = "Diagnosi: %s, stadio %d. Gravita: %d/5.",
+    UI_EHR_Examine_WoundInfection = "Una delle ferite sembra infetta...",
+    UI_EHR_Examine_SepsisVague = "Mi sento febbricitante e debole...",
+    UI_EHR_Examine_SepsisIdentified = "Penso di avere un'infezione del sangue... sepsi!",
+    UI_EHR_Examine_SepsisDetailed = "Sepsi confermata, stadio %d. Antibiotici IV subito!",
+    UI_EHR_Examine_MultipleIssues = "Ho piu problemi di salute da gestire.",
+    UI_EHR_Journal_Examination = "Auto-esame",
+    UI_EHR_Journal_ExamResult = "Auto-esame: %s",
+    UI_EHR_Journal_Healthy = "SANO",
+    UI_EHR_Journal_NoIssues = "Nessun problema trovato",
+
+    -- Disease Names (for journal display)
+    UI_EHR_Disease_Unknown = "Condizione sconosciuta",
+    UI_EHR_Disease_Healthy = "Sano",
+    UI_EHR_Disease_None = "Nessuna malattia",
+
+    -- Medication Names (for translation)
+    UI_EHR_Med_Antibiotics = "Antibiotici",
+    UI_EHR_Med_Painkillers = "Antidolorifici",
+    UI_EHR_Med_Vitamins = "Vitamine",
+    UI_EHR_Med_BetaBlockers = "Beta-bloccanti",
+    UI_EHR_Med_ColdFluTablets = "Compresse raffreddore e influenza",
+    UI_EHR_Med_CoughSyrup = "Sciroppo per la tosse",
+    UI_EHR_Med_ElectrolytePowder = "Polvere elettroliti",
+    UI_EHR_Med_BronchodilatorInhaler = "Inalatore broncodilatatore",
+    UI_EHR_Med_AntiNauseaTablets = "Compresse anti-nausea",
+    UI_EHR_Med_AntiInflammatoryPills = "Antinfiammatori",
+    UI_EHR_Med_AntiDiarrhealTablets = "Antidiarroici",
+    UI_EHR_Med_MuscleRelaxants = "Rilassanti muscolari",
+    UI_EHR_Med_CoughSuppressant = "Sedativo della tosse",
+    UI_EHR_Med_AntisepticCream = "Crema antisettica",
+    UI_EHR_Med_AntiviralCapsules = "Capsule antivirali",
+    UI_EHR_Med_PrescriptionAntibiotics = "Antibiotici con prescrizione",
+    UI_EHR_Med_AntifungalTablets = "Antimicotici",
+    UI_EHR_Med_ActivatedCharcoal = "Carbone attivo",
+    UI_EHR_Med_AntiparasiticPills = "Antiparassitari",
+    UI_EHR_Med_OralRehydrationKit = "Kit reidratazione orale",
+    UI_EHR_Med_TetanusAntitoxin = "Antitossina tetanica",
+    UI_EHR_Med_TBAntibiotics = "Antibiotici TB (Isoniazide)",
+    UI_EHR_Med_AntibioticOintment = "Unguento antibiotico",
+    UI_EHR_Med_BroadSpectrumAntibiotics = "Antibiotici ad ampio spettro",
+    UI_EHR_Med_CorticosteroidInjection = "Iniezione di corticosteroidi",
+    UI_EHR_Med_IVAntibiotics = "Antibiotici IV",
+    UI_EHR_Med_IVMetronidazole = "Metronidazolo IV",
+    UI_EHR_Med_IVAmphotericinB = "Amfotericina B IV",
+    UI_EHR_Med_ChelationTherapyKit = "Kit di chelazione",
+    UI_EHR_Med_AlbendazoleInjection = "Iniezione di albendazolo",
+    UI_EHR_Med_IVCiprofloxacin = "Ciprofloxacina IV",
+    UI_EHR_Med_TetanusImmunoglobulin = "Immunoglobulina tetanica",
+    UI_EHR_Med_RifampicinComboPack = "Pacchetto combinato di rifampicina",
+    UI_EHR_Med_IVVancomycin = "Vancomicina IV",
+    UI_EHR_Med_EmergencySepsisKit = "Kit emergenza sepsi",
+    UI_EHR_Med_EpinephrineAutoInjector = "Auto-iniettore di epinefrina",
+
+    -- Food Temperature Effects
+    UI_EHR_Food_Scalding = "*Il cibo caldo mi scalda dentro*",
+    UI_EHR_Food_Warming = "*Mi ha scaldato un po'*",
+    UI_EHR_Food_Frozen = "*Brr, gelo al cervello!*",
+    UI_EHR_Food_Cooling = "*Mi ha rinfrescato*",
+}

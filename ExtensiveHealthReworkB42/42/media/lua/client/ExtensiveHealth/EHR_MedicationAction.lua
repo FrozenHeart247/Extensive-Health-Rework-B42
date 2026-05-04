@@ -183,8 +183,9 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
                 desc = desc .. "Administration: " .. adminType .. " (~" .. timeSeconds .. "s) <LINE> "
 
                 -- Cure time if applicable
-                if medData.cureTimeHours then
-                    desc = desc .. "Treatment time: " .. medData.cureTimeHours .. " hours <LINE> "
+                local treatmentTimeText = EHR.Medication.GetTreatmentTimeText and EHR.Medication.GetTreatmentTimeText(medData) or nil
+                if treatmentTimeText then
+                    desc = desc .. "Treatment time: " .. treatmentTimeText .. " <LINE> "
                 end
 
                 -- Requirements

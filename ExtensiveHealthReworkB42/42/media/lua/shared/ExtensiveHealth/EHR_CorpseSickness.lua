@@ -81,6 +81,7 @@ EHR.CorpseSickness.Config = {
     VANILLA_SICKNESS_CLEAR_THRESHOLD = 0.005,
     VANILLA_SICKNESS_CLEAR_EXPOSURE = 1,
     FOOD_SICKNESS_SUPPRESS_DURATION = 0.5,
+    FOOD_RISK_GRACE_HOURS = 6,
     -- Dialogue lines for smell warning
     SMELL_DIALOGUES = {
         "Ugh, that smell...",
@@ -1021,7 +1022,58 @@ function EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
     if not lastBadFood then return false end
 
     currentHour = currentHour or getGameTime():getWorldAgeHours()
-    return currentHour - lastBadFood < 24
+    local foodCuredTime = history and history.lastFoodCuredTime
+    if foodCuredTime and foodCuredTime >= lastBadFood then
+        if EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
+            EHR.Disease.ClearFoodRiskHistory(history)
+        else
+            history.lastBadFood = nil
+            history.lastFoodRiskReason = nil
+            history.lastFoodRiskChance = nil
+            history.lastFoodAccumulatedRisk = nil
+            history.foodRiskAccumulated = nil
+            history.foodRiskLastTime = nil
+        end
+        return false
+    end
+
+    local elapsed = currentHour - lastBadFood
+    local graceHours = EHR.CorpseSickness.Config.FOOD_RISK_GRACE_HOURS or 6
+    if elapsed >= graceHours then
+        if EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
+            EHR.Disease.ClearFoodRiskHistory(history)
+        else
+            history.lastBadFood = nil
+            history.lastFoodRiskReason = nil
+            history.lastFoodRiskChance = nil
+            history.lastFoodAccumulatedRisk = nil
+            history.foodRiskAccumulated = nil
+            history.foodRiskLastTime = nil
+        end
+        return false
+    end
+
+    if elapsed > 0.25 and not EHR.CorpseSickness.HasActiveFoodDisease(player) then
+        local stats = player:getStats()
+        if stats and CharacterStat and CharacterStat.FOOD_SICKNESS then
+            local ok, foodSickness = pcall(function() return stats:get(CharacterStat.FOOD_SICKNESS) end)
+            if ok and (foodSickness or 0) <= 0.02 then
+                if EHR.Disease and EHR.Disease.ClearFoodRiskHistory then
+                    EHR.Disease.ClearFoodRiskHistory(history)
+                else
+                    history.lastBadFood = nil
+                    history.lastFoodRiskReason = nil
+                    history.lastFoodRiskChance = nil
+                    history.lastFoodAccumulatedRisk = nil
+                    history.foodRiskAccumulated = nil
+                    history.foodRiskLastTime = nil
+                end
+                return false
+            end
+        end
+    end
+
+    return true
 end
 
 function EHR.CorpseSickness.ShouldSuppressFoodSickness(player, currentHour)

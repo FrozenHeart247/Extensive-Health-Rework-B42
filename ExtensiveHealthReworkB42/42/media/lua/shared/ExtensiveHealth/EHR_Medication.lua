@@ -291,7 +291,11 @@ EHR.Medication.Database = {
         treats = {"food_poisoning", "corpse_sickness"},
         displayName = "Activated Charcoal",
         usageMessage = "You swallow activated charcoal. It absorbs the toxins.",
-        cureTimeHours = 24, -- 1 day to cure
+        cureTimeHours = 6, -- Fallback cure time
+        diseaseCureTimeHours = {
+            food_poisoning = 6,
+            corpse_sickness = 8,
+        },
     },
 
     ["ExtensiveHealth.AntiparasiticPills"] = {
@@ -1350,6 +1354,46 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
 end
 
+function EHR.Medication.GetCureTimeHours(medData, diseaseId, tierEffects)
+    if not medData then return 72 end
+
+    local cureTimeHours = medData.cureTimeHours or 72
+    if diseaseId and medData.diseaseCureTimeHours and medData.diseaseCureTimeHours[diseaseId] then
+        cureTimeHours = medData.diseaseCureTimeHours[diseaseId]
+    end
+
+    local cureRate = tierEffects and tierEffects.cureRate or 1.0
+    if cureRate <= 0 then cureRate = 1.0 end
+
+    return cureTimeHours / cureRate
+end
+
+function EHR.Medication.GetTreatmentTimeText(medData)
+    if not medData then return nil end
+
+    if medData.diseaseCureTimeHours and medData.treats then
+        local parts = {}
+        for _, diseaseId in ipairs(medData.treats) do
+            local hours = medData.diseaseCureTimeHours[diseaseId]
+            if hours then
+                local diseaseDef = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId]
+                local diseaseName = diseaseDef and diseaseDef.name or diseaseId
+                table.insert(parts, diseaseName .. ": " .. tostring(hours) .. "h")
+            end
+        end
+
+        if #parts > 0 then
+            return table.concat(parts, ", ")
+        end
+    end
+
+    if medData.cureTimeHours then
+        return tostring(medData.cureTimeHours) .. " hours"
+    end
+
+    return nil
+end
+
 function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, itemFullType)
     if not player or not diseaseId then return end
 
@@ -1394,7 +1438,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
     if tierEffects.canCure then
         medTracking.activeTreatments[diseaseId] = {
             startTime = currentHour,
-            cureTimeHours = (medData.cureTimeHours or 72) / tierEffects.cureRate,
+            cureTimeHours = EHR.Medication.GetCureTimeHours(medData, diseaseId, tierEffects),
             medicationName = medData.displayName,
             tier = medData.tier,
             medKey = medKey,

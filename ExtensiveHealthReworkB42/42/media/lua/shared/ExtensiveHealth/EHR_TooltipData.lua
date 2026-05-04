@@ -280,7 +280,7 @@ EHR.Tooltips.Data = {
         tier = 2,
         description = "Medical-grade activated charcoal.",
         cures = {"Food Poisoning", "Corpse Sickness"},
-        treatmentTime = "24 hours",
+    treatmentTime = "Food poisoning: 6 hours; corpse sickness: 8 hours",
         effects = {"Absorbs toxins", "CURES food poisoning and corpse sickness"},
     },
     ["ExtensiveHealth.AntiparasiticPills"] = {

@@ -106,7 +106,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.PillsVitamins"},  -- 15% symptom relief
             tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.AntiDiarrheal", "ExtensiveHealth.ElectrolytePowder"},  -- 40% relief
-            tier2 = {"ExtensiveHealth.ActivatedCharcoal"},  -- Cures in 24h
+            tier2 = {"ExtensiveHealth.ActivatedCharcoal"},  -- Cures in 6h
             tier3 = {},  -- No clinical treatment needed
         },
         stageEntryDialogue = {
@@ -535,7 +535,15 @@ EHR.Disease.FoodRisks = {
     uncooked = 0.40,        -- 40% chance from raw meat
     burned = 0.05,          -- 5% chance from burned food
     stale = 0.10,           -- 10% chance from stale food
-    -- These stack with immunity modifiers
+}
+
+-- Food poisoning is not a one-frame lottery: repeated risky bites stack up.
+EHR.Disease.FoodRiskAccumulation = {
+    decayPerHour = 0.20,
+    maxChance = 0.95,
+    guaranteedThreshold = 0.80,
+    pendingSicknessScale = 45,
+    pendingSicknessMax = 24,
 }
 
 -- ============================================
@@ -774,6 +782,7 @@ function EHR.Disease.TryContract(player, diseaseId, baseChance)
     local immunity = EHR.Disease.CalculateImmunity(player)
     local specificImmunity = data.immunity[diseaseId] or 0
     if diseaseId == "food_poisoning" then
+        immunity = 1.0
         specificImmunity = 0
         data.immunity[diseaseId] = 0
     end
@@ -858,6 +867,9 @@ function EHR.Disease.Contract(player, diseaseId)
     -- Record food exposure in history
     if diseaseId == "food_poisoning" or def.category == "food" then
         data.history.lastBadFood = currentHour
+        data.history.foodRiskAccumulated = 0
+        data.history.foodRiskLastTime = nil
+        data.history.lastFoodAccumulatedRisk = nil
     end
 end
 
@@ -1168,6 +1180,60 @@ end
 -- FOOD TRANSMISSION HOOK
 -- ============================================
 
+function EHR.Disease.ClearFoodRiskHistory(history)
+    if not history then return end
+
+    history.lastBadFood = nil
+    history.lastFoodRiskReason = nil
+    history.lastFoodRiskChance = nil
+    history.lastFoodAccumulatedRisk = nil
+    history.foodRiskAccumulated = nil
+    history.foodRiskLastTime = nil
+end
+
+function EHR.Disease.GetAccumulatedFoodRisk(player, addedRisk, riskReason)
+    local data = EHR.Disease.GetDiseaseData(player)
+    local history = data and data.history
+    if not history then return addedRisk or 0 end
+
+    local cfg = EHR.Disease.FoodRiskAccumulation or {}
+    local now = getGameTime():getWorldAgeHours()
+    local previous = history.foodRiskAccumulated or 0
+    local lastTime = history.foodRiskLastTime or now
+    local elapsed = math.max(0, now - lastTime)
+    local decayed = math.max(0, previous - ((cfg.decayPerHour or 0.20) * elapsed))
+    local accumulated = math.min(1.0, decayed + (addedRisk or 0))
+
+    history.foodRiskAccumulated = accumulated
+    history.foodRiskLastTime = now
+    history.lastFoodRiskReason = riskReason or history.lastFoodRiskReason
+    history.lastFoodRiskChance = addedRisk or history.lastFoodRiskChance
+    history.lastFoodAccumulatedRisk = accumulated
+
+    return accumulated
+end
+
+function EHR.Disease.GetPendingFoodRiskSickness(player)
+    local data = EHR.Disease.GetDiseaseData(player)
+    local history = data and data.history
+    if not history or not history.lastBadFood then return 0 end
+    if data.active and data.active["food_poisoning"] then return 0 end
+
+    local cfg = EHR.Disease.FoodRiskAccumulation or {}
+    local now = getGameTime():getWorldAgeHours()
+    local lastTime = history.foodRiskLastTime or history.lastBadFood
+    local elapsed = math.max(0, now - lastTime)
+    local accumulated = math.max(0, (history.foodRiskAccumulated or 0) - ((cfg.decayPerHour or 0.20) * elapsed))
+
+    if accumulated <= 0 then
+        EHR.Disease.ClearFoodRiskHistory(history)
+        return 0
+    end
+
+    history.lastFoodAccumulatedRisk = accumulated
+    return math.min(cfg.pendingSicknessMax or 24, accumulated * (cfg.pendingSicknessScale or 45))
+end
+
 --[[
     Check food item for disease risk
     Called when player eats food
@@ -1284,14 +1350,43 @@ function EHR.Disease.CheckFoodRisk(player, item)
     if risk > 0 then
         local itemName = safeCall("getDisplayName") or safeCall("getName") or "unknown"
         local diseaseData = EHR.Disease.GetDiseaseData(player)
+        local now = getGameTime():getWorldAgeHours()
         if diseaseData and diseaseData.history then
-            diseaseData.history.lastBadFood = getGameTime():getWorldAgeHours()
+            diseaseData.history.lastBadFood = now
             diseaseData.history.lastFoodRiskReason = riskReason
             diseaseData.history.lastFoodRiskChance = risk
         end
-        EHR.Log(string.format("Risky food consumed: %s (%s) - %.0f%% base risk",
-            itemName, riskReason, risk * 100))
-        EHR.Disease.TryContract(player, "food_poisoning", risk)
+
+        if diseaseData and diseaseData.active and diseaseData.active["food_poisoning"] then
+            EHR.Log(string.format("Risky food consumed: %s (%s) - %.0f%% base risk (food poisoning already active)",
+                itemName, riskReason, risk * 100))
+            return
+        end
+
+        local accumulatedRisk = EHR.Disease.GetAccumulatedFoodRisk(player, risk, riskReason)
+        local cfg = EHR.Disease.FoodRiskAccumulation or {}
+        local contractChance = math.min(cfg.maxChance or 0.95, accumulatedRisk)
+        local contracted = false
+
+        EHR.Log(string.format("Risky food consumed: %s (%s) - %.0f%% base risk, %.0f%% accumulated risk",
+            itemName, riskReason, risk * 100, contractChance * 100))
+
+        if accumulatedRisk >= (cfg.guaranteedThreshold or 0.80) then
+            EHR.Disease.Contract(player, "food_poisoning")
+            diseaseData = EHR.Disease.GetDiseaseData(player)
+            contracted = diseaseData and diseaseData.active and diseaseData.active["food_poisoning"] ~= nil
+        else
+            contracted = EHR.Disease.TryContract(player, "food_poisoning", contractChance)
+        end
+
+        if contracted then
+            diseaseData = EHR.Disease.GetDiseaseData(player)
+            if diseaseData and diseaseData.history then
+                diseaseData.history.foodRiskAccumulated = 0
+                diseaseData.history.foodRiskLastTime = nil
+                diseaseData.history.lastFoodAccumulatedRisk = nil
+            end
+        end
     end
 end
 
@@ -1595,7 +1690,12 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
         end
     end
 
-    if worstStage == 0 then return 0 end
+    if worstStage == 0 then
+        if ignoreDiseaseId ~= "food_poisoning" and EHR.Disease.GetPendingFoodRiskSickness then
+            return EHR.Disease.GetPendingFoodRiskSickness(player)
+        end
+        return 0
+    end
 
     -- Get base level for this stage
     local baseLevel = EHR.Disease.VanillaSicknessLevels[worstStage] or 0
@@ -1610,10 +1710,15 @@ end
 function EHR.Disease.ResetFoodSicknessAfterCure(player, curedDiseaseId)
     if not player then return end
 
+    local data = EHR.Disease.GetDiseaseData(player)
+    if data and data.history then
+        EHR.Disease.ClearFoodRiskHistory(data.history)
+        data.history.lastFoodCuredTime = getGameTime():getWorldAgeHours()
+    end
+
     local stats = player:getStats()
     if not stats or not CharacterStat then return end
 
-    local data = EHR.Disease.GetDiseaseData(player)
     local active = data and data.active or {}
     if active["corpse_sickness"] then return end
 

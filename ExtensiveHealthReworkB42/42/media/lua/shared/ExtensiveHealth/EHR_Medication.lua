@@ -2123,6 +2123,10 @@ function EHR.Medication.ApplySideEffect(player, effectId)
 
     if player:isLocalPlayer() then
         player:Say("Side effect: " .. sideEffect.displayName)
+
+        if effectId == "dizziness" and EHR.ToxinVision and EHR.ToxinVision.StartMedicationEpisode then
+            EHR.ToxinVision.StartMedicationEpisode(player)
+        end
     end
 
     EHR.Log("Applied side effect: " .. effectId .. " (duration: " .. sideEffect.duration .. " hours)")

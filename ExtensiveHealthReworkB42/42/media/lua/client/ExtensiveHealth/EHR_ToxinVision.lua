@@ -19,6 +19,8 @@ EHR.ToxinVision.Config = {
     CHECK_INTERVAL_HOURS = 1 / 60,      -- one game minute
     MIN_DURATION_MINUTES = 10,
     MAX_DURATION_MINUTES = 20,
+    MEDICATION_MIN_DURATION_MINUTES = 10,
+    MEDICATION_MAX_DURATION_MINUTES = 20,
     MIN_INTERVAL_MINUTES = 25,
     MAX_INTERVAL_MINUTES = 45,
 
@@ -281,6 +283,7 @@ function EHR.ToxinVision.StartEpisode(player, playerIndex, currentHour)
     local cfg = EHR.ToxinVision.Config
     state.savedSearchState = saved
     state.active = true
+    state.source = "toxin"
     state.activeUntilHour = currentHour + randomMinutesAsHours(cfg.MIN_DURATION_MINUTES, cfg.MAX_DURATION_MINUTES)
 
     if EHR.ToxinVision.Apply(playerIndex) then
@@ -291,6 +294,35 @@ function EHR.ToxinVision.StartEpisode(player, playerIndex, currentHour)
     end
 end
 
+function EHR.ToxinVision.StartMedicationEpisode(player)
+    if not isPlayerValid(player) then return false end
+
+    local playerIndex = getPlayerIndex(player, 0)
+    local state = EHR.ToxinVision.GetState(playerIndex)
+    if state.active then return false end
+
+    local currentHour = getWorldHour()
+    local saved = captureSearchState(playerIndex)
+    if not saved then return false end
+
+    local cfg = EHR.ToxinVision.Config
+    state.savedSearchState = saved
+    state.active = true
+    state.source = "medication"
+    state.activeUntilHour = currentHour + randomMinutesAsHours(
+        cfg.MEDICATION_MIN_DURATION_MINUTES,
+        cfg.MEDICATION_MAX_DURATION_MINUTES
+    )
+
+    if EHR.ToxinVision.Apply(playerIndex) then
+        EHR.Log("ToxinVision: medication dizziness episode started")
+        return true
+    end
+
+    EHR.ToxinVision.StopEpisode(playerIndex, currentHour, false)
+    return false
+end
+
 function EHR.ToxinVision.StopEpisode(playerIndex, currentHour, scheduleNext)
     local state = EHR.ToxinVision.GetState(playerIndex)
 
@@ -299,6 +331,7 @@ function EHR.ToxinVision.StopEpisode(playerIndex, currentHour, scheduleNext)
     end
 
     state.active = false
+    state.source = nil
     state.activeUntilHour = nil
     state.savedSearchState = nil
 
@@ -311,7 +344,9 @@ function EHR.ToxinVision.UpdatePlayer(player, playerIndex, currentHour)
     local state = EHR.ToxinVision.GetState(playerIndex)
 
     if not EHR.ToxinVision.HasPeakToxinPoisoning(player) then
-        EHR.ToxinVision.StopEpisode(playerIndex, currentHour, false)
+        if state.source == "toxin" then
+            EHR.ToxinVision.StopEpisode(playerIndex, currentHour, false)
+        end
         state.nextEpisodeHour = nil
         return
     end
@@ -342,7 +377,7 @@ function EHR.ToxinVision.OnTick()
 
         if state.active then
             if currentHour >= (state.activeUntilHour or 0) then
-                EHR.ToxinVision.StopEpisode(playerIndex, currentHour, true)
+                EHR.ToxinVision.StopEpisode(playerIndex, currentHour, state.source == "toxin")
             else
                 EHR.ToxinVision.Apply(playerIndex)
             end

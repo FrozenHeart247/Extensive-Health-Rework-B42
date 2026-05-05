@@ -676,7 +676,7 @@ EHR.Disease.Diseases["heat_stroke"] = {
     Treatment: Anti-parasitic medication (rare)
     Key: Muscle pain is distinctive - affects melee damage
 ]]--
-EHR.Disease.Diseases["trichinosis"] = {
+EHR.Disease.Diseases["trichinosis"] = EHR.Disease.Diseases["trichinosis"] or {
     name = "Trichinosis",
     -- Timing (in game hours)
     incubationMin = 24,     -- 24 hours minimum
@@ -770,7 +770,7 @@ EHR.Disease.Diseases["trichinosis"] = {
     Treatment: Hydration, rest, anti-nausea meds
     Key: Teaches hand hygiene - wash before eating
 ]]--
-EHR.Disease.Diseases["gastroenteritis"] = {
+EHR.Disease.Diseases["gastroenteritis"] = EHR.Disease.Diseases["gastroenteritis"] or {
     name = "Gastroenteritis",
     -- Timing (in game hours)
     incubationMin = 4,      -- 4 hours minimum

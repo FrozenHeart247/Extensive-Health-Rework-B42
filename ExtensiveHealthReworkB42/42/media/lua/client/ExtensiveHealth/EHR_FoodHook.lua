@@ -17,6 +17,7 @@ EHR.FoodHook = {}
 
 -- Track if we've already hooked
 EHR.FoodHook.initialized = false
+EHR.FoodHook.drinkInitialized = false
 
 --[[
     Override ISEatFoodAction:perform to detect food consumption
@@ -57,6 +58,8 @@ end
     Also hook into drinking for contaminated water
 ]]--
 function EHR.FoodHook.InitializeDrink()
+    if EHR.FoodHook.drinkInitialized then return end
+
     -- Check if ISDrinkFromBottle exists
     if not ISDrinkFromBottle then
         EHR.Log("FoodHook: ISDrinkFromBottle not found, skipping drink hook")
@@ -102,6 +105,7 @@ function EHR.FoodHook.InitializeDrink()
     end
 
     EHR.Log("FoodHook: ISDrinkFromBottle.perform hooked successfully")
+    EHR.FoodHook.drinkInitialized = true
 end
 
 -- Initialize on game start
@@ -127,8 +131,8 @@ end
 
 -- Reset handler for death/respawn
 function EHR.FoodHook.Reset()
-    EHR.FoodHook.initialized = false
-    EHR.Log("FoodHook: Reset - will re-hook on next game start")
+    -- The action hook is global. Reinstalling it after respawn stacks wrappers.
+    EHR.Log("FoodHook: Reset - global hook remains installed")
 end
 
 -- Register death handler

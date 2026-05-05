@@ -556,6 +556,36 @@ EHR.Disease.FoodRiskMemory = EHR.Disease.FoodRiskMemory or {}
 -- ============================================
 
 local DISEASE_TICK_INTERVAL = 60  -- Update every 60 ticks (~2 seconds)
+local EHR_DiseaseEffectTimeScale = 1
+
+local function EHR_DiseaseGetRuntimeTimeScale()
+    local scale = 1
+    local gameTime = getGameTime and getGameTime() or nil
+
+    if gameTime then
+        local okTrue, trueMultiplier = pcall(function()
+            if gameTime.getTrueMultiplier then
+                return gameTime:getTrueMultiplier()
+            end
+            return nil
+        end)
+        if okTrue and type(trueMultiplier) == "number" and trueMultiplier > 0 then
+            scale = trueMultiplier
+        else
+            local okMult, multiplier = pcall(function()
+                if gameTime.getMultiplier then
+                    return gameTime:getMultiplier()
+                end
+                return nil
+            end)
+            if okMult and type(multiplier) == "number" and multiplier > 0 then
+                scale = multiplier / 1.6
+            end
+        end
+    end
+
+    return math.max(1, math.min(40, scale))
+end
 
 local DIALOGUE_TICK_INTERVAL = 1800  -- Check dialogue every 1800 ticks (~1 minute)
 
@@ -1027,7 +1057,14 @@ function EHR.Disease.UpdateProgression(player, data)
 
                 -- Apply effects based on stage
                 if disease.stage > 1 then  -- Not in incubation
-                    EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
+                    local effectScale = EHR_DiseaseGetRuntimeTimeScale()
+                    local previousEffectScale = EHR_DiseaseEffectTimeScale
+                    EHR_DiseaseEffectTimeScale = effectScale
+                    local okEffects, effectErr = pcall(EHR.Disease.ApplyEffects, player, diseaseId, disease, def)
+                    EHR_DiseaseEffectTimeScale = previousEffectScale
+                    if not okEffects then
+                        error(effectErr)
+                    end
                 end
             end  -- End of stuck-check else block
         end
@@ -1092,6 +1129,7 @@ end
 ]]--
 local function EHR_DiseaseDrainEndurance(stats, amount, floor)
     if not stats or not amount or amount <= 0 then return end
+    amount = amount * (EHR_DiseaseEffectTimeScale or 1)
     floor = floor or 0.35
 
     if CharacterStat and CharacterStat.ENDURANCE then
@@ -1123,6 +1161,7 @@ end
 
 local function EHR_DiseaseAddStat(stats, stat, amount)
     if not stats or not stat or not amount or amount == 0 then return end
+    amount = amount * (EHR_DiseaseEffectTimeScale or 1)
 
     pcall(function()
         local current = stats:get(stat) or 0
@@ -1132,6 +1171,7 @@ end
 
 local function EHR_DiseaseRaiseStatToward(stats, stat, target, step, maxValue)
     if not stats or not stat or not target or not step or step <= 0 then return end
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
     maxValue = maxValue or 1
 
     pcall(function()
@@ -1145,6 +1185,7 @@ end
 
 local function EHR_DiseaseRaisePainToward(stats, target, step)
     if not stats or not target or not step or step <= 0 then return end
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
     target = math.min(1, math.max(0, target))
 
     if stats.getPain and stats.setPain then
@@ -1165,7 +1206,14 @@ local function EHR_DiseaseRaisePainToward(stats, target, step)
         end
     end
 
-    EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.PAIN, target, step, 1)
+    if CharacterStat and CharacterStat.PAIN then
+        pcall(function()
+            local current = stats:get(CharacterStat.PAIN) or 0
+            if current < target then
+                stats:set(CharacterStat.PAIN, math.min(target, math.min(current + step, 1)))
+            end
+        end)
+    end
 end
 
 local function EHR_DiseaseRoll(chance)
@@ -1671,6 +1719,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
     end
 
     local function trySymptom(key, chance, cooldownHours, callback)
+        chance = (chance or 0) * (EHR_DiseaseEffectTimeScale or 1)
         if EHR_DiseaseRoll(chance) and EHR_DiseaseCanTriggerSymptom(disease, key, cooldownHours) then
             pcall(callback)
         end
@@ -2384,11 +2433,13 @@ function EHR.Disease.CheckFoodRisk(player, item)
         addRisk("trichinosis", trichinosisReason, trichinosisRisk)
     end
 
-    -- Stale food check (age-based)
+    -- Stale food check (age-based, with B42 freshness fallback)
     if isRotten ~= true and isBurnt ~= true and age and offAge then
         if age > offAge * 0.8 then  -- More than 80% to spoilage
             addRisk("food_poisoning", "stale", EHR.Disease.FoodRisks.stale)
         end
+    elseif isRotten ~= true and isBurnt ~= true and isFresh == false then
+        addRisk("food_poisoning", "stale", EHR.Disease.FoodRisks.stale)
     end
 
     local gastroRisk, gastroReason = EHR.Disease.GetGastroenteritisRisk(player)

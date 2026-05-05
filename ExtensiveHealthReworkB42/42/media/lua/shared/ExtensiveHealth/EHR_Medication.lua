@@ -2104,22 +2104,34 @@ function EHR.Medication.Update(player)
     -- Update active treatments
     local treatmentsToRemove = {}
     for diseaseId, treatment in pairs(medTracking.activeTreatments) do
-        local elapsed = currentHour - treatment.startTime
-        local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
-
-        if elapsed >= treatment.cureTimeHours and courseComplete then
-            -- Treatment complete - cure the disease
-            if EHR.Disease and EHR.Disease.Cure then
-                EHR.Disease.Cure(player, diseaseId)
-                if player:isLocalPlayer() then
-                    player:Say("Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
-                end
-            end
+        if type(treatment) ~= "table" then
             table.insert(treatmentsToRemove, diseaseId)
-        elseif elapsed >= treatment.cureTimeHours and not courseComplete then
-            if not treatment.awaitingDoses then
-                treatment.awaitingDoses = true
-                EHR.Log("Treatment time reached for " .. diseaseId .. " but course still needs more doses")
+        else
+            local startTime = tonumber(treatment.startTime)
+            local cureTimeHours = tonumber(treatment.cureTimeHours)
+
+            if not startTime or not cureTimeHours or cureTimeHours <= 0 then
+                table.insert(treatmentsToRemove, diseaseId)
+                EHR.Log("Removed invalid active treatment data for " .. tostring(diseaseId))
+            else
+                local elapsed = math.max(0, currentHour - startTime)
+                local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
+
+                if elapsed >= cureTimeHours and courseComplete then
+                    -- Treatment complete - cure the disease
+                    if EHR.Disease and EHR.Disease.Cure then
+                        EHR.Disease.Cure(player, diseaseId)
+                        if player:isLocalPlayer() then
+                            player:Say("Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
+                        end
+                    end
+                    table.insert(treatmentsToRemove, diseaseId)
+                elseif elapsed >= cureTimeHours and not courseComplete then
+                    if not treatment.awaitingDoses then
+                        treatment.awaitingDoses = true
+                        EHR.Log("Treatment time reached for " .. diseaseId .. " but course still needs more doses")
+                    end
+                end
             end
         end
     end
@@ -2131,21 +2143,29 @@ function EHR.Medication.Update(player)
     -- Update active side effects
     local effectsToRemove = {}
     for effectId, effectData in pairs(medTracking.activeSideEffects) do
-        local elapsed = currentHour - effectData.startTime
-
-        if elapsed >= effectData.duration then
-            -- Side effect expired
-            local sideEffect = EHR.Medication.SideEffects[effectId]
-            if sideEffect and sideEffect.onEnd then
-                sideEffect.onEnd(player)
-            end
+        if type(effectData) ~= "table" then
             table.insert(effectsToRemove, effectId)
-            EHR.Log("Side effect expired: " .. effectId)
         else
-            -- Reapply effect each tick
             local sideEffect = EHR.Medication.SideEffects[effectId]
-            if sideEffect and sideEffect.effects then
-            sideEffect.effects(player, effectData)
+            local startTime = tonumber(effectData.startTime) or currentHour
+            local duration = tonumber(effectData.duration) or (sideEffect and sideEffect.duration) or 0
+            effectData.startTime = startTime
+            effectData.duration = duration
+
+            local elapsed = math.max(0, currentHour - startTime)
+
+            if duration <= 0 or elapsed >= duration then
+                -- Side effect expired
+                if sideEffect and sideEffect.onEnd then
+                    sideEffect.onEnd(player)
+                end
+                table.insert(effectsToRemove, effectId)
+                EHR.Log("Side effect expired: " .. effectId)
+            else
+                -- Reapply effect each tick
+                if sideEffect and sideEffect.effects then
+                    sideEffect.effects(player, effectData)
+                end
             end
         end
     end
@@ -2193,36 +2213,42 @@ function EHR.Medication.GetActiveTreatments(player)
     local currentHour = gameTime:getWorldAgeHours()
 
     for diseaseId, treatment in pairs(medTracking.activeTreatments) do
-        local elapsed = currentHour - treatment.startTime
-        local remaining = treatment.cureTimeHours - elapsed
-        local progress = elapsed / treatment.cureTimeHours
+        if type(treatment) == "table" then
+            local startTime = tonumber(treatment.startTime)
+            local cureTimeHours = tonumber(treatment.cureTimeHours)
+            if startTime and cureTimeHours and cureTimeHours > 0 then
+                local elapsed = math.max(0, currentHour - startTime)
+                local remaining = cureTimeHours - elapsed
+                local progress = elapsed / cureTimeHours
 
-        -- Get dose information if available
-        local doseInfo = nil
-        if treatment.medKey then
-            doseInfo = EHR.Medication.GetDoseStatus(player, treatment.medKey)
+                -- Get dose information if available
+                local doseInfo = nil
+                if treatment.medKey then
+                    doseInfo = EHR.Medication.GetDoseStatus(player, treatment.medKey)
+                end
+                local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
+
+                table.insert(treatments, {
+                    diseaseId = diseaseId,
+                    medKey = treatment.medKey,
+                    medicationName = treatment.medicationName,
+                    tier = treatment.tier,
+                    hoursRemaining = math.max(0, remaining),
+                    progress = math.min(1, progress),
+                    -- Dose timing info
+                    doseCount = doseInfo and doseInfo.doseCount or 0,
+                    totalDosesNeeded = doseInfo and doseInfo.totalDosesNeeded or 0,
+                    dosesRemaining = doseInfo and doseInfo.dosesRemaining or 0,
+                    hoursUntilNextDose = doseInfo and doseInfo.hoursUntilNextDose or 0,
+                    isDoseActive = doseInfo and doseInfo.isDoseActive or false,
+                    hoursActiveRemaining = doseInfo and doseInfo.hoursActiveRemaining or 0,
+                    isOverdue = doseInfo and doseInfo.isOverdue or false,
+                    hoursOverdue = doseInfo and doseInfo.hoursOverdue or 0,
+                    courseComplete = courseComplete,
+                    awaitingDoses = treatment.awaitingDoses == true,
+                })
+            end
         end
-        local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
-
-        table.insert(treatments, {
-            diseaseId = diseaseId,
-            medKey = treatment.medKey,
-            medicationName = treatment.medicationName,
-            tier = treatment.tier,
-            hoursRemaining = math.max(0, remaining),
-            progress = math.min(1, progress),
-            -- Dose timing info
-            doseCount = doseInfo and doseInfo.doseCount or 0,
-            totalDosesNeeded = doseInfo and doseInfo.totalDosesNeeded or 0,
-            dosesRemaining = doseInfo and doseInfo.dosesRemaining or 0,
-            hoursUntilNextDose = doseInfo and doseInfo.hoursUntilNextDose or 0,
-            isDoseActive = doseInfo and doseInfo.isDoseActive or false,
-            hoursActiveRemaining = doseInfo and doseInfo.hoursActiveRemaining or 0,
-            isOverdue = doseInfo and doseInfo.isOverdue or false,
-            hoursOverdue = doseInfo and doseInfo.hoursOverdue or 0,
-            courseComplete = courseComplete,
-            awaitingDoses = treatment.awaitingDoses == true,
-        })
     end
 
     return treatments
@@ -2240,16 +2266,20 @@ function EHR.Medication.GetActiveSideEffects(player)
 
     for effectId, effectData in pairs(medTracking.activeSideEffects) do
         local sideEffect = EHR.Medication.SideEffects[effectId]
-        if sideEffect then
-            local elapsed = currentHour - effectData.startTime
-            local remaining = effectData.duration - elapsed
+        if sideEffect and type(effectData) == "table" then
+            local startTime = tonumber(effectData.startTime)
+            local duration = tonumber(effectData.duration) or sideEffect.duration
+            if startTime and duration then
+                local elapsed = math.max(0, currentHour - startTime)
+                local remaining = duration - elapsed
 
-            table.insert(effects, {
-                effectId = effectId,
-                displayName = sideEffect.displayName,
-                severity = sideEffect.severity,
-                hoursRemaining = math.max(0, remaining),
-            })
+                table.insert(effects, {
+                    effectId = effectId,
+                    displayName = sideEffect.displayName,
+                    severity = sideEffect.severity,
+                    hoursRemaining = math.max(0, remaining),
+                })
+            end
         end
     end
 

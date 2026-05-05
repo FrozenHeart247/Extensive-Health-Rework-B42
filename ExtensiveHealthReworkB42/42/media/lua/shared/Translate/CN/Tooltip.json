@@ -24,7 +24,7 @@
     "Tooltip_AntiviralCapsules":  "Prescription antiviral medication. \u003cLINE\u003e CURES viral infections (cold, gastroenteritis). \u003cLINE\u003e Treatment time: 48 hours.",
     "Tooltip_PrescriptionAntibiotics":  "Strong prescription antibiotics. \u003cLINE\u003e CURES bacterial infections (wounds, cellulitis, pneumonia). \u003cLINE\u003e Treatment time: 72 hours.",
     "Tooltip_AntifungalTablets":  "Oral antifungal medication. \u003cLINE\u003e CURES fungal infections (aspergillosis). \u003cLINE\u003e Treatment time: 5 days.",
-    "Tooltip_ActivatedCharcoal":  "Medical-grade activated charcoal. \u003cLINE\u003e Absorbs toxins - CURES food poisoning and corpse sickness. \u003cLINE\u003e Treatment time: food poisoning 6h, corpse sickness 8h.",
+    "Tooltip_ActivatedCharcoal":  "Medical-grade activated charcoal. \u003cLINE\u003e Absorbs toxins - CURES food poisoning, corpse sickness, and toxin poisoning. \u003cLINE\u003e Treatment time: food poisoning 6h, corpse sickness 8h, toxin poisoning 12h.",
     "Tooltip_AntiparasiticPills":  "Antiparasitic medication. \u003cLINE\u003e CURES parasitic infections (trichinosis). \u003cLINE\u003e Treatment time: 7 days.",
     "Tooltip_OralRehydrationKit":  "Medical rehydration solution kit. \u003cLINE\u003e CURES dehydration-based conditions (dysentery, heat exhaustion). \u003cLINE\u003e Treatment time: 48 hours.",
     "Tooltip_TetanusAntitoxin":  "Tetanus antitoxin injection. \u003cLINE\u003e Neutralizes tetanus toxin - CURES tetanus. \u003cLINE\u003e Requires syringe. Treatment time: 5 days.",

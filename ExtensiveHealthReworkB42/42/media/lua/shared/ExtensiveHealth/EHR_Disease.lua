@@ -13,7 +13,7 @@
     B42 API Notes (preserved from discovery):
     - CharacterStat.FOOD_SICKNESS: Component stat for food sickness (0-1 scale)
     - CharacterStat.SICKNESS: Aggregate stat that drives moodles (thresholds: 25%/50%/75%/90%)
-    - CharacterStat.POISON: Raw food triggers this (values up to 14+), causes rapid death - must suppress
+    - CharacterStat.POISON: Raw food can spike this, but true PoisonPower food must remain dangerous
     - Moodles are READ-ONLY from Lua (no setMoodleLevel), driven by underlying stats
     - Old B41 methods like getFoodSicknessLevel()/setFoodSicknessLevel() DO NOT EXIST in B42
 ]]--
@@ -180,6 +180,36 @@ EHR.Disease.Diseases = {
             [2] = {"My muscles hurt so much...", "I can barely move..."},
             [3] = {"*screams in pain*", "It feels like parasites are in my muscles!", "I might die from this..."},
             [4] = {"Slowly getting better...", "Never eating raw meat again..."},
+        },
+    },
+
+    ["toxin_poisoning"] = {
+        name = "Toxin Poisoning",
+        category = "food",
+        incubationMin = 1,
+        incubationMax = 4,
+        durationMin = 24,
+        durationMax = 96,
+        baseSeverity = 0.65,
+        canKill = true,
+        stageCount = 4,
+        treatments = {
+            tier0 = {},
+            tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.ElectrolytePowder"},
+            tier2 = {"ExtensiveHealth.ActivatedCharcoal"},
+            tier3 = {},
+        },
+        stageEntryDialogue = {
+            [1] = "That tasted wrong...",
+            [2] = "My stomach is turning... I think that was poisonous...",
+            [3] = "*retches* Something is badly wrong...",
+            [4] = "The poison is finally passing...",
+        },
+        dialogue = {
+            [1] = {"My mouth feels bitter...", "That was a mistake..."},
+            [2] = {"I feel poisoned...", "My stomach is burning...", "I'm getting dizzy..."},
+            [3] = {"*vomits*", "I need help...", "My body feels like it's shutting down..."},
+            [4] = {"Still shaky...", "I think I'm recovering..."},
         },
     },
 
@@ -1092,6 +1122,8 @@ function EHR.Disease.OnRecovery(player, diseaseId)
     -- Food poisoning should stay fully risk-based on each bad meal.
     if diseaseId == "food_poisoning" then
         data.immunity[diseaseId] = 0
+    elseif diseaseId == "toxin_poisoning" then
+        data.immunity[diseaseId] = 0
     else
         data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
     end
@@ -1111,6 +1143,10 @@ function EHR.Disease.OnRecovery(player, diseaseId)
     -- Record cure in Medical Journal
     if EHR.MedicalJournal and EHR.MedicalJournal.RecordCure then
         EHR.MedicalJournal.RecordCure(player, diseaseId)
+    end
+
+    if diseaseId == "toxin_poisoning" and EHR.Disease.ClearVanillaPoison then
+        EHR.Disease.ClearVanillaPoison(player)
     end
 
     if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
@@ -1166,6 +1202,16 @@ local function EHR_DiseaseAddStat(stats, stat, amount)
     pcall(function()
         local current = stats:get(stat) or 0
         stats:set(stat, math.min(1, math.max(0, current + amount)))
+    end)
+end
+
+local function EHR_DiseaseReduceStat(stats, stat, amount)
+    if not stats or not stat or not amount or amount <= 0 then return end
+    amount = amount * (EHR_DiseaseEffectTimeScale or 1)
+
+    pcall(function()
+        local current = stats:get(stat) or 0
+        stats:set(stat, math.max(0, current - amount))
     end)
 end
 
@@ -1780,6 +1826,99 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             EHR_DiseaseTriggerVomit(player)
         end)
 
+    elseif diseaseId == "toxin_poisoning" then
+        local toxinType = disease.toxinType or "toxin"
+        local isMushroom = toxinType == "mushroom"
+        local isBerry = toxinType == "berry"
+        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "toxin_poisoning")
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "toxin_poisoning", disease)
+        local nauseaRelief = EHR_DiseaseGetActiveSymptomReduction(player, "toxin_poisoning", "nausea")
+        local vomitingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "toxin_poisoning", "vomiting")
+        local dehydrationRelief = EHR_DiseaseGetActiveSymptomReduction(player, "toxin_poisoning", "dehydration")
+        local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "toxin_poisoning", "weakness")
+        local toxinMult = isMushroom and 1.20 or isBerry and 0.75 or 0.95
+        local vomitMult = math.max(0.08, symptomMult * (1 - math.max(vomitingRelief, nauseaRelief * 0.5)))
+        local hydrationMult = math.max(0.15, symptomMult * (1 - dehydrationRelief))
+        local weaknessMult = math.max(0.20, symptomMult * (1 - weaknessRelief))
+        local painMult = 1.0
+        local stage2EnduranceFloor = 0.70
+        local stage3EnduranceFloor = isMushroom and 0.35 or 0.50
+        local stage4EnduranceFloor = 0.82
+
+        if curativeTreatment then
+            disease.toxinHealthCap = nil
+            toxinMult = toxinMult * 0.45
+            vomitMult = math.max(0.03, vomitMult * 0.35)
+            hydrationMult = math.max(0.06, hydrationMult * 0.45)
+            weaknessMult = math.max(0.08, weaknessMult * 0.35)
+            painMult = 0.35
+            stage2EnduranceFloor = 0.86
+            stage3EnduranceFloor = isMushroom and 0.62 or 0.72
+            stage4EnduranceFloor = 0.90
+
+            if CharacterStat and CharacterStat.POISON then
+                pcall(function() stats:set(CharacterStat.POISON, 0) end)
+            end
+            EHR_DiseaseReduceStat(stats, CharacterStat and CharacterStat.SICKNESS, 0.006 * severity)
+            EHR_DiseaseReduceStat(stats, CharacterStat and CharacterStat.FOOD_SICKNESS, 0.006 * severity)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.ENDURANCE, 0.003 * severity)
+        end
+
+        if stage == 2 then
+            EHR_DiseaseDrainEndurance(stats, 0.007 * severity * toxinMult * weaknessMult, stage2EnduranceFloor)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.0009 * severity * toxinMult * hydrationMult)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, 0.22 * severity * toxinMult, 0.0025 * severity, 1)
+        elseif stage == 3 then
+            EHR_DiseaseDrainEndurance(stats, 0.017 * severity * toxinMult * weaknessMult, stage3EnduranceFloor)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.0018 * severity * toxinMult * hydrationMult)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.0006 * severity * vomitMult)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, (isMushroom and 0.55 or 0.38) * severity, 0.004 * severity, 1)
+            EHR_DiseaseRaisePainToward(stats, (isMushroom and 0.22 or 0.12) * severity * painMult, 0.006 * severity * painMult)
+        elseif stage == 4 then
+            EHR_DiseaseDrainEndurance(stats, 0.003 * severity * weaknessMult, stage4EnduranceFloor)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00035 * severity * hydrationMult)
+        end
+
+        local vomitChance = (stage == 3 and 0.007 or stage == 2 and 0.0025 or 0.0007) * severity * toxinMult * vomitMult
+        trySymptom("toxin_vomit", vomitChance, 0.16, function()
+            EHR_DiseaseTriggerVomit(player)
+        end)
+
+        local dizzyChance = (stage == 3 and 0.005 or stage == 2 and 0.002 or 0.0005) * severity * toxinMult * weaknessMult
+        trySymptom("toxin_dizzy", dizzyChance, 0.20, function()
+            EHR_DiseaseTriggerDizziness(player)
+        end)
+
+        if isMushroom and stage == 3 and not curativeTreatment then
+            if not disease.toxinHealthCap then
+                disease.toxinHealthCap = EHR_DiseaseGetBodyHealth(player)
+            end
+            EHR_DiseaseClampBodyHealth(player, disease.toxinHealthCap)
+
+            if EHR_DiseaseCanTriggerSymptom(disease, "toxin_health_damage", 0.35) then
+                local damage = 0.45 + (1.10 * severity)
+                local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                    player,
+                    damage,
+                    "Toxin poisoning - untreated poisonous mushroom caused systemic poisoning"
+                )
+
+                if newHealth then
+                    disease.toxinHealthCap = math.min(disease.toxinHealthCap or 100, newHealth)
+                    EHR_DiseaseClampBodyHealth(player, disease.toxinHealthCap)
+                end
+
+                if newHealth and newHealth <= 15 and EHR_DiseaseRoll(0.012 * severity) then
+                    EHR_DiseaseKillPlayer(
+                        player,
+                        "Toxin poisoning - severe poisonous mushroom ingestion became fatal"
+                    )
+                end
+            end
+        elseif not isMushroom then
+            disease.toxinHealthCap = nil
+        end
+
     elseif diseaseId == "trichinosis" then
         -- Parasite infection: muscle pain, feverish fatigue and weakness.
         local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "trichinosis")
@@ -2210,6 +2349,165 @@ function EHR.Disease.GetPendingFoodRiskSickness(player)
     return math.min(cfg.pendingSicknessMax or 24, accumulated * (cfg.pendingSicknessScale or 45))
 end
 
+function EHR.Disease.GetPoisonSeverity(poisonPower, toxinType)
+    local power = math.max(0, tonumber(poisonPower) or 0)
+    local powerBonus = math.min(0.30, power * 0.08)
+    local severity = 0.55 + powerBonus
+
+    if toxinType == "mushroom" then
+        severity = 0.72 + math.min(0.28, power * 0.08)
+    elseif toxinType == "berry" then
+        severity = 0.38 + math.min(0.22, power * 0.06)
+    end
+
+    return math.max(0.25, math.min(1.0, severity))
+end
+
+function EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+    if not player then return end
+    toxinType = toxinType or "toxin"
+
+    local data = EHR.Disease.GetDiseaseData(player)
+    if not data or not data.active then return end
+
+    local now = getGameTime():getWorldAgeHours()
+    local severity = EHR.Disease.GetPoisonSeverity(poisonPower, toxinType)
+    local active = data.active["toxin_poisoning"]
+    if not active then
+        EHR.Disease.Contract(player, "toxin_poisoning")
+        data = EHR.Disease.GetDiseaseData(player)
+        active = data and data.active and data.active["toxin_poisoning"]
+    end
+
+    if not active then return end
+
+    local function rand(max)
+        if ZombRand and max and max > 0 then return ZombRand(max) end
+        return 0
+    end
+
+    active.severity = math.max(active.severity or 0, severity)
+    active.toxinType = toxinType
+    active.toxinSource = itemName or active.toxinSource or "unknown"
+    active.poisonPower = math.max(active.poisonPower or 0, tonumber(poisonPower) or 0)
+
+    local incubationHours = toxinType == "mushroom" and (2 + rand(4)) or (1 + rand(2))
+    local durationHours = 36 + rand(25)
+    if toxinType == "mushroom" then
+        durationHours = 72 + rand(49)
+    elseif toxinType == "berry" then
+        durationHours = 24 + rand(25)
+    end
+
+    active.startTime = math.min(active.startTime or now, now)
+    active.incubationEnd = math.min(active.incubationEnd or (now + incubationHours), now + incubationHours)
+    active.endTime = math.max(active.endTime or (now + durationHours), now + durationHours)
+    active.peakTime = math.min(active.peakTime or (now + incubationHours + (durationHours * 0.30)),
+        now + incubationHours + (durationHours * 0.30))
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Applied toxin poisoning from %s (%s, power=%.2f, severity=%.2f)",
+            itemName or "unknown", toxinType, tonumber(poisonPower) or 0, active.severity or severity))
+    end
+end
+
+function EHR.Disease.ClearVanillaPoison(player)
+    local data = EHR.Disease.GetDiseaseData(player)
+    if data and data.history then
+        data.history.vanillaPoison = nil
+        data.history.suppressExternalFoodSicknessUntil = getGameTime():getWorldAgeHours() + 24
+    end
+
+    local stats = player and player:getStats() or nil
+    if stats and CharacterStat and CharacterStat.POISON then
+        pcall(function() stats:set(CharacterStat.POISON, 0) end)
+    end
+
+    if player and player.transmitModData then
+        pcall(function() player:transmitModData() end)
+    end
+end
+
+function EHR.Disease.ShouldSuppressExternalFoodSickness(player)
+    local data = EHR.Disease.GetDiseaseData(player)
+    local history = data and data.history
+    if not history then return false end
+    if history.vanillaPoison then return false end
+
+    local suppressUntil = tonumber(history.suppressExternalFoodSicknessUntil)
+    if not suppressUntil then return false end
+
+    local now = getGameTime():getWorldAgeHours()
+    if now > suppressUntil then
+        history.suppressExternalFoodSicknessUntil = nil
+        return false
+    end
+
+    local active = data and data.active or {}
+    if active["corpse_sickness"] then return false end
+
+    local modData = player and player:getModData() or nil
+    local corpseData = modData and modData.EHR_CorpseSickness
+    if corpseData and (corpseData.currentExposure or 0) > 0.01 then return false end
+
+    return true
+end
+
+function EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
+    local data = EHR.Disease.GetDiseaseData(player)
+    local history = data and data.history
+    if not history then return end
+
+    local now = getGameTime():getWorldAgeHours()
+    history.suppressExternalFoodSicknessUntil = nil
+    history.vanillaPoison = {
+        source = itemName or "unknown",
+        poisonPower = poisonPower or 0,
+        poisonDetectionLevel = poisonDetectionLevel or 0,
+        toxinType = toxinType or "toxin",
+        startTime = now,
+        graceUntil = now + 24,
+    }
+
+    if player.transmitModData then
+        pcall(function() player:transmitModData() end)
+    end
+
+    if EHR.DEBUG then
+        EHR.Log(string.format("Vanilla poison food consumed: %s (power=%.2f, detect=%s)",
+            itemName or "unknown", poisonPower or 0, tostring(poisonDetectionLevel)))
+    end
+end
+
+function EHR.Disease.ShouldPreserveVanillaPoison(player, currentPoison)
+    local data = EHR.Disease.GetDiseaseData(player)
+    local history = data and data.history
+    local poisonData = history and history.vanillaPoison
+    if not poisonData then return false end
+
+    local now = getGameTime():getWorldAgeHours()
+    local poisonLevel = currentPoison or 0
+
+    if EHR_DiseaseGetActiveCurativeTreatment(player, "toxin_poisoning") then
+        poisonData.absorbedByTreatment = true
+        poisonData.graceUntil = now
+        return false
+    end
+
+    if poisonLevel > 0.01 then
+        poisonData.lastPoisonTime = now
+        poisonData.graceUntil = now + 12
+        return true
+    end
+
+    if now <= (poisonData.graceUntil or 0) then
+        return true
+    end
+
+    history.vanillaPoison = nil
+    return false
+end
+
 function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     if not item or isCooked == true or isBurnt == true then return 0, nil end
 
@@ -2410,7 +2708,23 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local itemName = safeCall("getDisplayName") or safeCall("getName") or "unknown"
     local itemFullType = safeCall("getFullType") or ""
     local foodType = safeCall("getFoodType") or safeCall("getEatType") or ""
-    local nameLower = string.lower(itemName .. " " .. itemFullType .. " " .. tostring(foodType))
+    local herbalistType = safeCall("getHerbalistType") or ""
+    local nameLower = string.lower(itemName .. " " .. itemFullType .. " " .. tostring(foodType) .. " " .. tostring(herbalistType))
+    local poisonPower = tonumber(safeCall("getPoisonPower")) or 0
+    local poisonDetectionLevel = tonumber(safeCall("getPoisonDetectionLevel")) or 0
+
+    if poisonPower > 0 then
+        local toxinType = "toxin"
+        local herbalistLower = string.lower(tostring(herbalistType or ""))
+        if herbalistLower == "mushroom" or string.find(nameLower, "mushroom", 1, true) then
+            toxinType = "mushroom"
+        elseif herbalistLower == "berry" or string.find(nameLower, "berry", 1, true) or string.find(nameLower, "berries", 1, true) then
+            toxinType = "berry"
+        end
+
+        EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
+        EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+    end
 
     -- B42 alternative: check if item has "Rotten" in name or category
     if isRotten == nil then
@@ -2517,6 +2831,12 @@ function EHR.Disease.Cure(player, diseaseId)
 
         data.active[diseaseId] = nil
 
+        if diseaseId == "toxin_poisoning" and EHR.Disease.ClearVanillaPoison then
+
+            EHR.Disease.ClearVanillaPoison(player)
+
+        end
+
         if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
             EHR.CorpseSickness.ResetAfterCure(player)
@@ -2556,8 +2876,15 @@ function EHR.Disease.CureAll(player)
 
     local curedCorpseSickness = false
     local curedFoodSickness = false
+    local curedToxinPoisoning = false
 
     for diseaseId, _ in pairs(data.active) do
+
+        if diseaseId == "toxin_poisoning" then
+
+            curedToxinPoisoning = true
+
+        end
 
         if diseaseId == "corpse_sickness" then
 
@@ -2589,6 +2916,12 @@ function EHR.Disease.CureAll(player)
     if curedFoodSickness and EHR.Disease.ResetFoodSicknessAfterCure then
 
         EHR.Disease.ResetFoodSicknessAfterCure(player)
+
+    end
+
+    if curedToxinPoisoning and EHR.Disease.ClearVanillaPoison then
+
+        EHR.Disease.ClearVanillaPoison(player)
 
     end
 
@@ -2807,6 +3140,10 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
         adjustedLevel = adjustedLevel * EHR_DiseaseGetActiveSymptomMultiplier(player, worstDiseaseId, worstDisease)
     end
 
+    if worstDiseaseId == "toxin_poisoning" and EHR_DiseaseGetActiveCurativeTreatment(player, "toxin_poisoning") then
+        adjustedLevel = adjustedLevel * 0.45
+    end
+
     if worstDiseaseId == "gastroenteritis" then
         local gastroFloor = EHR_DiseaseGetGastroSicknessFloor(player, ignoreDiseaseId)
         if gastroFloor then
@@ -2864,7 +3201,12 @@ function EHR.Disease.ResetFoodSicknessAfterCure(player, curedDiseaseId)
     end
 
     if CharacterStat.POISON then
-        pcall(function() stats:set(CharacterStat.POISON, 0) end)
+        local currentPoison = 0
+        local ok, value = pcall(function() return stats:get(CharacterStat.POISON) end)
+        if ok and value then currentPoison = value end
+        if not EHR.Disease.ShouldPreserveVanillaPoison(player, currentPoison) then
+            pcall(function() stats:set(CharacterStat.POISON, 0) end)
+        end
     end
 
     local playerID = player:getUsername() or "default"
@@ -2897,12 +3239,18 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
         return
     end
 
-    -- CRITICAL: Suppress POISON IMMEDIATELY on every call
-    -- POISON values spike to 14+ from raw food and cause rapid death
-    -- Must be done BEFORE any other processing to prevent frame-perfect deaths
+    -- CRITICAL: Suppress POISON IMMEDIATELY on every call unless it is a real
+    -- vanilla poisonous item (berries/mushrooms/tainted food with PoisonPower).
+    -- Raw food can still spike POISON to 14+ and cause frame-perfect deaths.
     if CharacterStat and CharacterStat.POISON then
         local success, poisonVal = pcall(function() return stats:get(CharacterStat.POISON) end)
         if success and poisonVal and poisonVal > 0.05 then
+            if EHR.Disease.ShouldPreserveVanillaPoison(player, poisonVal) then
+                if EHR.DEBUG then
+                    EHR.Log(string.format("SyncVanilla: Preserving vanilla POISON %.3f", poisonVal))
+                end
+                return
+            end
             pcall(function() stats:set(CharacterStat.POISON, 0) end)
             if EHR.DEBUG then
                 EHR.Log(string.format("SyncVanilla: Suppressed POISON immediately: %.3f -> 0", poisonVal))
@@ -2938,6 +3286,26 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     local targetLevel = EHR.Disease.GetTargetVanillaSickness(player)
 
     if targetLevel == 0 and currentVanilla > 0.01 then
+        if EHR.Disease.ShouldSuppressExternalFoodSickness and EHR.Disease.ShouldSuppressExternalFoodSickness(player) then
+            if CharacterStat.FOOD_SICKNESS then
+                pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, 0) end)
+            end
+            if CharacterStat.SICKNESS then
+                pcall(function() stats:set(CharacterStat.SICKNESS, 0) end)
+            end
+            if CharacterStat.POISON then
+                pcall(function() stats:set(CharacterStat.POISON, 0) end)
+            end
+
+            local playerID = player:getUsername() or "default"
+            cachedSicknessTargets[playerID] = {target = 0, lastSetTime = getGameTime():getWorldAgeHours()}
+
+            if EHR.DEBUG then
+                EHR.Log(string.format("SyncVanilla: Cleared post-cure FOOD_SICKNESS residue %.3f", currentVanilla))
+            end
+            return
+        end
+
         if EHR.CorpseSickness and EHR.CorpseSickness.ShouldSuppressFoodSickness and EHR.CorpseSickness.ShouldSuppressFoodSickness(player) then
             if CharacterStat.FOOD_SICKNESS then
                 pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, 0) end)
@@ -2989,6 +3357,7 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
             currentPoison = val
         end
     end
+    local preserveVanillaPoison = EHR.Disease.ShouldPreserveVanillaPoison(player, currentPoison)
 
     -- BUG-014 FIX: Snap values away from moodle thresholds to prevent flicker
     -- Moodle thresholds: 0.25 (Queasy), 0.50 (Nauseous), 0.75 (Sick), 0.90 (Fever)
@@ -3047,7 +3416,7 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     end
     local sicknessDifference = math.abs(currentSickness - targetB42)
     local sicknessBelowTarget = targetB42 > 0 and currentSickness < targetB42 - 0.02
-    local needsUpdate = vanillaAboveTarget or difference > 0.12 or sicknessDifference > 0.08 or sicknessBelowTarget or currentPoison > 0.1
+    local needsUpdate = vanillaAboveTarget or difference > 0.12 or sicknessDifference > 0.08 or sicknessBelowTarget or (currentPoison > 0.1 and not preserveVanillaPoison)
 
     if needsUpdate then
         local successFood = pcall(function()
@@ -3063,10 +3432,10 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
             end)
         end
 
-        -- CRITICAL: Suppress POISON stat - raw food triggers POISON which causes rapid death!
-        -- POISON values can go to 14+ and cause instant death. Zero it out.
+        -- CRITICAL: Suppress raw-food POISON spikes, but preserve real vanilla
+        -- poison from poisonous berries/mushrooms and intentionally tainted food.
         local successPoison = false
-        if currentPoison > 0.1 and CharacterStat.POISON then
+        if currentPoison > 0.1 and CharacterStat.POISON and not preserveVanillaPoison then
             successPoison = pcall(function()
                 stats:set(CharacterStat.POISON, 0)
             end)

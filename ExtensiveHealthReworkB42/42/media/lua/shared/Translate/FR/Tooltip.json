@@ -24,7 +24,7 @@
     "Tooltip_AntiviralCapsules":  "Antiviral sur ordonnance. \u003cLINE\u003e GUERIT les infections virales (rhume, gastro). \u003cLINE\u003e Duree: 48 heures.",
     "Tooltip_PrescriptionAntibiotics":  "Antibiotiques puissants sur ordonnance. \u003cLINE\u003e GUERIT les infections bacteriennes (plaies, cellulite, pneumonie). \u003cLINE\u003e Duree: 72 heures.",
     "Tooltip_AntifungalTablets":  "Antifongique oral. \u003cLINE\u003e GUERIT les infections fongiques (aspergillose). \u003cLINE\u003e Duree: 5 jours.",
-    "Tooltip_ActivatedCharcoal":  "Charbon actif medical. \u003cLINE\u003e Absorbe les toxines - GUERIT l\u0027intoxication alimentaire et la maladie des cadavres. \u003cLINE\u003e Duree: intoxication alimentaire 6h, cadavres 8h.",
+    "Tooltip_ActivatedCharcoal":  "Charbon actif medical. \u003cLINE\u003e Absorbe les toxines - GUERIT l\u0027intoxication alimentaire, la maladie des cadavres et l\u0027empoisonnement toxique. \u003cLINE\u003e Duree: intoxication alimentaire 6h, cadavres 8h, toxines 12h.",
     "Tooltip_AntiparasiticPills":  "Antiparasitaire. \u003cLINE\u003e GUERIT les infections parasitaires (trichinose). \u003cLINE\u003e Duree: 7 jours.",
     "Tooltip_OralRehydrationKit":  "Kit de rehydratation. \u003cLINE\u003e GUERIT les affections liees a la dehydration (dysenterie, coup de chaleur). \u003cLINE\u003e Duree: 48 heures.",
     "Tooltip_TetanusAntitoxin":  "Antitoxine tetanique. \u003cLINE\u003e Neutralise la toxine - GUERIT le tetanos. \u003cLINE\u003e Necessite une seringue. Duree: 5 jours.",

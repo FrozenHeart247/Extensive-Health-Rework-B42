@@ -24,7 +24,7 @@
     "Tooltip_AntiviralCapsules":  "Medicamento antiviral com prescrição. \u003cLINE\u003e CURA infecções virais (resfriado, gastroenterite). \u003cLINE\u003e Tempo de tratamento: 48 horas.",
     "Tooltip_PrescriptionAntibiotics":  "Antibióticos fortes com prescrição. \u003cLINE\u003e CURA infecções bacterianas (feridas, celulite, pneumonia). \u003cLINE\u003e Tempo de tratamento: 72 horas.",
     "Tooltip_AntifungalTablets":  "Medicamento antifúngico oral. \u003cLINE\u003e CURA infecções fúngicas (aspergilose). \u003cLINE\u003e Tempo de tratamento: 5 dias.",
-    "Tooltip_ActivatedCharcoal":  "Carvão ativado de grau médico. \u003cLINE\u003e Absorve toxinas - CURA envenenamento alimentar e doença de cadáveres. \u003cLINE\u003e Tempo de tratamento: envenenamento alimentar 6h, cadáveres 8h.",
+    "Tooltip_ActivatedCharcoal":  "Carvão ativado de grau médico. \u003cLINE\u003e Absorve toxinas - CURA envenenamento alimentar, doença de cadáveres e toxinas. \u003cLINE\u003e Tempo de tratamento: envenenamento alimentar 6h, cadáveres 8h, toxinas 12h.",
     "Tooltip_AntiparasiticPills":  "Medicamento antiparasitário. \u003cLINE\u003e CURA infecções parasitárias (triquinose). \u003cLINE\u003e Tempo de tratamento: 7 dias.",
     "Tooltip_OralRehydrationKit":  "Kit de solução de reidratação médica. \u003cLINE\u003e CURA condições baseadas em desidratação (disenteria, exaustão pelo calor). \u003cLINE\u003e Tempo de tratamento: 48 horas.",
     "Tooltip_TetanusAntitoxin":  "Injeção de antitoxina tetânica. \u003cLINE\u003e Neutraliza a toxina do tétano - CURA o tétano. \u003cLINE\u003e Requer seringa. Tempo de tratamento: 5 dias.",

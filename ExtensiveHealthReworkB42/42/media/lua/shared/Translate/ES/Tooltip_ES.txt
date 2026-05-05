@@ -24,7 +24,7 @@
     Tooltip_AntiviralCapsules = "Antiviral con receta. <LINE> CURA infecciones virales (resfriado, gastroenteritis). <LINE> Duracion: 48 horas.",
     Tooltip_PrescriptionAntibiotics = "Antibioticos fuertes con receta. <LINE> CURA infecciones bacterianas (heridas, celulitis, neumonia). <LINE> Duracion: 72 horas.",
     Tooltip_AntifungalTablets = "Antifungico oral. <LINE> CURA infecciones fungicas (aspergilosis). <LINE> Duracion: 5 dias.",
-    Tooltip_ActivatedCharcoal = "Carbon activado medico. <LINE> Absorbe toxinas - CURA intoxicacion alimentaria y enfermedad por cadaveres. <LINE> Duracion: intoxicacion alimentaria 6h, cadaveres 8h.",
+Tooltip_ActivatedCharcoal = "Carbon activado medico. <LINE> Absorbe toxinas - CURA intoxicacion alimentaria, enfermedad por cadaveres y toxinas. <LINE> Duracion: intoxicacion alimentaria 6h, cadaveres 8h, toxinas 12h.",
     Tooltip_AntiparasiticPills = "Antiparasitario. <LINE> CURA infecciones parasitarias (triquinosis). <LINE> Duracion: 7 dias.",
     Tooltip_OralRehydrationKit = "Kit de rehidratacion medica. <LINE> CURA condiciones por deshidratacion (disenteria, agotamiento por calor). <LINE> Duracion: 48 horas.",
     Tooltip_TetanusAntitoxin = "Antitoxina tetanica. <LINE> Neutraliza la toxina - CURA el tetanos. <LINE> Requiere jeringa. Duracion: 5 dias.",

@@ -708,6 +708,7 @@ end
 -- Disease IDs for infliction dropdown
 EHR.DebugV2.DiseaseList = {
     "food_poisoning",
+    "toxin_poisoning",
     "common_cold",
     "pneumonia",
     "dysentery",

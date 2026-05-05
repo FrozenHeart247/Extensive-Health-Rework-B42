@@ -24,7 +24,7 @@
     "Tooltip_AntiviralCapsules":  "Antiviral con receta. \u003cLINE\u003e CURA infecciones virales (resfriado, gastroenteritis). \u003cLINE\u003e Duracion: 48 horas.",
     "Tooltip_PrescriptionAntibiotics":  "Antibioticos fuertes con receta. \u003cLINE\u003e CURA infecciones bacterianas (heridas, celulitis, neumonia). \u003cLINE\u003e Duracion: 72 horas.",
     "Tooltip_AntifungalTablets":  "Antifungico oral. \u003cLINE\u003e CURA infecciones fungicas (aspergilosis). \u003cLINE\u003e Duracion: 5 dias.",
-    "Tooltip_ActivatedCharcoal":  "Carbon activado medico. \u003cLINE\u003e Absorbe toxinas - CURA intoxicacion alimentaria y enfermedad por cadaveres. \u003cLINE\u003e Duracion: intoxicacion alimentaria 6h, cadaveres 8h.",
+    "Tooltip_ActivatedCharcoal":  "Carbon activado medico. \u003cLINE\u003e Absorbe toxinas - CURA intoxicacion alimentaria, enfermedad por cadaveres y toxinas. \u003cLINE\u003e Duracion: intoxicacion alimentaria 6h, cadaveres 8h, toxinas 12h.",
     "Tooltip_AntiparasiticPills":  "Antiparasitario. \u003cLINE\u003e CURA infecciones parasitarias (triquinosis). \u003cLINE\u003e Duracion: 7 dias.",
     "Tooltip_OralRehydrationKit":  "Kit de rehidratacion medica. \u003cLINE\u003e CURA condiciones por deshidratacion (disenteria, agotamiento por calor). \u003cLINE\u003e Duracion: 48 horas.",
     "Tooltip_TetanusAntitoxin":  "Antitoxina tetanica. \u003cLINE\u003e Neutraliza la toxina - CURA el tetanos. \u003cLINE\u003e Requiere jeringa. Duracion: 5 dias.",

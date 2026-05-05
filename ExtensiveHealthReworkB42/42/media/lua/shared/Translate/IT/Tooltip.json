@@ -24,7 +24,7 @@
     "Tooltip_AntiviralCapsules":  "Antivirale con prescrizione. \u003cLINE\u003e CURA infezioni virali (raffreddore, gastroenterite). \u003cLINE\u003e Durata: 48 ore.",
     "Tooltip_PrescriptionAntibiotics":  "Antibiotici forti con prescrizione. \u003cLINE\u003e CURA infezioni batteriche (ferite, cellulite, polmonite). \u003cLINE\u003e Durata: 72 ore.",
     "Tooltip_AntifungalTablets":  "Antimicotico orale. \u003cLINE\u003e CURA infezioni fungine (aspergillosi). \u003cLINE\u003e Durata: 5 giorni.",
-    "Tooltip_ActivatedCharcoal":  "Carbone attivo medicale. \u003cLINE\u003e Assorbe tossine - CURA intossicazione alimentare e malattia da cadaveri. \u003cLINE\u003e Durata: intossicazione alimentare 6h, cadaveri 8h.",
+    "Tooltip_ActivatedCharcoal":  "Carbone attivo medicale. \u003cLINE\u003e Assorbe tossine - CURA intossicazione alimentare, malattia da cadaveri e tossine. \u003cLINE\u003e Durata: intossicazione alimentare 6h, cadaveri 8h, tossine 12h.",
     "Tooltip_AntiparasiticPills":  "Antiparassitario. \u003cLINE\u003e CURA infezioni parassitarie (trichinosi). \u003cLINE\u003e Durata: 7 giorni.",
     "Tooltip_OralRehydrationKit":  "Kit di reidratazione medica. \u003cLINE\u003e CURA condizioni da disidratazione (dissenteria, colpo di calore). \u003cLINE\u003e Durata: 48 ore.",
     "Tooltip_TetanusAntitoxin":  "Antitossina tetanica. \u003cLINE\u003e Neutralizza la tossina - CURA tetano. \u003cLINE\u003e Richiede siringa. Durata: 5 giorni.",

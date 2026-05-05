@@ -174,7 +174,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.ElectrolytePowder"] = {
         tier = 1,
-        treats = {"dysentery", "food_poisoning", "gastroenteritis", "heat_exhaustion"},
+        treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_exhaustion"},
         displayName = "Electrolyte Powder",
         usageMessage = "You mix and drink the electrolyte solution. You feel more hydrated.",
         symptomReduction = {
@@ -195,7 +195,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiNauseaTablets"] = {
         tier = 1,
-        treats = {"food_poisoning", "gastroenteritis", "corpse_sickness"},
+        treats = {"food_poisoning", "gastroenteritis", "toxin_poisoning", "corpse_sickness"},
         displayName = "Anti-Nausea Tablets",
         usageMessage = "You take anti-nausea tablets. Your stomach settles.",
         symptomReduction = {
@@ -289,13 +289,14 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.ActivatedCharcoal"] = {
         tier = 2,
-        treats = {"food_poisoning", "corpse_sickness"},
+        treats = {"food_poisoning", "corpse_sickness", "toxin_poisoning"},
         displayName = "Activated Charcoal",
         usageMessage = "You swallow activated charcoal. It absorbs the toxins.",
         cureTimeHours = 6, -- Fallback cure time
         diseaseCureTimeHours = {
             food_poisoning = 6,
             corpse_sickness = 8,
+            toxin_poisoning = 12,
         },
     },
 

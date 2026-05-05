@@ -7,6 +7,7 @@
 ]]--
 
 require "TimedActions/ISReadABook"
+require "ExtensiveHealth/EHR_DiseaseFlyers"
 
 EHR = EHR or {}
 EHR.DiseaseFlyers = EHR.DiseaseFlyers or {}
@@ -31,6 +32,21 @@ local function log(msg)
         EHR.Log(msg)
     else
         print("[EHR FlyerHook] " .. tostring(msg))
+    end
+end
+
+local function clearFlyerReadProgress(character, item, itemId)
+    if not character or not item or not itemId then return end
+
+    pcall(function() item:setAlreadyReadPages(0) end)
+    pcall(function() character:setAlreadyReadPages(itemId, 0) end)
+
+    if sendSyncPlayerFields then
+        pcall(sendSyncPlayerFields, character, 0x00000007)
+    end
+
+    if syncItemFields then
+        pcall(syncItemFields, character, item)
     end
 end
 
@@ -104,6 +120,10 @@ local function hookISReadABook()
                         end
                     end
                 end
+
+                -- Disease flyers use the read action, but should not behave like
+                -- skill books with persistent percentage progress.
+                clearFlyerReadProgress(self.character, self.item, itemId)
             end
         end
 

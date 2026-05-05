@@ -196,7 +196,22 @@ local function OnServerCommand(module, command, args)
             end
 
             if args.EHR_KnownDiseases ~= nil then
-                data.EHR_KnownDiseases = args.EHR_KnownDiseases
+                local mergedKnown = {}
+                if type(data.EHR_KnownDiseases) == "table" then
+                    for diseaseId, known in pairs(data.EHR_KnownDiseases) do
+                        if known == true then
+                            mergedKnown[diseaseId] = true
+                        end
+                    end
+                end
+                if type(args.EHR_KnownDiseases) == "table" then
+                    for diseaseId, known in pairs(args.EHR_KnownDiseases) do
+                        if known == true then
+                            mergedKnown[diseaseId] = true
+                        end
+                    end
+                end
+                data.EHR_KnownDiseases = mergedKnown
                 log("[EHR Client] Updated EHR_KnownDiseases")
             end
 

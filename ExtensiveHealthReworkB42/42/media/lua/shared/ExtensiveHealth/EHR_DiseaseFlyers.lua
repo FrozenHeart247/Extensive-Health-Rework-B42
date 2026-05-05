@@ -7,11 +7,13 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+require "ExtensiveHealth/EHR_SkillXP"
 
 EHR = EHR or {}
 EHR.DiseaseFlyers = EHR.DiseaseFlyers or {}
 
 EHR.DiseaseFlyers.Config = {
+    KNOWLEDGE_XP = 50,
     FLYER_ITEMS = {
         ["ExtensiveHealth.DiseaseFlyer_CommonCold"] = "common_cold",
         ["ExtensiveHealth.DiseaseFlyer_Flu"] = "flu",
@@ -42,11 +44,88 @@ EHR.DiseaseFlyers.Config = {
     },
 }
 
+local diseaseAliases = {
+    CommonCold = "common_cold",
+    Cold = "common_cold",
+    Flu = "flu",
+    Influenza = "flu",
+    Pneumonia = "pneumonia",
+    FoodPoisoning = "food_poisoning",
+    Hypothermia = "hypothermia",
+    HeatExhaustion = "heat_exhaustion",
+    HeatStroke = "heat_stroke",
+    Sepsis = "sepsis",
+    CorpseDisease = "corpse_sickness",
+    CorpseSickness = "corpse_sickness",
+    CorpseExposureIllness = "corpse_sickness",
+    TuberculosisCavitary = "tuberculosis",
+    TuberculosisMilliary = "tuberculosis",
+    Tuberculosis = "tuberculosis",
+    WoundInfection = "wound_infection",
+    Wound_Infection = "wound_infection",
+    KnoxInfection = "knox_infection",
+    Knox_Infection = "knox_infection",
+}
+
+local compactDiseaseAliases = {
+    commoncold = "common_cold",
+    cold = "common_cold",
+    flu = "flu",
+    influenza = "flu",
+    pneumonia = "pneumonia",
+    foodpoisoning = "food_poisoning",
+    hypothermia = "hypothermia",
+    heatexhaustion = "heat_exhaustion",
+    heatstroke = "heat_stroke",
+    sepsis = "sepsis",
+    corpsedisease = "corpse_sickness",
+    corpsesickness = "corpse_sickness",
+    corpseexposureillness = "corpse_sickness",
+    tuberculosis = "tuberculosis",
+    tuberculosiscavitary = "tuberculosis",
+    tuberculosismilliary = "tuberculosis",
+    woundinfection = "wound_infection",
+    knoxinfection = "knox_infection",
+}
+
 local function normalizeDiseaseId(diseaseId)
-    if diseaseId == "Sepsis" then
-        return "sepsis"
+    if not diseaseId then return diseaseId end
+
+    local rawId = tostring(diseaseId)
+    if EHR.DiseaseFlyers.Config.KNOWLEDGE_IDS[rawId] or EHR.DiseaseFlyers.Config.SELF_EVIDENT[rawId] then
+        return rawId
     end
-    return diseaseId
+
+    if diseaseAliases[rawId] then
+        return diseaseAliases[rawId]
+    end
+
+    local compact = rawId:gsub("[%s_%-%(%)]", ""):lower()
+    return compactDiseaseAliases[compact] or rawId
+end
+
+EHR.DiseaseFlyers.NormalizeDiseaseId = normalizeDiseaseId
+
+local function flyerText(key, fallback, ...)
+    local text = nil
+    if getText then
+        text = getText(key)
+    end
+    if not text or text == key then
+        text = fallback
+    end
+
+    local args = { ... }
+    for i, value in ipairs(args) do
+        local safeValue = tostring(value or "")
+        text = text:gsub("%%" .. tostring(i), safeValue)
+        if i == 1 then
+            text = text:gsub("%%s", safeValue)
+            text = text:gsub("{0}", safeValue)
+        end
+    end
+
+    return text
 end
 
 function EHR.DiseaseFlyers.GetKnownDiseases(player)
@@ -59,11 +138,14 @@ end
 
 function EHR.DiseaseFlyers.KnowsDisease(player, diseaseId)
     if not player or not diseaseId then return false end
+    diseaseId = normalizeDiseaseId(diseaseId)
     local known = EHR.DiseaseFlyers.GetKnownDiseases(player)
     return known[diseaseId] == true
 end
 
 function EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
+    diseaseId = normalizeDiseaseId(diseaseId)
+
     local names = {
         common_cold = "Common Cold",
         flu = "Influenza",
@@ -75,12 +157,28 @@ function EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
         sepsis = "Sepsis",
         corpse_sickness = "Corpse Exposure Illness",
         tuberculosis = "Tuberculosis",
+        wound_infection = "Wound Infection",
+        knox_infection = "Knox Infection",
     }
     return names[diseaseId] or diseaseId
 end
 
+function EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
+    if not player or not EHR.SkillXP or not EHR.SkillXP.AwardXP then return false end
+
+    local amount = EHR.DiseaseFlyers.Config.KNOWLEDGE_XP or 50
+    local awarded = EHR.SkillXP.AwardXP(player, amount, "disease_flyer_read", nil)
+
+    if awarded and EHR.DEBUG then
+        EHR.Log("Disease flyer XP awarded for: " .. tostring(diseaseId))
+    end
+
+    return awarded
+end
+
 function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
     if not player or not diseaseId then return false end
+    diseaseId = normalizeDiseaseId(diseaseId)
 
     local modData = player:getModData()
     if not modData then return false end
@@ -91,11 +189,18 @@ function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
     end
 
     modData.EHR_KnownDiseases[diseaseId] = true
+    modData.EHR_MedicalJournal = modData.EHR_MedicalJournal or { entries = {}, discoveries = {} }
+    modData.EHR_MedicalJournal.discoveries = modData.EHR_MedicalJournal.discoveries or {}
+    modData.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
+    modData.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+
+    if player.transmitModData then
+        pcall(function() player:transmitModData() end)
+    end
 
     local name = EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
     if player.Say then
-        local learnedText = getText and getText("UI_EHR_FlyerLearned", name) or nil
-        player:Say(learnedText or ("Disease knowledge acquired: " .. name))
+        player:Say(flyerText("UI_EHR_FlyerLearned", "Disease knowledge acquired: %1", name))
     end
 
     EHR.Log("Player learned disease: " .. tostring(diseaseId))
@@ -149,20 +254,24 @@ function EHR.DiseaseFlyers.OnFlyerRead(player, item)
 
     if isClient and isClient() then
         local newlyLearned = EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
+        if newlyLearned then
+            EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
+        end
         if not newlyLearned and player.Say then
-            local alreadyText = getText and getText("UI_EHR_FlyerAlreadyKnown") or nil
-            player:Say(alreadyText or "You already know about this disease.")
+            player:Say(flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
         end
         if sendClientCommand then
-            sendClientCommand(player, "EHR_Flyers", "UnlockDisease", { diseaseId = diseaseId })
+            sendClientCommand(player, "EHR_Flyers", "UnlockDisease", { diseaseId = normalizeDiseaseId(diseaseId) })
         end
         return
     end
 
     local newlyLearned = EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
+    if newlyLearned then
+        EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
+    end
     if not newlyLearned and player.Say then
-        local alreadyText = getText and getText("UI_EHR_FlyerAlreadyKnown") or nil
-        player:Say(alreadyText or "You already know about this disease.")
+        player:Say(flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
     end
 end
 

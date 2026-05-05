@@ -209,11 +209,23 @@ function EHR.ServerCommands.UnlockDiseaseKnowledge(player, args)
     if not player or not args or not args.diseaseId then return end
 
     local diseaseId = args.diseaseId
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.NormalizeDiseaseId then
+        diseaseId = EHR.DiseaseFlyers.NormalizeDiseaseId(diseaseId)
+    end
+
     local data = player:getModData()
     if not data then return end
 
     data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
     data.EHR_KnownDiseases[diseaseId] = true
+    data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
+    data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
+    data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
+    data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+
+    if player.transmitModData then
+        pcall(function() player:transmitModData() end)
+    end
 
     syncModDataToClient(player)
     log("[EHR Server] Disease knowledge unlocked: " .. tostring(diseaseId))

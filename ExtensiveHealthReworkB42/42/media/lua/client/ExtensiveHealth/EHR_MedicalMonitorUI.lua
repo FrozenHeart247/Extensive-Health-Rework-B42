@@ -474,6 +474,7 @@ function EHR_MedicalMonitorUI:onExamineSelf()
         sepsisStage = sepsisStage,
         hasWoundInfection = hasWoundInfection,
         highestSeverity = highestSeverity,
+        diseases = diseases,
     })
 
     -- Make the character say the dialogue
@@ -507,6 +508,56 @@ end
 function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, conditions)
     local dialogue = ""
 
+    local function knowsDiseaseFromFlyer(diseaseId)
+        return EHR.DiseaseFlyers
+            and EHR.DiseaseFlyers.KnowsDisease
+            and EHR.DiseaseFlyers.KnowsDisease(self.player, diseaseId)
+    end
+
+    local function canIdentifyDisease(diseaseId)
+        if skillTier >= 4 then return true end
+        if EHR.DiseaseFlyers and EHR.DiseaseFlyers.CanIdentifyDisease then
+            return EHR.DiseaseFlyers.CanIdentifyDisease(self.player, diseaseId)
+        end
+        return false
+    end
+
+    local function getDiseaseDisplayName(diseaseId)
+        local diseaseDef = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId]
+        if diseaseDef and diseaseDef.name then
+            return diseaseDef.name
+        end
+        if EHR.DiseaseFlyers and EHR.DiseaseFlyers.GetDiseaseFriendlyName then
+            return EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
+        end
+        return diseaseDef and diseaseDef.name or diseaseId
+    end
+
+    local function getIdentifiedDiseaseNames()
+        local names = {}
+        for diseaseId, _ in pairs(conditions.diseases or {}) do
+            if canIdentifyDisease(diseaseId) then
+                table.insert(names, getDiseaseDisplayName(diseaseId))
+            end
+        end
+        table.sort(names)
+        return names
+    end
+
+    local function joinDiseaseNames(names)
+        local visible = {}
+        local maxNames = 3
+        for i = 1, math.min(#names, maxNames) do
+            table.insert(visible, names[i])
+        end
+
+        local text = table.concat(visible, ", ")
+        if #names > maxNames then
+            text = text .. string.format(" +%d", #names - maxNames)
+        end
+        return text
+    end
+
     -- No issues detected
     if conditions.diseaseCount == 0 and conditions.bloodPercent >= 90 and not conditions.hasWoundInfection then
         if skillTier >= 3 then
@@ -533,11 +584,11 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
     end
 
     -- Sepsis detection (high priority)
-    if conditions.hasSepsis then
+    if conditions.hasSepsis and conditions.diseaseCount <= 1 then
         if skillTier >= 3 then
             -- Expert: Full diagnosis
             dialogue = string.format(getText("UI_EHR_Examine_SepsisDetailed") or "Sepsis confirmed, Stage %d. Need IV antibiotics immediately!", conditions.sepsisStage)
-        elseif skillTier >= 1 then
+        elseif canIdentifyDisease("Sepsis") then
             -- Novice: Can identify sepsis
             dialogue = getText("UI_EHR_Examine_SepsisIdentified") or "I think I have blood poisoning... sepsis!"
         else
@@ -548,7 +599,7 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
     end
 
     -- Wound infection detection
-    if conditions.hasWoundInfection then
+    if conditions.hasWoundInfection and conditions.diseaseCount <= 1 then
         if skillTier >= 1 then
             dialogue = getText("UI_EHR_Examine_WoundInfection") or "One of my wounds looks infected..."
         else
@@ -560,11 +611,23 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
     -- Disease detection
     if conditions.diseaseCount > 0 then
         local disease = conditions.severeDisease
+        local diseaseKnownFromFlyer = disease and knowsDiseaseFromFlyer(disease.id)
+        local identifiedNames = getIdentifiedDiseaseNames()
 
         if conditions.diseaseCount > 1 then
             -- Multiple issues
-            if skillTier >= 2 then
+            if #identifiedNames > 0 then
+                local identifiedText = joinDiseaseNames(identifiedNames)
+                local unknownCount = conditions.diseaseCount - #identifiedNames
+                if unknownCount > 0 then
+                    identifiedText = identifiedText .. string.format(" (+%d unknown)", unknownCount)
+                end
+                dialogue = ehrFormatText("UI_EHR_Examine_DiseasesIdentified", "I can identify: %s.", identifiedText)
+            elseif skillTier >= 2 then
                 dialogue = getText("UI_EHR_Examine_MultipleIssues") or "I have multiple health issues to deal with."
+            elseif diseaseKnownFromFlyer then
+                local displayName = getDiseaseDisplayName(disease.id)
+                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %s.", displayName)
             else
                 dialogue = getText("UI_EHR_Examine_FeelSick") or "I feel sick... but I can't tell what's wrong."
             end
@@ -572,15 +635,13 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
             -- Single disease
             if skillTier >= 3 and disease.data then
                 -- Expert: Full details
-                local diseaseDef = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[disease.id]
-                local displayName = diseaseDef and diseaseDef.name or disease.id
+                local displayName = getDiseaseDisplayName(disease.id)
                 local stage = disease.data.stage or 1
                 local severity = disease.data.severity or 1
                 dialogue = ehrFormatText("UI_EHR_Examine_DiseaseDetailed", "Diagnosis: %s, Stage %d. Severity: %d/5.", displayName, stage, severity)
-            elseif skillTier >= 1 then
-                -- Novice: Can identify disease
-                local diseaseDef = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[disease.id]
-                local displayName = diseaseDef and diseaseDef.name or disease.id
+            elseif canIdentifyDisease(disease.id) or diseaseKnownFromFlyer then
+                -- Novice or flyer knowledge: can identify disease, but not numeric details.
+                local displayName = getDiseaseDisplayName(disease.id)
                 dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %s.", displayName)
             else
                 -- Clueless: Vague
@@ -1744,7 +1805,7 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
         displayName = (unknownInfo and unknownInfo.displayName) or (getText("UI_EHR_DiseaseUnknown") or "Unknown Illness")
     else
         displayName = diseaseDef and diseaseDef.name or diseaseId
-        if skillTier >= 1 then
+        if skillTier >= 2 then
             showSeverity = true
         end
         if skillTier >= 2 then

@@ -146,7 +146,7 @@
     "UI_EHR_UnknownSeverity":  "Severity: ???",
     "UI_EHR_DiseaseUnknown":  "Unknown Illness",
     "UI_EHR_DiseaseRequiresFlyer":  "(Read the disease flyer to identify)",
-    "UI_EHR_FlyerLearned":  "Disease knowledge acquired: %s",
+    "UI_EHR_FlyerLearned":  "Disease knowledge acquired: %1",
     "UI_EHR_FlyerAlreadyKnown":  "You already know about this disease.",
     "UI_EHR_CorpseExposure":  "Corpse Exposure",
     "UI_EHR_Trend_Improving":  "Improving",

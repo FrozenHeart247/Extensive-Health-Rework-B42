@@ -13,12 +13,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Common Cold,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_CommonCold,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 5,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 2,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_Flu
@@ -27,12 +27,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Influenza,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_Flu,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 8,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 2,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_Pneumonia
@@ -41,12 +41,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Pneumonia,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_Pneumonia,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 12,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 3,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_FoodPoisoning
@@ -55,12 +55,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Food Poisoning,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_FoodPoisoning,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 6,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 2,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_Hypothermia
@@ -69,12 +69,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Hypothermia,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_Hypothermia,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 8,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 2,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_HeatExhaustion
@@ -83,12 +83,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Heat Exhaustion,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_HeatExhaustion,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 7,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 2,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_Sepsis
@@ -97,12 +97,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Sepsis,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_Sepsis,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 15,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 4,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_CorpseSickness
@@ -111,12 +111,12 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Corpse Exposure Illness,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_CorpseSickness,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 10,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 3,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 
     item DiseaseFlyer_Tuberculosis
@@ -125,11 +125,11 @@ module ExtensiveHealth
         ItemType = base:literature,
         DisplayName = Disease Information: Tuberculosis,
         Weight = 0.1,
-        Icon = Magazine,
+        Icon = DiseaseFlyer_Tuberculosis,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 18,
-        SkillTrained = FirstAid,
-        LvlSkillTrained = 0,
-        NumLevelsTrained = 4,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
     }
 }

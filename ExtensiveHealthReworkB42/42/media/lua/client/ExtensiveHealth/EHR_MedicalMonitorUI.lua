@@ -2032,7 +2032,12 @@ function EHR_MedicalMonitorUI:renderMedicationEntry(startY, medData)
     -- Dose count on right side
     if totalDoses > 0 then
         local doseText = string.format("Dose %d/%d", doseCount, totalDoses)
-        self:drawRightTextFit(doseText, self.width - padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, self.width - 110)
+        local doseMinX = self.width - 110
+        local doseMaxWidth = (self.width - padding) - doseMinX
+        if self:getTextWidth(doseText, UIFont.Small) > doseMaxWidth then
+            doseText = string.format("%d/%d", doseCount, totalDoses)
+        end
+        self:drawRightTextFit(doseText, self.width - padding, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small, doseMinX)
     end
     y = y + self.LINE_HEIGHT
     -- Treatment progress (only for disease treatment, not symptom relief)

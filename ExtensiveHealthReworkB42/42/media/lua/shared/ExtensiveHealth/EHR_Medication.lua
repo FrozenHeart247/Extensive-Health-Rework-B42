@@ -230,6 +230,7 @@ EHR.Medication.Database = {
         treats = {"tetanus", "trichinosis"},
         displayName = "Muscle Relaxants",
         usageMessage = "You take muscle relaxants. The cramping eases.",
+        appliesWithoutDisease = true,
         symptomReduction = {
             muscleSpasms = 0.40,
             pain = 0.30,
@@ -1498,6 +1499,9 @@ function EHR.Medication.UseMedication(player, item)
 
     -- If no disease was treated, still track the dose for drug interaction purposes
     if not treatedAny then
+        if medData.appliesWithoutDisease and EHR.Medication.ApplyGeneralSymptomRelief then
+            EHR.Medication.ApplyGeneralSymptomRelief(player, medData)
+        end
         EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
 
@@ -1576,6 +1580,7 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
             tier = medData.tier,
             treatingDisease = nil,  -- No disease being treated
             symptomOnly = doseTiming.symptomOnly,
+            requiresDoseCourse = false,
         }
     else
         local doseData = medTracking.activeDoses[medKey]
@@ -1588,6 +1593,7 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
         doseData.tier = medData.tier
         doseData.treatingDisease = nil
         doseData.symptomOnly = doseTiming.symptomOnly
+        doseData.requiresDoseCourse = false
     end
 
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
@@ -1746,7 +1752,11 @@ local function EHR_MedicationReduceMuscleStiffness(player, reduction)
             if part.getAdditionalPain and part.setAdditionalPain then
                 pcall(function()
                     local currentPain = part:getAdditionalPain() or 0
-                    part:setAdditionalPain(math.max(0, currentPain - (reduction * 20)))
+                    local newPain = math.max(0, currentPain - (reduction * 20))
+                    if newPain < currentPain then
+                        part:setAdditionalPain(newPain)
+                        changed = true
+                    end
                 end)
             end
         end
@@ -1798,6 +1808,30 @@ local function EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medD
     end
 end
 
+function EHR.Medication.ApplyGeneralSymptomRelief(player, medData)
+    local reductions = medData and medData.symptomReduction
+    if not reductions then return false end
+
+    local didRelieve = false
+    if reductions.muscleSpasms then
+        didRelieve = EHR_MedicationReduceMuscleStiffness(player, reductions.muscleSpasms) or didRelieve
+    end
+
+    if reductions.pain then
+        didRelieve = EHR_MedicationReducePain(player, reductions.pain) or didRelieve
+    end
+
+    if reductions.weakness then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.ENDURANCE, 0.12 * reductions.weakness, 0, 1) or didRelieve
+    end
+
+    if didRelieve then
+        EHR.Log("Applied general symptom relief from " .. (medData.displayName or "medication"))
+    end
+
+    return didRelieve
+end
+
 function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, itemFullType)
     if not player or not diseaseId then return end
 
@@ -1840,6 +1874,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
             tier = medData.tier,
             treatingDisease = diseaseId,
             symptomOnly = doseTiming.symptomOnly,
+            requiresDoseCourse = tierEffects.canCure == true,
         }
     else
         -- Subsequent dose
@@ -1853,6 +1888,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
         doseData.tier = medData.tier
         doseData.treatingDisease = diseaseId
         doseData.symptomOnly = doseTiming.symptomOnly
+        doseData.requiresDoseCourse = tierEffects.canCure == true
     end
 
     -- Start or continue cure process if tier can cure.
@@ -1989,7 +2025,9 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     local activeHours = doseData.activeHours
     if activeHours == nil then activeHours = doseTiming.activeHours end
     local totalDosesNeeded = doseData.totalDosesNeeded or doseTiming.dosesRequired
-    if doseTiming.symptomOnly and not doseData.requiresDoseCourse then
+    local requiresDoseCourse = doseData.requiresDoseCourse == true
+        or (doseData.treatingDisease ~= nil and tierEffects and tierEffects.canCure == true)
+    if doseTiming.symptomOnly and not requiresDoseCourse then
         totalDosesNeeded = 1
     end
 
@@ -2019,6 +2057,7 @@ function EHR.Medication.GetDoseStatus(player, medKey)
         hoursOverdue = hoursOverdue,
         treatmentComplete = treatmentComplete,
         symptomOnly = doseTiming.symptomOnly or doseData.symptomOnly == true,
+        requiresDoseCourse = requiresDoseCourse,
     }
 end
 

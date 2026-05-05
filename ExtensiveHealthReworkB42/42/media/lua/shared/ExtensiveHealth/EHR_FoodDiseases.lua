@@ -28,20 +28,20 @@ EHR.Food.Config = {
     trichinosis = {
         -- High risk meats (carnivores/omnivores)
         highRisk = {
-            ["DeadRat"] = 0.50,
-            ["DeadMouse"] = 0.50,
-            ["Rat"] = 0.50,
-            ["Mouse"] = 0.50,
-            ["RatMeat"] = 0.50,
-            ["WildBoarMeat"] = 0.50,
-            ["BoarMeat"] = 0.50,
-            ["BearMeat"] = 0.50,
+            ["DeadRat"] = 0.70,
+            ["DeadMouse"] = 0.70,
+            ["Rat"] = 0.70,
+            ["Mouse"] = 0.70,
+            ["RatMeat"] = 0.70,
+            ["WildBoarMeat"] = 0.70,
+            ["BoarMeat"] = 0.70,
+            ["BearMeat"] = 0.70,
         },
         -- Medium risk (other carnivores)
         mediumRisk = {
-            ["FoxMeat"] = 0.50,
-            ["RaccoonMeat"] = 0.50,
-            ["WolfMeat"] = 0.50,
+            ["FoxMeat"] = 0.70,
+            ["RaccoonMeat"] = 0.70,
+            ["WolfMeat"] = 0.70,
         },
         -- Patterns to match
         rawPatterns = {"Raw", "Uncooked", "Dead"},

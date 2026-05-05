@@ -534,10 +534,10 @@ EHR.Disease.FoodRisks = {
     rotten = 0.70,          -- 70% chance from rotten food
     burned = 0.05,          -- 5% chance from burned food
     stale = 0.10,           -- 10% chance from stale food
-    rawWildGameHigh = 0.50,
-    rawWildGameMedium = 0.50,
-    rawWildGameLow = 0.50,
-    rawMeatLow = 0.50,
+    rawWildGameHigh = 0.70,
+    rawWildGameMedium = 0.70,
+    rawWildGameLow = 0.70,
+    rawMeatLow = 0.70,
 }
 
 -- Food poisoning is not a one-frame lottery: repeated risky bites stack up.

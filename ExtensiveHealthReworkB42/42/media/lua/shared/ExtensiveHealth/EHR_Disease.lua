@@ -137,7 +137,7 @@ EHR.Disease.Diseases = {
             tier0 = {"Base.PillsVitamins"},
             tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.AntiDiarrheal", "ExtensiveHealth.ElectrolytePowder"},
             tier2 = {"ExtensiveHealth.AntiviralCapsules"},  -- Cures in 48h
-            tier3 = {"ExtensiveHealth.IVCiprofloxacin"},  -- Fast cure 24h
+            tier3 = {"ExtensiveHealth.IVCiprofloxacin"},  -- Severe bacterial GI infection
         },
         stageEntryDialogue = {
             [1] = "My stomach doesn't feel right...",
@@ -1438,9 +1438,17 @@ local function EHR_DiseaseGetActiveSymptomMultiplier(player, diseaseId, disease)
     local activeDoses = medTracking and medTracking.activeDoses
     if activeDoses and EHR.Medication and EHR.Medication.TierEffectiveness then
         for medKey, doseData in pairs(activeDoses) do
-            if doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
-                local elapsed = currentHour - doseData.lastDoseTime
-                if elapsed >= 0 and elapsed <= doseData.intervalHours then
+            if type(doseData) == "table" and doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
+                local effectActive = false
+                if EHR.Medication.GetDoseStatus then
+                    local status = EHR.Medication.GetDoseStatus(player, medKey)
+                    effectActive = status and status.isDoseActive and status.treatingDisease == diseaseId
+                else
+                    local elapsed = currentHour - doseData.lastDoseTime
+                    effectActive = elapsed >= 0 and elapsed <= doseData.intervalHours
+                end
+
+                if effectActive then
                     local tier = doseData.tier
                     local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
                     if not tier and medData then tier = medData.tier end
@@ -1470,9 +1478,17 @@ local function EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, reduction
 
     local activeReduction = 0
     for medKey, doseData in pairs(activeDoses) do
-        if doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
-            local elapsed = currentHour - doseData.lastDoseTime
-            if elapsed >= 0 and elapsed <= doseData.intervalHours then
+        if type(doseData) == "table" and doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
+            local effectActive = false
+            if EHR.Medication.GetDoseStatus then
+                local status = EHR.Medication.GetDoseStatus(player, medKey)
+                effectActive = status and status.isDoseActive and status.treatingDisease == diseaseId
+            else
+                local elapsed = currentHour - doseData.lastDoseTime
+                effectActive = elapsed >= 0 and elapsed <= doseData.intervalHours
+            end
+
+            if effectActive then
                 local medData = EHR.Medication.Database[medKey]
                 local reductions = medData and medData.symptomReduction
                 local reduction = reductions and reductions[reductionKey] or 0
@@ -1662,37 +1678,55 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
 
     -- Food Poisoning specific effects
     if diseaseId == "food_poisoning" then
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "food_poisoning", disease)
+        local nauseaRelief = EHR_DiseaseGetActiveSymptomReduction(player, "food_poisoning", "nausea")
+        local vomitingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "food_poisoning", "vomiting")
+        local dehydrationRelief = EHR_DiseaseGetActiveSymptomReduction(player, "food_poisoning", "dehydration")
+        local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "food_poisoning", "weakness")
+        local vomitMult = math.max(0.08, symptomMult * (1 - math.max(vomitingRelief, nauseaRelief * 0.5)))
+        local hydrationMult = math.max(0.15, symptomMult * (1 - dehydrationRelief))
+        local weaknessMult = math.max(0.20, symptomMult * (1 - weaknessRelief))
+
         -- Stage 2: Early symptoms
         if stage == 2 then
-            EHR_DiseaseDrainEndurance(stats, 0.006 * severity, 0.75)
+            EHR_DiseaseDrainEndurance(stats, 0.006 * severity * weaknessMult, 0.75)
 
         -- Stage 3: Peak symptoms
         elseif stage == 3 then
-            EHR_DiseaseDrainEndurance(stats, 0.018 * severity, 0.55)
+            EHR_DiseaseDrainEndurance(stats, 0.018 * severity * weaknessMult, 0.55)
 
             -- Increase hunger (vomiting loses food) - reduced by 50%
-            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.0005 * severity)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.0005 * severity * vomitMult)
 
             -- Increase thirst (dehydration from vomiting) - reduced by 50%
-            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.001 * severity)
+            EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.001 * severity * hydrationMult)
 
         -- Stage 4: Recovery
         elseif stage == 4 then
-            EHR_DiseaseDrainEndurance(stats, 0.002 * severity, 0.85)
+            EHR_DiseaseDrainEndurance(stats, 0.002 * severity * weaknessMult, 0.85)
         end
 
-        local vomitChance = (stage == 3 and 0.004 or stage == 2 and 0.0015 or 0.0004) * severity
+        local vomitChance = (stage == 3 and 0.004 or stage == 2 and 0.0015 or 0.0004) * severity * vomitMult
         trySymptom("vomit", vomitChance, 0.20, function()
             EHR_DiseaseTriggerVomit(player)
         end)
 
     elseif diseaseId == "gastroenteritis" then
         -- Dirty-hands illness: nausea, vomiting, dehydration and weakness.
-        EHR_DiseaseDrainEndurance(stats, 0.003 * severity * stageMult, 0.30)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.0011 * severity * stageMult)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.00045 * severity * stageMult)
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "gastroenteritis", disease)
+        local nauseaRelief = EHR_DiseaseGetActiveSymptomReduction(player, "gastroenteritis", "nausea")
+        local vomitingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "gastroenteritis", "vomiting")
+        local dehydrationRelief = EHR_DiseaseGetActiveSymptomReduction(player, "gastroenteritis", "dehydration")
+        local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "gastroenteritis", "weakness")
+        local vomitMult = math.max(0.08, symptomMult * (1 - math.max(vomitingRelief, nauseaRelief * 0.5)))
+        local hydrationMult = math.max(0.15, symptomMult * (1 - dehydrationRelief))
+        local weaknessMult = math.max(0.20, symptomMult * (1 - weaknessRelief))
 
-        local vomitChance = (stage == 3 and 0.006 or stage == 2 and 0.002 or 0.0006) * severity
+        EHR_DiseaseDrainEndurance(stats, 0.003 * severity * stageMult * weaknessMult, 0.30)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.0011 * severity * stageMult * hydrationMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.HUNGER, 0.00045 * severity * stageMult * vomitMult)
+
+        local vomitChance = (stage == 3 and 0.006 or stage == 2 and 0.002 or 0.0006) * severity * vomitMult
         trySymptom("vomit", vomitChance, 0.18, function()
             EHR_DiseaseTriggerVomit(player)
         end)
@@ -2665,6 +2699,21 @@ EHR.Disease.vanillaAPIChecked = false
 -- Cache for sickness level to prevent flickering (per-player)
 local cachedSicknessTargets = {}  -- playerID -> {target, lastSetTime}
 
+local function EHR_DiseaseGetGastroSicknessFloor(player, ignoreDiseaseId)
+    if not player or ignoreDiseaseId == "gastroenteritis" then return nil end
+
+    local data = EHR.Disease.GetDiseaseData(player)
+    local disease = data and data.active and data.active["gastroenteritis"]
+    if not disease then return nil end
+
+    local stage = disease.stage or 0
+    if stage == 2 then return 31 end -- Stay clearly above Queasy threshold.
+    if stage == 3 then return 56 end -- Stay clearly above Nauseous threshold.
+    if stage == 4 then return 18 end -- Recovery fades below Queasy.
+
+    return nil
+end
+
 --[[
     Get what vanilla sickness level should be based on our disease state
 ]]--
@@ -2675,6 +2724,8 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
     -- Find the worst active food-related disease
     local worstStage = 0
     local worstSeverity = 0
+    local worstDiseaseId = nil
+    local worstDisease = nil
 
     for diseaseId, disease in pairs(data.active) do
         local def = EHR.Disease.Diseases[diseaseId]
@@ -2683,6 +2734,8 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
             if disease.stage > worstStage then
                 worstStage = disease.stage
                 worstSeverity = disease.severity or 0.5
+                worstDiseaseId = diseaseId
+                worstDisease = disease
             end
         end
     end
@@ -2699,6 +2752,16 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
 
     -- Adjust by severity (0.5 severity = base, 1.0 = +50%, 0.0 = -50%)
     local adjustedLevel = baseLevel * (0.5 + worstSeverity)
+    if worstDiseaseId and worstDisease then
+        adjustedLevel = adjustedLevel * EHR_DiseaseGetActiveSymptomMultiplier(player, worstDiseaseId, worstDisease)
+    end
+
+    if worstDiseaseId == "gastroenteritis" then
+        local gastroFloor = EHR_DiseaseGetGastroSicknessFloor(player, ignoreDiseaseId)
+        if gastroFloor then
+            adjustedLevel = math.max(adjustedLevel, gastroFloor)
+        end
+    end
 
     -- Cap at safe level
     return math.min(adjustedLevel, EHR.Disease.VANILLA_SICKNESS_CAP)
@@ -2899,16 +2962,24 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     if cached then
         local targetDiff = math.abs(cached.target - targetB42)
         local timeSinceSet = currentHour - cached.lastSetTime
+        local targetIsLower = targetB42 < cached.target - 0.01
 
         -- Only change target if:
         -- 1. Target differs by more than 15% (major stage change), OR
         -- 2. At least 0.25 game hours (15 min) have passed
-        if targetDiff < 0.15 and timeSinceSet < 0.25 then
+        -- 3. The new target is lower (active symptom relief should be felt immediately)
+        if targetDiff < 0.15 and timeSinceSet < 0.25 and not targetIsLower then
             targetB42 = cached.target  -- Keep old target
         else
             cachedSicknessTargets[playerID] = {target = targetB42, lastSetTime = currentHour}
         end
     else
+        cachedSicknessTargets[playerID] = {target = targetB42, lastSetTime = currentHour}
+    end
+
+    local gastroFloor = EHR_DiseaseGetGastroSicknessFloor(player)
+    if gastroFloor and targetB42 < gastroFloor / 100 then
+        targetB42 = gastroFloor / 100
         cachedSicknessTargets[playerID] = {target = targetB42, lastSetTime = currentHour}
     end
 
@@ -2918,7 +2989,14 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     -- The dead zone only applies when vanilla is below target (we don't want to boost it)
     local difference = math.abs(currentVanilla - targetB42)
     local vanillaAboveTarget = currentVanilla > targetB42 + 0.02  -- Small margin for floating point
-    local needsUpdate = vanillaAboveTarget or difference > 0.12 or currentPoison > 0.1
+    local currentSickness = 0
+    if CharacterStat.SICKNESS then
+        local ok, value = pcall(function() return stats:get(CharacterStat.SICKNESS) end)
+        if ok and value then currentSickness = value end
+    end
+    local sicknessDifference = math.abs(currentSickness - targetB42)
+    local sicknessBelowTarget = targetB42 > 0 and currentSickness < targetB42 - 0.02
+    local needsUpdate = vanillaAboveTarget or difference > 0.12 or sicknessDifference > 0.08 or sicknessBelowTarget or currentPoison > 0.1
 
     if needsUpdate then
         local successFood = pcall(function()

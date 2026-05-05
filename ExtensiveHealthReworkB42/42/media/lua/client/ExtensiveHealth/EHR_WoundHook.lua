@@ -340,8 +340,10 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
         if item and EHR.WoundHook.IsIVAntibiotics(item) then
             -- Check if player has sepsis
             local hasSepsis = EHR.Sepsis and EHR.Sepsis.HasSepsis and EHR.Sepsis.HasSepsis(player)
+            local inventory = player:getInventory()
+            local hasIVKit = inventory and inventory:containsTypeRecurse("ExtensiveHealth.IVKit")
 
-            if hasSepsis then
+            if hasSepsis and hasIVKit then
                 -- Add "Administer IV Antibiotics" option
                 local option = context:addOption(
                     "Administer IV Antibiotics",
@@ -364,6 +366,14 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
                     "Stage: %d",
                     doses, required, data.stage
                 )
+                option.toolTip = tooltip
+            elseif hasSepsis then
+                local option = context:addOption("Administer IV Antibiotics (Requires IV Kit)", player)
+                option.notAvailable = true
+
+                local tooltip = ISWorldObjectContextMenu.addToolTip()
+                tooltip:setName("IV Antibiotics")
+                tooltip.description = "Requires an IV Administration Kit."
                 option.toolTip = tooltip
             else
                 -- No sepsis - option grayed out
@@ -412,6 +422,16 @@ function EHR.WoundHook.OnAdministerIVAntibiotics(player, item)
 
     EHR.Log("WoundHook: Administering IV antibiotics")
 
+    local inventory = player:getInventory()
+    if not inventory then return end
+
+    if not inventory:containsTypeRecurse("ExtensiveHealth.IVKit") then
+        if player:isLocalPlayer() then
+            player:Say("I need an IV administration kit.")
+        end
+        return
+    end
+
     -- Use the item
     local consumed = false
     if EHR.Sepsis and EHR.Sepsis.OnTakeIVAntibiotics then
@@ -420,8 +440,14 @@ function EHR.WoundHook.OnAdministerIVAntibiotics(player, item)
 
     -- Remove item from inventory if consumed (with MP sync)
     if consumed then
-        local inventory = player:getInventory()
-        if inventory then
+        local ivKit = inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
+        if ivKit and EHR.Medication and EHR.Medication.ConsumeOneDose then
+            EHR.Medication.ConsumeOneDose(player, ivKit, inventory)
+        end
+
+        if EHR.Medication and EHR.Medication.ConsumeOneDose then
+            EHR.Medication.ConsumeOneDose(player, item, inventory)
+        else
             if isClient() then
                 sendClientCommand(player, "EHR", "RemoveItem", {itemID = item:getID()})
             end

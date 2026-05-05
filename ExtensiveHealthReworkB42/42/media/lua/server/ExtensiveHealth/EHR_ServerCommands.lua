@@ -1237,10 +1237,13 @@ local function OnClientCommand(module, command, player, args)
                 medicationName = args.medicationName,
                 tier = args.tier or 0,
                 doseCount = args.doseCount or 1,
-                totalDosesNeeded = args.totalDosesNeeded or 3,
+                totalDosesNeeded = args.totalDosesNeeded or 1,
                 intervalHours = args.intervalHours or 6,
+                activeHours = args.activeHours or args.intervalHours or 6,
                 lastDoseTime = args.lastDoseTime,
                 startTime = args.lastDoseTime,
+                treatingDisease = args.treatingDisease,
+                symptomOnly = args.symptomOnly == true,
             }
 
             syncModDataToClient(player)

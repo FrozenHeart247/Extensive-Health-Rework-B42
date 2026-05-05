@@ -132,7 +132,7 @@ EHR.Medication.Database = {
     -- Base.PillsVitamins
     ["Base.PillsVitamins"] = {
         tier = 0,
-        treats = {"common_cold", "gastroenteritis"},
+        treats = {"common_cold", "food_poisoning", "gastroenteritis"},
         displayName = "Vitamins",
         usageMessage = "You take vitamins. You feel slightly better.",
     },
@@ -174,7 +174,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.ElectrolytePowder"] = {
         tier = 1,
-        treats = {"dysentery", "gastroenteritis", "heat_exhaustion"},
+        treats = {"dysentery", "food_poisoning", "gastroenteritis", "heat_exhaustion"},
         displayName = "Electrolyte Powder",
         usageMessage = "You mix and drink the electrolyte solution. You feel more hydrated.",
         symptomReduction = {
@@ -820,6 +820,88 @@ EHR.Medication.SideEffects = {
             modData.EHR_LiverStress = nil
         end,
     },
+
+    ["medication_overdose"] = {
+        displayName = "Medication Overdose",
+        duration = 10,
+        severity = 3,
+        effects = function(player, effectData)
+            if not player then return end
+
+            effectData = effectData or {}
+            local intensity = math.max(1, math.min(3, effectData.intensity or 1))
+            local sicknessTarget = effectData.sicknessTarget or math.min(0.60, 0.42 + (0.04 * intensity))
+            local enduranceCap = effectData.enduranceCap or math.max(0.45, 0.57 - (0.04 * intensity))
+            local thirstTarget = effectData.thirstTarget or math.min(0.78, 0.64 + (0.04 * intensity))
+            local healthCap = effectData.healthCap or math.max(45, 70 - (7 * intensity))
+
+            local stats = nil
+            pcall(function() stats = player:getStats() end)
+            if stats and CharacterStat then
+                local function raiseStat(stat, target)
+                    if not stat then return end
+                    pcall(function()
+                        local current = stats:get(stat) or 0
+                        if current < target then
+                            stats:set(stat, target)
+                        end
+                    end)
+                end
+
+                local function capStat(stat, target)
+                    if not stat then return end
+                    pcall(function()
+                        local current = stats:get(stat) or 0
+                        if current > target then
+                            stats:set(stat, target)
+                        end
+                    end)
+                end
+
+                raiseStat(CharacterStat.SICKNESS, sicknessTarget)
+                raiseStat(CharacterStat.FOOD_SICKNESS, math.min(0.50, sicknessTarget))
+                raiseStat(CharacterStat.THIRST, thirstTarget)
+                capStat(CharacterStat.ENDURANCE, enduranceCap)
+            end
+
+            local bodyDamage = nil
+            pcall(function() bodyDamage = player:getBodyDamage() end)
+            if bodyDamage then
+                local okHealth, currentHealth = pcall(function()
+                    return bodyDamage:getOverallBodyHealth()
+                end)
+
+                if okHealth and currentHealth and currentHealth > healthCap then
+                    local damageAmount = currentHealth - healthCap
+                    local reduced = false
+                    if bodyDamage.ReduceGeneralHealth then
+                        reduced = pcall(function()
+                            bodyDamage:ReduceGeneralHealth(damageAmount)
+                        end)
+                    end
+
+                    if not reduced then
+                        pcall(function()
+                            bodyDamage:setOverallBodyHealth(healthCap)
+                        end)
+                    else
+                        local okAfter, afterHealth = pcall(function()
+                            return bodyDamage:getOverallBodyHealth()
+                        end)
+                        if okAfter and afterHealth and afterHealth > healthCap then
+                            pcall(function()
+                                bodyDamage:setOverallBodyHealth(healthCap)
+                            end)
+                        end
+                    end
+
+                    if bodyDamage.DamageUpdate then
+                        pcall(function() bodyDamage:DamageUpdate() end)
+                    end
+                end
+            end
+        end,
+    },
 }
 
 -- ============================================
@@ -880,7 +962,156 @@ EHR.Medication.DosingSchedules = {
 }
 
 -- Default dosing for medications not in the schedule
-EHR.Medication.DefaultDosing = { doseInterval = 6, dosesRequired = 4 }
+EHR.Medication.DefaultDosing = { doseInterval = 6, dosesRequired = 1 }
+
+local function EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
+    medData = medData or {}
+
+    local dosingSchedule = (itemFullType and EHR.Medication.DosingSchedules[itemFullType]) or EHR.Medication.DefaultDosing
+    local doseInterval = medData.doseIntervalHours or medData.intervalHours or dosingSchedule.doseInterval or 6
+    local canCure = (tierEffects and tierEffects.canCure)
+        or medData.cureTimeHours ~= nil
+        or medData.diseaseCureTimeHours ~= nil
+        or medData.isKnoxCure == true
+    local hasSymptomRelief = medData.symptomReduction ~= nil
+        or ((tierEffects and tierEffects.symptomRelief or 0) > 0)
+    local symptomOnly = hasSymptomRelief and not canCure
+
+    local dosesRequired = medData.totalDosesNeeded or dosingSchedule.dosesRequired or 1
+    if symptomOnly and not medData.requiresDoseCourse then
+        dosesRequired = 1
+    end
+
+    local activeHours = medData.effectDurationHours
+        or medData.symptomReliefHours
+        or dosingSchedule.activeHours
+        or doseInterval
+    if activeHours <= 0 and hasSymptomRelief then
+        activeHours = 4
+    end
+
+    return {
+        doseInterval = math.max(0, doseInterval or 0),
+        dosesRequired = math.max(1, dosesRequired or 1),
+        activeHours = math.max(0, activeHours or 0),
+        symptomOnly = symptomOnly,
+    }
+end
+
+function EHR.Medication.GetDoseTiming(medData, itemFullType, tierEffects)
+    return EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
+end
+
+function EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
+    if not player or not medData then return nil end
+    if medData.isTopical then return nil end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking or not medTracking.activeDoses then return nil end
+
+    local tier = medData.tier or 0
+    local tierEffects = EHR.Medication.TierEffectiveness[tier] or EHR.Medication.TierEffectiveness[0]
+    local doseTiming = EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
+
+    if (doseTiming.dosesRequired or 1) < 6 then return nil end
+    if (doseTiming.doseInterval or 0) <= 0 then return nil end
+
+    local medKey = itemFullType or medData.displayName
+    local existingDose = medTracking.activeDoses[medKey]
+    if not existingDose or not existingDose.lastDoseTime then return nil end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local elapsed = math.max(0, currentHour - existingDose.lastDoseTime)
+    local earlyBy = doseTiming.doseInterval - elapsed
+    if earlyBy <= 0.05 then return nil end
+
+    local earlyRatio = math.max(0, math.min(1, earlyBy / doseTiming.doseInterval))
+    local intensity = 1
+    if earlyRatio >= 0.75 then
+        intensity = 2
+    end
+    if earlyRatio >= 0.92 then
+        intensity = 3
+    end
+
+    local existingOverdose = medTracking.activeSideEffects and medTracking.activeSideEffects["medication_overdose"]
+    if existingOverdose and existingOverdose.intensity then
+        intensity = math.min(3, math.max(intensity, existingOverdose.intensity + 1))
+    end
+
+    return {
+        effectId = "medication_overdose",
+        medKey = medKey,
+        medicationName = medData.displayName or medKey,
+        currentHour = currentHour,
+        earlyBy = earlyBy,
+        intervalHours = doseTiming.doseInterval,
+        intensity = intensity,
+        duration = math.min(10, 7 + intensity),
+        sicknessTarget = math.min(0.60, 0.42 + (0.04 * intensity)),
+        enduranceCap = math.max(0.45, 0.57 - (0.04 * intensity)),
+        thirstTarget = math.min(0.78, 0.64 + (0.04 * intensity)),
+        healthCap = math.max(45, 70 - (7 * intensity)),
+    }
+end
+
+function EHR.Medication.ApplyEarlyDoseOverdose(player, overdoseInfo)
+    if not player or not overdoseInfo then return false end
+
+    local sideEffect = EHR.Medication.SideEffects and EHR.Medication.SideEffects[overdoseInfo.effectId]
+    if not sideEffect then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    local currentHour = overdoseInfo.currentHour
+    if not currentHour then
+        local gameTime = getGameTime()
+        currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    end
+
+    local existing = medTracking.activeSideEffects[overdoseInfo.effectId]
+    local duration = overdoseInfo.duration or sideEffect.duration or 10
+    if existing and existing.startTime and existing.duration then
+        local remaining = math.max(0, existing.duration - (currentHour - existing.startTime))
+        duration = math.max(duration, remaining)
+    end
+
+    medTracking.activeSideEffects[overdoseInfo.effectId] = {
+        startTime = currentHour,
+        duration = duration,
+        intensity = overdoseInfo.intensity or 1,
+        medKey = overdoseInfo.medKey,
+        medicationName = overdoseInfo.medicationName,
+        earlyBy = overdoseInfo.earlyBy,
+        intervalHours = overdoseInfo.intervalHours,
+        sicknessTarget = overdoseInfo.sicknessTarget,
+        enduranceCap = overdoseInfo.enduranceCap,
+        thirstTarget = overdoseInfo.thirstTarget,
+        healthCap = overdoseInfo.healthCap,
+    }
+
+    if sideEffect.effects then
+        sideEffect.effects(player, medTracking.activeSideEffects[overdoseInfo.effectId])
+    end
+
+    if player:isLocalPlayer() then
+        local earlyText = string.format("%.1f", overdoseInfo.earlyBy or 0)
+        if (overdoseInfo.intensity or 1) >= 3 then
+            player:Say("I took that way too soon... I feel awful.")
+        elseif (overdoseInfo.intensity or 1) >= 2 then
+            player:Say("That dose was too early. My body is reacting badly.")
+        else
+            player:Say("I should have waited another " .. earlyText .. "h before taking that.")
+        end
+    end
+
+    EHR.Log("Early dose overdose from " .. tostring(overdoseInfo.medicationName) ..
+            " (" .. string.format("%.2f", overdoseInfo.earlyBy or 0) .. "h early, intensity " ..
+            tostring(overdoseInfo.intensity or 1) .. ")")
+    return true
+end
 
 -- ============================================
 -- DRUG INTERACTION DATABASE
@@ -1103,7 +1334,13 @@ function EHR.Medication.GetMedicationData(player)
             activeDoses = {},       -- { medId = { lastDoseTime, doseCount, totalDosesNeeded, intervalHours } }
         }
     end
-    -- Migration: ensure activeDoses exists
+    -- Migration: ensure medication tracking tables exist on older saves / hook-created data.
+    if not modData.EHR_Medication.activeTreatments then
+        modData.EHR_Medication.activeTreatments = {}
+    end
+    if not modData.EHR_Medication.activeSideEffects then
+        modData.EHR_Medication.activeSideEffects = {}
+    end
     if not modData.EHR_Medication.activeDoses then
         modData.EHR_Medication.activeDoses = {}
     end
@@ -1122,39 +1359,52 @@ end
     @param inventory (ItemContainer) - Player's inventory
 ]]--
 function EHR.Medication.ConsumeOneDose(player, item, inventory)
-    if not item or not inventory then return end
+    if not item or not inventory then return false, "invalid" end
 
-    local isDrainable = item:getUseDelta() and item:getUseDelta() > 0
+    local itemID = nil
+    if item.getID then
+        local ok, id = pcall(function() return item:getID() end)
+        if ok then
+            itemID = id
+        end
+    end
 
-    if isDrainable then
-        local useDelta = item:getUseDelta()
-        -- Safety check: ensure getUsedDelta exists before calling (some items may not have it)
+    local useDelta = 0
+    if item.getUseDelta then
+        local ok, delta = pcall(function() return item:getUseDelta() end)
+        if ok and delta then
+            useDelta = delta
+        end
+    end
+
+    -- B42 normal items can expose getUseDelta(), but they cannot always store UsedDelta.
+    local canUseDose = useDelta > 0 and item.getUsedDelta and item.setUsedDelta
+
+    if canUseDose then
         local currentUsed = 0
-        if item.getUsedDelta then
-            currentUsed = item:getUsedDelta() or 0
+        local okCurrent, usedDelta = pcall(function() return item:getUsedDelta() end)
+        if okCurrent and usedDelta then
+            currentUsed = usedDelta
         end
         local newUsed = currentUsed + useDelta
 
-        if newUsed >= 1.0 then
-            -- Fully depleted
-            if isClient() then
-                sendClientCommand(player, "EHR", "RemoveItem", {itemID = item:getID()})
-            end
-            inventory:Remove(item)
-        else
-            -- Still has uses remaining
-            item:setUsedDelta(newUsed)
-            if isClient() then
-                sendClientCommand(player, "EHR", "UpdateItemDelta", {itemID = item:getID(), usedDelta = newUsed})
+        if newUsed < 1.0 then
+            local okSet = pcall(function() item:setUsedDelta(newUsed) end)
+            if okSet then
+                if isClient() and itemID then
+                    sendClientCommand(player, "EHR", "UpdateItemDelta", {itemID = itemID, usedDelta = newUsed})
+                end
+                return true, "dose", useDelta, newUsed
             end
         end
-    else
-        -- Single-use item
-        if isClient() then
-            sendClientCommand(player, "EHR", "RemoveItem", {itemID = item:getID()})
-        end
-        inventory:Remove(item)
     end
+
+    if isClient() and itemID then
+        sendClientCommand(player, "EHR", "RemoveItem", {itemID = itemID})
+    end
+    inventory:Remove(item)
+
+    return true, "removed", useDelta, 1.0
 end
 
 function EHR.Medication.CanUseMedication(player, item)
@@ -1204,6 +1454,7 @@ function EHR.Medication.UseMedication(player, item)
 
     local medTracking = EHR.Medication.GetMedicationData(player)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(player)
+    local earlyDoseOverdose = EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
 
     -- Display usage message
     if medData.usageMessage and player:isLocalPlayer() then
@@ -1250,6 +1501,10 @@ function EHR.Medication.UseMedication(player, item)
         EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
 
+    if earlyDoseOverdose then
+        EHR.Medication.ApplyEarlyDoseOverdose(player, earlyDoseOverdose)
+    end
+
     -- Apply side effects for Tier 3 medications
     if tier == 3 and medData.sideEffects then
         for _, effectId in ipairs(medData.sideEffects) do
@@ -1260,43 +1515,17 @@ function EHR.Medication.UseMedication(player, item)
     -- Check for drug interactions
     EHR.Medication.CheckAndApplyInteractions(player)
 
-    -- Consume one dose of the medication
-    -- For drainable items (multi-use), use one dose
-    -- For normal items (single-use), remove entirely
-    local isDrainable = item:getUseDelta() and item:getUseDelta() > 0
-
-    if isDrainable then
-        -- Multi-use drainable item - use one dose
-        local useDelta = item:getUseDelta()
-        -- BUG FIX: Check if getUsedDelta exists before calling (some items don't have it)
-        local currentUsed = 0
-        if item.getUsedDelta then
-            currentUsed = item:getUsedDelta() or 0
+    local consumed, consumeMode, useDelta, newUsed = EHR.Medication.ConsumeOneDose(player, item, inventory)
+    if consumed and consumeMode == "dose" then
+        local remainingDoses = 0
+        if useDelta and useDelta > 0 then
+            remainingDoses = math.floor((1.0 - newUsed) / useDelta)
         end
-        local newUsed = currentUsed + useDelta
-
-        if newUsed >= 1.0 then
-            -- Item fully depleted - remove it
-            if isClient() then
-                sendClientCommand(player, "EHR", "RemoveItem", {itemID = item:getID()})
-            end
-            inventory:Remove(item)
-            EHR.Log("Used last dose of: " .. itemFullType)
-        else
-            -- Still has doses remaining - just update the used amount
-            item:setUsedDelta(newUsed)
-            if isClient() then
-                sendClientCommand(player, "EHR", "UpdateItemDelta", {itemID = item:getID(), usedDelta = newUsed})
-            end
-            local remainingDoses = math.floor((1.0 - newUsed) / useDelta)
-            EHR.Log("Used dose of: " .. itemFullType .. " (" .. remainingDoses .. " doses remaining)")
-        end
+        EHR.Log("Used dose of: " .. itemFullType .. " (" .. remainingDoses .. " doses remaining)")
+    elseif consumed and consumeMode == "removed" then
+        EHR.Log("Used last dose of: " .. itemFullType)
     else
-        -- Single-use item - remove entirely
-        if isClient() then
-            sendClientCommand(player, "EHR", "RemoveItem", {itemID = item:getID()})
-        end
-        inventory:Remove(item)
+        EHR.Log("WARNING: Failed to consume medication item: " .. itemFullType)
     end
 
     EHR.Log("Used medication: " .. itemFullType .. " (Tier " .. tier .. ", treated disease: " .. tostring(treatedAny) .. ")")
@@ -1332,23 +1561,33 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     local gameTime = getGameTime()
     local currentHour = gameTime:getWorldAgeHours()
 
-    local dosingSchedule = EHR.Medication.DosingSchedules[itemFullType] or EHR.Medication.DefaultDosing
+    local tierEffects = EHR.Medication.TierEffectiveness[medData.tier or 0]
+    local doseTiming = EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
     local medKey = itemFullType or medData.displayName
 
     if not medTracking.activeDoses[medKey] then
         medTracking.activeDoses[medKey] = {
             lastDoseTime = currentHour,
             doseCount = 1,
-            totalDosesNeeded = dosingSchedule.dosesRequired,
-            intervalHours = dosingSchedule.doseInterval,
+            totalDosesNeeded = doseTiming.dosesRequired,
+            intervalHours = doseTiming.doseInterval,
+            activeHours = doseTiming.activeHours,
             medicationName = medData.displayName,
             tier = medData.tier,
             treatingDisease = nil,  -- No disease being treated
+            symptomOnly = doseTiming.symptomOnly,
         }
     else
         local doseData = medTracking.activeDoses[medKey]
         doseData.lastDoseTime = currentHour
-        doseData.doseCount = doseData.doseCount + 1
+        doseData.doseCount = (doseData.doseCount or 0) + 1
+        doseData.totalDosesNeeded = doseTiming.dosesRequired
+        doseData.intervalHours = doseTiming.doseInterval
+        doseData.activeHours = doseTiming.activeHours
+        doseData.medicationName = medData.displayName
+        doseData.tier = medData.tier
+        doseData.treatingDisease = nil
+        doseData.symptomOnly = doseTiming.symptomOnly
     end
 
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
@@ -1445,6 +1684,29 @@ local function EHR_MedicationReducePain(player, reduction)
     return changed
 end
 
+local function EHR_MedicationAdjustStat(player, stat, delta, minValue, maxValue)
+    if not player or not stat or not delta or delta == 0 then return false end
+
+    local stats = nil
+    pcall(function() stats = player:getStats() end)
+    if not stats then return false end
+
+    minValue = minValue or 0
+    maxValue = maxValue or 1
+
+    local changed = false
+    pcall(function()
+        local current = stats:get(stat) or 0
+        local nextValue = math.max(minValue, math.min(maxValue, current + delta))
+        if math.abs(nextValue - current) > 0.0001 then
+            stats:set(stat, nextValue)
+            changed = true
+        end
+    end)
+
+    return changed
+end
+
 local function EHR_MedicationReduceMuscleStiffness(player, reduction)
     if not player or not reduction or reduction <= 0 then return false end
     if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return false end
@@ -1502,6 +1764,27 @@ local function EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medD
     if not reductions then return end
 
     local didRelieve = false
+    local isFoodborne = diseaseId == "food_poisoning" or diseaseId == "gastroenteritis" or diseaseId == "dysentery"
+
+    if isFoodborne and reductions.nausea then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.FOOD_SICKNESS, -0.04 * reductions.nausea, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.SICKNESS, -0.03 * reductions.nausea, 0, 1) or didRelieve
+    end
+
+    if isFoodborne and reductions.vomiting then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.FOOD_SICKNESS, -0.05 * reductions.vomiting, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.HUNGER, -0.02 * reductions.vomiting, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.THIRST, -0.04 * reductions.vomiting, 0, 1) or didRelieve
+    end
+
+    if reductions.dehydration then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.THIRST, -0.10 * reductions.dehydration, 0, 1) or didRelieve
+    end
+
+    if reductions.weakness then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.ENDURANCE, 0.12 * reductions.weakness, 0, 1) or didRelieve
+    end
+
     if reductions.muscleSpasms then
         didRelieve = EHR_MedicationReduceMuscleStiffness(player, reductions.muscleSpasms) or didRelieve
     end
@@ -1526,7 +1809,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
 
     local gameTime = getGameTime()
     local currentHour = gameTime:getWorldAgeHours()
-    local dosingSchedule = EHR.Medication.DosingSchedules[itemFullType] or EHR.Medication.DefaultDosing
+    local doseTiming = EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
     local medKey = itemFullType or medData.displayName
 
     -- Apply symptom relief
@@ -1537,7 +1820,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
         end
 
         disease.symptomSeverity = math.min(currentSymptomSeverity, 1 - tierEffects.symptomRelief)
-        disease.symptomReliefUntil = currentHour + math.max(0, dosingSchedule.doseInterval or 0)
+        disease.symptomReliefUntil = currentHour + doseTiming.activeHours
         disease.symptomReliefMedKey = medKey
         EHR.Log("Applied symptom relief: " .. (tierEffects.symptomRelief * 100) .. "% to " .. diseaseId)
     end
@@ -1550,36 +1833,58 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
         medTracking.activeDoses[medKey] = {
             lastDoseTime = currentHour,
             doseCount = 1,
-            totalDosesNeeded = dosingSchedule.dosesRequired,
-            intervalHours = dosingSchedule.doseInterval,
+            totalDosesNeeded = doseTiming.dosesRequired,
+            intervalHours = doseTiming.doseInterval,
+            activeHours = doseTiming.activeHours,
             medicationName = medData.displayName,
             tier = medData.tier,
             treatingDisease = diseaseId,
+            symptomOnly = doseTiming.symptomOnly,
         }
     else
         -- Subsequent dose
         local doseData = medTracking.activeDoses[medKey]
         doseData.lastDoseTime = currentHour
-        doseData.doseCount = doseData.doseCount + 1
-        doseData.totalDosesNeeded = dosingSchedule.dosesRequired
-        doseData.intervalHours = dosingSchedule.doseInterval
+        doseData.doseCount = (doseData.doseCount or 0) + 1
+        doseData.totalDosesNeeded = doseTiming.dosesRequired
+        doseData.intervalHours = doseTiming.doseInterval
+        doseData.activeHours = doseTiming.activeHours
         doseData.medicationName = medData.displayName
         doseData.tier = medData.tier
         doseData.treatingDisease = diseaseId
+        doseData.symptomOnly = doseTiming.symptomOnly
     end
 
-    -- Start cure process if tier can cure
+    -- Start or continue cure process if tier can cure.
     if tierEffects.canCure then
-        medTracking.activeTreatments[diseaseId] = {
-            startTime = currentHour,
-            cureTimeHours = EHR.Medication.GetCureTimeHours(medData, diseaseId, tierEffects),
-            medicationName = medData.displayName,
-            tier = medData.tier,
-            medKey = medKey,
-        }
+        local cureTimeHours = EHR.Medication.GetCureTimeHours(medData, diseaseId, tierEffects)
+        local existingTreatment = medTracking.activeTreatments[diseaseId]
 
-        EHR.Log("Started treatment for " .. diseaseId .. " - cure in " ..
-                medTracking.activeTreatments[diseaseId].cureTimeHours .. " hours")
+        if existingTreatment and existingTreatment.medKey == medKey then
+            -- Continuing the same course should not reset accumulated treatment time.
+            existingTreatment.cureTimeHours = existingTreatment.cureTimeHours or cureTimeHours
+            existingTreatment.medicationName = medData.displayName
+            existingTreatment.tier = medData.tier
+            existingTreatment.medKey = medKey
+            existingTreatment.awaitingDoses = nil
+
+            local doseData = medTracking.activeDoses[medKey] or {}
+            EHR.Log("Continued treatment for " .. diseaseId .. " - dose " ..
+                    tostring(doseData.doseCount or 0) .. "/" ..
+                    tostring(doseData.totalDosesNeeded or 1))
+        else
+            medTracking.activeTreatments[diseaseId] = {
+                startTime = currentHour,
+                cureTimeHours = cureTimeHours,
+                medicationName = medData.displayName,
+                tier = medData.tier,
+                medKey = medKey,
+                awaitingDoses = nil,
+            }
+
+            EHR.Log("Started treatment for " .. diseaseId .. " - cure in " ..
+                    medTracking.activeTreatments[diseaseId].cureTimeHours .. " hours")
+        end
     end
 
     -- Check for drug interactions
@@ -1595,15 +1900,10 @@ function EHR.Medication.GetActiveCategories(player)
     if not medTracking then return {} end
 
     local categories = {}
-    local gameTime = getGameTime()
-    local currentHour = gameTime:getWorldAgeHours()
 
     for medKey, doseData in pairs(medTracking.activeDoses) do
-        -- Check if dose is still active (within interval + grace period)
-        local elapsed = currentHour - doseData.lastDoseTime
-        local stillActive = elapsed < (doseData.intervalHours * 1.5)
-
-        if stillActive then
+        local status = EHR.Medication.GetDoseStatus(player, medKey)
+        if status and status.isDoseActive then
             local category = EHR.Medication.DrugCategories[doseData.medicationName]
             if category then
                 categories[category] = true
@@ -1672,32 +1972,53 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     end
 
     local doseData = medTracking.activeDoses[medKey]
+    if type(doseData) ~= "table" or not doseData.lastDoseTime then
+        return nil
+    end
+
     local gameTime = getGameTime()
     local currentHour = gameTime:getWorldAgeHours()
 
     local elapsed = currentHour - doseData.lastDoseTime
-    local nextDoseIn = math.max(0, doseData.intervalHours - elapsed)
-    local isOverdue = elapsed > doseData.intervalHours
-    local hoursOverdue = isOverdue and (elapsed - doseData.intervalHours) or 0
-    local isDoseActive = elapsed <= doseData.intervalHours
-    local hoursActiveRemaining = isDoseActive and nextDoseIn or 0
+    local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+    local tier = doseData.tier or (medData and medData.tier) or 0
+    local tierEffects = EHR.Medication.TierEffectiveness[tier] or EHR.Medication.TierEffectiveness[0]
+    local doseTiming = EHR_MedicationGetDoseTiming(medData or { tier = tier }, medKey, tierEffects)
+    local intervalHours = doseData.intervalHours
+    if intervalHours == nil then intervalHours = doseTiming.doseInterval end
+    local activeHours = doseData.activeHours
+    if activeHours == nil then activeHours = doseTiming.activeHours end
+    local totalDosesNeeded = doseData.totalDosesNeeded or doseTiming.dosesRequired
+    if doseTiming.symptomOnly and not doseData.requiresDoseCourse then
+        totalDosesNeeded = 1
+    end
+
+    local doseCount = doseData.doseCount or 0
+    local treatmentComplete = doseCount >= totalDosesNeeded
+    local nextDoseIn = (not treatmentComplete and intervalHours > 0) and math.max(0, intervalHours - elapsed) or 0
+    local isOverdue = (not treatmentComplete) and intervalHours > 0 and elapsed > intervalHours
+    local hoursOverdue = isOverdue and (elapsed - intervalHours) or 0
+    local isDoseActive = activeHours > 0 and elapsed >= 0 and elapsed <= activeHours
+    local hoursActiveRemaining = isDoseActive and math.max(0, activeHours - elapsed) or 0
 
     return {
         medKey = medKey,
         medicationName = doseData.medicationName,
-        tier = doseData.tier,
+        tier = tier,
         treatingDisease = doseData.treatingDisease,
-        doseCount = doseData.doseCount,
-        totalDosesNeeded = doseData.totalDosesNeeded,
-        dosesRemaining = math.max(0, doseData.totalDosesNeeded - doseData.doseCount),
-        intervalHours = doseData.intervalHours,
+        doseCount = doseCount,
+        totalDosesNeeded = totalDosesNeeded,
+        dosesRemaining = math.max(0, totalDosesNeeded - doseCount),
+        intervalHours = intervalHours,
+        activeHours = activeHours,
         hoursSinceLastDose = elapsed,
         hoursUntilNextDose = nextDoseIn,
         isDoseActive = isDoseActive,
         hoursActiveRemaining = hoursActiveRemaining,
         isOverdue = isOverdue,
         hoursOverdue = hoursOverdue,
-        treatmentComplete = doseData.doseCount >= doseData.totalDosesNeeded,
+        treatmentComplete = treatmentComplete,
+        symptomOnly = doseTiming.symptomOnly or doseData.symptomOnly == true,
     }
 end
 
@@ -1706,18 +2027,11 @@ function EHR.Medication.GetAllDoseStatuses(player)
     if not medTracking then return {} end
 
     local statuses = {}
-    local gameTime = getGameTime()
-    local currentHour = gameTime:getWorldAgeHours()
 
     for medKey, doseData in pairs(medTracking.activeDoses) do
-        local elapsed = currentHour - doseData.lastDoseTime
-        local stillRelevant = elapsed < (doseData.intervalHours * 3) -- Keep showing for 3x interval
-
-        if stillRelevant then
-            local status = EHR.Medication.GetDoseStatus(player, medKey)
-            if status then
-                table.insert(statuses, status)
-            end
+        local status = EHR.Medication.GetDoseStatus(player, medKey)
+        if status and (status.isDoseActive or status.isOverdue or not status.treatmentComplete) then
+            table.insert(statuses, status)
         end
     end
 
@@ -1732,6 +2046,19 @@ function EHR.Medication.GetAllDoseStatuses(player)
     end)
 
     return statuses
+end
+
+function EHR.Medication.IsTreatmentCourseComplete(player, treatment)
+    if not player or not treatment then return false end
+    if not treatment.medKey then return true end
+
+    local status = EHR.Medication.GetDoseStatus(player, treatment.medKey)
+    if not status then
+        -- Older saves may have active treatment data without dose metadata.
+        return true
+    end
+
+    return status.treatmentComplete == true
 end
 
 function EHR.Medication.ApplySideEffect(player, effectId)
@@ -1751,7 +2078,7 @@ function EHR.Medication.ApplySideEffect(player, effectId)
 
     -- Apply immediate effect
     if sideEffect.effects then
-        sideEffect.effects(player)
+        sideEffect.effects(player, medTracking.activeSideEffects[effectId])
     end
 
     if player:isLocalPlayer() then
@@ -1778,8 +2105,9 @@ function EHR.Medication.Update(player)
     local treatmentsToRemove = {}
     for diseaseId, treatment in pairs(medTracking.activeTreatments) do
         local elapsed = currentHour - treatment.startTime
+        local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
 
-        if elapsed >= treatment.cureTimeHours then
+        if elapsed >= treatment.cureTimeHours and courseComplete then
             -- Treatment complete - cure the disease
             if EHR.Disease and EHR.Disease.Cure then
                 EHR.Disease.Cure(player, diseaseId)
@@ -1788,6 +2116,11 @@ function EHR.Medication.Update(player)
                 end
             end
             table.insert(treatmentsToRemove, diseaseId)
+        elseif elapsed >= treatment.cureTimeHours and not courseComplete then
+            if not treatment.awaitingDoses then
+                treatment.awaitingDoses = true
+                EHR.Log("Treatment time reached for " .. diseaseId .. " but course still needs more doses")
+            end
         end
     end
 
@@ -1812,13 +2145,36 @@ function EHR.Medication.Update(player)
             -- Reapply effect each tick
             local sideEffect = EHR.Medication.SideEffects[effectId]
             if sideEffect and sideEffect.effects then
-                sideEffect.effects(player)
+            sideEffect.effects(player, effectData)
             end
         end
     end
 
     for _, effectId in ipairs(effectsToRemove) do
         medTracking.activeSideEffects[effectId] = nil
+    end
+
+    -- Remove completed symptom-only dose entries once their actual effect has ended.
+    local dosesToRemove = {}
+    for medKey, _ in pairs(medTracking.activeDoses) do
+        local status = EHR.Medication.GetDoseStatus(player, medKey)
+        if status and status.treatmentComplete and not status.isDoseActive and not status.isOverdue then
+            local usedByTreatment = false
+            for _, treatment in pairs(medTracking.activeTreatments) do
+                if treatment.medKey == medKey then
+                    usedByTreatment = true
+                    break
+                end
+            end
+
+            if not usedByTreatment then
+                table.insert(dosesToRemove, medKey)
+            end
+        end
+    end
+
+    for _, medKey in ipairs(dosesToRemove) do
+        medTracking.activeDoses[medKey] = nil
     end
 end
 
@@ -1846,6 +2202,7 @@ function EHR.Medication.GetActiveTreatments(player)
         if treatment.medKey then
             doseInfo = EHR.Medication.GetDoseStatus(player, treatment.medKey)
         end
+        local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
 
         table.insert(treatments, {
             diseaseId = diseaseId,
@@ -1863,6 +2220,8 @@ function EHR.Medication.GetActiveTreatments(player)
             hoursActiveRemaining = doseInfo and doseInfo.hoursActiveRemaining or 0,
             isOverdue = doseInfo and doseInfo.isOverdue or false,
             hoursOverdue = doseInfo and doseInfo.hoursOverdue or 0,
+            courseComplete = courseComplete,
+            awaitingDoses = treatment.awaitingDoses == true,
         })
     end
 

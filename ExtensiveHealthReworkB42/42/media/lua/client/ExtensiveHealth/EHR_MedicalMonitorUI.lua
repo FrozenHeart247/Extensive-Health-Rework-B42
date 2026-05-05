@@ -1232,7 +1232,8 @@ function EHR_MedicalMonitorUI:renderDoseAlertsSection(startY)
     -- Filter for urgent alerts (overdue or due within 30 minutes)
     local urgentAlerts = {}
     for _, status in ipairs(doseStatuses) do
-        if status.isOverdue or (status.hoursUntilNextDose < 0.5 and not status.treatmentComplete) then
+        if (status.isOverdue and not status.treatmentComplete)
+            or (status.hoursUntilNextDose < 0.5 and not status.treatmentComplete) then
             table.insert(urgentAlerts, status)
         end
     end

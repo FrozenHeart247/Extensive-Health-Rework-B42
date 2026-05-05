@@ -83,6 +83,7 @@ local function trackMedicationDose(character, item, medData, itemFullType)
     modData.EHR_Medication = modData.EHR_Medication or {}
     modData.EHR_Medication.activeDoses = modData.EHR_Medication.activeDoses or {}
     modData.EHR_Medication.activeTreatments = modData.EHR_Medication.activeTreatments or {}
+    modData.EHR_Medication.activeSideEffects = modData.EHR_Medication.activeSideEffects or {}
 
     local gameTime = getGameTime()
     local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
@@ -99,30 +100,15 @@ local function trackMedicationDose(character, item, medData, itemFullType)
         end
     end
 
-    -- Track the dose
-    local doseCount = existingDose and (existingDose.doseCount or 0) + 1 or 1
+    local earlyDoseOverdose = nil
+    if EHR.Medication.GetEarlyDoseOverdoseInfo then
+        earlyDoseOverdose = EHR.Medication.GetEarlyDoseOverdoseInfo(character, medData, itemFullType)
+    end
 
-    -- For generic meds, use sensible defaults
-    -- totalDosesNeeded: 3 doses for symptom relief
-    -- intervalHours: 6 hours between doses (typical OTC medication)
-    local totalDosesNeeded = medData.totalDosesNeeded or 3
-    local intervalHours = medData.intervalHours or 6
+    local treatedDisease = false
 
-    modData.EHR_Medication.activeDoses[medKey] = {
-        medKey = medKey,
-        medicationName = medData.displayName,
-        tier = medData.tier or 0,
-        doseCount = doseCount,
-        totalDosesNeeded = totalDosesNeeded,
-        intervalHours = intervalHours,
-        lastDoseTime = currentHour,
-        startTime = existingDose and existingDose.startTime or currentHour,
-        isGeneric = medData.isGeneric or false,
-    }
-
-    log("Tracked medication: " .. itemFullType .. " (dose #" .. doseCount .. ")")
-
-    -- If the medication treats diseases and player has those diseases, apply treatment
+    -- If the medication treats diseases and player has those diseases, apply treatment.
+    -- ApplyTreatment owns activeDoses for real EHR treatments, so don't pre-write the dose here.
     if medData.treats and #medData.treats > 0 and EHR.Disease and EHR.Disease.GetDiseaseData then
         local diseaseData = EHR.Disease.GetDiseaseData(character)
         if diseaseData and diseaseData.active then
@@ -134,11 +120,39 @@ local function trackMedicationDose(character, item, medData, itemFullType)
                             EHR.Medication.TierEffectiveness[medData.tier] or
                             { symptomRelief = 0.15, cureRate = 0.0, canCure = false }
                         EHR.Medication.ApplyTreatment(character, diseaseId, medData, tierEffects, itemFullType)
+                        treatedDisease = true
                         log("Applied treatment for: " .. diseaseId)
                     end
                 end
             end
         end
+    end
+
+    if not treatedDisease then
+        if EHR.Medication.TrackDoseOnly then
+            EHR.Medication.TrackDoseOnly(character, medData, itemFullType)
+        else
+            local doseCount = existingDose and (existingDose.doseCount or 0) + 1 or 1
+            modData.EHR_Medication.activeDoses[medKey] = {
+                medKey = medKey,
+                medicationName = medData.displayName,
+                tier = medData.tier or 0,
+                doseCount = doseCount,
+                totalDosesNeeded = medData.totalDosesNeeded or 1,
+                intervalHours = medData.intervalHours or 6,
+                activeHours = medData.effectDurationHours or medData.symptomReliefHours or medData.intervalHours or 6,
+                lastDoseTime = currentHour,
+                startTime = existingDose and existingDose.startTime or currentHour,
+                isGeneric = medData.isGeneric or false,
+                symptomOnly = true,
+            }
+        end
+
+        log("Tracked medication: " .. itemFullType)
+    end
+
+    if earlyDoseOverdose and EHR.Medication.ApplyEarlyDoseOverdose then
+        EHR.Medication.ApplyEarlyDoseOverdose(character, earlyDoseOverdose)
     end
 
     -- Apply immediate effects (for emergency medications, Knox cures, etc.)
@@ -158,14 +172,18 @@ local function trackMedicationDose(character, item, medData, itemFullType)
 
     -- MP sync
     if isClient() and sendClientCommand then
+        local trackedDose = modData.EHR_Medication.activeDoses[medKey] or {}
         sendClientCommand(character, "EHR", "TrackMedication", {
             medKey = medKey,
             medicationName = medData.displayName,
             tier = medData.tier or 0,
-            doseCount = doseCount,
-            totalDosesNeeded = totalDosesNeeded,
-            intervalHours = intervalHours,
+            doseCount = trackedDose.doseCount or 1,
+            totalDosesNeeded = trackedDose.totalDosesNeeded or 1,
+            intervalHours = trackedDose.intervalHours or 6,
+            activeHours = trackedDose.activeHours or trackedDose.intervalHours or 6,
             lastDoseTime = currentHour,
+            treatingDisease = trackedDose.treatingDisease,
+            symptomOnly = trackedDose.symptomOnly == true,
         })
     end
 end

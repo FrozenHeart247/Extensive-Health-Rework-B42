@@ -221,7 +221,7 @@ module ExtensiveHealth
         Icon = IVKit,
         Weight = 0.3,
         Tooltip = Tooltip_IVKit,
-        UseDelta = 0.2,
+        UseDelta = 1.0,
         UseWhileEquipped = false,
         Medical = true,
     }

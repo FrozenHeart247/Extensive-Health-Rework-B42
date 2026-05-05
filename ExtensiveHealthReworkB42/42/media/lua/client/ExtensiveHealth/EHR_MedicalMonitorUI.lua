@@ -1927,12 +1927,15 @@ function EHR_MedicalMonitorUI:renderMedicationsSection(startY)
     for _, treatment in ipairs(treatments) do
         table.insert(displayedMeds, {
             medicationName = treatment.medicationName,
+            medKey = treatment.medKey,
             tier = treatment.tier,
             hoursRemaining = treatment.hoursRemaining,
             progress = treatment.progress,
             doseCount = treatment.doseCount,
             totalDosesNeeded = treatment.totalDosesNeeded,
             hoursUntilNextDose = treatment.hoursUntilNextDose,
+            isDoseActive = treatment.isDoseActive,
+            hoursActiveRemaining = treatment.hoursActiveRemaining,
             isOverdue = treatment.isOverdue,
             hoursOverdue = treatment.hoursOverdue,
             isTreatingDisease = true,
@@ -1942,15 +1945,18 @@ function EHR_MedicalMonitorUI:renderMedicationsSection(startY)
 
     -- Then add dose-only entries (meds taken without disease)
     for _, doseStatus in ipairs(doseStatuses) do
-        if not seenMedKeys[doseStatus.medicationName] and not doseStatus.treatmentComplete then
+        if not seenMedKeys[doseStatus.medicationName] and (doseStatus.isDoseActive or not doseStatus.treatmentComplete) then
             table.insert(displayedMeds, {
                 medicationName = doseStatus.medicationName,
+                medKey = doseStatus.medKey,
                 tier = doseStatus.tier,
                 hoursRemaining = 0, -- No cure timer for symptom relief
                 progress = doseStatus.doseCount / doseStatus.totalDosesNeeded,
                 doseCount = doseStatus.doseCount,
                 totalDosesNeeded = doseStatus.totalDosesNeeded,
                 hoursUntilNextDose = doseStatus.hoursUntilNextDose,
+                isDoseActive = doseStatus.isDoseActive,
+                hoursActiveRemaining = doseStatus.hoursActiveRemaining,
                 isOverdue = doseStatus.isOverdue,
                 hoursOverdue = doseStatus.hoursOverdue,
                 isTreatingDisease = false, -- Symptom relief only
@@ -2008,6 +2014,8 @@ function EHR_MedicalMonitorUI:renderMedicationEntry(startY, medData)
     local doseCount = medData.doseCount or 0
     local totalDoses = medData.totalDosesNeeded or 0
     local hoursUntilNextDose = medData.hoursUntilNextDose or 0
+    local isDoseActive = medData.isDoseActive or false
+    local hoursActiveRemaining = medData.hoursActiveRemaining or 0
     local isOverdue = medData.isOverdue or false
     local hoursOverdue = medData.hoursOverdue or 0
 
@@ -2040,7 +2048,11 @@ function EHR_MedicalMonitorUI:renderMedicationEntry(startY, medData)
         y = y + 16
     else
         -- Symptom relief only - show status text
-        self:drawText(getText("UI_EHR_SymptomRelief"), padding + 5, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        local reliefText = getText("UI_EHR_SymptomRelief")
+        if isDoseActive and hoursActiveRemaining > 0 then
+            reliefText = string.format("Symptom relief: %.1fh left", hoursActiveRemaining)
+        end
+        self:drawText(reliefText, padding + 5, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
         y = y + self.LINE_HEIGHT
     end
     -- Next dose timer / Retake indicator
@@ -2333,7 +2345,7 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
         medCount = medCount + 1
     end
     for _, d in ipairs(doseStatuses) do
-        if d.medicationName and not seenMeds[d.medicationName] and not d.treatmentComplete then
+        if d.medicationName and not seenMeds[d.medicationName] and (d.isDoseActive or not d.treatmentComplete) then
             medCount = medCount + 1
         end
     end

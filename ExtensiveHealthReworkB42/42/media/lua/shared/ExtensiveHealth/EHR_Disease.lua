@@ -1309,7 +1309,9 @@ local function EHR_DiseaseApplyBodyHealthDamage(player, amount, cause)
                 EHR_DiseaseKillPlayer(player, cause)
                 return 0
             end
-            return afterHealth
+            if afterHealth < currentHealth then
+                return afterHealth
+            end
         end
     end
 
@@ -1357,6 +1359,15 @@ local function EHR_DiseaseClampBodyHealth(player, maxHealth)
             end)
         end
 
+        if clamped then
+            local okAfter, afterHealth = pcall(function()
+                return bodyDamage:getOverallBodyHealth()
+            end)
+            if not okAfter or not afterHealth or afterHealth > healthCap then
+                clamped = false
+            end
+        end
+
         if not clamped then
             pcall(function()
                 bodyDamage:setOverallBodyHealth(healthCap)
@@ -1365,6 +1376,114 @@ local function EHR_DiseaseClampBodyHealth(player, maxHealth)
     end
 
     return math.min(currentHealth, healthCap)
+end
+
+local function EHR_DiseaseGetBodyHealth(player)
+    if not player then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+
+    if okHealth then
+        return currentHealth
+    end
+
+    return nil
+end
+
+local function EHR_DiseaseGetActiveCurativeTreatment(player, diseaseId)
+    if not player or not diseaseId then return nil end
+
+    local modData = player:getModData()
+    local medTracking = modData and modData.EHR_Medication
+    local treatments = medTracking and medTracking.activeTreatments
+    local treatment = treatments and treatments[diseaseId]
+    if not treatment then return nil end
+
+    if treatment.tier and treatment.tier < 2 then return nil end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    if gameTime and treatment.startTime and treatment.cureTimeHours then
+        local currentHour = gameTime:getWorldAgeHours()
+        if (currentHour - treatment.startTime) >= treatment.cureTimeHours then
+            return nil
+        end
+    end
+
+    return treatment
+end
+
+local function EHR_DiseaseGetActiveSymptomMultiplier(player, diseaseId, disease)
+    if not player or not diseaseId or not disease then return 1.0 end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local multiplier = 1.0
+
+    if disease.symptomReliefUntil and disease.symptomReliefUntil > currentHour then
+        multiplier = math.min(multiplier, disease.symptomSeverity or 1.0)
+    elseif disease.symptomReliefUntil then
+        disease.symptomReliefUntil = nil
+        disease.symptomReliefMedKey = nil
+        disease.symptomSeverity = 1.0
+    end
+
+    local modData = player:getModData()
+    local medTracking = modData and modData.EHR_Medication
+    local activeDoses = medTracking and medTracking.activeDoses
+    if activeDoses and EHR.Medication and EHR.Medication.TierEffectiveness then
+        for medKey, doseData in pairs(activeDoses) do
+            if doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
+                local elapsed = currentHour - doseData.lastDoseTime
+                if elapsed >= 0 and elapsed <= doseData.intervalHours then
+                    local tier = doseData.tier
+                    local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+                    if not tier and medData then tier = medData.tier end
+
+                    local tierEffects = EHR.Medication.TierEffectiveness[tier or 0]
+                    if tierEffects and tierEffects.symptomRelief and tierEffects.symptomRelief > 0 then
+                        multiplier = math.min(multiplier, 1 - tierEffects.symptomRelief)
+                    end
+                end
+            end
+        end
+    end
+
+    return math.max(0.20, math.min(1.0, multiplier))
+end
+
+local function EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, reductionKey)
+    if not player or not diseaseId or not reductionKey then return 0 end
+    if not EHR.Medication or not EHR.Medication.Database then return 0 end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local modData = player:getModData()
+    local medTracking = modData and modData.EHR_Medication
+    local activeDoses = medTracking and medTracking.activeDoses
+    if not activeDoses then return 0 end
+
+    local activeReduction = 0
+    for medKey, doseData in pairs(activeDoses) do
+        if doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
+            local elapsed = currentHour - doseData.lastDoseTime
+            if elapsed >= 0 and elapsed <= doseData.intervalHours then
+                local medData = EHR.Medication.Database[medKey]
+                local reductions = medData and medData.symptomReduction
+                local reduction = reductions and reductions[reductionKey] or 0
+                if reduction > activeReduction then
+                    activeReduction = reduction
+                end
+            end
+        end
+    end
+
+    return math.max(0, math.min(1, activeReduction))
 end
 
 local function EHR_DiseaseIsMusclePart(partType, part)
@@ -1467,6 +1586,58 @@ local function EHR_DiseaseApplyMuscleStrain(player, targetStiffness, step)
     end
 end
 
+local function EHR_DiseaseReduceMuscleStrainToward(player, targetStiffness, step)
+    if not player or targetStiffness == nil then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    targetStiffness = math.min(100, math.max(0, targetStiffness))
+    step = math.min(5, math.max(0.05, step or 0.5))
+    local changed = false
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and EHR_DiseaseIsMusclePart(partType, part) then
+            local okCurrent, currentStiffness = pcall(function()
+                return part:getStiffness()
+            end)
+
+            currentStiffness = (okCurrent and currentStiffness) or 0
+            if currentStiffness > targetStiffness and part.setStiffness then
+                local newStiffness = math.max(targetStiffness, currentStiffness - step)
+                local okSet = pcall(function()
+                    part:setStiffness(newStiffness)
+                end)
+
+                if okSet then
+                    changed = true
+                    if newStiffness <= 0.1 and player.getFitness and BodyPartType.ToString then
+                        pcall(function()
+                            player:getFitness():removeStiffnessValue(BodyPartType.ToString(partType))
+                        end)
+                    end
+                end
+            end
+
+            if part.getAdditionalPain and part.setAdditionalPain then
+                pcall(function()
+                    local currentPain = part:getAdditionalPain() or 0
+                    part:setAdditionalPain(math.max(0, currentPain - (step * 1.5)))
+                end)
+            end
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+end
+
 function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
     local stats = player:getStats()
     if not stats then return end
@@ -1528,6 +1699,10 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
 
     elseif diseaseId == "trichinosis" then
         -- Parasite infection: muscle pain, feverish fatigue and weakness.
+        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "trichinosis")
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "trichinosis", disease)
+        local muscleRelief = EHR_DiseaseGetActiveSymptomReduction(player, "trichinosis", "muscleSpasms")
+        local painRelief = EHR_DiseaseGetActiveSymptomReduction(player, "trichinosis", "pain")
         local enduranceDrain = 0.002 * severity
         local enduranceFloor = 0.80
         local fatigueTarget = 0.18 * severity
@@ -1562,14 +1737,39 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             strainStep = 0.20 * severity
         end
 
+        if symptomMult < 1.0 then
+            painTarget = painTarget * symptomMult
+            if muscleRelief <= 0 then
+                strainTarget = math.max(4, strainTarget * symptomMult)
+                strainStep = math.max(0.05, strainStep * symptomMult)
+            end
+        end
+
+        if muscleRelief > 0 then
+            local muscleMult = math.max(0.12, 1 - (muscleRelief * 2.0))
+            strainTarget = math.min(4.5, math.max(2, strainTarget * muscleMult))
+            strainStep = math.max(0.02, strainStep * 0.10)
+        end
+
+        if painRelief > 0 then
+            painTarget = painTarget * math.max(0.25, 1 - (painRelief * 1.5))
+        end
+
         EHR_DiseaseDrainEndurance(stats, enduranceDrain, enduranceFloor)
         EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, fatigueTarget, 0.0035 * severity, 1)
         EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.SICKNESS, feverTarget, 0.004 * severity, 1)
         EHR_DiseaseRaisePainToward(stats, painTarget, 0.018 * severity)
         EHR_DiseaseApplyMuscleStrain(player, strainTarget, strainStep)
+        if muscleRelief > 0 then
+            local reliefStep = math.max(1.0, (1.2 + stageMult * 1.8) * (0.5 + severity) * muscleRelief)
+            EHR_DiseaseReduceMuscleStrainToward(player, strainTarget, reliefStep)
+        end
         EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00055 * severity * stageMult)
 
         local crampChance = (stage == 3 and 0.009 or stage == 2 and 0.003 or 0.0005) * severity
+        if muscleRelief > 0 then
+            crampChance = crampChance * math.max(0.10, 1 - (muscleRelief * 2.0))
+        end
         trySymptom("cramp", crampChance, 0.25, function()
             EHR_DiseaseTriggerCramp(player)
         end)
@@ -1580,14 +1780,19 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             end)
         end
 
-        if stage == 3 and disease.trichinosisHealthCap then
+        if curativeTreatment then
+            disease.trichinosisHealthCap = nil
+        elseif stage == 3 then
+            if not disease.trichinosisHealthCap then
+                disease.trichinosisHealthCap = EHR_DiseaseGetBodyHealth(player)
+            end
             EHR_DiseaseClampBodyHealth(player, disease.trichinosisHealthCap)
         elseif stage ~= 3 then
             disease.trichinosisHealthCap = nil
         end
 
-        if stage == 3 and EHR_DiseaseCanTriggerSymptom(disease, "trichinosis_health_damage", 1.0) then
-            local damage = 1.4 + (1.3 * severity)
+        if stage == 3 and not curativeTreatment and EHR_DiseaseCanTriggerSymptom(disease, "trichinosis_health_damage", 0.25) then
+            local damage = 1.1 + (2.2 * severity)
             local newHealth = EHR_DiseaseApplyBodyHealthDamage(
                 player,
                 damage,
@@ -1599,7 +1804,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
                 EHR_DiseaseClampBodyHealth(player, disease.trichinosisHealthCap)
             end
 
-            if newHealth and newHealth <= 20 and EHR_DiseaseRoll(0.035 * severity) then
+            if newHealth and newHealth <= 20 and EHR_DiseaseRoll(0.02 * severity) then
                 EHR_DiseaseKillPlayer(
                     player,
                     "Trichinosis complications - severe untreated parasitic infection became fatal"
@@ -1688,6 +1893,24 @@ function EHR.Disease.CheckDialogue(player, data)
                 end
             end
         end
+    end
+end
+
+local function EHR_DiseaseEnforceHealthCaps(player, modData)
+    if not player or not modData or not modData.EHR_Disease or not modData.EHR_Disease.active then return end
+
+    local trichinosis = modData.EHR_Disease.active.trichinosis
+    if not trichinosis then return end
+
+    if EHR_DiseaseGetActiveCurativeTreatment(player, "trichinosis") then
+        trichinosis.trichinosisHealthCap = nil
+        return
+    end
+
+    if trichinosis.stage == 3 and trichinosis.trichinosisHealthCap then
+        EHR_DiseaseClampBodyHealth(player, trichinosis.trichinosisHealthCap)
+    elseif trichinosis.stage ~= 3 then
+        trichinosis.trichinosisHealthCap = nil
     end
 end
 
@@ -2791,6 +3014,8 @@ local function processPlayerTick(player)
         return
     end
 
+    EHR_DiseaseEnforceHealthCaps(player, modData)
+
     -- Sync our disease state to vanilla food sickness (suppresses vanilla death)
     state.vanilla = state.vanilla + 1
     if state.vanilla >= VANILLA_SICKNESS_INTERVAL then
@@ -2805,6 +3030,7 @@ local function processPlayerTick(player)
         -- Apply Lifestyle & Hobbies healing bonuses before progression
         EHR.Disease.ApplyHealingBonuses(player, modData)
         EHR.Disease.UpdateProgression(player, modData)
+        EHR_DiseaseEnforceHealthCaps(player, modData)
     end
 
     -- Dialogue checks (every ~1 minute)

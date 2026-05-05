@@ -1394,6 +1394,127 @@ function EHR.Medication.GetTreatmentTimeText(medData)
     return nil
 end
 
+local function EHR_MedicationIsMusclePart(partType, part)
+    local partName = nil
+
+    if BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(partType)
+        end)
+    end
+
+    if (not partName or partName == "") and part and part.getType and BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(part:getType())
+        end)
+    end
+
+    partName = tostring(partName or partType or ""):lower()
+    return partName:find("arm", 1, true)
+        or partName:find("hand", 1, true)
+        or partName:find("leg", 1, true)
+        or partName:find("foot", 1, true)
+        or partName:find("torso", 1, true)
+        or partName:find("groin", 1, true)
+end
+
+local function EHR_MedicationReducePain(player, reduction)
+    if not player or not reduction or reduction <= 0 then return false end
+
+    local stats = nil
+    pcall(function() stats = player:getStats() end)
+    if not stats then return false end
+
+    local changed = false
+    if CharacterStat and CharacterStat.PAIN then
+        changed = pcall(function()
+            local current = stats:get(CharacterStat.PAIN) or 0
+            local drop = current > 1.5 and math.max(3, reduction * 35) or math.max(0.05, reduction * 0.45)
+            stats:set(CharacterStat.PAIN, math.max(0, current - drop))
+        end) or changed
+    end
+
+    if (not changed) and stats.getPain and stats.setPain then
+        changed = pcall(function()
+            local current = stats:getPain() or 0
+            local drop = current > 1.5 and math.max(3, reduction * 35) or math.max(0.05, reduction * 0.45)
+            stats:setPain(math.max(0, current - drop))
+        end) or changed
+    end
+
+    return changed
+end
+
+local function EHR_MedicationReduceMuscleStiffness(player, reduction)
+    if not player or not reduction or reduction <= 0 then return false end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return false end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return false end
+
+    local changed = false
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and EHR_MedicationIsMusclePart(partType, part) then
+            local okCurrent, currentStiffness = pcall(function()
+                return part:getStiffness()
+            end)
+
+            currentStiffness = (okCurrent and currentStiffness) or 0
+            if currentStiffness > 0 and part.setStiffness then
+                local drop = math.max(10, currentStiffness * math.min(0.85, reduction * 1.75))
+                local newStiffness = math.max(0, currentStiffness - drop)
+                local okSet = pcall(function()
+                    part:setStiffness(newStiffness)
+                end)
+
+                if okSet then
+                    changed = true
+                    if newStiffness <= 0.1 and player.getFitness and BodyPartType.ToString then
+                        pcall(function()
+                            player:getFitness():removeStiffnessValue(BodyPartType.ToString(partType))
+                        end)
+                    end
+                end
+            end
+
+            if part.getAdditionalPain and part.setAdditionalPain then
+                pcall(function()
+                    local currentPain = part:getAdditionalPain() or 0
+                    part:setAdditionalPain(math.max(0, currentPain - (reduction * 20)))
+                end)
+            end
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+
+    return changed
+end
+
+local function EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medData)
+    local reductions = medData and medData.symptomReduction
+    if not reductions then return end
+
+    local didRelieve = false
+    if reductions.muscleSpasms then
+        didRelieve = EHR_MedicationReduceMuscleStiffness(player, reductions.muscleSpasms) or didRelieve
+    end
+
+    if reductions.pain then
+        didRelieve = EHR_MedicationReducePain(player, reductions.pain) or didRelieve
+    end
+
+    if didRelieve then
+        EHR.Log("Applied immediate symptom relief from " .. (medData.displayName or "medication") .. " to " .. tostring(diseaseId))
+    end
+end
+
 function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, itemFullType)
     if not player or not diseaseId then return end
 
@@ -1405,17 +1526,25 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
 
     local gameTime = getGameTime()
     local currentHour = gameTime:getWorldAgeHours()
-
-    -- Apply symptom relief
-    if tierEffects.symptomRelief > 0 then
-        disease.symptomSeverity = (disease.symptomSeverity or 1.0) * (1 - tierEffects.symptomRelief)
-        EHR.Log("Applied symptom relief: " .. (tierEffects.symptomRelief * 100) .. "% to " .. diseaseId)
-    end
-
-    -- Track dose for this medication
     local dosingSchedule = EHR.Medication.DosingSchedules[itemFullType] or EHR.Medication.DefaultDosing
     local medKey = itemFullType or medData.displayName
 
+    -- Apply symptom relief
+    if tierEffects.symptomRelief > 0 then
+        local currentSymptomSeverity = disease.symptomSeverity or 1.0
+        if not disease.symptomReliefUntil or disease.symptomReliefUntil <= currentHour then
+            currentSymptomSeverity = 1.0
+        end
+
+        disease.symptomSeverity = math.min(currentSymptomSeverity, 1 - tierEffects.symptomRelief)
+        disease.symptomReliefUntil = currentHour + math.max(0, dosingSchedule.doseInterval or 0)
+        disease.symptomReliefMedKey = medKey
+        EHR.Log("Applied symptom relief: " .. (tierEffects.symptomRelief * 100) .. "% to " .. diseaseId)
+    end
+
+    EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medData)
+
+    -- Track dose for this medication
     if not medTracking.activeDoses[medKey] then
         -- First dose of this medication
         medTracking.activeDoses[medKey] = {
@@ -1432,6 +1561,11 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
         local doseData = medTracking.activeDoses[medKey]
         doseData.lastDoseTime = currentHour
         doseData.doseCount = doseData.doseCount + 1
+        doseData.totalDosesNeeded = dosingSchedule.dosesRequired
+        doseData.intervalHours = dosingSchedule.doseInterval
+        doseData.medicationName = medData.displayName
+        doseData.tier = medData.tier
+        doseData.treatingDisease = diseaseId
     end
 
     -- Start cure process if tier can cure
@@ -1545,16 +1679,22 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     local nextDoseIn = math.max(0, doseData.intervalHours - elapsed)
     local isOverdue = elapsed > doseData.intervalHours
     local hoursOverdue = isOverdue and (elapsed - doseData.intervalHours) or 0
+    local isDoseActive = elapsed <= doseData.intervalHours
+    local hoursActiveRemaining = isDoseActive and nextDoseIn or 0
 
     return {
+        medKey = medKey,
         medicationName = doseData.medicationName,
         tier = doseData.tier,
+        treatingDisease = doseData.treatingDisease,
         doseCount = doseData.doseCount,
         totalDosesNeeded = doseData.totalDosesNeeded,
         dosesRemaining = math.max(0, doseData.totalDosesNeeded - doseData.doseCount),
         intervalHours = doseData.intervalHours,
         hoursSinceLastDose = elapsed,
         hoursUntilNextDose = nextDoseIn,
+        isDoseActive = isDoseActive,
+        hoursActiveRemaining = hoursActiveRemaining,
         isOverdue = isOverdue,
         hoursOverdue = hoursOverdue,
         treatmentComplete = doseData.doseCount >= doseData.totalDosesNeeded,
@@ -1709,6 +1849,7 @@ function EHR.Medication.GetActiveTreatments(player)
 
         table.insert(treatments, {
             diseaseId = diseaseId,
+            medKey = treatment.medKey,
             medicationName = treatment.medicationName,
             tier = treatment.tier,
             hoursRemaining = math.max(0, remaining),
@@ -1718,6 +1859,8 @@ function EHR.Medication.GetActiveTreatments(player)
             totalDosesNeeded = doseInfo and doseInfo.totalDosesNeeded or 0,
             dosesRemaining = doseInfo and doseInfo.dosesRemaining or 0,
             hoursUntilNextDose = doseInfo and doseInfo.hoursUntilNextDose or 0,
+            isDoseActive = doseInfo and doseInfo.isDoseActive or false,
+            hoursActiveRemaining = doseInfo and doseInfo.hoursActiveRemaining or 0,
             isOverdue = doseInfo and doseInfo.isOverdue or false,
             hoursOverdue = doseInfo and doseInfo.hoursOverdue or 0,
         })

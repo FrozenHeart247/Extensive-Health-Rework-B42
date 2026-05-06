@@ -2,14 +2,12 @@ module Base
 {
     /** ===========================================
         EXTENSIVE HEALTH REWORK - VANILLA OVERRIDES
-        Adds realistic pill counts to vanilla medications
-        US Standard bottle sizes
+        Adds balanced multi-dose counts to vanilla medications
     =========================================== **/
 
     /** =========================================
         VANILLA MEDICATION OVERRIDES
-        Original vanilla meds have 10 uses (UseDelta = 0.1)
-        We're updating to realistic US bottle sizes
+        Balanced multi-dose package sizes for EHR medication economy
     ========================================= **/
 
     item Pills
@@ -20,7 +18,7 @@ module Base
         Icon = PillsPainkiller,
         Medical = true,
         Tooltip = Tooltip_Painkillers,
-        UseDelta = 0.0333,
+        UseDelta = 0.0625,
         UseWhileEquipped = false,
         StaticModel = PillBottle,
         WorldStaticModel = PainKillers_Ground,
@@ -35,7 +33,7 @@ module Base
         Icon = PillsAntidepressant,
         Medical = true,
         Tooltip = Tooltip_PillsAntidepressant,
-        UseDelta = 0.0333,
+        UseDelta = 0.0625,
         UseWhileEquipped = false,
         StaticModel = PillBottle,
         Tags = base:consumable,
@@ -49,7 +47,7 @@ module Base
         Icon = PillsBetablocker,
         Medical = true,
         Tooltip = Tooltip_PillsBetablocker,
-        UseDelta = 0.0333,
+        UseDelta = 0.0625,
         UseWhileEquipped = false,
         StaticModel = PillBottle,
         Tags = base:consumable,
@@ -63,7 +61,7 @@ module Base
         Icon = PillsSleeping,
         Medical = true,
         Tooltip = Tooltip_PillsSleeping,
-        UseDelta = 0.0333,
+        UseDelta = 0.0833,
         UseWhileEquipped = false,
         StaticModel = PillBottle,
         Tags = base:consumable,
@@ -77,7 +75,7 @@ module Base
         Icon = PillsCaffeine,
         Medical = true,
         Tooltip = Tooltip_PillsVitamins,
-        UseDelta = 0.0167,
+        UseDelta = 0.0417,
         UseWhileEquipped = false,
         StaticModel = CaffeinePills,
         WorldStaticModel = CaffeinePills,
@@ -92,7 +90,7 @@ module Base
         Icon = Antibiotics,
         Medical = true,
         Tooltip = Tooltip_Antibiotics,
-        UseDelta = 0.0714,
+        UseDelta = 0.1,
         UseWhileEquipped = false,
         StaticModel = Antibiotics,
         WorldStaticModel = Antibiotics,

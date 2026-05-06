@@ -156,6 +156,18 @@ Sandbox_EN = {
     -- ============================================
     Sandbox_EHR_KnoxCureItemsEnabled = "Enable Knox Cure Items",
     Sandbox_EHR_KnoxCureItemsEnabled_tooltip = "Allow Knox Virus Cure items to spawn in the world. <LINE> <LINE> ITEMS AFFECTED: <LINE> - Phalanx Pills (slows infection) <LINE> - Antibody Test Kit (detects infection stage) <LINE> - Immunobooster Shot (boosts resistance) <LINE> - Gene Therapy Kit (cures Knox Virus) <LINE> <LINE> These ultra-rare items only spawn in the Military Research Facility basement near Rosewood. <LINE> <LINE> Disable this if you want a more vanilla zombie experience with NO cure possibility.",
+    Sandbox_EHR_MedicationLootMultiplier = "Medication Loot Multiplier",
+    Sandbox_EHR_MedicationLootMultiplier_tooltip = "Scales EHR medication and medical supply spawn chances. <LINE> <LINE> 0.0 = disabled, 0.5 = half, 1.0 = default, 2.0 = double.",
+    Sandbox_EHR_MedicationPackageFill = "Medication Package Fill",
+    Sandbox_EHR_MedicationPackageFill_tooltip = "Controls how many doses remain inside spawned multi-dose medication packages.",
+    Sandbox_EHR_MedicationPackageFill_option1 = "Scarce",
+    Sandbox_EHR_MedicationPackageFill_option2 = "Low",
+    Sandbox_EHR_MedicationPackageFill_option3 = "Normal",
+    Sandbox_EHR_MedicationPackageFill_option4 = "Generous",
+    Sandbox_EHR_AllowFullPharmacyPackages = "Allow Full Pharmacy Packages",
+    Sandbox_EHR_AllowFullPharmacyPackages_tooltip = "Allows pharmacies and drugstores to occasionally spawn full medication packages. Other locations are still capped below full.",
+    Sandbox_EHR_HouseholdPrescriptionLoot = "Household Prescription Loot",
+    Sandbox_EHR_HouseholdPrescriptionLoot_tooltip = "Allows rare prescription medication leftovers to spawn in houses, bedrooms, desks, and similar non-medical locations.",
 
     -- ============================================
     -- MOD COMPATIBILITY

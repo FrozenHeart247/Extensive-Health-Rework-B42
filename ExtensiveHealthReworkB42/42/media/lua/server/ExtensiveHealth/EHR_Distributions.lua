@@ -36,6 +36,38 @@ local function log(msg)
     end
 end
 
+local function getEHRSandbox()
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        return SandboxVars.ExtensiveHealthRework
+    end
+    return nil
+end
+
+local function clampNumber(value, minValue, maxValue)
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function getMedicationLootMultiplier()
+    local sandbox = getEHRSandbox()
+    if sandbox and sandbox.MedicationLootMultiplier ~= nil then
+        local value = tonumber(sandbox.MedicationLootMultiplier)
+        if value then
+            return clampNumber(value, 0.0, 2.0)
+        end
+    end
+    return 1.0
+end
+
+local function isHouseholdPrescriptionLootEnabled()
+    local sandbox = getEHRSandbox()
+    if sandbox and sandbox.HouseholdPrescriptionLoot ~= nil then
+        return sandbox.HouseholdPrescriptionLoot == true
+    end
+    return true
+end
+
 -- ============================================
 -- HELPER FUNCTIONS
 -- ============================================
@@ -104,6 +136,8 @@ local function EHR_InitDistributions()
     local added = 0
     local failed = 0
     local failedTables = {}
+    local medicationLootMultiplier = getMedicationLootMultiplier()
+    local householdPrescriptionLoot = isHouseholdPrescriptionLootEnabled()
 
     local function tryAdd(listName, itemName, chance)
         if addItemToDistribution(listName, itemName, chance) then
@@ -114,6 +148,11 @@ local function EHR_InitDistributions()
                 failedTables[listName] = true
             end
         end
+    end
+
+    local function tryAddMed(listName, itemName, chance)
+        if medicationLootMultiplier <= 0 then return end
+        tryAdd(listName, itemName, chance * medicationLootMultiplier)
     end
 
     -- =========================================
@@ -226,34 +265,34 @@ local function EHR_InitDistributions()
     -- =========================================
 
     -- Pharmacy/Drug Store Shelves
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.ColdFluTablets", 8)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.CoughSyrup", 7)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.AntiNauseaTablets", 7)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.AntiDiarrheal", 7)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.AntiInflammatory", 8)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.CoughSuppressant", 6)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.AntisepticCream", 8)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.MuscleRelaxants", 5)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.ElectrolytePowder", 6)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.BronchodilatorInhaler", 3)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ColdFluTablets", 8)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.CoughSyrup", 7)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiNauseaTablets", 7)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiDiarrheal", 7)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiInflammatory", 8)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.CoughSuppressant", 6)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntisepticCream", 8)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.MuscleRelaxants", 5)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ElectrolytePowder", 6)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.BronchodilatorInhaler", 3)
 
     -- Medicine Cabinets (bathroom)
-    tryAdd("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
-    tryAdd("MedicineCabinet", "ExtensiveHealth.CoughSyrup", 3)
-    tryAdd("MedicineCabinet", "ExtensiveHealth.AntiNauseaTablets", 3)
-    tryAdd("MedicineCabinet", "ExtensiveHealth.AntiDiarrheal", 3)
-    tryAdd("MedicineCabinet", "ExtensiveHealth.AntisepticCream", 4)
-    tryAdd("MedicineCabinet", "ExtensiveHealth.AntiInflammatory", 3)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.CoughSyrup", 3)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiNauseaTablets", 3)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiDiarrheal", 3)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntisepticCream", 4)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiInflammatory", 3)
 
     -- Medical Storage / Clinic (OTC items)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.CoughSyrup", 6)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.ElectrolytePowder", 6)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.BronchodilatorInhaler", 4)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.AntiNauseaTablets", 6)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.AntiInflammatory", 7)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.MuscleRelaxants", 5)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.Syringe", 10)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.CoughSyrup", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ElectrolytePowder", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.BronchodilatorInhaler", 4)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiNauseaTablets", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiInflammatory", 7)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.MuscleRelaxants", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Syringe", 10)
 
     -- =========================================
     -- TIER 2 - PRESCRIPTION MEDICATION
@@ -261,26 +300,26 @@ local function EHR_InitDistributions()
     -- =========================================
 
     -- Medical Clinic
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 7)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.AntifungalTablets", 3)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.OralRehydrationKit", 5)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 7)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntifungalTablets", 3)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.OralRehydrationKit", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 5)
 
     -- Medical Storage Drugs (Tier 2)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 6)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.ActivatedCharcoal", 5)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.AntiparasiticPills", 2)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.TetanusAntitoxin", 3)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 2)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.AntibioticOintment", 5)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 4)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.IVKit", 5)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.SalineBag", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ActivatedCharcoal", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiparasiticPills", 2)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TetanusAntitoxin", 3)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 2)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntibioticOintment", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 4)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVKit", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SalineBag", 6)
 
     -- =========================================
     -- TIER 3 - CLINICAL GRADE
@@ -288,38 +327,38 @@ local function EHR_InitDistributions()
     -- =========================================
 
     -- Medical Storage Outfit (hospital storage)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.IVAntibiotics", 3)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.IVMetronidazole", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.IVAmphotericin", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.IVCiprofloxacin", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.IVVancomycin", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.EmergencySepsisKit", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.CorticosteroidInjection", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.ChelationKit", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.RifampicinComboPack", 2)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.Epinephrine", 3)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
-    tryAdd("MedicalStorageOutfit", "ExtensiveHealth.SalineBag", 7)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAntibiotics", 3)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVMetronidazole", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAmphotericin", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVCiprofloxacin", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVVancomycin", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.EmergencySepsisKit", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.CorticosteroidInjection", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.ChelationKit", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RifampicinComboPack", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Epinephrine", 3)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SalineBag", 7)
 
     -- Army Surplus / Military
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.IVAntibiotics", 5)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.IVCiprofloxacin", 3)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.EmergencySepsisKit", 2)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.CorticosteroidInjection", 2)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.TetanusImmunoglobulin", 2)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.Epinephrine", 5)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.IVKit", 6)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.Syringe", 8)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.SalineBag", 7)
-    tryAdd("ArmySurplusMedical", "ExtensiveHealth.BroadSpectrumAntibiotics", 6)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVAntibiotics", 5)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVCiprofloxacin", 3)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.EmergencySepsisKit", 2)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.CorticosteroidInjection", 2)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.TetanusImmunoglobulin", 2)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Epinephrine", 5)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVKit", 6)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Syringe", 8)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SalineBag", 7)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.BroadSpectrumAntibiotics", 6)
 
     -- First Aid Kits (basic supplies)
-    tryAdd("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
-    tryAdd("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)
-    tryAdd("FirstAidKit", "ExtensiveHealth.Syringe", 3)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.Syringe", 3)
 
     -- =========================================
     -- HOUSEHOLD SPAWNS (Very Rare)
@@ -363,11 +402,13 @@ local function EHR_InitDistributions()
     for _, container in ipairs(householdContainers) do
         -- Tier 1
         for item, chance in pairs(tier1Household) do
-            tryAdd(container, item, chance)
+            tryAddMed(container, item, chance)
         end
         -- Tier 2
-        for item, chance in pairs(tier2Household) do
-            tryAdd(container, item, chance)
+        if householdPrescriptionLoot then
+            for item, chance in pairs(tier2Household) do
+                tryAddMed(container, item, chance)
+            end
         end
     end
 

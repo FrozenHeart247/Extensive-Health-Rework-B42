@@ -25,7 +25,7 @@ module ExtensiveHealth
         Icon = PillsCaffeine,
         Weight = 0.1,
         Tooltip = Tooltip_PhalanxPills,
-        UseDelta = 0.2,
+        UseDelta = 0.3333,
         UseWhileEquipped = false,
         Medical = true,
     }

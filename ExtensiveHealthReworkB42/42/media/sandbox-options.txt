@@ -318,6 +318,41 @@ option ExtensiveHealthRework.KnoxCureItemsEnabled
     translation = EHR_KnoxCureItemsEnabled,
 }
 
+option ExtensiveHealthRework.MedicationLootMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 2.0,
+    default = 1.0,
+    page = EHR_Loot,
+    translation = EHR_MedicationLootMultiplier,
+}
+
+option ExtensiveHealthRework.MedicationPackageFill
+{
+    type = enum,
+    numValues = 4,
+    default = 3,
+    page = EHR_Loot,
+    translation = EHR_MedicationPackageFill,
+}
+
+option ExtensiveHealthRework.AllowFullPharmacyPackages
+{
+    type = boolean,
+    default = true,
+    page = EHR_Loot,
+    translation = EHR_AllowFullPharmacyPackages,
+}
+
+option ExtensiveHealthRework.HouseholdPrescriptionLoot
+{
+    type = boolean,
+    default = true,
+    page = EHR_Loot,
+    translation = EHR_HouseholdPrescriptionLoot,
+}
+
 option ExtensiveHealthRework.NnCCompatEnabled
 {
     type = boolean,

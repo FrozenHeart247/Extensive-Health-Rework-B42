@@ -182,6 +182,20 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
                 local timeSeconds = math.floor((EHR.MedicationAction.Times[adminType] or 120) / 30)
                 desc = desc .. "Administration: " .. adminType .. " (~" .. timeSeconds .. "s) <LINE> "
 
+                -- Remaining package doses
+                local hasPackageDoses = false
+                if EHR.Medication.GetItemDoseInfo then
+                    local doseInfo = EHR.Medication.GetItemDoseInfo(item)
+                    if doseInfo and doseInfo.maxDoses and doseInfo.maxDoses > 1 then
+                        desc = desc .. "Doses: " .. tostring(doseInfo.remainingDoses or 0) ..
+                            "/" .. tostring(doseInfo.maxDoses) .. " <LINE> "
+                        hasPackageDoses = true
+                    end
+                end
+                if not hasPackageDoses then
+                    desc = desc .. "Single use <LINE> "
+                end
+
                 -- Cure time if applicable
                 local treatmentTimeText = EHR.Medication.GetTreatmentTimeText and EHR.Medication.GetTreatmentTimeText(medData) or nil
                 if treatmentTimeText then

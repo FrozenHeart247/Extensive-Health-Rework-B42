@@ -17,6 +17,7 @@ if not EHR or not EHR.Tooltips or not EHR.Tooltips.Data then
     -- Try to require it if not already loaded
     pcall(function() require "ExtensiveHealth/EHR_TooltipData" end)
 end
+pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 
 EHR = EHR or {}
 EHR.Tooltips = EHR.Tooltips or {}
@@ -274,6 +275,37 @@ local function renderEHRTooltipImpl(self, data, item)
     local fontHeight = textManager:getFontHeight(font)
     local lineSpacing = 4
 
+    local function trimLastCharacter(text)
+        local len = #text
+        if len <= 1 then return "" end
+
+        local cut = len
+        while cut > 1 do
+            local byte = string.byte(text, cut)
+            if not byte or byte < 128 or byte >= 192 then
+                break
+            end
+            cut = cut - 1
+        end
+
+        return text:sub(1, cut - 1)
+    end
+
+    local function fitText(text, maxWidth)
+        text = tostring(text or "")
+        if not maxWidth or maxWidth <= 0 then return "" end
+        if textManager:MeasureStringX(font, text) <= maxWidth then return text end
+
+        local suffix = "..."
+        local trimmed = text
+        while #trimmed > 0 and textManager:MeasureStringX(font, trimmed .. suffix) > maxWidth do
+            trimmed = trimLastCharacter(trimmed)
+        end
+
+        if trimmed == "" then return "" end
+        return trimmed .. suffix
+    end
+
     -- Helper function to wrap text
     local function wrapText(text, maxWidth, color)
         local wrappedLines = {}
@@ -287,14 +319,14 @@ local function renderEHRTooltipImpl(self, data, item)
             local testLine = currentLine == "" and word or (currentLine .. " " .. word)
             local testWidth = textManager:MeasureStringX(font, testLine)
             if testWidth > maxWidth and currentLine ~= "" then
-                table.insert(wrappedLines, {text = currentLine, color = color})
+                table.insert(wrappedLines, {text = fitText(currentLine, maxWidth), color = color})
                 currentLine = word
             else
                 currentLine = testLine
             end
         end
         if currentLine ~= "" then
-            table.insert(wrappedLines, {text = currentLine, color = color})
+            table.insert(wrappedLines, {text = fitText(currentLine, maxWidth), color = color})
         end
         return wrappedLines
     end
@@ -303,6 +335,19 @@ local function renderEHRTooltipImpl(self, data, item)
     local lines = {}
     local totalHeight = 0
     local maxWidth = 200
+
+    local function addWrappedLines(text, color)
+        local wrapped = wrapText(tostring(text or ""), maxLineWidth, color)
+        for _, line in ipairs(wrapped) do
+            table.insert(lines, line)
+            totalHeight = totalHeight + fontHeight + lineSpacing
+        end
+    end
+
+    local function addSpacer()
+        table.insert(lines, {text = " ", color = {r=1, g=1, b=1}, spacer = true})
+        totalHeight = totalHeight + fontHeight + lineSpacing
+    end
 
     -- Item name (from item display name)
     local displayName = item:getDisplayName() or item:getName()
@@ -320,6 +365,15 @@ local function renderEHRTooltipImpl(self, data, item)
         totalHeight = totalHeight + fontHeight + lineSpacing
     end
 
+    if EHR and EHR.Medication and EHR.Medication.GetItemDoseInfo then
+        local okDose, doseInfo = pcall(function()
+            return EHR.Medication.GetItemDoseInfo(item)
+        end)
+        if okDose and doseInfo and doseInfo.maxDoses and doseInfo.maxDoses > 1 then
+            addWrappedLines(string.format("Remaining: %d/%d", doseInfo.remainingDoses or 0, doseInfo.maxDoses), {r=0.45, g=0.9, b=1.0})
+        end
+    end
+
     -- Separator
     table.insert(lines, {text = "---", color = {r=0.4, g=0.4, b=0.4}})
     totalHeight = totalHeight + fontHeight + lineSpacing
@@ -335,8 +389,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Effects (with wrapping)
     if data.effects and #data.effects > 0 then
-        table.insert(lines, {text = " ", color = {r=1, g=1, b=1}}) -- spacer
-        totalHeight = totalHeight + fontHeight / 2
+        addSpacer()
         for _, effect in ipairs(data.effects) do
             local effectLines = wrapText("+ " .. effect, maxLineWidth, {r=0.3, g=0.9, b=0.3})
             for _, line in ipairs(effectLines) do
@@ -368,8 +421,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Treatment time
     if data.treatmentTime then
-        table.insert(lines, {text = "Treatment time: " .. data.treatmentTime, color = {r=0.7, g=0.7, b=0.7}})
-        totalHeight = totalHeight + fontHeight + lineSpacing
+        addWrappedLines("Treatment time: " .. data.treatmentTime, {r=0.7, g=0.7, b=0.7})
     end
 
     -- Requirements (with wrapping)
@@ -384,8 +436,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Side effects (with wrapping)
     if data.sideEffects and #data.sideEffects > 0 then
-        table.insert(lines, {text = " ", color = {r=1, g=1, b=1}}) -- spacer
-        totalHeight = totalHeight + fontHeight / 2
+        addSpacer()
         table.insert(lines, {text = "SIDE EFFECTS:", color = {r=1.0, g=0.5, b=0.0}})
         totalHeight = totalHeight + fontHeight + lineSpacing
         for _, sideEffect in ipairs(data.sideEffects) do
@@ -408,12 +459,10 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Success/Failure text (for Gene Therapy etc)
     if data.successText then
-        table.insert(lines, {text = "+ " .. data.successText, color = {r=0.3, g=1.0, b=0.3}})
-        totalHeight = totalHeight + fontHeight + lineSpacing
+        addWrappedLines("+ " .. data.successText, {r=0.3, g=1.0, b=0.3})
     end
     if data.failureText then
-        table.insert(lines, {text = "- " .. data.failureText, color = {r=1.0, g=0.3, b=0.3}})
-        totalHeight = totalHeight + fontHeight + lineSpacing
+        addWrappedLines("- " .. data.failureText, {r=1.0, g=0.3, b=0.3})
     end
 
     -- Spoilage time for perishable items (blood bags, saline, etc.)
@@ -548,8 +597,7 @@ local function renderEHRTooltipImpl(self, data, item)
     -- Weight/Encumbrance
     local weight = item:getUnequippedWeight()
     if weight then
-        table.insert(lines, {text = " ", color = {r=1, g=1, b=1}}) -- spacer
-        totalHeight = totalHeight + fontHeight / 2
+        addSpacer()
         table.insert(lines, {text = string.format("Encumbrance: %.1f", weight), color = {r=0.6, g=0.6, b=0.6}})
         totalHeight = totalHeight + fontHeight + lineSpacing
     end
@@ -577,6 +625,8 @@ local function renderEHRTooltipImpl(self, data, item)
     if my + boxHeight > screenH then
         my = screenH - boxHeight - 5
     end
+    mx = math.max(5, mx)
+    my = math.max(5, my)
 
     -- Position and size the tooltip panel
     self:setX(mx)
@@ -599,7 +649,7 @@ local function renderEHRTooltipImpl(self, data, item)
     for i, line in ipairs(lines) do
         local c = line.color
         if line.text ~= " " then
-            self:drawText(line.text, padding, y, c.r, c.g, c.b, 1, font)
+            self:drawText(fitText(line.text, boxWidth - padding * 2), padding, y, c.r, c.g, c.b, 1, font)
         end
         y = y + fontHeight + lineSpacing
     end

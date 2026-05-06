@@ -1353,6 +1353,43 @@ end
 -- MEDICATION APPLICATION
 -- ============================================
 
+function EHR.Medication.GetDoseCapacityFromDelta(useDelta)
+    if not useDelta or useDelta <= 0 then return 1 end
+    return math.max(1, math.floor((1.0 / useDelta) + 0.5))
+end
+
+function EHR.Medication.GetItemDoseInfo(item)
+    if not item or not item.getUseDelta then return nil end
+    if not item.getCurrentUsesFloat or not item.setUsedDelta then return nil end
+
+    if instanceof then
+        local okType, isDrainable = pcall(function() return instanceof(item, "DrainableComboItem") end)
+        if okType and not isDrainable then return nil end
+    end
+
+    local okDelta, useDelta = pcall(function() return item:getUseDelta() end)
+    if not okDelta or not useDelta or useDelta <= 0 then return nil end
+
+    local currentUsesFloat = 1.0
+    local okCurrent, value = pcall(function() return item:getCurrentUsesFloat() end)
+    if okCurrent and value then
+        currentUsesFloat = value
+    end
+
+    local maxDoses = EHR.Medication.GetDoseCapacityFromDelta(useDelta)
+    currentUsesFloat = math.max(0, math.min(1.0, currentUsesFloat))
+    local remaining = math.floor((currentUsesFloat / useDelta) + 0.0001)
+    remaining = math.max(0, math.min(maxDoses, remaining))
+
+    return {
+        useDelta = useDelta,
+        usedDelta = currentUsesFloat,
+        currentUsesFloat = currentUsesFloat,
+        maxDoses = maxDoses,
+        remainingDoses = remaining,
+    }
+end
+
 --[[
     Consume one dose of a drainable item, or remove a single-use item.
     Handles both multi-use (drainable) and single-use items.
@@ -1379,24 +1416,27 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
         end
     end
 
-    -- B42 normal items can expose getUseDelta(), but they cannot always store UsedDelta.
-    local canUseDose = useDelta > 0 and item.getUsedDelta and item.setUsedDelta
+    -- Drainable medications store remaining fill as current uses / setUsedDelta.
+    local canUseDose = useDelta > 0 and item.setUsedDelta
 
     if canUseDose then
-        local currentUsed = 0
-        local okCurrent, usedDelta = pcall(function() return item:getUsedDelta() end)
-        if okCurrent and usedDelta then
-            currentUsed = usedDelta
-        end
-        local newUsed = currentUsed + useDelta
+        local doseInfo = EHR.Medication.GetItemDoseInfo(item)
+        local remainingDoses = doseInfo and doseInfo.remainingDoses or 0
 
-        if newUsed < 1.0 then
+        if remainingDoses > 1 then
+            local newRemaining = remainingDoses - 1
+            local newUsed = newRemaining * useDelta
+            if newRemaining >= (doseInfo.maxDoses or 1) then
+                newUsed = 1.0
+            end
+            newUsed = math.max(0, math.min(1.0, newUsed))
+
             local okSet = pcall(function() item:setUsedDelta(newUsed) end)
             if okSet then
                 if isClient() and itemID then
                     sendClientCommand(player, "EHR", "UpdateItemDelta", {itemID = itemID, usedDelta = newUsed})
                 end
-                return true, "dose", useDelta, newUsed
+                return true, "dose", useDelta, newUsed, newRemaining
             end
         end
     end
@@ -1520,11 +1560,10 @@ function EHR.Medication.UseMedication(player, item)
     -- Check for drug interactions
     EHR.Medication.CheckAndApplyInteractions(player)
 
-    local consumed, consumeMode, useDelta, newUsed = EHR.Medication.ConsumeOneDose(player, item, inventory)
+    local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(player, item, inventory)
     if consumed and consumeMode == "dose" then
-        local remainingDoses = 0
-        if useDelta and useDelta > 0 then
-            remainingDoses = math.floor((1.0 - newUsed) / useDelta)
+        if remainingDoses == nil and useDelta and useDelta > 0 then
+            remainingDoses = math.floor((newUsed / useDelta) + 0.0001)
         end
         EHR.Log("Used dose of: " .. itemFullType .. " (" .. remainingDoses .. " doses remaining)")
     elseif consumed and consumeMode == "removed" then

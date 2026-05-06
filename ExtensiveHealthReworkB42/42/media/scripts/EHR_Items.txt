@@ -3,7 +3,7 @@ module ExtensiveHealth
     /** ===========================================
         EXTENSIVE HEALTH REWORK - MEDICAL ITEMS
         Blood Bags, Saline, and Medication System
-        Updated for B42 with realistic pill counts
+        Updated for B42 with balanced multi-dose packages
     =========================================== **/
 
     /** =========================================
@@ -234,7 +234,7 @@ module ExtensiveHealth
         Icon = Syringe,
         Weight = 0.1,
         Tooltip = Tooltip_Syringe,
-        UseDelta = 0.1,
+        UseDelta = 0.2,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -252,7 +252,7 @@ module ExtensiveHealth
 
     /** =========================================
         TIER 1 - OTC (OVER THE COUNTER)
-        US Standard Bottle Sizes
+        Balanced multi-dose package sizes
     ========================================= **/
 
     item ColdFluTablets
@@ -263,7 +263,7 @@ module ExtensiveHealth
         Icon = ColdFluTablets,
         Weight = 0.1,
         Tooltip = Tooltip_ColdFluTablets,
-        UseDelta = 0.0417,
+        UseDelta = 0.0833,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -276,7 +276,7 @@ module ExtensiveHealth
         Icon = CoughSyrup,
         Weight = 0.3,
         Tooltip = Tooltip_CoughSyrup,
-        UseDelta = 0.1,
+        UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -289,7 +289,7 @@ module ExtensiveHealth
         Icon = ElectrolytePowder,
         Weight = 0.15,
         Tooltip = Tooltip_ElectrolytePowder,
-        UseDelta = 0.1667,
+        UseDelta = 0.25,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -302,7 +302,7 @@ module ExtensiveHealth
         Icon = BronchodilatorInhaler,
         Weight = 0.1,
         Tooltip = Tooltip_BronchodilatorInhaler,
-        UseDelta = 0.005,
+        UseDelta = 0.025,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -315,7 +315,7 @@ module ExtensiveHealth
         Icon = AntiNauseaTablets,
         Weight = 0.1,
         Tooltip = Tooltip_AntiNauseaTablets,
-        UseDelta = 0.0417,
+        UseDelta = 0.0833,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -328,7 +328,7 @@ module ExtensiveHealth
         Icon = AntiInflammatory,
         Weight = 0.1,
         Tooltip = Tooltip_AntiInflammatory,
-        UseDelta = 0.0333,
+        UseDelta = 0.0625,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -341,7 +341,7 @@ module ExtensiveHealth
         Icon = AntiDiarrheal,
         Weight = 0.1,
         Tooltip = Tooltip_AntiDiarrheal,
-        UseDelta = 0.0417,
+        UseDelta = 0.0833,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -354,7 +354,7 @@ module ExtensiveHealth
         Icon = MuscleRelaxants,
         Weight = 0.1,
         Tooltip = Tooltip_MuscleRelaxants,
-        UseDelta = 0.0333,
+        UseDelta = 0.0833,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -367,7 +367,7 @@ module ExtensiveHealth
         Icon = CoughSuppressant,
         Weight = 0.1,
         Tooltip = Tooltip_CoughSuppressant,
-        UseDelta = 0.05,
+        UseDelta = 0.0833,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -380,14 +380,14 @@ module ExtensiveHealth
         Icon = AntisepticCream,
         Weight = 0.1,
         Tooltip = Tooltip_AntisepticCream,
-        UseDelta = 0.1,
+        UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,
     }
 
     /** =========================================
         TIER 2 - PRESCRIPTION MEDICATION
-        Standard prescription bottle sizes
+        Balanced prescription package sizes
     ========================================= **/
 
     item AntiviralCapsules
@@ -398,7 +398,7 @@ module ExtensiveHealth
         Icon = AntiviralCapsules,
         Weight = 0.1,
         Tooltip = Tooltip_AntiviralCapsules,
-        UseDelta = 0.1,
+        UseDelta = 0.125,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -411,7 +411,7 @@ module ExtensiveHealth
         Icon = PrescriptionAntibiotics,
         Weight = 0.1,
         Tooltip = Tooltip_PrescriptionAntibiotics,
-        UseDelta = 0.0714,
+        UseDelta = 0.1,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -424,7 +424,7 @@ module ExtensiveHealth
         Icon = AntifungalTablets,
         Weight = 0.1,
         Tooltip = Tooltip_AntifungalTablets,
-        UseDelta = 0.0714,
+        UseDelta = 0.125,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -437,7 +437,7 @@ module ExtensiveHealth
         Icon = ActivatedCharcoal,
         Weight = 0.2,
         Tooltip = Tooltip_ActivatedCharcoal,
-        UseDelta = 0.5,
+        UseDelta = 0.3333,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -450,7 +450,7 @@ module ExtensiveHealth
         Icon = AntiparasiticPills,
         Weight = 0.1,
         Tooltip = Tooltip_AntiparasiticPills,
-        UseDelta = 0.1667,
+        UseDelta = 0.125,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -463,7 +463,7 @@ module ExtensiveHealth
         Icon = OralRehydrationKit,
         Weight = 0.2,
         Tooltip = Tooltip_OralRehydrationKit,
-        UseDelta = 0.25,
+        UseDelta = 0.3333,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -487,7 +487,7 @@ module ExtensiveHealth
         Icon = TBAntibiotics,
         Weight = 0.1,
         Tooltip = Tooltip_TBAntibiotics,
-        UseDelta = 0.0333,
+        UseDelta = 0.0714,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -500,7 +500,7 @@ module ExtensiveHealth
         Icon = AntibioticOintment,
         Weight = 0.1,
         Tooltip = Tooltip_AntibioticOintment,
-        UseDelta = 0.1,
+        UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -513,7 +513,7 @@ module ExtensiveHealth
         Icon = BroadSpectrumAntibiotics,
         Weight = 0.1,
         Tooltip = Tooltip_BroadSpectrumAntibiotics,
-        UseDelta = 0.05,
+        UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -623,7 +623,7 @@ module ExtensiveHealth
         Icon = RifampicinComboPack,
         Weight = 0.2,
         Tooltip = Tooltip_RifampicinComboPack,
-        UseDelta = 0.0333,
+        UseDelta = 0.1429,
         UseWhileEquipped = false,
         Medical = true,
     }

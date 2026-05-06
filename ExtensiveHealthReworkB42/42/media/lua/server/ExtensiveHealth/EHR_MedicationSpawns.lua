@@ -2,9 +2,9 @@
     Extensive Health Rework B42
     Medication Spawn Randomization Module
 
-    - Full bottles spawn in pharmacies/medical locations
-    - Partially used bottles spawn everywhere else (houses, etc.)
-    - Slightly reduced overall spawn rates for medications
+    - Pharmacies can occasionally spawn full packages
+    - Other locations are capped below full and randomized by sandbox profile
+    - Remaining uses are rounded to whole doses
 ]]--
 
 EHR = EHR or {}
@@ -15,16 +15,59 @@ EHR.MedicationSpawns = {}
 -- ============================================
 
 EHR.MedicationSpawns.Config = {
-    -- Minimum remaining in non-pharmacy locations (0.2 = at least 20% left)
-    minRemainingElsewhere = 0.15,
-    -- Maximum remaining in non-pharmacy locations (0.85 = up to 85% left)
-    maxRemainingElsewhere = 0.85,
+    DefaultFillProfile = 3,
 
-    -- Chance for a pharmacy item to still be full (0.9 = 90% chance full)
-    pharmacyFullChance = 0.90,
-
-    -- If not full in pharmacy, minimum remaining
-    pharmacyMinRemaining = 0.7,
+    -- Fill ranges are percentages of max doses left. Non-pharmacy locations cap at 70%.
+    FillProfiles = {
+        -- Scarce
+        [1] = {
+            pharmacyFullChance = 0.08,
+            ranges = {
+                pharmacy = {0.25, 0.65},
+                medical = {0.15, 0.45},
+                ambulance = {0.10, 0.40},
+                household = {0.02, 0.25},
+                military = {0.20, 0.50},
+                default = {0.02, 0.30},
+            },
+        },
+        -- Low
+        [2] = {
+            pharmacyFullChance = 0.15,
+            ranges = {
+                pharmacy = {0.35, 0.80},
+                medical = {0.25, 0.60},
+                ambulance = {0.18, 0.55},
+                household = {0.04, 0.35},
+                military = {0.30, 0.60},
+                default = {0.05, 0.40},
+            },
+        },
+        -- Normal
+        [3] = {
+            pharmacyFullChance = 0.25,
+            ranges = {
+                pharmacy = {0.45, 0.90},
+                medical = {0.35, 0.70},
+                ambulance = {0.25, 0.70},
+                household = {0.05, 0.45},
+                military = {0.40, 0.70},
+                default = {0.10, 0.50},
+            },
+        },
+        -- Generous
+        [4] = {
+            pharmacyFullChance = 0.35,
+            ranges = {
+                pharmacy = {0.60, 0.95},
+                medical = {0.45, 0.70},
+                ambulance = {0.35, 0.70},
+                household = {0.10, 0.60},
+                military = {0.50, 0.70},
+                default = {0.15, 0.60},
+            },
+        },
+    },
 }
 
 -- Medication item types that should be randomized
@@ -67,28 +110,76 @@ EHR.MedicationSpawns.DrainableMeds = {
     -- EHR Supplies
     ["ExtensiveHealth.IVKit"] = true,
     ["ExtensiveHealth.Syringe"] = true,
-}
 
--- Room types considered "pharmacy/medical" (items spawn full here)
-EHR.MedicationSpawns.MedicalRooms = {
-    ["pharmacy"] = true,
-    ["drugstore"] = true,
-    ["medical"] = true,
-    ["medclinic"] = true,
-    ["hospital"] = true,
-    ["emergencyroom"] = true,
-    ["nursingstation"] = true,
-    ["medicalstorage"] = true,
-    ["ambulance"] = true,
-    ["doctorsoffice"] = true,
-    ["dentaloffice"] = true,
-    ["optometrist"] = true,
-    ["vetclinic"] = true,
+    -- Knox treatment
+    ["ExtensiveHealth.PhalanxPills"] = true,
 }
 
 -- ============================================
 -- SPAWN RANDOMIZATION
 -- ============================================
+
+local function clamp(value, minValue, maxValue)
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function getSandbox()
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        return SandboxVars.ExtensiveHealthRework
+    end
+    return nil
+end
+
+function EHR.MedicationSpawns.GetFillProfile()
+    local sandbox = getSandbox()
+    local profileIndex = EHR.MedicationSpawns.Config.DefaultFillProfile
+
+    if sandbox and sandbox.MedicationPackageFill then
+        profileIndex = tonumber(sandbox.MedicationPackageFill) or profileIndex
+    end
+
+    profileIndex = clamp(math.floor(profileIndex), 1, 4)
+    return EHR.MedicationSpawns.Config.FillProfiles[profileIndex]
+end
+
+function EHR.MedicationSpawns.AllowFullPharmacyPackages()
+    local sandbox = getSandbox()
+    if sandbox and sandbox.AllowFullPharmacyPackages ~= nil then
+        return sandbox.AllowFullPharmacyPackages == true
+    end
+    return true
+end
+
+function EHR.MedicationSpawns.GetLocationType(roomType, containerType)
+    local text = string.lower(tostring(roomType or "") .. " " .. tostring(containerType or ""))
+
+    if string.find(text, "pharm") or string.find(text, "drugstore") then
+        return "pharmacy"
+    end
+    if string.find(text, "ambulance") then
+        return "ambulance"
+    end
+    if string.find(text, "army") or string.find(text, "military") then
+        return "military"
+    end
+    if string.find(text, "medical") or string.find(text, "medic")
+        or string.find(text, "hospital") or string.find(text, "clinic")
+        or string.find(text, "doctor") or string.find(text, "nursing")
+        or string.find(text, "emergency") or string.find(text, "vetclinic") then
+        return "medical"
+    end
+    if string.find(text, "bathroom") or string.find(text, "bedroom")
+        or string.find(text, "sidetable") or string.find(text, "dresser")
+        or string.find(text, "wardrobe") or string.find(text, "livingroom")
+        or string.find(text, "shelf") or string.find(text, "desk")
+        or string.find(text, "filing") then
+        return "household"
+    end
+
+    return "default"
+end
 
 --[[
     Check if a room type is a medical/pharmacy location
@@ -96,58 +187,70 @@ EHR.MedicationSpawns.MedicalRooms = {
     @return boolean
 ]]--
 function EHR.MedicationSpawns.IsMedicalRoom(roomType)
-    if not roomType then return false end
-    local roomLower = string.lower(roomType)
+    local locationType = EHR.MedicationSpawns.GetLocationType(roomType, nil)
+    return locationType == "pharmacy"
+        or locationType == "medical"
+        or locationType == "ambulance"
+        or locationType == "military"
+end
 
-    -- Direct match
-    if EHR.MedicationSpawns.MedicalRooms[roomLower] then
-        return true
+function EHR.MedicationSpawns.GetDoseCapacity(item, useDelta)
+    if not item or not useDelta or useDelta <= 0 then return 1 end
+    return math.max(1, math.floor((1.0 / useDelta) + 0.5))
+end
+
+function EHR.MedicationSpawns.PickDoseCount(maxDoses, minRemaining, maxRemaining)
+    maxDoses = math.max(1, maxDoses or 1)
+    minRemaining = clamp(minRemaining or 0.05, 0.0, 1.0)
+    maxRemaining = clamp(maxRemaining or minRemaining, minRemaining, 1.0)
+
+    local minDoses = math.max(1, math.ceil(maxDoses * minRemaining))
+    local maxAllowed = math.max(minDoses, math.floor(maxDoses * maxRemaining))
+    maxAllowed = math.min(maxAllowed, maxDoses)
+
+    if maxAllowed <= minDoses then
+        return minDoses
     end
 
-    -- Partial match for variations
-    if string.find(roomLower, "pharm") then return true end
-    if string.find(roomLower, "medic") then return true end
-    if string.find(roomLower, "hospital") then return true end
-    if string.find(roomLower, "clinic") then return true end
-    if string.find(roomLower, "doctor") then return true end
-
-    return false
+    return minDoses + ZombRand((maxAllowed - minDoses) + 1)
 end
 
 --[[
     Randomize the UsedDelta of a drainable medication item.
     @param item (InventoryItem)
-    @param isMedicalLocation (boolean)
+    @param locationType (string)
 ]]--
-function EHR.MedicationSpawns.RandomizeItemUses(item, isMedicalLocation)
+function EHR.MedicationSpawns.RandomizeItemUses(item, locationType)
     if not item then return end
+    if not item.getUseDelta or not item.setUsedDelta then return end
 
     -- Check if this is a drainable item
     local useDelta = item:getUseDelta()
     if not useDelta or useDelta <= 0 then return end
 
-    local config = EHR.MedicationSpawns.Config
+    local profile = EHR.MedicationSpawns.GetFillProfile()
+    local location = locationType or "default"
 
-    if isMedicalLocation then
-        -- Pharmacy/medical: high chance of full, otherwise mostly full
-        if ZombRand(100) < (config.pharmacyFullChance * 100) then
-            item:setUsedDelta(0)  -- Full
-        else
-            -- Slightly used (someone grabbed a few before the apocalypse)
-            local remaining = config.pharmacyMinRemaining + (ZombRand(30) / 100)
-            remaining = math.min(remaining, 1.0)
-            item:setUsedDelta(1.0 - remaining)
+    if location == "pharmacy" and EHR.MedicationSpawns.AllowFullPharmacyPackages() then
+        if ZombRand(100) < ((profile.pharmacyFullChance or 0) * 100) then
+            item:setUsedDelta(1.0)
+            return
         end
-    else
-        -- Residential/other: random partial use
-        local minRemain = config.minRemainingElsewhere
-        local maxRemain = config.maxRemainingElsewhere
-        local range = maxRemain - minRemain
-
-        -- Random remaining amount between min and max
-        local remaining = minRemain + (ZombRand(math.floor(range * 100)) / 100)
-        item:setUsedDelta(1.0 - remaining)
     end
+
+    local range = (profile.ranges and profile.ranges[location]) or profile.ranges.default
+    local minRemaining = range[1] or 0.05
+    local maxRemaining = range[2] or minRemaining
+    local maxDoses = EHR.MedicationSpawns.GetDoseCapacity(item, useDelta)
+    local dosesLeft = EHR.MedicationSpawns.PickDoseCount(maxDoses, minRemaining, maxRemaining)
+
+    local usedDelta = dosesLeft * useDelta
+    if dosesLeft >= maxDoses then
+        usedDelta = 1.0
+    end
+    usedDelta = clamp(usedDelta, useDelta, 1.0)
+
+    item:setUsedDelta(usedDelta)
 end
 
 --[[
@@ -162,7 +265,7 @@ function EHR.MedicationSpawns.OnFillContainer(roomType, containerType, container
     -- B42 safety: Check if container has getItems method (ItemPickerContainer doesn't)
     if not container.getItems then return end
 
-    local isMedical = EHR.MedicationSpawns.IsMedicalRoom(roomType)
+    local locationType = EHR.MedicationSpawns.GetLocationType(roomType, containerType)
 
     -- Iterate through items in container
     local items = container:getItems()
@@ -173,7 +276,7 @@ function EHR.MedicationSpawns.OnFillContainer(roomType, containerType, container
         if item then
             local fullType = item:getFullType()
             if EHR.MedicationSpawns.DrainableMeds[fullType] then
-                EHR.MedicationSpawns.RandomizeItemUses(item, isMedical)
+                EHR.MedicationSpawns.RandomizeItemUses(item, locationType)
             end
         end
     end
@@ -190,7 +293,7 @@ end
 
 -- Log module load
 if EHR.Log then
-    EHR.Log("MedicationSpawns module loaded - pharmacy full, elsewhere randomized")
+    EHR.Log("MedicationSpawns module loaded - sandbox fill profiles active")
 else
     print("[EHR] MedicationSpawns module loaded")
 end

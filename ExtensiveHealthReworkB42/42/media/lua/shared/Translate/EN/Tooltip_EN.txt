@@ -36,13 +36,13 @@ Tooltip_EN = {
 Tooltip_RespiratorySupportKit = "Portable oxygen and airway support kit. <LINE> FAST CURE for corpse sickness (6hrs). <LINE> Strong breathing, dizziness, nausea and weakness relief. <LINE> 3 uses per kit, one dose every 3 hours.",
     Tooltip_IVAntibiotics = "Intravenous antibiotic solution. <LINE> FAST CURE for severe infections (36hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Nausea, Fatigue",
     Tooltip_IVMetronidazole = "IV Metronidazole for anaerobic bacteria. <LINE> FAST CURE for dysentery and sepsis (24hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Metallic Taste, Nausea",
-    Tooltip_IVAmphotericin = "IV Amphotericin B - powerful antifungal. <LINE> FAST CURE for severe cadaveric aspergillosis (24hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Fever, Kidney Stress, Fatigue",
+Tooltip_IVAmphotericin = "IV Amphotericin B - powerful antifungal. <LINE> FAST CURE for severe cadaveric aspergillosis (24hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Fever, Kidney Stress, Fatigue",
     Tooltip_ChelationKit = "Chelation therapy kit for heavy metal poisoning. <LINE> Removes heavy metals from the bloodstream (24hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Headache, Fatigue, Nausea",
     Tooltip_AlbendazoleInjection = "Injectable Albendazole antiparasitic. <LINE> FAST CURE for severe parasitic infections (72hrs). <LINE> Requires syringe. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Abdominal Pain, Dizziness",
     Tooltip_IVCiprofloxacin = "IV Ciprofloxacin fluoroquinolone antibiotic. <LINE> FAST CURE for GI infections (24hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Tendon Weakness, Dizziness",
     Tooltip_TetanusImmunoglobulin = "Tetanus immunoglobulin - immediate protection. <LINE> FAST CURE for tetanus (48hrs). <LINE> Requires syringe. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Injection Pain, Fever",
     Tooltip_RifampicinComboPack = "Rifampicin combination therapy for TB. <LINE> FAST CURE for tuberculosis (14 days vs 21). <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Orange Urine, Liver Stress, Fatigue",
-    Tooltip_IVVancomycin = "IV Vancomycin - last resort antibiotic. <LINE> FAST CURE for resistant infections (48hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Red Man Syndrome, Kidney Stress",
+Tooltip_IVVancomycin = "IV Vancomycin - last resort antibiotic. <LINE> FAST CURE for resistant infections (48hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Red Man Syndrome, Kidney Stress",
     Tooltip_EmergencySepsisKit = "Emergency sepsis treatment kit. <LINE> FASTEST CURE for sepsis (24hrs). <LINE> Requires IV Kit. <LINE> <RGB:1,0.5,0> SIDE EFFECTS: Severe Fatigue, Nausea, Fever",
 
     -- Knox Virus Treatments

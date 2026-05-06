@@ -497,6 +497,94 @@ EHR.Disease.Diseases["corpse_sickness"] = {
 }
 
 -- ============================================
+-- CADAVERIC ASPERGILLOSIS
+-- ============================================
+--[[
+    Transmission: Fungal spores from damp/cold decomposing corpses
+    Duration: 7-14 days, potentially lethal without antifungals
+    Effects: Respiratory issues, fever, coughing, severe fatigue
+    Treatment: Antifungal tablets or IV Amphotericin; inhaler/cough meds reduce symptoms
+]]--
+EHR.Disease.Diseases["cadaveric_aspergillosis"] = {
+    name = "Cadaveric Aspergillosis",
+    category = "corpse",
+    incubationMin = 24,
+    incubationMax = 72,
+    durationMin = 168,
+    durationMax = 336,
+    stageDurations = {
+        [1] = 0.15,
+        [2] = 0.30,
+        [3] = 0.40,
+        [4] = 0.15,
+    },
+    baseSeverity = 0.75,
+    canKill = true,
+    deathChancePerHour = 0.004,
+    deathStage = 3,
+    stageCount = 4,
+    treatments = {
+        tier0 = {},
+        tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler"},
+        tier2 = {"ExtensiveHealth.AntifungalTablets"},
+        tier3 = {"ExtensiveHealth.IVAmphotericin"},
+    },
+    effects = {
+        [1] = {
+            fatigueDrain = 0.001,
+            staminaPenalty = 0.05,
+            coughingChance = 0,
+        },
+        [2] = {
+            fatigueDrain = 0.004,
+            staminaPenalty = 0.20,
+            coughingChance = 0.003,
+            thirstDrain = 0.002,
+        },
+        [3] = {
+            fatigueDrain = 0.009,
+            staminaPenalty = 0.45,
+            coughingChance = 0.012,
+            thirstDrain = 0.006,
+            movementPenalty = 0.75,
+            canSprint = false,
+            breathingDifficulty = true,
+        },
+        [4] = {
+            fatigueDrain = 0.003,
+            staminaPenalty = 0.15,
+            coughingChance = 0.002,
+        },
+    },
+    stageEntryDialogue = {
+        [1] = "My throat feels dusty after breathing that air...",
+        [2] = "*coughs* Something is wrong with my lungs...",
+        [3] = "*wheezes* I need antifungals... now...",
+        [4] = "The cough is finally easing...",
+    },
+    dialogue = {
+        [1] = {
+            "My chest feels scratchy...",
+            "That damp corpse air got into my lungs...",
+        },
+        [2] = {
+            "*coughs*",
+            "My chest feels tight...",
+            "I feel feverish...",
+        },
+        [3] = {
+            "*wheezing cough*",
+            "I can barely breathe...",
+            "This feels like a lung infection...",
+        },
+        [4] = {
+            "Breathing a little easier...",
+            "The fever is breaking...",
+        },
+    },
+}
+
+-- ============================================
 -- HEAT EXHAUSTION (Phase 3)
 -- ============================================
 --[[
@@ -1156,6 +1244,7 @@ EHR.Log("  - pneumonia: LETHAL without antibiotics, coughing attracts zombies")
 EHR.Log("  - dysentery: Contaminated water -> LETHAL dehydration")
 EHR.Log("  - hypothermia: Cold + wet -> LETHAL cardiac arrest")
 EHR.Log("  - corpse_sickness: Prolonged corpse exposure -> nausea + weakness")
+EHR.Log("  - cadaveric_aspergillosis: Damp/cold corpses -> fungal lung infection")
 EHR.Log("  - heat_exhaustion: Heat + exertion -> can progress to heat stroke")
 EHR.Log("  - heat_stroke: LETHAL without cooling")
 EHR.Log("  - trichinosis: Raw meat -> SEVERE muscle pain + potential death")

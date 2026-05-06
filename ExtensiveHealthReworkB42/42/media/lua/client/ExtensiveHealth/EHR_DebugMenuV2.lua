@@ -718,9 +718,46 @@ EHR.DebugV2.DiseaseList = {
     "heat_stroke",
     "trichinosis",
     "gastroenteritis",
+    "cadaveric_aspergillosis",
     "tetanus",
     "tuberculosis",
 }
+
+function EHR_DebugMenuV2:getActiveDiseaseIds()
+    local ids = {}
+    if not self.player then return ids end
+
+    local data = self.player:getModData()
+    if data and data.EHR_Disease and data.EHR_Disease.active then
+        for diseaseId, disease in pairs(data.EHR_Disease.active) do
+            if type(disease) == "table" then
+                table.insert(ids, diseaseId)
+            end
+        end
+    end
+
+    table.sort(ids)
+    return ids
+end
+
+function EHR_DebugMenuV2:getSelectedDiseaseId()
+    local ids = self:getActiveDiseaseIds()
+    if #ids == 0 then
+        self.selectedDiseaseId = nil
+        return nil
+    end
+
+    local data = self.player:getModData()
+    if self.selectedDiseaseId
+        and data.EHR_Disease
+        and data.EHR_Disease.active
+        and data.EHR_Disease.active[self.selectedDiseaseId] then
+        return self.selectedDiseaseId
+    end
+
+    self.selectedDiseaseId = ids[1]
+    return self.selectedDiseaseId
+end
 
 function EHR_DebugMenuV2:createDiseasesPanel()
     local panel = ISPanel:new(0, 0, self.contentArea.width, self.contentArea.height)
@@ -741,9 +778,35 @@ function EHR_DebugMenuV2:createDiseasesPanel()
     cureAllBtn.backgroundColor = c.safe
     panel:addChild(cureAllBtn)
 
+    local prevBtn = ISButton:new(PADDING + 90, y, 48, BUTTON_HEIGHT, "Prev", self, EHR_DebugMenuV2.onCycleSelectedDisease)
+    prevBtn:initialise()
+    prevBtn:instantiate()
+    prevBtn.internal = -1
+    prevBtn.backgroundColor = c.buttonBg
+    panel:addChild(prevBtn)
+
+    local nextBtn = ISButton:new(PADDING + 143, y, 48, BUTTON_HEIGHT, "Next", self, EHR_DebugMenuV2.onCycleSelectedDisease)
+    nextBtn:initialise()
+    nextBtn:instantiate()
+    nextBtn.internal = 1
+    nextBtn.backgroundColor = c.buttonBg
+    panel:addChild(nextBtn)
+
+    local stageX = PADDING + 205
+    for stage = 1, 4 do
+        local stageBtn = ISButton:new(stageX, y, 44, BUTTON_HEIGHT, "S" .. tostring(stage), self, EHR_DebugMenuV2.onSetSelectedDiseaseStage)
+        stageBtn:initialise()
+        stageBtn:instantiate()
+        stageBtn.internal = stage
+        stageBtn.backgroundColor = stage == 3 and c.danger or (stage == 2 and c.warning or c.buttonBg)
+        stageBtn.textColor = c.text
+        panel:addChild(stageBtn)
+        stageX = stageX + 48
+    end
+
     -- Disease infliction buttons - 3 columns to fit wider buttons
     local inflictX = PADDING
-    local inflictY = y + BUTTON_HEIGHT + 10
+    local inflictY = y + BUTTON_HEIGHT + 28
     for i, diseaseId in ipairs(EHR.DebugV2.DiseaseList) do
         local col = ((i - 1) % 3)
         local row = math.floor((i - 1) / 3)
@@ -768,6 +831,8 @@ function EHR_DebugMenuV2:createDiseasesPanel()
         panel:addChild(btn)
     end
 
+    panel.activeStatusY = inflictY + (math.ceil(#EHR.DebugV2.DiseaseList / 3) * (BUTTON_HEIGHT + 3)) + 18
+
     -- Store reference for rendering
     panel.menuRef = self
 
@@ -782,10 +847,15 @@ function EHR_DebugMenuV2:createDiseasesPanel()
 
         local data = menu.player:getModData()
         local c = EHR.DebugV2.Colors
-        -- Calculate Y based on disease button grid (13 diseases, 3 cols = 5 rows)
-        -- Buttons start at y=44, each row is 27px, 5 rows = 135px, plus padding
-        local y = 200
         local x = PADDING
+        local selectedId = menu:getSelectedDiseaseId()
+        local selectedDef = selectedId and EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[selectedId] or nil
+        local selectedName = selectedDef and selectedDef.name or selectedId or "none"
+
+        self:drawText("Stage target: " .. tostring(selectedName),
+            x + 90, PADDING + BUTTON_HEIGHT + 6, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, FONT)
+
+        local y = self.activeStatusY or 220
 
         -- Active diseases header
         self:drawText("ACTIVE DISEASES", x, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
@@ -809,14 +879,14 @@ function EHR_DebugMenuV2:createDiseasesPanel()
                 elseif stage == 3 then stageColor = c.danger
                 elseif stage == 4 then stageColor = c.safe end
 
-                self:drawText(string.format("%s - Stage %d (%s)", name, stage, stageName),
+                local marker = (id == selectedId) and "> " or "  "
+                self:drawText(string.format("%s%s - Stage %d (%s)", marker, name, stage, stageName),
                     x + 10, y, stageColor.r, stageColor.g, stageColor.b, stageColor.a, FONT)
                 y = y + 18
 
                 -- Duration remaining
-                local elapsed = disease.elapsedTime or 0
-                local duration = disease.duration or 72
-                local remaining = math.max(0, duration - elapsed)
+                local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+                local remaining = math.max(0, (tonumber(disease.endTime) or currentHour) - currentHour)
                 self:drawText(string.format("  Time remaining: %.1f hours", remaining),
                     x + 10, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, FONT)
                 y = y + 20
@@ -853,11 +923,63 @@ function EHR_DebugMenuV2:onCureAllDiseases()
     EHR.DebugV2.Log("Cured all diseases", "DISEASES", "INFO")
 end
 
+function EHR_DebugMenuV2:onCycleSelectedDisease(button)
+    local ids = self:getActiveDiseaseIds()
+    if #ids == 0 then
+        self.selectedDiseaseId = nil
+        EHR.DebugV2.Log("No active diseases to select", "DISEASES", "WARN")
+        return
+    end
+
+    local direction = button and button.internal or 1
+    local currentIndex = 1
+    for i, diseaseId in ipairs(ids) do
+        if diseaseId == self.selectedDiseaseId then
+            currentIndex = i
+            break
+        end
+    end
+
+    local nextIndex = ((currentIndex - 1 + direction) % #ids) + 1
+    self.selectedDiseaseId = ids[nextIndex]
+    EHR.DebugV2.Log("Selected disease: " .. tostring(self.selectedDiseaseId), "DISEASES", "INFO")
+end
+
+function EHR_DebugMenuV2:onSetSelectedDiseaseStage(button)
+    if not self.player or not button then return end
+
+    local diseaseId = self:getSelectedDiseaseId()
+    if not diseaseId then
+        EHR.DebugV2.Log("No active disease selected for stage change", "DISEASES", "WARN")
+        return
+    end
+
+    local stage = tonumber(button.internal) or 2
+    if EHR.Disease and EHR.Disease.MarkDebugSet then
+        EHR.Disease.MarkDebugSet(self.player)
+    end
+
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "SetDiseaseStage", {
+            diseaseId = diseaseId,
+            stage = stage,
+        })
+    end
+
+    local changed = EHR.Disease and EHR.Disease.SetStage and EHR.Disease.SetStage(self.player, diseaseId, stage)
+    if changed then
+        EHR.DebugV2.Log(string.format("Set %s to stage %d", tostring(diseaseId), stage), "DISEASES", "INFO")
+    else
+        EHR.DebugV2.Log("Failed to set disease stage: " .. tostring(diseaseId), "DISEASES", "ERROR")
+    end
+end
+
 function EHR_DebugMenuV2:onInflictDisease(button)
     if not self.player then return end
 
     local diseaseId = button.internal
     if not diseaseId then return end
+    self.selectedDiseaseId = diseaseId
 
     -- MP FIX: Mark grace period BEFORE setting data to protect from overwrites
     if EHR.Disease and EHR.Disease.MarkDebugSet then

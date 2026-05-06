@@ -2,7 +2,7 @@
     Extensive Health Rework B42
     Corpse Sickness Module (Unified System)
 
-    Replaces aspergillosis + putrefaction with a single corpse exposure illness.
+    Handles acute corpse exposure sickness plus damp/cold corpse-spore illness.
     MP note: exposure tracking and disease application run server-side and
     sync ModData to clients for UI display.
 ]]--
@@ -82,6 +82,22 @@ EHR.CorpseSickness.Config = {
     VANILLA_SICKNESS_CLEAR_EXPOSURE = 1,
     FOOD_SICKNESS_SUPPRESS_DURATION = 0.5,
     FOOD_RISK_GRACE_HOURS = 6,
+
+    -- Cadaveric aspergillosis: fungal spores from damp/cold decomposing corpses
+    ASPERGILLOSIS_EXPOSURE_THRESHOLD = 120,
+    ASPERGILLOSIS_MIN_EXPOSURE_TIME_HOURS = 1.5,
+    ASPERGILLOSIS_CHECK_INTERVAL_HOURS = 1.0,
+    ASPERGILLOSIS_EXPOSURE_DECAY_PER_HOUR = 25,
+    ASPERGILLOSIS_GAIN_RATE = 1.8,
+    ASPERGILLOSIS_WETNESS_THRESHOLD = 0.30,
+    ASPERGILLOSIS_COLD_TEMP = 10,
+    ASPERGILLOSIS_DAMP_MULTIPLIER = 1.6,
+    ASPERGILLOSIS_COLD_MULTIPLIER = 1.25,
+    ASPERGILLOSIS_INDOOR_MULTIPLIER = 1.15,
+    ASPERGILLOSIS_BASE_CHANCE = 0.35,
+    ASPERGILLOSIS_MAX_CHANCE = 0.85,
+    ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN = true,
+
     -- Dialogue lines for smell warning
     SMELL_DIALOGUES = {
         "Ugh, that smell...",
@@ -128,6 +144,21 @@ local function getSpeedMultiplier()
     return options.CorpseDiseaseSpeed or 1.0
 end
 
+local function isAspergillosisEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end
+
+    if options.AspergilliosisEnabled ~= nil then
+        return options.AspergilliosisEnabled
+    end
+
+    if options.CadavericAspergillosisEnabled ~= nil then
+        return options.CadavericAspergillosisEnabled
+    end
+
+    return true
+end
+
 -- ============================================
 -- EXPOSURE TRACKING
 -- ============================================
@@ -149,6 +180,13 @@ function EHR.CorpseSickness.GetExposureData(player)
         lastVanillaCorpseSignalHour = 0,
         suppressFoodSicknessUntil = 0,
         immuneUntil = 0,
+        fungalExposure = 0,
+        fungalMaxExposure = 0,
+        fungalTimeInArea = 0,
+        lastFungalUpdateHour = 0,
+        lastFungalCheckHour = 0,
+        lastFungalCorpseCount = 0,
+        lastFungalRiskReason = nil,
     }
     return modData.EHR_CorpseSickness
 end
@@ -167,6 +205,12 @@ function EHR.CorpseSickness.InitializePlayer(player)
         data.lastVanillaCorpseSignalHour = data.lastVanillaCorpseSignalHour or 0
         data.suppressFoodSicknessUntil = data.suppressFoodSicknessUntil or 0
         data.immuneUntil = data.immuneUntil or 0
+        data.fungalExposure = data.fungalExposure or 0
+        data.fungalMaxExposure = data.fungalMaxExposure or 0
+        data.fungalTimeInArea = data.fungalTimeInArea or 0
+        data.lastFungalUpdateHour = data.lastFungalUpdateHour or 0
+        data.lastFungalCheckHour = data.lastFungalCheckHour or 0
+        data.lastFungalCorpseCount = data.lastFungalCorpseCount or 0
     end
 end
 
@@ -385,8 +429,7 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
         if not cx and corpseSquare.getX then cx = safeCall(function() return corpseSquare:getX() end, nil) end
         if not cy and corpseSquare.getY then cy = safeCall(function() return corpseSquare:getY() end, nil) end
         if not cz and corpseSquare.getZ then cz = safeCall(function() return corpseSquare:getZ() end, nil) end
-        if not cx or not cy then return end
-        cz = cz or pz
+        if not cx or not cy or cz == nil then return end
 
         if math.abs(cx - px) > config.SEARCH_RADIUS or math.abs(cy - py) > config.SEARCH_RADIUS then return end
         if math.floor(cz) ~= math.floor(pz) then return end
@@ -705,6 +748,111 @@ function EHR.CorpseSickness.GetEnvironmentMultiplier(player)
     return config.INDOOR_MULTIPLIER
 end
 
+local function getPlayerWetness(player)
+    if EHR.Environmental and EHR.Environmental.GetWetness then
+        local ok, wetness = pcall(function() return EHR.Environmental.GetWetness(player) end)
+        if ok and wetness then return wetness end
+    end
+
+    local stats = player and player:getStats()
+    if stats and CharacterStat and CharacterStat.WETNESS then
+        local ok, wetness = pcall(function() return stats:get(CharacterStat.WETNESS) end)
+        if ok and wetness then return wetness end
+    end
+
+    if player and player.getWetness then
+        local ok, wetness = pcall(function() return player:getWetness() end)
+        if ok and wetness then return wetness end
+    end
+
+    return 0
+end
+
+local function getAirTemperature()
+    if EHR.Environmental and EHR.Environmental.GetAirTemperature then
+        local ok, temp = pcall(function() return EHR.Environmental.GetAirTemperature() end)
+        if ok and temp then return temp end
+    end
+
+    local climate = getClimateManager and getClimateManager() or nil
+    if climate and climate.getTemperature then
+        local ok, temp = pcall(function() return climate:getTemperature() end)
+        if ok and temp then return temp end
+    end
+
+    return 15
+end
+
+local function isRainingNow()
+    local climate = getClimateManager and getClimateManager() or nil
+    if not climate then return false end
+
+    if climate.isRaining then
+        local ok, raining = pcall(function() return climate:isRaining() end)
+        if ok and raining ~= nil then return raining == true end
+    end
+
+    if climate.getRainIntensity then
+        local ok, intensity = pcall(function() return climate:getRainIntensity() end)
+        if ok and intensity then return intensity > 0.05 end
+    end
+
+    return false
+end
+
+local function isPlayerOutside(player)
+    local sq = player and player:getCurrentSquare()
+    if not sq then return false end
+
+    if sq.isOutside then
+        local ok, outside = pcall(function() return sq:isOutside() end)
+        if ok and outside ~= nil then return outside == true end
+    end
+
+    if sq.isInARoom then
+        local ok, inRoom = pcall(function() return sq:isInARoom() end)
+        if ok and inRoom ~= nil then return not inRoom end
+    end
+
+    if sq.getRoom then
+        local ok, room = pcall(function() return sq:getRoom() end)
+        if ok then return room == nil end
+    end
+
+    return false
+end
+
+function EHR.CorpseSickness.GetFungalEnvironment(player)
+    local config = EHR.CorpseSickness.Config
+    local wetness = getPlayerWetness(player)
+    local airTemp = getAirTemperature()
+    local outside = isPlayerOutside(player)
+    local raining = outside and isRainingNow()
+
+    local isDamp = wetness >= (config.ASPERGILLOSIS_WETNESS_THRESHOLD or 0.30) or raining
+    local isCold = airTemp <= (config.ASPERGILLOSIS_COLD_TEMP or 10)
+    if not isDamp and not isCold then
+        return 0, false, "dry"
+    end
+
+    local multiplier = 1.0
+    local reasons = {}
+    if isDamp then
+        multiplier = multiplier * (config.ASPERGILLOSIS_DAMP_MULTIPLIER or 1.6)
+        table.insert(reasons, "damp")
+    end
+    if isCold then
+        multiplier = multiplier * (config.ASPERGILLOSIS_COLD_MULTIPLIER or 1.25)
+        table.insert(reasons, "cold")
+    end
+    if not outside then
+        multiplier = multiplier * (config.ASPERGILLOSIS_INDOOR_MULTIPLIER or 1.15)
+        table.insert(reasons, "indoors")
+    end
+
+    return multiplier, true, table.concat(reasons, "+")
+end
+
 --[[
     Check if player is safely inside a sealed vehicle.
     Returns true if player is in a vehicle with all doors and windows closed/intact.
@@ -783,11 +931,131 @@ end
 -- EXPOSURE UPDATE
 -- ============================================
 
+function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
+    if not player then return end
+
+    local data = EHR.CorpseSickness.GetExposureData(player)
+    if not data then return end
+
+    local config = EHR.CorpseSickness.Config
+    local currentHour = getGameTime():getWorldAgeHours()
+    local lastHour = data.lastFungalUpdateHour or currentHour
+    local deltaHours = currentHour - lastHour
+    if deltaHours <= 0 or deltaHours > 1 then
+        deltaHours = 5 / 3600
+    end
+    data.lastFungalUpdateHour = currentHour
+
+    local function decayFungalExposure()
+        local decay = (config.ASPERGILLOSIS_EXPOSURE_DECAY_PER_HOUR or 25) * deltaHours
+        data.fungalExposure = math.max(0, (data.fungalExposure or 0) - decay)
+        data.fungalTimeInArea = math.max(0, (data.fungalTimeInArea or 0) - deltaHours)
+        if data.fungalExposure <= 0 then
+            data.fungalMaxExposure = 0
+            data.lastFungalRiskReason = nil
+            data.lastFungalCorpseCount = 0
+        end
+    end
+
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
+    if diseaseData and diseaseData.active and diseaseData.active["cadaveric_aspergillosis"] then
+        data.fungalExposure = 0
+        data.fungalTimeInArea = 0
+        data.lastFungalCorpseCount = 0
+        return
+    end
+
+    if not isAspergillosisEnabled() then
+        decayFungalExposure()
+        return
+    end
+
+    if EHR.CorpseSickness.IsProtectedInVehicle(player) then
+        decayFungalExposure()
+        return
+    end
+
+    local protection = EHR.CorpseSickness.GetProtectionLevel(player)
+    if protection >= 1.0 then
+        decayFungalExposure()
+        return
+    end
+
+    local corpseInfo = EHR.CorpseSickness.ScanNearbyCorpses(player)
+    data.lastFungalCorpseCount = corpseInfo.count or 0
+
+    local envMultiplier, hasFungalWeather, reason = EHR.CorpseSickness.GetFungalEnvironment(player)
+    local sporeLoad
+    if config.ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN then
+        sporeLoad = (corpseInfo.count or 0) * 2.0
+    else
+        sporeLoad = ((corpseInfo.decomposingCount or 0) * 1.0)
+            + ((corpseInfo.rottenCount or 0) * 2.0)
+            + ((corpseInfo.freshCount or 0) * 0.05)
+    end
+
+    if sporeLoad <= 0 or not hasFungalWeather then
+        decayFungalExposure()
+        return
+    end
+
+    local gain = sporeLoad
+        * (config.ASPERGILLOSIS_GAIN_RATE or 1.8)
+        * envMultiplier
+        * (1 - protection)
+        * getSpeedMultiplier()
+        * deltaHours
+
+    data.fungalExposure = math.max(0, (data.fungalExposure or 0) + gain)
+    data.fungalMaxExposure = math.max(data.fungalMaxExposure or 0, data.fungalExposure)
+    data.fungalTimeInArea = (data.fungalTimeInArea or 0) + deltaHours
+    data.lastFungalRiskReason = reason
+
+    local threshold = config.ASPERGILLOSIS_EXPOSURE_THRESHOLD or 120
+    local minTime = config.ASPERGILLOSIS_MIN_EXPOSURE_TIME_HOURS or 1.5
+    local checkInterval = config.ASPERGILLOSIS_CHECK_INTERVAL_HOURS or 1.0
+
+    if data.fungalExposure < threshold or data.fungalTimeInArea < minTime then
+        return
+    end
+
+    if currentHour - (data.lastFungalCheckHour or 0) < checkInterval then
+        return
+    end
+    data.lastFungalCheckHour = currentHour
+
+    local overThreshold = math.max(0, data.fungalExposure - threshold) / threshold
+    local chance = (config.ASPERGILLOSIS_BASE_CHANCE or 0.35) + (overThreshold * 0.30)
+    chance = math.min(config.ASPERGILLOSIS_MAX_CHANCE or 0.85, chance)
+
+    local contracted = false
+    if EHR.Disease and EHR.Disease.TryContract then
+        contracted = EHR.Disease.TryContract(player, "cadaveric_aspergillosis", chance)
+    elseif EHR.Disease and EHR.Disease.Contract then
+        EHR.Disease.Contract(player, "cadaveric_aspergillosis")
+        contracted = true
+    end
+
+    if contracted then
+        data.fungalExposure = 0
+        data.fungalMaxExposure = 0
+        data.fungalTimeInArea = 0
+        data.lastFungalCorpseCount = 0
+        data.lastFungalRiskReason = nil
+        if player.Say then
+            player:Say("*coughs* My chest feels wrong after breathing that air...")
+        end
+        EHR.Log("Player contracted cadaveric aspergillosis from damp corpse exposure")
+    end
+end
+
 function EHR.CorpseSickness.UpdateExposure(player)
     if not player then return end
 
     local data = EHR.CorpseSickness.GetExposureData(player)
     if not data then return end
+
+    EHR.CorpseSickness.UpdateAspergillosisExposure(player)
 
     if EHR.CorpseSickness.IsImmune(player) then
         data.currentExposure = 0
@@ -946,12 +1214,35 @@ function EHR.CorpseSickness.UpdateExposure(player)
         data.lastWarningTime = currentHour
     end
 
-    if effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_HIGH then
+    local function logCorpseTrigger(reason)
+        EHR.Log(string.format(
+            "Corpse sickness trigger (%s): exposure=%.1f current=%.1f vanilla=%.1f time=%.2fh corpses=%d fresh=%d decomposing=%d rotten=%d emission=%.2f env=%.2f protection=%.2f vanillaSignal=%s",
+            tostring(reason),
+            effectiveExposureLevel or 0,
+            data.currentExposure or 0,
+            data.vanillaCorpseExposure or 0,
+            data.timeInArea or 0,
+            corpseInfo.count or 0,
+            corpseInfo.freshCount or 0,
+            corpseInfo.decomposingCount or 0,
+            corpseInfo.rottenCount or 0,
+            corpseInfo.totalEmission or 0,
+            envMultiplier or 0,
+            protection or 0,
+            tostring(hasVanillaCorpseSignal)
+        ))
+    end
+
+    local canTriggerCorpseSickness = not EHR.CorpseSickness.HasActiveCorpseDisease(player)
+
+    if canTriggerCorpseSickness and effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_HIGH then
         if data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS then
+            logCorpseTrigger("high")
             EHR.CorpseSickness.TriggerSickness(player)
         end
-    elseif effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_MEDIUM then
+    elseif canTriggerCorpseSickness and effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_MEDIUM then
         if data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS and ZombRand(100) < 30 then
+            logCorpseTrigger("medium")
             EHR.CorpseSickness.TriggerSickness(player)
         end
     end

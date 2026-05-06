@@ -179,7 +179,11 @@ EHR.Tooltips.Data = {
         tier = 1,
         description = "Electrolyte replacement powder - mix with water.",
         relieves = {"Dehydration symptoms"},
-        effects = {"40% symptom relief"},
+        effects = {
+            "Immediate hydration boost",
+            "Gradual hydration support for 30 minutes",
+            "40% dehydration symptom relief",
+        },
         warning = "Does NOT cure dehydration-based diseases",
     },
     ["ExtensiveHealth.BronchodilatorInhaler"] = {
@@ -273,7 +277,10 @@ EHR.Tooltips.Data = {
         description = "Oral antifungal medication.",
         cures = {"Cadaveric Aspergillosis"},
         treatmentTime = "5 days",
-        effects = {"CURES fungal respiratory illness"},
+        effects = {
+            "CURES fungal respiratory illness",
+            "Reduces cough, fever, dehydration and breathing trouble",
+        },
     },
     ["ExtensiveHealth.ActivatedCharcoal"] = {
         category = "Prescription",
@@ -341,9 +348,9 @@ EHR.Tooltips.Data = {
         category = "Clinical",
         tier = 3,
         description = "Hospital-grade corticosteroid injection.",
-        cures = {"Pneumonia", "Severe corpse airway irritation"},
+        cures = {"Pneumonia", "Corpse Sickness"},
         treatmentTime = "12 hours (FAST)",
-        effects = {"FAST CURE for inflammation-related respiratory illness"},
+        effects = {"FAST CURE for pneumonia/corpse airway inflammation"},
         sideEffects = {"Immunosuppression", "Insomnia"},
         requirements = {"Syringe"},
     },
@@ -385,7 +392,10 @@ EHR.Tooltips.Data = {
         description = "IV Amphotericin B - powerful antifungal.",
         cures = {"Severe Cadaveric Aspergillosis"},
         treatmentTime = "24 hours (FAST)",
-        effects = {"FAST CURE for severe fungal respiratory illness"},
+        effects = {
+            "FAST CURE for severe fungal respiratory illness",
+            "Strong cough, fever, dehydration and breathing relief",
+        },
         sideEffects = {"Fever", "Kidney Stress", "Fatigue"},
         requirements = {"IV Kit"},
     },

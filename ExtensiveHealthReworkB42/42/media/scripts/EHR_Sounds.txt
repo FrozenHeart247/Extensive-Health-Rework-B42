@@ -1,0 +1,62 @@
+module Base
+{
+    sound EHRCough
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_cough_male.ogg,
+            distanceMax = 30,
+        }
+    }
+
+    sound EHRCoughMale
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_cough_male.ogg,
+            distanceMax = 30,
+        }
+    }
+
+    sound EHRCoughFemale
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_cough_female.ogg,
+            distanceMax = 30,
+        }
+    }
+
+    sound EHRCoughSevere
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_cough_severe_male.ogg,
+            distanceMax = 45,
+        }
+    }
+
+    sound EHRCoughSevereMale
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_cough_severe_male.ogg,
+            distanceMax = 45,
+        }
+    }
+
+    sound EHRCoughSevereFemale
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_cough_severe_female.ogg,
+            distanceMax = 45,
+        }
+    }
+}

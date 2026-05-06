@@ -501,6 +501,32 @@ function EHR.ServerCommands.InflictDisease(player, args)
     log("[EHR Server] InflictDisease command executed and synced to client")
 end
 
+function EHR.ServerCommands.SetDiseaseStage(player, args)
+    if not player then return end
+    if not args or not args.diseaseId or not args.stage then return end
+
+    local diseaseId = args.diseaseId
+    local stage = math.max(1, math.min(4, tonumber(args.stage) or 2))
+    local changed = false
+
+    if EHR.Disease and EHR.Disease.SetStage then
+        changed = EHR.Disease.SetStage(player, diseaseId, stage)
+    else
+        local data = player:getModData()
+        if data and data.EHR_Disease and data.EHR_Disease.active and data.EHR_Disease.active[diseaseId] then
+            data.EHR_Disease.active[diseaseId].stage = stage
+            changed = true
+        end
+    end
+
+    if changed then
+        syncModDataToClient(player)
+        log("[EHR Server] SetDiseaseStage command executed: " .. tostring(diseaseId) .. " -> stage " .. tostring(stage))
+    else
+        log("[EHR Server] SetDiseaseStage failed: " .. tostring(diseaseId))
+    end
+end
+
 -- ============================================
 -- BLOOD COMMANDS
 -- ============================================
@@ -1379,6 +1405,8 @@ local function OnClientCommand(module, command, player, args)
         EHR.ServerCommands.CureAllDiseases(player, args)
     elseif command == "InflictDisease" then
         EHR.ServerCommands.InflictDisease(player, args)
+    elseif command == "SetDiseaseStage" then
+        EHR.ServerCommands.SetDiseaseStage(player, args)
 
     -- Blood commands
     elseif command == "SetBloodPercent" then

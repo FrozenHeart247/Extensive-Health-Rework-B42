@@ -495,6 +495,36 @@ EHR.Disease.Diseases = {
         },
     },
 
+    ["cadaveric_aspergillosis"] = {
+        name = "Cadaveric Aspergillosis",
+        category = "corpse",
+        incubationMin = 24,
+        incubationMax = 72,
+        durationMin = 168,
+        durationMax = 336,
+        baseSeverity = 0.75,
+        canKill = true,
+        stageCount = 4,
+        treatments = {
+            tier0 = {},
+            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler"},
+            tier2 = {"ExtensiveHealth.AntifungalTablets"},
+            tier3 = {"ExtensiveHealth.IVAmphotericin"},
+        },
+        stageEntryDialogue = {
+            [1] = "My throat feels dusty after breathing that air...",
+            [2] = "*coughs* Something is wrong with my lungs...",
+            [3] = "*wheezes* I need antifungals... now...",
+            [4] = "The cough is finally easing...",
+        },
+        dialogue = {
+            [1] = {"My chest feels scratchy...", "That damp corpse air got into my lungs..."},
+            [2] = {"*coughs*", "My chest feels tight...", "I feel feverish..."},
+            [3] = {"*wheezing cough*", "I can barely breathe...", "This feels like a lung infection..."},
+            [4] = {"Breathing a little easier...", "The fever is breaking..."},
+        },
+    },
+
     ["tuberculosis"] = {
         name = "Tuberculosis",
         category = "corpse",
@@ -1165,7 +1195,7 @@ end
 --[[
     Apply disease effects based on stage and severity
 ]]--
-local function EHR_DiseaseDrainEndurance(stats, amount, floor)
+local function EHR_DiseaseDrainEndurance(stats, amount, floor, fallbackFatigueCap)
     if not stats or not amount or amount <= 0 then return end
     amount = amount * (EHR_DiseaseEffectTimeScale or 1)
     floor = floor or 0.35
@@ -1192,7 +1222,9 @@ local function EHR_DiseaseDrainEndurance(stats, amount, floor)
     if CharacterStat and CharacterStat.FATIGUE then
         pcall(function()
             local current = stats:get(CharacterStat.FATIGUE) or 0
-            stats:set(CharacterStat.FATIGUE, math.min(1, math.max(0, current + (amount * 0.02))))
+            local cap = fallbackFatigueCap or 1
+            if current >= cap then return end
+            stats:set(CharacterStat.FATIGUE, math.min(cap, math.max(0, current + (amount * 0.02))))
         end)
     end
 end
@@ -1243,6 +1275,42 @@ local function EHR_DiseaseLowerStatToward(stats, stat, target, step, minValue)
         local nextValue = math.max(target, math.max(current - step, minValue))
         stats:set(stat, math.min(1, nextValue))
     end)
+end
+
+local function EHR_DiseaseMoveBodyTemperatureToward(player, target, step)
+    if not player or not target or not step or step <= 0 then return end
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
+    target = math.max(28.0, math.min(42.0, target))
+
+    local function moveValue(current)
+        current = tonumber(current) or target
+        if math.abs(target - current) <= step then return target end
+        if current < target then return current + step end
+        return current - step
+    end
+
+    if EHR and EHR.BodyTemp then
+        local tempData = nil
+        if EHR.BodyTemp.GetTemperatureData then
+            tempData = EHR.BodyTemp.GetTemperatureData(player)
+        end
+        if not tempData and EHR.BodyTemp.InitializePlayer then
+            tempData = EHR.BodyTemp.InitializePlayer(player)
+        end
+        if tempData and tempData.bodyTemp then
+            tempData.bodyTemp = moveValue(tempData.bodyTemp)
+            tempData.targetTemp = target
+            return
+        end
+    end
+
+    local stats = player.getStats and player:getStats() or nil
+    if stats and CharacterStat and CharacterStat.TEMPERATURE then
+        pcall(function()
+            local current = stats:get(CharacterStat.TEMPERATURE) or target
+            stats:set(CharacterStat.TEMPERATURE, moveValue(current))
+        end)
+    end
 end
 
 local function EHR_DiseaseClampSicknessStat(stats, maxAllowed)
@@ -2152,7 +2220,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.DISCOMFORT, discomfortTarget * breathingMult, 0.003 * severity, 1)
         EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PAIN, 0.0010 * severity * stageMult * breathingMult)
         EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.0008 * severity * stageMult * dizzinessMult)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00045 * severity * stageMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00018 * severity * stageMult * math.max(0.25, symptomMult))
 
         local dizzyChance = (stage == 3 and 0.018 or stage == 2 and 0.007 or 0.0012) * severity * dizzinessMult
         trySymptom("dizzy", dizzyChance, 0.18, function()
@@ -2175,6 +2243,115 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             trySymptom("collapse", 0.004 * severity * weaknessMult, 0.50, function()
                 EHR_DiseaseTriggerCollapse(player)
             end)
+        end
+
+    elseif diseaseId == "cadaveric_aspergillosis" then
+        -- Damp-corpse fungal lung infection: feverish fatigue, cough, and breathing trouble.
+        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "cadaveric_aspergillosis")
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "cadaveric_aspergillosis", disease)
+        local coughingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "coughing")
+        local breathingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "breathingDifficulty")
+        local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "weakness")
+
+        local coughMult = math.max(0.12, symptomMult * (1 - coughingRelief))
+        local breathingMult = math.max(0.15, symptomMult * (1 - breathingRelief))
+        local weaknessMult = math.max(0.18, symptomMult * (1 - weaknessRelief))
+        local sicknessTarget = 0.16
+        local discomfortTarget = 0.18
+        local fatigueTarget = 0.18
+        local enduranceDrain = 0.003
+        local enduranceFloor = 0.78
+        local feverTarget = 37.4
+        local feverStep = 0.0007
+
+        if stage == 2 then
+            sicknessTarget = 0.34
+            discomfortTarget = 0.32
+            fatigueTarget = 0.20
+            enduranceDrain = 0.0035
+            enduranceFloor = 0.74
+            feverTarget = 38.2
+            feverStep = 0.0010
+        elseif stage == 3 then
+            sicknessTarget = 0.58
+            discomfortTarget = 0.58
+            fatigueTarget = 0.62
+            enduranceDrain = 0.012
+            enduranceFloor = 0.42
+            feverTarget = 39.4
+            feverStep = 0.0016
+        elseif stage == 4 then
+            sicknessTarget = 0.20
+            discomfortTarget = 0.20
+            fatigueTarget = 0.22
+            enduranceDrain = 0.003
+            enduranceFloor = 0.82
+            feverTarget = 37.6
+            feverStep = 0.0010
+        end
+
+        if curativeTreatment then
+            sicknessTarget = sicknessTarget * 0.65
+            discomfortTarget = discomfortTarget * 0.70
+            fatigueTarget = fatigueTarget * 0.70
+            enduranceDrain = enduranceDrain * 0.65
+            enduranceFloor = math.min(0.90, enduranceFloor + 0.12)
+            feverTarget = stage == 3 and 38.2 or 37.6
+            feverStep = feverStep * 1.8
+            disease.aspergillosisHealthCap = nil
+        end
+
+        local enduranceFallbackFatigueCap = stage == 2 and 0.20 or nil
+        EHR_DiseaseDrainEndurance(stats, enduranceDrain * severity * weaknessMult, enduranceFloor, enduranceFallbackFatigueCap)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.SICKNESS, sicknessTarget * severity, 0.0035 * severity, 1)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.DISCOMFORT, discomfortTarget * breathingMult, 0.003 * severity, 1)
+        local fatigueCap = stage == 2 and 0.20 or 1
+        local fatigueStep = stage == 2 and 0.0010 or 0.0025
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, math.min(fatigueCap, fatigueTarget * weaknessMult), fatigueStep * severity, fatigueCap)
+        EHR_DiseaseMoveBodyTemperatureToward(player, feverTarget, feverStep * severity * math.max(0.25, symptomMult))
+        if stage == 3 and not curativeTreatment then
+            EHR_DiseaseRaiseStatToward(
+                stats,
+                CharacterStat and CharacterStat.THIRST,
+                0.50,
+                0.000018 * severity * stageMult * math.max(0.25, symptomMult),
+                0.50
+            )
+        end
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.0008 * severity * stageMult * breathingMult)
+
+        local coughChance = (stage == 3 and 0.010 or stage == 2 and 0.0035 or stage == 4 and 0.0012 or 0.0003) * severity * coughMult
+        trySymptom("aspergillosis_cough", coughChance, 0.14, function()
+            EHR_DiseaseTriggerCough(player, stage == 3)
+        end)
+
+        if stage >= 2 then
+            trySymptom("aspergillosis_fever", (stage == 3 and 0.004 or 0.0015) * severity * symptomMult, 0.28, function()
+                EHR_DiseaseSay(player, {"I'm burning up...", "My chest is on fire...", "This fever is getting worse..."})
+            end)
+        end
+
+        if stage == 3 and not curativeTreatment then
+            if not disease.aspergillosisHealthCap then
+                disease.aspergillosisHealthCap = EHR_DiseaseGetBodyHealth(player)
+            end
+            EHR_DiseaseClampBodyHealth(player, disease.aspergillosisHealthCap)
+
+            if EHR_DiseaseCanTriggerSymptom(disease, "aspergillosis_health_damage", 0.45) then
+                local damage = 0.55 + (1.30 * severity)
+                local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                    player,
+                    damage,
+                    "Cadaveric aspergillosis - untreated fungal lung infection caused respiratory failure"
+                )
+
+                if newHealth then
+                    disease.aspergillosisHealthCap = math.min(disease.aspergillosisHealthCap or 100, newHealth)
+                    EHR_DiseaseClampBodyHealth(player, disease.aspergillosisHealthCap)
+                end
+            end
+        elseif stage ~= 3 then
+            disease.aspergillosisHealthCap = nil
         end
 
     elseif diseaseId == "tuberculosis" then
@@ -2238,17 +2415,25 @@ local function EHR_DiseaseEnforceHealthCaps(player, modData)
     if not player or not modData or not modData.EHR_Disease or not modData.EHR_Disease.active then return end
 
     local trichinosis = modData.EHR_Disease.active.trichinosis
-    if not trichinosis then return end
-
-    if EHR_DiseaseGetActiveCurativeTreatment(player, "trichinosis") then
-        trichinosis.trichinosisHealthCap = nil
-        return
+    if trichinosis then
+        if EHR_DiseaseGetActiveCurativeTreatment(player, "trichinosis") then
+            trichinosis.trichinosisHealthCap = nil
+        elseif trichinosis.stage == 3 and trichinosis.trichinosisHealthCap then
+            EHR_DiseaseClampBodyHealth(player, trichinosis.trichinosisHealthCap)
+        elseif trichinosis.stage ~= 3 then
+            trichinosis.trichinosisHealthCap = nil
+        end
     end
 
-    if trichinosis.stage == 3 and trichinosis.trichinosisHealthCap then
-        EHR_DiseaseClampBodyHealth(player, trichinosis.trichinosisHealthCap)
-    elseif trichinosis.stage ~= 3 then
-        trichinosis.trichinosisHealthCap = nil
+    local aspergillosis = modData.EHR_Disease.active.cadaveric_aspergillosis
+    if aspergillosis then
+        if EHR_DiseaseGetActiveCurativeTreatment(player, "cadaveric_aspergillosis") then
+            aspergillosis.aspergillosisHealthCap = nil
+        elseif aspergillosis.stage == 3 and aspergillosis.aspergillosisHealthCap then
+            EHR_DiseaseClampBodyHealth(player, aspergillosis.aspergillosisHealthCap)
+        elseif aspergillosis.stage ~= 3 then
+            aspergillosis.aspergillosisHealthCap = nil
+        end
     end
 end
 
@@ -3230,8 +3415,56 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
     if not data or not data.active then return false end
 
     if data.active[diseaseId] then
-        data.active[diseaseId].stage = stage
-        data.active[diseaseId].stageProgress = 0
+        stage = math.max(1, math.min(4, tonumber(stage) or 1))
+
+        local disease = data.active[diseaseId]
+        local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+        local def = EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] or nil
+        local totalDuration = tonumber(disease.endTime) and tonumber(disease.startTime)
+            and (tonumber(disease.endTime) - tonumber(disease.startTime))
+            or nil
+
+        if not totalDuration or totalDuration < 6 then
+            totalDuration = math.max(6, (def and def.durationMax) or 72)
+        end
+
+        local progressByStage = {
+            [1] = 0.05,
+            [2] = 0.20,
+            [3] = 0.50,
+            [4] = 0.80,
+        }
+        local progress = progressByStage[stage] or 0.20
+        local oldStage = disease.stage
+
+        disease.startTime = currentHour - (totalDuration * progress)
+        disease.endTime = disease.startTime + totalDuration
+        disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
+        disease.peakTime = disease.startTime + (totalDuration * 0.40)
+        disease.stage = stage
+        disease.stageProgress = 0
+        disease.stageStartTime = currentHour
+        disease.lastStageTime = currentHour
+        disease.debugForcedStageAt = currentHour
+
+        if stage == 4 then
+            disease.warmthBlocked = nil
+        end
+
+        if oldStage ~= stage and def and def.stageEntryDialogue and def.stageEntryDialogue[stage] and EHR.Dialogue then
+            EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[stage])
+        end
+
+        if EHR.Disease.MarkDebugSet then
+            EHR.Disease.MarkDebugSet(player)
+        end
+
+        if isClient() then
+            sendClientCommand(player, "EHR", "RequestSync", {})
+        elseif player.transmitModData then
+            pcall(function() player:transmitModData() end)
+        end
+
         EHR.Log("Set " .. tostring(diseaseId) .. " to stage " .. tostring(stage))
         return true
     end

@@ -192,6 +192,7 @@
     "UI_EHR_Disease_heat_exhaustion":  "Heat Exhaustion",
     "UI_EHR_Disease_heat_stroke":  "Heat Stroke",
     "UI_EHR_Disease_corpse_sickness":  "Corpse Exposure Illness",
+    "UI_EHR_Disease_cadaveric_aspergillosis":  "Cadaveric Aspergillosis",
     "UI_EHR_Disease_tuberculosis":  "Tuberculosis",
     "UI_EHR_Disease_tetanus":  "Tetanus",
     "UI_EHR_Disease_Knox_Infection":  "Knox Virus Infection"

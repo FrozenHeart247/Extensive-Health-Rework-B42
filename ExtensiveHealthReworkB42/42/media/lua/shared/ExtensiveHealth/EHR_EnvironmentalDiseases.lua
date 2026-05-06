@@ -68,6 +68,12 @@ EHR.Environmental.Config = {
         coughVolume = 8,
         coughSevereRadius = 25,
         coughSevereVolume = 15,
+        coughSfx = "EHRCough",
+        coughMaleSfx = "EHRCoughMale",
+        coughFemaleSfx = "EHRCoughFemale",
+        coughSevereSfx = "EHRCoughSevere",
+        coughSevereMaleSfx = "EHRCoughSevereMale",
+        coughSevereFemaleSfx = "EHRCoughSevereFemale",
         vomitRadius = 15,
         vomitVolume = 10,
     },
@@ -228,8 +234,9 @@ function EHR.Environmental.SuppressVanillaTemperature(player)
     local hasModHeatStroke = active["heat_stroke"] ~= nil
     local hasModCold = active["common_cold"] ~= nil
     local hasModPneumonia = active["pneumonia"] ~= nil
+    local hasModAspergillosis = active["cadaveric_aspergillosis"] ~= nil
 
-    if not (hasModHypothermia or hasModHeatExhaustion or hasModHeatStroke or hasModCold or hasModPneumonia) then
+    if not (hasModHypothermia or hasModHeatExhaustion or hasModHeatStroke or hasModCold or hasModPneumonia or hasModAspergillosis) then
         return  -- No mod temperature/respiratory disease, don't interfere with vanilla
     end
 
@@ -275,6 +282,7 @@ function EHR.Environmental.SuppressVanillaCold(player)
     local hasModCold = active["common_cold"] ~= nil
     local hasModPneumonia = active["pneumonia"] ~= nil
     local hasModCorpseSickness = active["corpse_sickness"] ~= nil
+    local hasModAspergillosis = active["cadaveric_aspergillosis"] ~= nil
     local hasModTuberculosis = active["tuberculosis"] ~= nil
     local hasModFoodDisease = false
 
@@ -286,7 +294,7 @@ function EHR.Environmental.SuppressVanillaCold(player)
         end
     end
 
-    local hasAnyModRespiratory = hasModCold or hasModPneumonia or hasModCorpseSickness or hasModTuberculosis
+    local hasAnyModRespiratory = hasModCold or hasModPneumonia or hasModCorpseSickness or hasModAspergillosis or hasModTuberculosis
 
     if not CharacterStat or not CharacterStat.SICKNESS then return end
 
@@ -342,7 +350,7 @@ function EHR.Environmental.SuppressVanillaCold(player)
     if hasAnyModRespiratory then
         -- Mod HAS a respiratory disease - sync SICKNESS to mod's disease stage
         local targetSickness = 0
-        local respiratoryDiseases = {"common_cold", "pneumonia", "corpse_sickness", "tuberculosis"}
+        local respiratoryDiseases = {"common_cold", "pneumonia", "corpse_sickness", "cadaveric_aspergillosis", "tuberculosis"}
         local corpseReliefCapped = false
         local gameTime = getGameTime and getGameTime() or nil
         local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
@@ -1194,7 +1202,7 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     -- PNEUMONIA: Coughing fits (severe zombie attraction)
     if diseaseId == "pneumonia" and effects.coughingChance then
         if ZombRand(1000) / 1000 < effects.coughingChance then
-            EHR.Environmental.TriggerCough(player, true) -- severe = true
+            EHR.Environmental.TriggerCough(player, true)
         end
     end
 
@@ -1333,6 +1341,51 @@ end
 
     @param severe - If true, it's a violent coughing fit
 ]]--
+local function EHR_EnvironmentalIsFemale(player)
+    if not player then return false end
+
+    if player.isFemale then
+        local ok, value = pcall(function()
+            return player:isFemale()
+        end)
+        if ok and value ~= nil then
+            return value == true
+        end
+    end
+
+    if player.getDescriptor then
+        local okDesc, descriptor = pcall(function()
+            return player:getDescriptor()
+        end)
+        if okDesc and descriptor and descriptor.isFemale then
+            local ok, value = pcall(function()
+                return descriptor:isFemale()
+            end)
+            if ok and value ~= nil then
+                return value == true
+            end
+        end
+    end
+
+    return false
+end
+
+local function EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
+    local female = EHR_EnvironmentalIsFemale(player)
+
+    if severe then
+        if female and cfg.coughSevereFemaleSfx then
+            return cfg.coughSevereFemaleSfx
+        end
+        return cfg.coughSevereMaleSfx or cfg.coughSevereSfx
+    end
+
+    if female and cfg.coughFemaleSfx then
+        return cfg.coughFemaleSfx
+    end
+    return cfg.coughMaleSfx or cfg.coughSfx
+end
+
 function EHR.Environmental.TriggerCough(player, severe)
     local cfg = EHR.Environmental.Config.sound
 
@@ -1349,6 +1402,14 @@ function EHR.Environmental.TriggerCough(player, severe)
             local coughs = {"*cough*", "*coughs*", "*cough cough*"}
             player:Say(coughs[ZombRand(#coughs) + 1])
         end
+    end
+
+    -- Audible SFX for the player. Zombie attraction is still handled by world sound below.
+    local sfx = EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
+    if sfx and sfx ~= "" and player.playSound then
+        pcall(function()
+            player:playSound(sfx)
+        end)
     end
 
     -- Create noise for zombie attraction
@@ -1714,6 +1775,8 @@ function EHR.Environmental.CheckDiseaseLethal(player, diseaseId, disease, def)
         if player.Say then
             if diseaseId == "pneumonia" then
                 player:Say("*gasps* Can't... breathe...")
+            elseif diseaseId == "cadaveric_aspergillosis" then
+                player:Say("*wheezes* Can't... breathe...")
             elseif diseaseId == "hypothermia" then
                 player:Say("So... cold... tired...")
             end

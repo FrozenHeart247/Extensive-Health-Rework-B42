@@ -21,6 +21,8 @@ EHR.ToxinVision.Config = {
     MAX_DURATION_MINUTES = 20,
     MEDICATION_MIN_DURATION_MINUTES = 10,
     MEDICATION_MAX_DURATION_MINUTES = 20,
+    SYMPTOM_MIN_DURATION_MINUTES = 5,
+    SYMPTOM_MAX_DURATION_MINUTES = 10,
     MIN_INTERVAL_MINUTES = 25,
     MAX_INTERVAL_MINUTES = 45,
 
@@ -245,6 +247,21 @@ function EHR.ToxinVision.HasPeakToxinPoisoning(player)
     return toxin and toxin.stage == 3
 end
 
+function EHR.ToxinVision.HasMedicationDizziness(player, currentHour)
+    if not isPlayerValid(player) then return false end
+
+    local modData = player:getModData()
+    local medData = modData and modData.EHR_Medication
+    local activeEffects = medData and medData.activeSideEffects
+    local effect = activeEffects and activeEffects.dizziness
+    if type(effect) ~= "table" then return false end
+
+    currentHour = currentHour or getWorldHour()
+    local startTime = tonumber(effect.startTime) or currentHour
+    local duration = tonumber(effect.duration) or 0
+    return duration > 0 and currentHour < startTime + duration
+end
+
 function EHR.ToxinVision.SayBlurLine(player, state)
     if not player or not player.Say then return end
 
@@ -302,6 +319,8 @@ function EHR.ToxinVision.StartMedicationEpisode(player)
     if state.active then return false end
 
     local currentHour = getWorldHour()
+    if not EHR.ToxinVision.HasMedicationDizziness(player, currentHour) then return false end
+
     local saved = captureSearchState(playerIndex)
     if not saved then return false end
 
@@ -316,6 +335,35 @@ function EHR.ToxinVision.StartMedicationEpisode(player)
 
     if EHR.ToxinVision.Apply(playerIndex) then
         EHR.Log("ToxinVision: medication dizziness episode started")
+        return true
+    end
+
+    EHR.ToxinVision.StopEpisode(playerIndex, currentHour, false)
+    return false
+end
+
+function EHR.ToxinVision.StartSymptomEpisode(player)
+    if not isPlayerValid(player) then return false end
+
+    local playerIndex = getPlayerIndex(player, 0)
+    local state = EHR.ToxinVision.GetState(playerIndex)
+    if state.active then return false end
+
+    local currentHour = getWorldHour()
+    local saved = captureSearchState(playerIndex)
+    if not saved then return false end
+
+    local cfg = EHR.ToxinVision.Config
+    state.savedSearchState = saved
+    state.active = true
+    state.source = "symptom"
+    state.activeUntilHour = currentHour + randomMinutesAsHours(
+        cfg.SYMPTOM_MIN_DURATION_MINUTES,
+        cfg.SYMPTOM_MAX_DURATION_MINUTES
+    )
+
+    if EHR.ToxinVision.Apply(playerIndex) then
+        EHR.Log("ToxinVision: symptom dizziness episode started")
         return true
     end
 
@@ -376,7 +424,9 @@ function EHR.ToxinVision.OnTick()
         local state = EHR.ToxinVision.GetState(playerIndex)
 
         if state.active then
-            if currentHour >= (state.activeUntilHour or 0) then
+            if state.source == "medication" and not EHR.ToxinVision.HasMedicationDizziness(player, currentHour) then
+                EHR.ToxinVision.StopEpisode(playerIndex, currentHour, false)
+            elseif currentHour >= (state.activeUntilHour or 0) then
                 EHR.ToxinVision.StopEpisode(playerIndex, currentHour, state.source == "toxin")
             else
                 EHR.ToxinVision.Apply(playerIndex)

@@ -106,6 +106,7 @@ EHR.MedicationSpawns.DrainableMeds = {
 
     -- EHR Tier 3 - Clinical (drainable ones)
     ["ExtensiveHealth.RifampicinComboPack"] = true,
+    ["ExtensiveHealth.RespiratorySupportKit"] = true,
 
     -- EHR Supplies
     ["ExtensiveHealth.IVKit"] = true,

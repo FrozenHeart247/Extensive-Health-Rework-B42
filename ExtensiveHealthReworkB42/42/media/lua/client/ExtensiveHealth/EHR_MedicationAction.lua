@@ -187,7 +187,7 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
                 if EHR.Medication.GetItemDoseInfo then
                     local doseInfo = EHR.Medication.GetItemDoseInfo(item)
                     if doseInfo and doseInfo.maxDoses and doseInfo.maxDoses > 1 then
-                        desc = desc .. "Doses: " .. tostring(doseInfo.remainingDoses or 0) ..
+                        desc = desc .. "Remaining: " .. tostring(doseInfo.remainingDoses or 0) ..
                             "/" .. tostring(doseInfo.maxDoses) .. " <LINE> "
                         hasPackageDoses = true
                     end

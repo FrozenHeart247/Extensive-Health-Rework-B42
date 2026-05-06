@@ -534,6 +534,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item RespiratorySupportKit
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Respiratory Support Kit,
+        Icon = RespiratorySupportKit,
+        Weight = 0.5,
+        Tooltip = Tooltip_RespiratorySupportKit,
+        UseDelta = 0.3333,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item IVAntibiotics
     {
         DisplayCategory = FirstAid,

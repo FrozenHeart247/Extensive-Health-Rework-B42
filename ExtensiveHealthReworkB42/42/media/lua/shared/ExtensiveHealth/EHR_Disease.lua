@@ -478,8 +478,8 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {},
             tier1 = {"ExtensiveHealth.AntiNauseaTablets"},
-            tier2 = {"ExtensiveHealth.ActivatedCharcoal", "ExtensiveHealth.AntifungalTablets"},
-            tier3 = {"ExtensiveHealth.ChelationKit"},
+            tier2 = {},
+            tier3 = {"ExtensiveHealth.CorticosteroidInjection", "ExtensiveHealth.RespiratorySupportKit"},
         },
         stageEntryDialogue = {
             [1] = "That smell is getting to me...",
@@ -564,6 +564,7 @@ EHR.Disease.FoodRisks = {
     rotten = 0.70,          -- 70% chance from rotten food
     burned = 0.05,          -- 5% chance from burned food
     stale = 0.10,           -- 10% chance from stale food
+    dangerousUncooked = 0.35,
     rawWildGameHigh = 0.70,
     rawWildGameMedium = 0.70,
     rawWildGameLow = 0.70,
@@ -1229,6 +1230,49 @@ local function EHR_DiseaseRaiseStatToward(stats, stat, target, step, maxValue)
     end)
 end
 
+local function EHR_DiseaseLowerStatToward(stats, stat, target, step, minValue)
+    if not stats or not stat or not target or not step or step <= 0 then return end
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
+    minValue = minValue or 0
+
+    pcall(function()
+        local current = stats:get(stat) or 0
+        if current <= target then return end
+
+        local nextValue = math.max(target, math.max(current - step, minValue))
+        stats:set(stat, math.min(1, nextValue))
+    end)
+end
+
+local function EHR_DiseaseClampSicknessStat(stats, maxAllowed)
+    if not stats or not maxAllowed then return false end
+
+    local changed = false
+    maxAllowed = math.max(0, math.min(1, maxAllowed))
+
+    if CharacterStat and CharacterStat.SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.SICKNESS) or 0
+            if current > maxAllowed then
+                stats:set(CharacterStat.SICKNESS, maxAllowed)
+                changed = true
+            end
+        end)
+    end
+
+    if stats.getSickness and stats.setSickness then
+        pcall(function()
+            local current = stats:getSickness() or 0
+            if current > maxAllowed then
+                stats:setSickness(maxAllowed)
+                changed = true
+            end
+        end)
+    end
+
+    return changed
+end
+
 local function EHR_DiseaseRaisePainToward(stats, target, step)
     if not stats or not target or not step or step <= 0 then return end
     step = step * (EHR_DiseaseEffectTimeScale or 1)
@@ -1325,6 +1369,15 @@ local function EHR_DiseaseTriggerCough(player, severe)
 end
 
 local function EHR_DiseaseTriggerDizziness(player)
+    local isLocalPlayer = false
+    if player then
+        pcall(function() isLocalPlayer = player:isLocalPlayer() end)
+    end
+
+    if isLocalPlayer and EHR.ToxinVision and EHR.ToxinVision.StartSymptomEpisode then
+        pcall(function() EHR.ToxinVision.StartSymptomEpisode(player) end)
+    end
+
     if EHR.Environmental and EHR.Environmental.TriggerDizziness then
         local ok = pcall(function() EHR.Environmental.TriggerDizziness(player) end)
         if ok then return end
@@ -2036,27 +2089,89 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
 
     elseif diseaseId == "corpse_sickness" then
         -- Current active corpse illness covers old putrefaction gas symptoms and mild spore irritation.
-        EHR_DiseaseDrainEndurance(stats, 0.002 * severity * stageMult, 0.35)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PAIN, 0.00045 * severity * stageMult)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.00045 * severity * stageMult)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00025 * severity * stageMult)
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "corpse_sickness", disease)
+        local nauseaRelief = EHR_DiseaseGetActiveSymptomReduction(player, "corpse_sickness", "nausea")
+        if disease.corpseSicknessNauseaReliefUntil and disease.corpseSicknessNauseaReliefUntil > currentHour then
+            nauseaRelief = math.max(nauseaRelief, disease.corpseSicknessNauseaRelief or 0)
+        elseif disease.corpseSicknessNauseaReliefUntil then
+            disease.corpseSicknessNauseaRelief = nil
+            disease.corpseSicknessNauseaReliefUntil = nil
+        end
+        local dizzinessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "corpse_sickness", "dizziness")
+        local breathingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "corpse_sickness", "breathingDifficulty")
+        local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "corpse_sickness", "weakness")
+        local nauseaMult = math.max(0.12, symptomMult * (1 - nauseaRelief))
+        local dizzinessMult = math.max(0.12, symptomMult * (1 - dizzinessRelief))
+        local breathingMult = math.max(0.15, symptomMult * (1 - breathingRelief))
+        local weaknessMult = math.max(0.18, symptomMult * (1 - weaknessRelief))
 
-        local dizzyChance = (stage == 3 and 0.005 or stage == 2 and 0.002 or 0.0004) * severity
+        local sicknessTarget = 0.18
+        local discomfortTarget = 0.16
+        local enduranceDrain = 0.003
+        local enduranceFloor = 0.68
+        if stage == 2 then
+            sicknessTarget = 0.36
+            discomfortTarget = 0.32
+            enduranceDrain = 0.006
+            enduranceFloor = 0.58
+        elseif stage == 3 then
+            sicknessTarget = 0.58
+            discomfortTarget = 0.55
+            enduranceDrain = 0.011
+            enduranceFloor = 0.42
+        elseif stage == 4 then
+            sicknessTarget = 0.20
+            discomfortTarget = 0.18
+            enduranceDrain = 0.002
+            enduranceFloor = 0.78
+        end
+
+        local treatedSicknessTarget = sicknessTarget * nauseaMult
+        if nauseaRelief > 0 then
+            local nauseaFloor = stage == 3 and 0.36 or stage == 2 and 0.20 or stage == 4 and 0.12 or 0.10
+            treatedSicknessTarget = math.max(nauseaFloor, treatedSicknessTarget)
+        end
+
+        if nauseaRelief > 0 then
+            disease.corpseSicknessSymptomTarget = treatedSicknessTarget
+            disease.corpseSicknessSymptomTargetUntil = currentHour + 0.25
+        else
+            disease.corpseSicknessSymptomTarget = nil
+            disease.corpseSicknessSymptomTargetUntil = nil
+        end
+
+        EHR_DiseaseDrainEndurance(stats, enduranceDrain * severity * weaknessMult, enduranceFloor)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.SICKNESS, treatedSicknessTarget, 0.0035 * severity, 1)
+        if nauseaRelief > 0 then
+            EHR_DiseaseLowerStatToward(stats, CharacterStat and CharacterStat.SICKNESS, treatedSicknessTarget, (0.006 + 0.010 * nauseaRelief) * severity, 0)
+            EHR_DiseaseClampSicknessStat(stats, treatedSicknessTarget + 0.015)
+        end
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.DISCOMFORT, discomfortTarget * breathingMult, 0.003 * severity, 1)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PAIN, 0.0010 * severity * stageMult * breathingMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.0008 * severity * stageMult * dizzinessMult)
+        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.THIRST, 0.00045 * severity * stageMult)
+
+        local dizzyChance = (stage == 3 and 0.018 or stage == 2 and 0.007 or 0.0012) * severity * dizzinessMult
         trySymptom("dizzy", dizzyChance, 0.18, function()
             EHR_DiseaseTriggerDizziness(player)
         end)
 
-        local coughChance = (stage == 3 and 0.003 or stage == 2 and 0.001 or 0.0003) * severity
+        local coughChance = (stage == 3 and 0.007 or stage == 2 and 0.0025 or 0.0005) * severity * breathingMult
         trySymptom("cough", coughChance, 0.16, function()
             EHR_DiseaseTriggerCough(player, stage == 3)
         end)
 
         if stage == 2 then
-            trySymptom("eye_irritation", 0.0015 * severity, 0.25, function()
+            trySymptom("eye_irritation", 0.006 * severity * breathingMult, 0.22, function()
                 EHR_DiseaseSay(player, {"My eyes are burning...", "My eyes sting...", "Need fresh air..."})
             end)
         elseif stage == 3 then
-            trySymptom("collapse", 0.001 * severity, 0.50, function()
+            trySymptom("eye_irritation", 0.008 * severity * breathingMult, 0.22, function()
+                EHR_DiseaseSay(player, {"My eyes are burning...", "My eyes sting...", "Need fresh air..."})
+            end)
+            trySymptom("collapse", 0.004 * severity * weaknessMult, 0.50, function()
                 EHR_DiseaseTriggerCollapse(player)
             end)
         end
@@ -2508,6 +2623,38 @@ function EHR.Disease.ShouldPreserveVanillaPoison(player, currentPoison)
     return false
 end
 
+local function EHR_DiseaseSafeItemMethod(target, methodName)
+    if not target or not methodName or not target[methodName] then return nil end
+
+    local ok, result = pcall(function()
+        return target[methodName](target)
+    end)
+
+    if ok then return result end
+    return nil
+end
+
+local function EHR_DiseaseGetScriptItemFlag(item, methodNames)
+    local scriptItem = EHR_DiseaseSafeItemMethod(item, "getScriptItem")
+    if not scriptItem then return false end
+
+    for _, methodName in ipairs(methodNames) do
+        local value = EHR_DiseaseSafeItemMethod(scriptItem, methodName)
+        if value ~= nil then return value == true end
+    end
+
+    return false
+end
+
+local function EHR_DiseaseGetItemFlag(item, methodNames)
+    for _, methodName in ipairs(methodNames) do
+        local value = EHR_DiseaseSafeItemMethod(item, methodName)
+        if value ~= nil then return value == true end
+    end
+
+    return EHR_DiseaseGetScriptItemFlag(item, methodNames)
+end
+
 function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     if not item or isCooked == true or isBurnt == true then return 0, nil end
 
@@ -2519,6 +2666,9 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     end
 
     nameLower = nameLower or ""
+    local foodTypeLower = string.lower(tostring(EHR_DiseaseSafeItemMethod(item, "getFoodType") or EHR_DiseaseSafeItemMethod(item, "getEatType") or ""))
+    local dangerousUncooked = EHR_DiseaseGetItemFlag(item, {"isDangerousUncooked", "getDangerousUncooked"})
+
     local cookedPatterns = {"cooked", "grilled", "roasted", "fried", "boiled", "burnt", "burned", "charred"}
     for _, pattern in ipairs(cookedPatterns) do
         if string.find(nameLower, pattern) then
@@ -2529,6 +2679,7 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     local highRiskPatterns = {
         "dead rat", "deadrat", "rat meat", "ratmeat", " rat", "rat ", "^rat$",
         "dead mouse", "deadmouse", "mouse meat", "mousemeat", " mouse", "mouse ", "^mouse$",
+        "rodent meat", "rodentmeat", "small animal meat", "smallanimalmeat", "small animal", "smallanimal",
         "wild boar", "boar meat", "boarmeat", "bear meat", "bearmeat",
     }
     for _, pattern in ipairs(highRiskPatterns) do
@@ -2541,12 +2692,18 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
         "fox meat", "foxmeat", "raccoon meat", "raccoonmeat", "wolf meat", "wolfmeat",
         "dead rabbit", "deadrabbit", "rabbit meat", "rabbitmeat", " rabbit", "rabbit ", "^rabbit$",
         "squirrel meat", "squirrelmeat", "dead squirrel", "deadsquirrel",
+        "frog meat", "frogmeat", " frog", "frog ", "^frog$",
+        "small bird meat", "smallbirdmeat", "small bird", "smallbird", "bird meat",
         "venison", "deer meat", "deermeat",
     }
     for _, pattern in ipairs(mediumRiskPatterns) do
         if string.find(nameLower, pattern) then
             return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
         end
+    end
+
+    if foodTypeLower == "game" then
+        return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
     end
 
     local lowRiskPatterns = {
@@ -2558,6 +2715,19 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
         if string.find(nameLower, pattern) then
             return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
         end
+    end
+
+    local dangerousMeatTypes = {
+        poultry = true,
+        pork = true,
+        beef = true,
+        bacon = true,
+        mutton = true,
+        lamb = true,
+        meat = true,
+    }
+    if dangerousUncooked and dangerousMeatTypes[foodTypeLower] then
+        return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
     end
 
     return 0, nil
@@ -2745,6 +2915,16 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local trichinosisRisk, trichinosisReason = EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     if trichinosisRisk > 0 then
         addRisk("trichinosis", trichinosisReason, trichinosisRisk)
+    end
+
+    -- DangerousUncooked non-meat food causes food poisoning. Meat/game is handled above.
+    local dangerousUncooked = EHR_DiseaseGetItemFlag(item, {"isDangerousUncooked", "getDangerousUncooked"})
+    if trichinosisRisk <= 0
+        and dangerousUncooked == true
+        and isRotten ~= true
+        and isBurnt ~= true
+        and isCooked ~= true then
+        addRisk("food_poisoning", "dangerous uncooked", EHR.Disease.FoodRisks.dangerousUncooked)
     end
 
     -- Stale food check (age-based, with B42 freshness fallback)
@@ -3091,11 +3271,22 @@ local function EHR_DiseaseGetGastroSicknessFloor(player, ignoreDiseaseId)
     if not disease then return nil end
 
     local stage = disease.stage or 0
-    if stage == 2 then return 31 end -- Stay clearly above Queasy threshold.
-    if stage == 3 then return 56 end -- Stay clearly above Nauseous threshold.
-    if stage == 4 then return 18 end -- Recovery fades below Queasy.
+    local floor = nil
+    if stage == 2 then floor = 31 end -- Stay clearly above Queasy threshold.
+    if stage == 3 then floor = 56 end -- Stay clearly above Nauseous threshold.
+    if stage == 4 then floor = 18 end -- Recovery fades below Queasy.
 
-    return nil
+    if not floor then return nil end
+
+    local nauseaRelief = EHR_DiseaseGetActiveSymptomReduction(player, "gastroenteritis", "nausea")
+    local sicknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "gastroenteritis", "sickness")
+    local targetedRelief = math.max(nauseaRelief * 0.65, sicknessRelief)
+    if targetedRelief > 0 then
+        local minimumFloor = stage == 3 and 35 or 12
+        floor = math.max(minimumFloor, floor * math.max(0.50, 1 - targetedRelief))
+    end
+
+    return floor
 end
 
 --[[
@@ -3138,6 +3329,12 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
     local adjustedLevel = baseLevel * (0.5 + worstSeverity)
     if worstDiseaseId and worstDisease then
         adjustedLevel = adjustedLevel * EHR_DiseaseGetActiveSymptomMultiplier(player, worstDiseaseId, worstDisease)
+        local nauseaRelief = EHR_DiseaseGetActiveSymptomReduction(player, worstDiseaseId, "nausea")
+        local sicknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, worstDiseaseId, "sickness")
+        local targetedRelief = math.max(nauseaRelief * 0.75, sicknessRelief)
+        if targetedRelief > 0 then
+            adjustedLevel = adjustedLevel * math.max(0.45, 1 - targetedRelief)
+        end
     end
 
     if worstDiseaseId == "toxin_poisoning" and EHR_DiseaseGetActiveCurativeTreatment(player, "toxin_poisoning") then
@@ -3284,6 +3481,51 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
 
     -- Get our target level based on disease state (returns 0-100)
     local targetLevel = EHR.Disease.GetTargetVanillaSickness(player)
+
+    local corpseShouldSuppressFood = EHR.CorpseSickness
+            and EHR.CorpseSickness.ShouldSuppressFoodSickness
+            and EHR.CorpseSickness.ShouldSuppressFoodSickness(player)
+
+    local activeCorpseIllness = false
+    local activeCorpseDisease = nil
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    if diseaseData and diseaseData.active and diseaseData.active.corpse_sickness then
+        activeCorpseIllness = true
+        activeCorpseDisease = diseaseData.active.corpse_sickness
+    end
+
+    local corpseSicknessSignal = false
+    if EHR.CorpseSickness then
+        local modData = player:getModData()
+        local corpseData = modData and modData.EHR_CorpseSickness
+        if corpseData then
+            local currentHour = getGameTime():getWorldAgeHours()
+            corpseSicknessSignal = (corpseData.currentExposure or 0) > 0
+                    or (corpseData.vanillaCorpseExposure or 0) > 0
+                    or (corpseData.suppressFoodSicknessUntil or 0) > currentHour
+        end
+    end
+
+    -- Corpse exposure owns CharacterStat.SICKNESS directly. If no food disease is
+    -- active, keep the food component suppressed without zeroing the corpse moodle.
+    if targetLevel == 0 and (activeCorpseIllness or corpseShouldSuppressFood or (corpseSicknessSignal and currentVanilla <= 0.01)) then
+        if CharacterStat.FOOD_SICKNESS then
+            pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, 0) end)
+        end
+        if EHR.CorpseSickness and EHR.CorpseSickness.SuppressFoodSicknessComponent then
+            EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+        end
+        if activeCorpseIllness and activeCorpseDisease and CharacterStat.SICKNESS then
+            local symptomTarget = activeCorpseDisease.corpseSicknessSymptomTarget
+            local symptomTargetUntil = activeCorpseDisease.corpseSicknessSymptomTargetUntil
+            local currentHour = getGameTime():getWorldAgeHours()
+            if symptomTarget and symptomTargetUntil and symptomTargetUntil > currentHour then
+                local maxAllowed = symptomTarget + 0.015
+                EHR_DiseaseClampSicknessStat(stats, maxAllowed)
+            end
+        end
+        return
+    end
 
     if targetLevel == 0 and currentVanilla > 0.01 then
         if EHR.Disease.ShouldSuppressExternalFoodSickness and EHR.Disease.ShouldSuppressExternalFoodSickness(player) then
@@ -3629,4 +3871,3 @@ if Events then
 end
 
 EHR.Log("Disease module loaded v1.0.1")
-

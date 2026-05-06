@@ -99,11 +99,30 @@ function EHR.TendonWeakness.IsActive(player)
 
     local modData = player:getModData()
     if not modData then return false end
-    if modData.EHR_TendonWeakness then return true end
 
     local medData = modData.EHR_Medication
     local activeEffects = medData and medData.activeSideEffects
-    return activeEffects and activeEffects.tendon_weakness ~= nil
+    local effect = activeEffects and activeEffects.tendon_weakness
+
+    if type(effect) == "table" then
+        local currentHour = getWorldHour()
+        local startTime = tonumber(effect.startTime) or currentHour
+        local duration = tonumber(effect.duration) or 0
+
+        if duration > 0 and currentHour < startTime + duration then
+            modData.EHR_TendonWeakness = true
+            return true
+        end
+
+        activeEffects.tendon_weakness = nil
+    end
+
+    -- Old debug tools can remove the side effect table without running onEnd.
+    if modData.EHR_TendonWeakness then
+        modData.EHR_TendonWeakness = nil
+    end
+
+    return false
 end
 
 function EHR.TendonWeakness.GetMovementState(player)

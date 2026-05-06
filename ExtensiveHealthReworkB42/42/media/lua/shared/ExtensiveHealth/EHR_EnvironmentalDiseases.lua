@@ -343,24 +343,49 @@ function EHR.Environmental.SuppressVanillaCold(player)
         -- Mod HAS a respiratory disease - sync SICKNESS to mod's disease stage
         local targetSickness = 0
         local respiratoryDiseases = {"common_cold", "pneumonia", "corpse_sickness", "tuberculosis"}
+        local corpseReliefCapped = false
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
 
         for _, diseaseId in ipairs(respiratoryDiseases) do
             local disease = active[diseaseId]
             if disease and disease.stage then
                 local stageValue = EHR.Disease.VanillaSicknessLevels[disease.stage] or 0
+                if diseaseId == "corpse_sickness" then
+                    local symptomTarget = disease.corpseSicknessSymptomTarget
+                    local symptomTargetUntil = disease.corpseSicknessSymptomTargetUntil
+                    if symptomTarget and symptomTargetUntil and symptomTargetUntil > currentHour then
+                        stageValue = math.min(stageValue, math.max(0, math.min(100, symptomTarget * 100)))
+                        corpseReliefCapped = true
+                    end
+                end
                 targetSickness = math.max(targetSickness, stageValue)
             end
         end
 
         local targetB42 = targetSickness / 100
-        local difference = math.abs(currentSickness - targetB42)
+        local currentLegacySickness = currentSickness
+        if stats.getSickness then
+            local okLegacy, legacyValue = pcall(function() return stats:getSickness() end)
+            if okLegacy and legacyValue then
+                currentLegacySickness = legacyValue
+            end
+        end
+        local effectiveCurrentSickness = math.max(currentSickness, currentLegacySickness)
+        local difference = math.abs(effectiveCurrentSickness - targetB42)
 
         -- Only update if significantly different (dead zone to prevent flicker)
-        if difference > 0.10 then
+        if difference > 0.10 or (corpseReliefCapped and effectiveCurrentSickness > targetB42 + 0.015) then
             pcall(function() stats:set(CharacterStat.SICKNESS, targetB42) end)
+            if stats.setSickness then
+                pcall(function() stats:setSickness(targetB42) end)
+            end
             if EHR.DEBUG then
-                EHR.Log(string.format("SuppressVanillaCold: Synced SICKNESS %.3f -> %.3f (mod respiratory disease active)",
-                    currentSickness, targetB42))
+                EHR.Log(string.format("SuppressVanillaCold: Synced SICKNESS %.3f/%.3f -> %.3f (mod respiratory disease active%s)",
+                    currentSickness,
+                    currentLegacySickness,
+                    targetB42,
+                    corpseReliefCapped and ", corpse nausea relief cap" or ""))
             end
         end
     else

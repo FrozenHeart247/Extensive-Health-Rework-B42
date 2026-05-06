@@ -999,6 +999,11 @@ function EHR.CorpseSickness.HasOtherActiveDisease(player)
     return false
 end
 
+function EHR.CorpseSickness.HasActiveCorpseDisease(player)
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
+    return diseaseData and diseaseData.active and diseaseData.active["corpse_sickness"] ~= nil
+end
+
 function EHR.CorpseSickness.HasActiveFoodDisease(player)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
     if not diseaseData or not diseaseData.active then return false end
@@ -1236,6 +1241,7 @@ function EHR.CorpseSickness.QuickClampVanillaSickness(player)
 end
 function EHR.CorpseSickness.DecayVanillaSickness(player, exposure, deltaHours)
     if not player or not deltaHours or deltaHours <= 0 then return end
+    if EHR.CorpseSickness.HasActiveCorpseDisease(player) then return end
     if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
     if EHR.CorpseSickness.HasActiveFoodDisease(player) then return end
     if EHR.CorpseSickness.HasRecentFoodRisk(player) then return end
@@ -1298,6 +1304,7 @@ function EHR.CorpseSickness.ClearTinyVanillaSickness(player, threshold)
 end
 function EHR.CorpseSickness.ClampVanillaSickness(player, exposure)
     if not player then return end
+    if EHR.CorpseSickness.HasActiveCorpseDisease(player) then return end
     if EHR.CorpseSickness.HasOtherActiveDisease(player) then return end
     if EHR.CorpseSickness.HasActiveFoodDisease(player) then return end
     if EHR.CorpseSickness.HasRecentFoodRisk(player) then return end
@@ -1334,6 +1341,8 @@ end
 
 function EHR.CorpseSickness.ApplyNauseaMoodle(player, exposure)
     if not player or not exposure then return end
+
+    if EHR.CorpseSickness.HasActiveCorpseDisease(player) then return end
 
     local stats = player:getStats()
     if not stats or not CharacterStat or not CharacterStat.SICKNESS then return end

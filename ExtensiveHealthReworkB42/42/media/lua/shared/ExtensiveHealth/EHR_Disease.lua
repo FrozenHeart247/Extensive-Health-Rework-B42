@@ -565,6 +565,7 @@ EHR.Disease.FoodRisks = {
     burned = 0.05,          -- 5% chance from burned food
     stale = 0.10,           -- 10% chance from stale food
     dangerousUncooked = 0.35,
+    uncooked = 0.35,
     rawWildGameHigh = 0.70,
     rawWildGameMedium = 0.70,
     rawWildGameLow = 0.70,
@@ -2655,6 +2656,47 @@ local function EHR_DiseaseGetItemFlag(item, methodNames)
     return EHR_DiseaseGetScriptItemFlag(item, methodNames)
 end
 
+local function EHR_DiseaseScriptItemHasTag(item, tag)
+    if not item or not tag then return false end
+
+    local scriptItem = EHR_DiseaseSafeItemMethod(item, "getScriptItem")
+    if not scriptItem then return false end
+
+    local okTags, tags = pcall(function()
+        return scriptItem:getTags()
+    end)
+    if not okTags or not tags then return false end
+
+    local tagsToCheck = {tag}
+    if string.sub(tag, 1, 5) == "base:" then
+        table.insert(tagsToCheck, string.sub(tag, 6))
+    else
+        table.insert(tagsToCheck, "base:" .. tag)
+    end
+
+    for _, tagToCheck in ipairs(tagsToCheck) do
+        local okContains, contains = pcall(function()
+            return tags:contains(tagToCheck)
+        end)
+        if okContains and contains == true then return true end
+    end
+
+    if tags.size and tags.get then
+        local okSize, size = pcall(function() return tags:size() end)
+        if okSize and size then
+            local needle = string.lower(tag)
+            for i = 0, size - 1 do
+                local okGet, value = pcall(function() return tags:get(i) end)
+                if okGet and string.lower(tostring(value)) == needle then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     if not item or isCooked == true or isBurnt == true then return 0, nil end
 
@@ -2872,6 +2914,7 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local isRotten = safeCall("isRotten")
     local isBurnt = safeCall("isBurnt") or safeCall("isBurned")
     local isCooked = safeCall("isCooked")
+    local isCookable = safeCall("isCookable")
     local isFresh = safeCall("isFresh")
     local age = safeCall("getAge")
     local offAge = safeCall("getOffAge") or safeCall("getOffAgeMax")
@@ -2880,8 +2923,12 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local foodType = safeCall("getFoodType") or safeCall("getEatType") or ""
     local herbalistType = safeCall("getHerbalistType") or ""
     local nameLower = string.lower(itemName .. " " .. itemFullType .. " " .. tostring(foodType) .. " " .. tostring(herbalistType))
+    local foodTypeLower = string.lower(tostring(foodType or ""))
     local poisonPower = tonumber(safeCall("getPoisonPower")) or 0
     local poisonDetectionLevel = tonumber(safeCall("getPoisonDetectionLevel")) or 0
+    if isCookable == nil then
+        isCookable = EHR_DiseaseGetItemFlag(item, {"isCookable", "getIsCookable"})
+    end
 
     if poisonPower > 0 then
         local toxinType = "toxin"
@@ -2917,14 +2964,69 @@ function EHR.Disease.CheckFoodRisk(player, item)
         addRisk("trichinosis", trichinosisReason, trichinosisRisk)
     end
 
-    -- DangerousUncooked non-meat food causes food poisoning. Meat/game is handled above.
+    -- DangerousUncooked and explicitly uncooked non-meat food causes food poisoning.
+    -- Meat/game is handled above.
     local dangerousUncooked = EHR_DiseaseGetItemFlag(item, {"isDangerousUncooked", "getDangerousUncooked"})
+    local looksUncooked = string.find(nameLower, "uncooked", 1, true) ~= nil
+        or string.find(nameLower, "undercooked", 1, true) ~= nil
+    local hiddenUncooked = EHR_DiseaseScriptItemHasTag(item, "base:hideuncooked")
+    local rawSafeFoodTypes = {
+        vegetable = true,
+        vegetables = true,
+        greens = true,
+        fruit = true,
+        fruits = true,
+        berry = true,
+        berries = true,
+        mushroom = true,
+        mushrooms = true,
+    }
+    local preparedPatterns = {
+        "recipe",
+        "waterpot",
+        "waterpan",
+        "potof",
+        "potforged",
+        "fryingpan",
+        "saucepan",
+        "pizza",
+        "fries",
+        "tatodots",
+        "tato dots",
+        "tvdinner",
+        "soup",
+        "stew",
+        "pasta",
+        "rice",
+        "omelette",
+        "pie",
+        "bread",
+        "cake",
+        "muffin",
+        "pancake",
+        "waffle",
+        "dumpling",
+    }
+    local preparedUncooked = false
+    for _, pattern in ipairs(preparedPatterns) do
+        if string.find(nameLower, pattern, 1, true) then
+            preparedUncooked = true
+            break
+        end
+    end
+    local rawSafeUncooked = rawSafeFoodTypes[foodTypeLower] == true and preparedUncooked ~= true
+    local cookableUncooked = isCookable == true and hiddenUncooked ~= true and rawSafeUncooked ~= true and preparedUncooked == true
     if trichinosisRisk <= 0
-        and dangerousUncooked == true
         and isRotten ~= true
         and isBurnt ~= true
         and isCooked ~= true then
-        addRisk("food_poisoning", "dangerous uncooked", EHR.Disease.FoodRisks.dangerousUncooked)
+        if dangerousUncooked == true then
+            addRisk("food_poisoning", "dangerous uncooked", EHR.Disease.FoodRisks.dangerousUncooked)
+        elseif looksUncooked and rawSafeUncooked ~= true then
+            addRisk("food_poisoning", "uncooked", EHR.Disease.FoodRisks.uncooked)
+        elseif cookableUncooked then
+            addRisk("food_poisoning", "uncooked", EHR.Disease.FoodRisks.uncooked)
+        end
     end
 
     -- Stale food check (age-based, with B42 freshness fallback)

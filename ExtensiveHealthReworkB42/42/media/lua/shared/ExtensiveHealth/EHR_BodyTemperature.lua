@@ -242,6 +242,193 @@ function EHR.BodyTemp.GetTemperatureData(player)
     return modData[TEMP_DATA_KEY]
 end
 
+EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
+    cadaveric_aspergillosis = {
+        [2] = 38.2,
+        [3] = 39.4,
+        [4] = 37.6,
+    },
+    trichinosis = {
+        [2] = 38.0,
+        [3] = 38.9,
+        [4] = 37.4,
+    },
+    pneumonia = {
+        [2] = 38.1,
+        [3] = 39.0,
+        [4] = 37.6,
+    },
+    common_cold = {
+        [3] = 37.8,
+        [4] = 37.2,
+    },
+    tuberculosis = {
+        [2] = 37.7,
+        [3] = 38.4,
+        [4] = 37.3,
+    },
+    sepsis = {
+        [1] = 38.0,
+        [2] = 38.6,
+        [3] = 39.4,
+        [4] = 40.0,
+    },
+}
+
+local function EHR_BodyTempGetStageTarget(targets, stage)
+    if not targets or not stage then return nil end
+    local target = targets[stage]
+    if target then return target end
+
+    local bestStage = nil
+    for candidateStage, _ in pairs(targets) do
+        if candidateStage <= stage and (not bestStage or candidateStage > bestStage) then
+            bestStage = candidateStage
+        end
+    end
+
+    return bestStage and targets[bestStage] or nil
+end
+
+function EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
+    if not player then return nil end
+
+    local modData = nil
+    pcall(function() modData = player:getModData() end)
+    if not modData then return nil end
+
+    local bestTarget = nil
+    local active = modData.EHR_Disease and modData.EHR_Disease.active or nil
+    if active then
+        for diseaseId, targets in pairs(EHR.BodyTemp.DiseaseFeverTargets) do
+            if diseaseId ~= "sepsis" then
+                local disease = active[diseaseId]
+                local stage = disease and (tonumber(disease.stage) or 1) or nil
+                local target = EHR_BodyTempGetStageTarget(targets, stage)
+                if target then
+                    bestTarget = math.max(bestTarget or target, target)
+                end
+            end
+        end
+    end
+
+    local sepsis = modData.EHR_Sepsis
+    local sepsisStage = sepsis and tonumber(sepsis.stage) or 0
+    if sepsisStage > 0 then
+        local target = EHR_BodyTempGetStageTarget(EHR.BodyTemp.DiseaseFeverTargets.sepsis, sepsisStage)
+        if target then
+            bestTarget = math.max(bestTarget or target, target)
+        end
+    end
+
+    return bestTarget
+end
+
+function EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+    return EHR.BodyTemp.GetActiveDiseaseFeverTarget(player) ~= nil
+end
+
+function EHR.BodyTemp.MoveDiseaseFeverToward(player, target, step)
+    if not player or not target or not step or step <= 0 then return false end
+
+    local cfg = EHR.BodyTemp.Config
+    target = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, target))
+
+    local function moveValue(current)
+        current = tonumber(current) or target
+        if math.abs(target - current) <= step then return target end
+        if current < target then return current + step end
+        return current - step
+    end
+
+    local tempData = nil
+    if EHR.BodyTemp.GetTemperatureData then
+        tempData = EHR.BodyTemp.GetTemperatureData(player)
+    end
+    if not tempData and EHR.BodyTemp.InitializePlayer then
+        tempData = EHR.BodyTemp.InitializePlayer(player)
+    end
+
+    local nextTemp = nil
+    if tempData and tempData.bodyTemp then
+        nextTemp = moveValue(tempData.bodyTemp)
+        tempData.bodyTemp = nextTemp
+        tempData.targetTemp = target
+        tempData.diseaseTargetTemp = target
+        tempData.diseaseFeverActive = target > ((cfg.normalTemp or 37.0) + 0.2)
+
+        local gameTime = getGameTime and getGameTime() or nil
+        tempData.diseaseTargetTempUntil = gameTime and (gameTime:getWorldAgeHours() + 1.0) or nil
+    end
+
+    local stats = nil
+    pcall(function() stats = player:getStats() end)
+    if stats and CharacterStat and CharacterStat.TEMPERATURE then
+        pcall(function()
+            if not nextTemp then
+                local current = stats:get(CharacterStat.TEMPERATURE) or target
+                nextTemp = moveValue(current)
+            end
+            stats:set(CharacterStat.TEMPERATURE, nextTemp)
+        end)
+    end
+
+    return nextTemp ~= nil
+end
+
+function EHR.BodyTemp.ResetDiseaseFever(player, snapToNormal)
+    if not player then return false end
+
+    local tempData = EHR.BodyTemp.GetTemperatureData(player)
+    if not tempData and EHR.BodyTemp.InitializePlayer then
+        tempData = EHR.BodyTemp.InitializePlayer(player)
+    end
+    if not tempData then return false end
+
+    local normalTemp = EHR.BodyTemp.Config.normalTemp or 37.0
+    tempData.diseaseTargetTemp = nil
+    tempData.diseaseTargetTempUntil = nil
+    tempData.diseaseFeverActive = false
+    tempData.targetTemp = normalTemp
+    tempData.hotStage = 0
+    tempData.prevHotStage = 0
+    tempData.timeAtDangerousTemp = 0
+    tempData.dangerZone = nil
+    tempData.currentThirstMult = 1.0
+    tempData.currentStaminaPenalty = 0
+
+    if snapToNormal ~= false then
+        tempData.bodyTemp = normalTemp
+
+        local stats = nil
+        pcall(function() stats = player:getStats() end)
+        if stats and CharacterStat and CharacterStat.TEMPERATURE then
+            pcall(function()
+                stats:set(CharacterStat.TEMPERATURE, normalTemp)
+            end)
+        end
+    end
+
+    if EHR.BodyTemp.ResetVanillaSuppression then
+        EHR.BodyTemp.ResetVanillaSuppression()
+    end
+
+    return true
+end
+
+function EHR.BodyTemp.ResetDiseaseFeverIfStale(player, snapToNormal)
+    if EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player) then
+        return false
+    end
+
+    local tempData = EHR.BodyTemp.GetTemperatureData(player)
+    if not tempData or (not tempData.diseaseTargetTemp and not tempData.diseaseFeverActive) then
+        return false
+    end
+
+    return EHR.BodyTemp.ResetDiseaseFever(player, snapToNormal)
+end
+
 -- ============================================
 -- UTILITY FUNCTIONS
 -- ============================================
@@ -294,6 +481,31 @@ function EHR.BodyTemp.IsDehydrated(player)
         if success and thirst and thirst > 0.5 then
             return true
         end
+    end
+
+    return false
+end
+
+function EHR.BodyTemp.IsDiseaseFeverActive(player, tempData)
+    if not player then return false end
+
+    local cfg = EHR.BodyTemp.Config
+    local normalTemp = cfg.normalTemp or 37.0
+    local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+
+    if tempData and tempData.diseaseTargetTemp and hasFeverSource then
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local untilHour = tonumber(tempData.diseaseTargetTempUntil)
+        local targetTemp = tonumber(tempData.diseaseTargetTemp) or normalTemp
+
+        if (not untilHour or untilHour >= currentHour) and targetTemp > normalTemp + 0.2 then
+            return true
+        end
+    end
+
+    if hasFeverSource then
+        return true
     end
 
     return false
@@ -645,6 +857,30 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
 
     -- Calculate target temperature
     local targetTemp = EHR.BodyTemp.CalculateTargetTemp(player)
+    tempData.environmentTargetTemp = targetTemp
+    if tempData.diseaseTargetTemp then
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+        if not hasFeverSource then
+            tempData.diseaseTargetTemp = nil
+            tempData.diseaseTargetTempUntil = nil
+            tempData.diseaseFeverActive = false
+        elseif not tempData.diseaseTargetTempUntil or tempData.diseaseTargetTempUntil >= currentHour then
+            local diseaseTarget = math.max(
+                EHR.BodyTemp.Config.minBodyTemp,
+                math.min(EHR.BodyTemp.Config.maxBodyTemp, tonumber(tempData.diseaseTargetTemp) or targetTemp)
+            )
+            if diseaseTarget >= EHR.BodyTemp.Config.normalTemp then
+                targetTemp = math.max(targetTemp, diseaseTarget)
+            else
+                targetTemp = math.min(targetTemp, diseaseTarget)
+            end
+        else
+            tempData.diseaseTargetTemp = nil
+            tempData.diseaseTargetTempUntil = nil
+        end
+    end
     tempData.targetTemp = targetTemp
 
     -- Calculate change
@@ -662,7 +898,15 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
     tempData.prevColdStage = tempData.coldStage
     tempData.prevHotStage = tempData.hotStage
     tempData.coldStage = EHR.BodyTemp.GetColdStage(tempData.bodyTemp, player)
+    tempData.diseaseFeverActive = EHR.BodyTemp.IsDiseaseFeverActive(player, tempData)
     tempData.hotStage = EHR.BodyTemp.GetHotStage(tempData.bodyTemp, player)
+    if tempData.diseaseFeverActive and (not tempData.environmentTargetTemp or tempData.environmentTargetTemp < cfg.hotStage1) then
+        tempData.hotStage = 0
+        local playerID = player and player:getUsername() or "default"
+        if playerTempStates[playerID] then
+            playerTempStates[playerID].hotStage = 0
+        end
+    end
 
     if EHR.DEBUG and math.abs(change) > 0.001 then
         EHR.Log(string.format("BodyTemp: %.2f°C -> %.2f°C (target: %.2f°C, change: %+.3f)",
@@ -689,11 +933,17 @@ function EHR.BodyTemp.ApplyPreDiseaseEffects(player, tempData)
     -- Cold effects
     if tempData.coldStage > 0 then
         EHR.BodyTemp.ApplyColdEffects(player, tempData, currentHour)
+    else
+        tempData.currentMovementPenalty = 0
+        tempData.currentFatigueMult = 1.0
     end
 
     -- Hot effects
     if tempData.hotStage > 0 then
         EHR.BodyTemp.ApplyHotEffects(player, tempData, currentHour)
+    else
+        tempData.currentThirstMult = 1.0
+        tempData.currentStaminaPenalty = 0
     end
 end
 
@@ -951,6 +1201,39 @@ local vanillaSuppression = {
     TOLERANCE = 1.0,                   -- Only force if off by more than 1°C
 }
 
+function EHR.BodyTemp.GetVanillaSuppressionTarget(player)
+    local normalTemp = EHR.BodyTemp.Config.normalTemp or vanillaSuppression.NORMAL_BODY_TEMP
+    if not player then return normalTemp end
+
+    local cfg = EHR.BodyTemp.Config
+    local tempData = EHR.BodyTemp.GetTemperatureData(player)
+    local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+    if tempData and tempData.diseaseTargetTemp then
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local untilHour = tonumber(tempData.diseaseTargetTempUntil)
+        if not hasFeverSource or (untilHour and untilHour < currentHour) then
+            tempData.diseaseTargetTemp = nil
+            tempData.diseaseTargetTempUntil = nil
+            if not hasFeverSource then
+                tempData.diseaseFeverActive = false
+            end
+        else
+            local feverTemp = tonumber(tempData.bodyTemp) or tonumber(tempData.diseaseTargetTemp) or normalTemp
+            return math.max(cfg.minBodyTemp, math.min(cfg.maxBodyTemp, feverTemp))
+        end
+    end
+
+    if hasFeverSource and EHR.BodyTemp.GetActiveDiseaseFeverTarget then
+        local feverTemp = EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
+        if feverTemp then
+            return math.max(cfg.minBodyTemp, math.min(cfg.maxBodyTemp, feverTemp))
+        end
+    end
+
+    return normalTemp
+end
+
 --[[
     Attempt to disable the vanilla Thermoregulator simulation.
     This stops vanilla temperature calculations at the source.
@@ -1024,10 +1307,12 @@ function EHR.BodyTemp.SuppressVanillaTemperature(player)
 
     if not success or current == nil then return end
 
-    -- Only force if significantly off from normal
-    if math.abs(current - vanillaSuppression.NORMAL_BODY_TEMP) > vanillaSuppression.TOLERANCE then
+    local targetTemp = EHR.BodyTemp.GetVanillaSuppressionTarget(player)
+
+    -- Only force if significantly off from the mod-managed temperature
+    if math.abs(current - targetTemp) > vanillaSuppression.TOLERANCE then
         pcall(function()
-            stats:set(CharacterStat.TEMPERATURE, vanillaSuppression.NORMAL_BODY_TEMP)
+            stats:set(CharacterStat.TEMPERATURE, targetTemp)
         end)
 
         -- If we had to force, thermoregulator might have re-enabled
@@ -1035,7 +1320,7 @@ function EHR.BodyTemp.SuppressVanillaTemperature(player)
 
         if EHR.DEBUG then
             EHR.Log(string.format("BodyTemp: Safety net triggered - forced TEMPERATURE: %.1f -> %.1f",
-                current, vanillaSuppression.NORMAL_BODY_TEMP))
+                current, targetTemp))
         end
     end
 end

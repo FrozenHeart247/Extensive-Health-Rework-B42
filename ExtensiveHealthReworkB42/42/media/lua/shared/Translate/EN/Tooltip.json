@@ -13,6 +13,7 @@
     "Tooltip_Syringe":  "Sterile disposable syringe. \u003cLINE\u003e Required for injectable medications. \u003cLINE\u003e Single use - consumed on use.",
     "Tooltip_Epinephrine":  "Emergency epinephrine auto-injector. \u003cLINE\u003e Treats severe allergic reactions and cardiac arrest. \u003cLINE\u003e Can revive unconscious patients.",
     "Tooltip_ColdFluTablets":  "Over-the-counter cold and flu relief. \u003cLINE\u003e Reduces fever, fatigue, and minor pain. \u003cLINE\u003e Does NOT cure - symptom relief only (40%).",
+    "Tooltip_AntipyreticTablets":  "Fever-reducing tablets. \u003cLINE\u003e Can reduce illness-related fever to 37.0 C. \u003cLINE\u003e Does NOT cool environmental overheating.",
     "Tooltip_CoughSyrup":  "Liquid cough medicine. \u003cLINE\u003e Suppresses cough reflex - good for stealth! \u003cLINE\u003e Reduces coughing by 50%. Does NOT cure.",
     "Tooltip_ElectrolytePowder":  "Electrolyte replacement powder - mix with water. \u003cLINE\u003e Treats dehydration from dysentery, heat, or vomiting. \u003cLINE\u003e 40% symptom relief. Does NOT cure.",
     "Tooltip_BronchodilatorInhaler":  "Inhaler for respiratory distress. \u003cLINE\u003e Opens airways - helps with pneumonia and corpse sickness. \u003cLINE\u003e 45% breathing improvement. Does NOT cure.",

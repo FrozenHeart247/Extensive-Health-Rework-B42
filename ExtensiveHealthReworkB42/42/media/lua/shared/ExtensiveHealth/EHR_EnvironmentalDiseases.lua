@@ -1178,6 +1178,52 @@ end
 -- DISEASE EFFECT HANDLERS
 -- ============================================
 
+local EHR_EnvironmentalDiseaseFeverTargets = {
+    common_cold = {
+        [3] = { temp = 37.8, step = 0.018 },
+        [4] = { temp = 37.2, step = 0.010 },
+    },
+    pneumonia = {
+        [2] = { temp = 38.1, step = 0.030 },
+        [3] = { temp = 39.0, step = 0.050 },
+        [4] = { temp = 37.6, step = 0.025 },
+    },
+}
+
+local function EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
+    local stage = disease and (tonumber(disease.stage) or 1) or 1
+    local feverInfo = EHR_EnvironmentalDiseaseFeverTargets[diseaseId]
+        and EHR_EnvironmentalDiseaseFeverTargets[diseaseId][stage]
+    if not feverInfo or not (EHR.BodyTemp and EHR.BodyTemp.MoveDiseaseFeverToward) then return end
+
+    local symptomMult = 1.0
+    if EHR.Disease and EHR.Disease.GetActiveSymptomMultiplier then
+        symptomMult = EHR.Disease.GetActiveSymptomMultiplier(player, diseaseId, disease)
+    end
+
+    local feverRelief = 0
+    if EHR.Disease and EHR.Disease.GetActiveSymptomReduction then
+        feverRelief = EHR.Disease.GetActiveSymptomReduction(player, diseaseId, "fever")
+    end
+
+    local feverTarget = feverInfo.temp
+    local feverStep = feverInfo.step
+    if feverRelief > 0 then
+        local strongFeverReducer = feverRelief >= 0.60
+        local feverFloor = strongFeverReducer and 37.0 or 37.4
+        local feverDrop = strongFeverReducer and 4.0 or math.min(1.2, feverRelief * 1.8)
+        feverTarget = math.max(feverFloor, feverTarget - feverDrop)
+        feverStep = feverStep * math.max(0.35, 1 - feverRelief)
+    end
+
+    local severity = tonumber(disease and disease.severity) or 0.5
+    EHR.BodyTemp.MoveDiseaseFeverToward(
+        player,
+        feverTarget,
+        feverStep * severity * math.max(0.25, symptomMult or 1.0)
+    )
+end
+
 --[[
     Apply environmental disease effects
     Called from disease progression system
@@ -1191,6 +1237,8 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
 
     local stats = player:getStats()
     if not stats then return end
+
+    EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
 
     -- COMMON COLD: Sneezing (zombie attraction)
     if diseaseId == "common_cold" and effects.sneezingChance then

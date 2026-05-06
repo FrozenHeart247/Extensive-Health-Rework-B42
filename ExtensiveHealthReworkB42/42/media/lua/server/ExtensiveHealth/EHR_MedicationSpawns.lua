@@ -83,6 +83,7 @@ EHR.MedicationSpawns.DrainableMeds = {
 
     -- EHR Tier 1 - OTC
     ["ExtensiveHealth.ColdFluTablets"] = true,
+    ["ExtensiveHealth.AntipyreticTablets"] = true,
     ["ExtensiveHealth.CoughSyrup"] = true,
     ["ExtensiveHealth.ElectrolytePowder"] = true,
     ["ExtensiveHealth.BronchodilatorInhaler"] = true,

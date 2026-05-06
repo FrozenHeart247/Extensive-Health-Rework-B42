@@ -163,6 +163,19 @@ EHR.Tooltips.Data = {
         cures = {},
         warning = "Does NOT cure - symptom relief only",
     },
+    ["ExtensiveHealth.AntipyreticTablets"] = {
+        category = "OTC Medication",
+        tier = 1,
+        description = "Fever-reducing tablets.",
+        relieves = {"Disease fever"},
+        effects = {
+            "60% fever relief",
+            "Can normalize illness fever to 37.0 C",
+            "Works against illness-related fever",
+        },
+        cures = {},
+        warning = "Does NOT cool environmental overheating",
+    },
     ["ExtensiveHealth.CoughSyrup"] = {
         category = "OTC Medication",
         tier = 1,

@@ -268,6 +268,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item AntipyreticTablets
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Antipyretic Tablets,
+        Icon = AntipyreticTablets,
+        Weight = 0.1,
+        Tooltip = Tooltip_AntipyreticTablets,
+        UseDelta = 0.0833,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item CoughSyrup
     {
         DisplayCategory = FirstAid,

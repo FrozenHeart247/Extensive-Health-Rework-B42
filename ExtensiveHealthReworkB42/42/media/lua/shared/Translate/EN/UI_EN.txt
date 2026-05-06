@@ -248,6 +248,7 @@ UI_EN = {
     UI_EHR_Med_Vitamins = "Vitamins",
     UI_EHR_Med_BetaBlockers = "Beta Blockers",
     UI_EHR_Med_ColdFluTablets = "Cold & Flu Tablets",
+    UI_EHR_Med_AntipyreticTablets = "Antipyretic Tablets",
     UI_EHR_Med_CoughSyrup = "Cough Syrup",
     UI_EHR_Med_ElectrolytePowder = "Electrolyte Powder",
     UI_EHR_Med_BronchodilatorInhaler = "Bronchodilator Inhaler",

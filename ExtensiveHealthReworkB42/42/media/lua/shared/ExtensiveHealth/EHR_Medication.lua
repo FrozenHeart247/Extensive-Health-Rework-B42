@@ -162,6 +162,28 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.AntipyreticTablets"] = {
+        tier = 1,
+        treats = {
+            "common_cold",
+            "influenza",
+            "pneumonia",
+            "trichinosis",
+            "cadaveric_aspergillosis",
+            "wound_infection",
+            "cellulitis",
+            "tetanus",
+            "sepsis",
+            "tuberculosis",
+        },
+        displayName = "Antipyretic Tablets",
+        usageMessage = "You take antipyretic tablets. The fever begins to ease.",
+        effectDurationHours = 4,
+        symptomReduction = {
+            fever = 0.60,
+        },
+    },
+
     ["ExtensiveHealth.CoughSyrup"] = {
         tier = 1,
         treats = {"common_cold", "pneumonia", "cadaveric_aspergillosis"},
@@ -664,6 +686,188 @@ local function EHRMedicationCapStat(stats, stat, cap)
     end)
 end
 
+local function EHRMedicationGetBodyPartName(partType, part)
+    local partName = nil
+
+    if BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(partType)
+        end)
+    end
+
+    if (not partName or partName == "") and part and part.getType and BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(part:getType())
+        end)
+    end
+
+    return tostring(partName or partType or "")
+end
+
+local function EHRMedicationIsKidneyBackPart(partName)
+    local name = tostring(partName or ""):lower()
+    return name:find("back", 1, true)
+        or (name:find("torso", 1, true) and (name:find("lower", 1, true) or name:find("upper", 1, true)))
+end
+
+local function EHRMedicationForEachBodyPart(player, callback)
+    if not player or not callback then return false end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return false end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return false end
+
+    local changed = false
+    local okMax, maxIndex = pcall(function()
+        return BodyPartType.ToIndex(BodyPartType.MAX)
+    end)
+    if not okMax or not maxIndex then return false end
+
+    for i = 0, maxIndex - 1 do
+        local partType = nil
+        pcall(function() partType = BodyPartType.FromIndex(i) end)
+        local part = nil
+        if partType then
+            pcall(function() part = bodyDamage:getBodyPart(partType) end)
+        end
+        if part then
+            local partName = EHRMedicationGetBodyPartName(partType, part)
+            changed = callback(bodyDamage, partType, part, partName) or changed
+        end
+    end
+
+    return changed
+end
+
+local function EHRMedicationDamageUpdate(player)
+    if not player then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if bodyDamage and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+end
+
+local function EHRMedicationApplyKidneyBackPain(player, effectData)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if not modData then return false end
+    local alreadyApplied = effectData and effectData.backPainApplied
+
+    modData.EHR_KidneyStressBodyPain = modData.EHR_KidneyStressBodyPain or {}
+    local tracked = modData.EHR_KidneyStressBodyPain
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        if not EHRMedicationIsKidneyBackPart(partName) then return false end
+
+        local lowerBack = tostring(partName):lower():find("lower", 1, true) ~= nil
+        local targetStiffness = lowerBack and 32 or 18
+        local targetPain = lowerBack and 18 or 10
+
+        local currentStiffness = 0
+        local currentPain = 0
+        pcall(function()
+            if part.getStiffness then currentStiffness = part:getStiffness() or 0 end
+        end)
+        pcall(function()
+            if part.getAdditionalPain then currentPain = part:getAdditionalPain() or 0 end
+        end)
+
+        if not tracked[partName] then
+            tracked[partName] = {
+                stiffness = currentStiffness,
+                pain = currentPain,
+                targetStiffness = targetStiffness,
+                targetPain = targetPain,
+            }
+        end
+
+        local partChanged = false
+        if part.setStiffness and currentStiffness < targetStiffness then
+            local okSet = pcall(function()
+                part:setStiffness(targetStiffness)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        if part.setAdditionalPain and currentPain < targetPain then
+            local okSet = pcall(function()
+                part:setAdditionalPain(targetPain)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        return partChanged
+    end)
+
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+
+    if effectData then
+        effectData.backPainApplied = changed or effectData.backPainApplied
+    end
+
+    return changed or alreadyApplied
+end
+
+local function EHRMedicationClearKidneyBackPain(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    local tracked = modData and modData.EHR_KidneyStressBodyPain or nil
+    if not tracked then return end
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        local record = tracked[partName]
+        if not record then return false end
+
+        local partChanged = false
+        local currentStiffness = nil
+        local currentPain = nil
+
+        pcall(function()
+            if part.getStiffness then currentStiffness = part:getStiffness() end
+        end)
+        pcall(function()
+            if part.getAdditionalPain then currentPain = part:getAdditionalPain() end
+        end)
+
+        if part.setStiffness and currentStiffness and currentStiffness <= (record.targetStiffness or 0) + 2 then
+            local restore = math.max(0, tonumber(record.stiffness) or 0)
+            local okSet = pcall(function()
+                part:setStiffness(restore)
+            end)
+            partChanged = okSet or partChanged
+
+            if okSet and restore <= 0.1 and player.getFitness and BodyPartType and BodyPartType.ToString then
+                pcall(function()
+                    player:getFitness():removeStiffnessValue(BodyPartType.ToString(partType))
+                end)
+            end
+        end
+
+        if part.setAdditionalPain and currentPain and currentPain <= (record.targetPain or 0) + 2 then
+            local restore = math.max(0, tonumber(record.pain) or 0)
+            local okSet = pcall(function()
+                part:setAdditionalPain(restore)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        return partChanged
+    end)
+
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+
+    modData.EHR_KidneyStressBodyPain = nil
+end
+
 local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     if not player then return end
 
@@ -675,6 +879,7 @@ local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     end
     if not activeSideEffects or not activeSideEffects.kidney_stress then
         modData.EHR_KidneyStress = nil
+        EHRMedicationClearKidneyBackPain(player)
     end
 end
 
@@ -877,21 +1082,23 @@ EHR.Medication.SideEffects = {
         displayName = "Kidney Stress",
         duration = 18,
         severity = 2,
-        effects = function(player)
+        effects = function(player, effectData)
             local modData = player:getModData()
             modData.EHR_KidneyStress = true
+            local backPainApplied = EHRMedicationApplyKidneyBackPain(player, effectData)
 
             local stats = EHRMedicationGetStats(player)
             if stats and CharacterStat then
                 EHRMedicationRaiseStat(stats, CharacterStat.FATIGUE, 0.38)
                 EHRMedicationRaiseStat(stats, CharacterStat.SICKNESS, 0.16)
-                EHRMedicationRaiseStat(stats, CharacterStat.PAIN, 0.22)
+                EHRMedicationRaiseStat(stats, CharacterStat.PAIN, backPainApplied and 0.30 or 0.38)
                 EHRMedicationCapStat(stats, CharacterStat.ENDURANCE, 0.78)
             end
         end,
         onEnd = function(player)
             local modData = player:getModData()
             modData.EHR_KidneyStress = nil
+            EHRMedicationClearKidneyBackPain(player)
         end,
     },
 
@@ -1015,6 +1222,7 @@ EHR.Medication.DosingSchedules = {
 
     -- Tier 1 - OTC (every 4-6 hours)
     ["ExtensiveHealth.ColdFluTablets"] = { doseInterval = 4, dosesRequired = 4 },
+    ["ExtensiveHealth.AntipyreticTablets"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.CoughSyrup"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.ElectrolytePowder"] = { doseInterval = 4, dosesRequired = 4 },
     ["ExtensiveHealth.BronchodilatorInhaler"] = { doseInterval = 4, dosesRequired = 4 },
@@ -1908,7 +2116,9 @@ end
 local function EHR_MedicationReduceFever(player, reduction)
     if not player or not reduction or reduction <= 0 then return false end
 
-    local drop = math.max(0.10, math.min(1.0, reduction * 0.85))
+    local strongFeverReducer = reduction >= 0.60
+    local feverFloor = strongFeverReducer and 37.0 or 37.4
+    local drop = strongFeverReducer and 4.0 or math.max(0.10, math.min(1.0, reduction * 0.85))
     local changed = false
 
     if EHR and EHR.BodyTemp then
@@ -1922,8 +2132,8 @@ local function EHR_MedicationReduceFever(player, reduction)
 
         if tempData and tempData.bodyTemp then
             local current = tonumber(tempData.bodyTemp) or 37.0
-            if current > 37.4 then
-                tempData.bodyTemp = math.max(37.4, current - drop)
+            if current > feverFloor then
+                tempData.bodyTemp = math.max(feverFloor, current - drop)
                 tempData.targetTemp = math.min(tonumber(tempData.targetTemp) or tempData.bodyTemp, tempData.bodyTemp)
                 changed = true
             end
@@ -1935,8 +2145,18 @@ local function EHR_MedicationReduceFever(player, reduction)
     if stats and CharacterStat and CharacterStat.TEMPERATURE then
         pcall(function()
             local current = stats:get(CharacterStat.TEMPERATURE) or 37.0
-            if current > 37.4 then
-                stats:set(CharacterStat.TEMPERATURE, math.max(37.4, current - drop))
+            if current > feverFloor then
+                stats:set(CharacterStat.TEMPERATURE, math.max(feverFloor, current - drop))
+                changed = true
+            end
+        end)
+    end
+
+    if stats and CharacterStat and CharacterStat.SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.SICKNESS) or 0
+            if current > 0 then
+                stats:set(CharacterStat.SICKNESS, math.max(0, current - (0.08 * reduction)))
                 changed = true
             end
         end)

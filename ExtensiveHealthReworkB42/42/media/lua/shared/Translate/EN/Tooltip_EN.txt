@@ -13,6 +13,7 @@ Tooltip_EN = {
     Tooltip_Syringe = "Sterile disposable syringe. <LINE> Required for injectable medications. <LINE> Single use - consumed on use.",
     Tooltip_Epinephrine = "Emergency epinephrine auto-injector. <LINE> Treats severe allergic reactions and cardiac arrest. <LINE> Can revive unconscious patients.",
     Tooltip_ColdFluTablets = "Over-the-counter cold and flu relief. <LINE> Reduces fever, fatigue, and minor pain. <LINE> Does NOT cure - symptom relief only (40%).",
+    Tooltip_AntipyreticTablets = "Fever-reducing tablets. <LINE> Can reduce illness-related fever to 37.0 C. <LINE> Does NOT cool environmental overheating.",
     Tooltip_CoughSyrup = "Liquid cough medicine. <LINE> Suppresses cough reflex - good for stealth! <LINE> Reduces coughing by 50%. Does NOT cure.",
     Tooltip_ElectrolytePowder = "Electrolyte replacement powder - mix with water. <LINE> Treats dehydration from dysentery, heat, or vomiting. <LINE> 40% symptom relief. Does NOT cure.",
     Tooltip_BronchodilatorInhaler = "Inhaler for respiratory distress. <LINE> Opens airways - helps with pneumonia and corpse sickness. <LINE> 45% breathing improvement. Does NOT cure.",

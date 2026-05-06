@@ -941,6 +941,22 @@ function EHR_MedicalMonitorUI:updateCachedData()
         local coldStage = tempData.coldStage or 0
         local hotStage = tempData.hotStage or 0
         local bodyTemp = tempData.bodyTemp or 37.0
+        local diseaseFeverActive = tempData.diseaseFeverActive
+        if diseaseFeverActive == nil and EHR.BodyTemp and EHR.BodyTemp.IsDiseaseFeverActive and self.player then
+            local ok, active = pcall(function()
+                return EHR.BodyTemp.IsDiseaseFeverActive(self.player, tempData)
+            end)
+            diseaseFeverActive = ok and active or false
+        end
+
+        local feverOnly = false
+        if diseaseFeverActive then
+            local hotThreshold = 37.5
+            if EHR.BodyTemp and EHR.BodyTemp.Config and EHR.BodyTemp.Config.hotStage1 then
+                hotThreshold = EHR.BodyTemp.Config.hotStage1
+            end
+            feverOnly = (not tempData.environmentTargetTemp) or tempData.environmentTargetTemp < hotThreshold
+        end
 
         if coldStage > 0 then
             local coldWarnings = {
@@ -963,7 +979,7 @@ function EHR_MedicalMonitorUI:updateCachedData()
             end
         end
 
-        if hotStage > 0 then
+        if hotStage > 0 and not feverOnly then
             local hotWarnings = {
                 [1] = {name = getText("UI_EHR_Temp_Warm") or "Warm", severity = 1, desc = getText("UI_EHR_Temp_WarmDesc") or "Feeling warm"},
                 [2] = {name = getText("UI_EHR_Temp_Hot") or "Hot", severity = 2, desc = getText("UI_EHR_Temp_HotDesc") or "Getting hot, find shade"},
@@ -2768,6 +2784,29 @@ local clientSuppression = {
     logCounter = 0,
 }
 
+local function getClientVanillaTemperatureTarget(player)
+    if EHR and EHR.BodyTemp and EHR.BodyTemp.GetVanillaSuppressionTarget then
+        local ok, target = pcall(EHR.BodyTemp.GetVanillaSuppressionTarget, player)
+        if ok and target then return target end
+    end
+
+    local modData = nil
+    if player then
+        pcall(function() modData = player:getModData() end)
+    end
+    local active = modData and modData.EHR_Disease and modData.EHR_Disease.active or nil
+    local aspergillosis = active and active["cadaveric_aspergillosis"] or nil
+    if aspergillosis then
+        local stage = tonumber(aspergillosis.stage) or 1
+        if stage == 3 then return 39.4 end
+        if stage == 2 then return 38.2 end
+        if stage == 4 then return 37.6 end
+        return 37.4
+    end
+
+    return clientSuppression.NORMAL_BODY_TEMP
+end
+
 local function suppressVanillaTemperatureClient()
     local player = getSpecificPlayer(0)
     if not player then return end
@@ -2811,17 +2850,19 @@ local function suppressVanillaTemperatureClient()
     end)
 
     if success and current ~= nil then
-        -- Only force if significantly off from normal
-        if math.abs(current - clientSuppression.NORMAL_BODY_TEMP) > clientSuppression.TOLERANCE then
+        local targetTemp = getClientVanillaTemperatureTarget(player)
+
+        -- Only force if significantly off from the mod-managed temperature
+        if math.abs(current - targetTemp) > clientSuppression.TOLERANCE then
             pcall(function()
-                stats:set(CharacterStat.TEMPERATURE, clientSuppression.NORMAL_BODY_TEMP)
+                stats:set(CharacterStat.TEMPERATURE, targetTemp)
             end)
 
             -- If we had to force, thermoregulator might have re-enabled
             clientSuppression.thermoregulatorDisabled = false
 
             -- Log when safety net triggers
-            print("[EHR] Client safety net: " .. tostring(current) .. " -> " .. tostring(clientSuppression.NORMAL_BODY_TEMP))
+            print("[EHR] Client safety net: " .. tostring(current) .. " -> " .. tostring(targetTemp))
         end
     end
 end

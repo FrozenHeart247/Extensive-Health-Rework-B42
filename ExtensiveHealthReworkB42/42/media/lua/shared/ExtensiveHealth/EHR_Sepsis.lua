@@ -132,6 +132,13 @@ EHR.Sepsis.StageEffects = {
     },
 }
 
+local EHR_SepsisBodyFeverTargets = {
+    [1] = { temp = 38.0, step = 0.030 },
+    [2] = { temp = 38.6, step = 0.040 },
+    [3] = { temp = 39.4, step = 0.060 },
+    [4] = { temp = 40.0, step = 0.075 },
+}
+
 -- ============================================
 -- DIALOGUE
 -- ============================================
@@ -425,6 +432,24 @@ function EHR.Sepsis.ApplyEffects(player)
         end)
     end
 
+    local feverInfo = EHR_SepsisBodyFeverTargets[data.stage]
+    if feverInfo and EHR.BodyTemp and EHR.BodyTemp.MoveDiseaseFeverToward then
+        local feverTarget = feverInfo.temp
+        local feverStep = feverInfo.step
+        local feverRelief = 0
+        if EHR.Disease and EHR.Disease.GetActiveSymptomReduction then
+            feverRelief = EHR.Disease.GetActiveSymptomReduction(player, "sepsis", "fever")
+        end
+        if feverRelief > 0 then
+            local strongFeverReducer = feverRelief >= 0.60
+            local feverFloor = strongFeverReducer and 37.0 or 37.4
+            local feverDrop = strongFeverReducer and 4.0 or math.min(1.2, feverRelief * 1.8)
+            feverTarget = math.max(feverFloor, feverTarget - feverDrop)
+            feverStep = feverStep * math.max(0.35, 1 - feverRelief)
+        end
+        EHR.BodyTemp.MoveDiseaseFeverToward(player, feverTarget, feverStep)
+    end
+
     -- 2. Confusion (via STRESS stat spike)
     if effects.confusionChance > 0 and ZombRand(100) < (effects.confusionChance * 100) then
         if CharacterStat and CharacterStat.STRESS then
@@ -618,6 +643,10 @@ function EHR.Sepsis.Cure(player)
             local current = stats:get(CharacterStat.SICKNESS) or 0
             stats:set(CharacterStat.SICKNESS, math.max(0, current - 0.5))
         end)
+    end
+
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
     end
 
     -- Build immunity to wound infections

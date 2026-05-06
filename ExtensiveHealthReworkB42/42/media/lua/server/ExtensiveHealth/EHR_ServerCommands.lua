@@ -321,6 +321,9 @@ function EHR.ServerCommands.FullHeal(player, args)
             data.EHR_Disease.active[id] = nil
         end
     end
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFever then
+        EHR.BodyTemp.ResetDiseaseFever(player, true)
+    end
 
     -- Clear wound infections
     clearAllWounds(data)
@@ -402,10 +405,14 @@ function EHR.ServerCommands.ResetAll(player, args)
     data.EHR_SideEffects = nil
     data.EHR_Corpse = nil
     data.EHR_Corpse_Initialized = nil
+    data.EHR_Temperature = nil
 
     -- Re-initialize
     if EHR and EHR.InitializePlayer then
         EHR.InitializePlayer(player)
+    end
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFever then
+        EHR.BodyTemp.ResetDiseaseFever(player, true)
     end
 
     syncModDataToClient(player)
@@ -433,6 +440,9 @@ function EHR.ServerCommands.CureAllDiseases(player, args)
                 data.EHR_Disease.active[id] = nil
             end
         end
+    end
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
     end
 
     syncModDataToClient(player)
@@ -517,6 +527,9 @@ function EHR.ServerCommands.SetDiseaseStage(player, args)
             data.EHR_Disease.active[diseaseId].stage = stage
             changed = true
         end
+    end
+    if changed and EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
     end
 
     if changed then
@@ -1669,6 +1682,9 @@ local function processPlayerProgression(player)
             if disease.endTime and currentHour >= disease.endTime then
                 -- Disease has run its course - cure it
                 data.EHR_Disease.active[diseaseId] = nil
+                if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+                    EHR.BodyTemp.ResetDiseaseFeverIfStale(player, false)
+                end
                 log("[EHR Server] Player " .. player:getUsername() .. " recovered from " .. diseaseId)
             elseif disease.peakTime and disease.stage then
                 -- Update stage based on time

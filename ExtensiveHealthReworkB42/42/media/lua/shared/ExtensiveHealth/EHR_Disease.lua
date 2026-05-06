@@ -31,12 +31,24 @@ EHR.Disease = {}
 -- ============================================
 -- Tracks when debug menu sets data to prevent server sync overwrites
 EHR.Disease.DebugGracePeriod = {}
-EHR.Disease.GRACE_PERIOD_SECONDS = 30  -- Extended for MP sync reliability
+EHR.Disease.GRACE_PERIOD_SECONDS = 5
+
+local function EHR_DiseaseGetDebugClockSeconds()
+    if getTimestampMs then
+        local ok, ms = pcall(getTimestampMs)
+        if ok and ms then return ms / 1000 end
+    end
+    if os and os.time then
+        local ok, seconds = pcall(os.time)
+        if ok and seconds then return seconds end
+    end
+    return 0
+end
 
 function EHR.Disease.MarkDebugSet(player)
     if not player then return end
     local username = player:getUsername() or tostring(player:getPlayerNum())
-    EHR.Disease.DebugGracePeriod[username] = os.time()
+    EHR.Disease.DebugGracePeriod[username] = EHR_DiseaseGetDebugClockSeconds()
     print("[EHR Disease] Debug grace period started for " .. username)
 end
 
@@ -46,7 +58,7 @@ function EHR.Disease.IsInDebugGracePeriod(player)
     local setTime = EHR.Disease.DebugGracePeriod[username]
     if not setTime then return false end
 
-    local elapsed = os.time() - setTime
+    local elapsed = EHR_DiseaseGetDebugClockSeconds() - setTime
     if elapsed < EHR.Disease.GRACE_PERIOD_SECONDS then
         return true
     else
@@ -165,7 +177,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},
-            tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.MuscleRelaxants"},  -- Symptom relief only
+            tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief only
             tier2 = {"ExtensiveHealth.AntiparasiticPills"},  -- Cures in 7 days
             tier3 = {"ExtensiveHealth.AlbendazoleInjection"},  -- Fast cure 72h
         },
@@ -230,7 +242,7 @@ EHR.Disease.Diseases = {
         canProgress = "pneumonia",  -- Can progress to pneumonia if untreated
         treatments = {
             tier0 = {"Base.Pills"},
-            tier1 = {"ExtensiveHealth.ColdFluTablets", "ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant"},
+            tier1 = {"ExtensiveHealth.ColdFluTablets", "ExtensiveHealth.AntipyreticTablets", "ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant"},
             tier2 = {"ExtensiveHealth.AntiviralCapsules"},  -- Cures in 48h
             tier3 = {},
         },
@@ -260,7 +272,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.Pills", "Base.Antibiotics"},
-            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant"},
+            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.PrescriptionAntibiotics"},  -- Cures in 72h
             tier3 = {"ExtensiveHealth.CorticosteroidInjection"},  -- Fast cure 24h
         },
@@ -386,7 +398,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.Antibiotics"},
-            tier1 = {"ExtensiveHealth.AntisepticCream", "ExtensiveHealth.AntiInflammatory"},
+            tier1 = {"ExtensiveHealth.AntisepticCream", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics"},
             tier3 = {"ExtensiveHealth.IVAntibiotics"},  -- Fast cure 36h
         },
@@ -416,7 +428,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.Antibiotics"},  -- Minimal help
-            tier1 = {},  -- OTC won't help
+            tier1 = {"ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief only
             tier2 = {"ExtensiveHealth.BroadSpectrumAntibiotics"},  -- Cures in 72h
             tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVVancomycin", "ExtensiveHealth.EmergencySepsisKit"},  -- Fast cure 24-48h
         },
@@ -447,7 +459,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.Antibiotics"},
-            tier1 = {"ExtensiveHealth.AntiInflammatory"},
+            tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics"},
             tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVVancomycin"},
         },
@@ -507,7 +519,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},
-            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler"},
+            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.AntifungalTablets"},
             tier3 = {"ExtensiveHealth.IVAmphotericin"},
         },
@@ -537,7 +549,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},  -- Vanilla antibiotics don't work
-            tier1 = {"ExtensiveHealth.CoughSuppressant"},  -- Symptom relief only
+            tier1 = {"ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief only
             tier2 = {"ExtensiveHealth.TBAntibiotics"},  -- Cures in 21 days
             tier3 = {"ExtensiveHealth.RifampicinComboPack"},  -- Fast cure 14 days
         },
@@ -567,7 +579,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},  -- No vanilla treatment
-            tier1 = {"ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.AntiInflammatory"},  -- Symptom relief
+            tier1 = {"ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief
             tier2 = {"ExtensiveHealth.TetanusAntitoxin"},  -- Cures in 5 days
             tier3 = {"ExtensiveHealth.TetanusImmunoglobulin"},  -- Fast cure 48h
         },
@@ -1136,6 +1148,9 @@ function EHR.Disease.UpdateProgression(player, data)
     for _, diseaseId in ipairs(toRemove) do
         data.EHR_Disease.active[diseaseId] = nil
     end
+    if #toRemove > 0 and EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(player, false)
+    end
 end
 
 --[[
@@ -1282,6 +1297,11 @@ local function EHR_DiseaseMoveBodyTemperatureToward(player, target, step)
     step = step * (EHR_DiseaseEffectTimeScale or 1)
     target = math.max(28.0, math.min(42.0, target))
 
+    if EHR and EHR.BodyTemp and EHR.BodyTemp.MoveDiseaseFeverToward then
+        EHR.BodyTemp.MoveDiseaseFeverToward(player, target, step)
+        return
+    end
+
     local function moveValue(current)
         current = tonumber(current) or target
         if math.abs(target - current) <= step then return target end
@@ -1300,11 +1320,22 @@ local function EHR_DiseaseMoveBodyTemperatureToward(player, target, step)
         if tempData and tempData.bodyTemp then
             tempData.bodyTemp = moveValue(tempData.bodyTemp)
             tempData.targetTemp = target
+            tempData.diseaseTargetTemp = target
+            local gameTime = getGameTime and getGameTime() or nil
+            tempData.diseaseTargetTempUntil = gameTime and (gameTime:getWorldAgeHours() + 1.0) or nil
+            local stats = nil
+            pcall(function() stats = player:getStats() end)
+            if stats and CharacterStat and CharacterStat.TEMPERATURE then
+                pcall(function()
+                    stats:set(CharacterStat.TEMPERATURE, tempData.bodyTemp)
+                end)
+            end
             return
         end
     end
 
-    local stats = player.getStats and player:getStats() or nil
+    local stats = nil
+    pcall(function() stats = player:getStats() end)
     if stats and CharacterStat and CharacterStat.TEMPERATURE then
         pcall(function()
             local current = stats:get(CharacterStat.TEMPERATURE) or target
@@ -1312,6 +1343,19 @@ local function EHR_DiseaseMoveBodyTemperatureToward(player, target, step)
         end)
     end
 end
+
+local EHR_DiseaseBodyFeverTargets = {
+    trichinosis = {
+        [2] = { temp = 38.0, step = 0.028 },
+        [3] = { temp = 38.9, step = 0.045 },
+        [4] = { temp = 37.4, step = 0.020 },
+    },
+    tuberculosis = {
+        [2] = { temp = 37.7, step = 0.016 },
+        [3] = { temp = 38.4, step = 0.026 },
+        [4] = { temp = 37.3, step = 0.012 },
+    },
+}
 
 local function EHR_DiseaseClampSicknessStat(stats, maxAllowed)
     if not stats or not maxAllowed then return false end
@@ -1718,6 +1762,45 @@ local function EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, reduction
     return math.max(0, math.min(1, activeReduction))
 end
 
+function EHR.Disease.GetActiveSymptomReduction(player, diseaseId, reductionKey)
+    return EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, reductionKey)
+end
+
+function EHR.Disease.GetActiveSymptomMultiplier(player, diseaseId, disease)
+    return EHR_DiseaseGetActiveSymptomMultiplier(player, diseaseId, disease)
+end
+
+local function EHR_DiseaseApplyBodyFever(player, diseaseId, disease, severity, symptomMult, curativeTreatment)
+    if not player or not diseaseId or not disease then return end
+
+    local stage = tonumber(disease.stage) or 1
+    local feverInfo = EHR_DiseaseBodyFeverTargets[diseaseId] and EHR_DiseaseBodyFeverTargets[diseaseId][stage]
+    if not feverInfo then return end
+
+    local feverTarget = feverInfo.temp
+    local feverStep = feverInfo.step
+
+    if curativeTreatment then
+        feverTarget = math.min(feverTarget, stage == 3 and 38.1 or 37.6)
+        feverStep = feverStep * 1.5
+    end
+
+    local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, "fever")
+    if feverRelief > 0 then
+        local strongFeverReducer = feverRelief >= 0.60
+        local feverFloor = strongFeverReducer and 37.0 or 37.4
+        local feverDrop = strongFeverReducer and 4.0 or math.min(1.2, feverRelief * 1.8)
+        feverTarget = math.max(feverFloor, feverTarget - feverDrop)
+        feverStep = feverStep * math.max(0.35, 1 - feverRelief)
+    end
+
+    EHR_DiseaseMoveBodyTemperatureToward(
+        player,
+        feverTarget,
+        feverStep * (severity or 0.5) * math.max(0.25, symptomMult or 1.0)
+    )
+end
+
 local function EHR_DiseaseIsMusclePart(partType, part)
     local partName = nil
 
@@ -2047,6 +2130,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "trichinosis", disease)
         local muscleRelief = EHR_DiseaseGetActiveSymptomReduction(player, "trichinosis", "muscleSpasms")
         local painRelief = EHR_DiseaseGetActiveSymptomReduction(player, "trichinosis", "pain")
+        local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, "trichinosis", "fever")
         local enduranceDrain = 0.002 * severity
         local enduranceFloor = 0.80
         local fatigueTarget = 0.18 * severity
@@ -2089,6 +2173,10 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             end
         end
 
+        if feverRelief > 0 then
+            feverTarget = feverTarget * math.max(0.25, 1 - (feverRelief * 1.4))
+        end
+
         if muscleRelief > 0 then
             local muscleMult = math.max(0.12, 1 - (muscleRelief * 2.0))
             strainTarget = math.min(4.5, math.max(2, strainTarget * muscleMult))
@@ -2102,6 +2190,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         EHR_DiseaseDrainEndurance(stats, enduranceDrain, enduranceFloor)
         EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, fatigueTarget, 0.0035 * severity, 1)
         EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.SICKNESS, feverTarget, 0.004 * severity, 1)
+        EHR_DiseaseApplyBodyFever(player, "trichinosis", disease, severity, symptomMult, curativeTreatment)
         EHR_DiseaseRaisePainToward(stats, painTarget, 0.018 * severity)
         EHR_DiseaseApplyMuscleStrain(player, strainTarget, strainStep)
         if muscleRelief > 0 then
@@ -2252,6 +2341,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         local coughingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "coughing")
         local breathingRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "breathingDifficulty")
         local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "weakness")
+        local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cadaveric_aspergillosis", "fever")
 
         local coughMult = math.max(0.12, symptomMult * (1 - coughingRelief))
         local breathingMult = math.max(0.15, symptomMult * (1 - breathingRelief))
@@ -2262,7 +2352,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         local enduranceDrain = 0.003
         local enduranceFloor = 0.78
         local feverTarget = 37.4
-        local feverStep = 0.0007
+        local feverStep = 0.015
 
         if stage == 2 then
             sicknessTarget = 0.34
@@ -2271,7 +2361,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             enduranceDrain = 0.0035
             enduranceFloor = 0.74
             feverTarget = 38.2
-            feverStep = 0.0010
+            feverStep = 0.035
         elseif stage == 3 then
             sicknessTarget = 0.58
             discomfortTarget = 0.58
@@ -2279,7 +2369,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             enduranceDrain = 0.012
             enduranceFloor = 0.42
             feverTarget = 39.4
-            feverStep = 0.0016
+            feverStep = 0.055
         elseif stage == 4 then
             sicknessTarget = 0.20
             discomfortTarget = 0.20
@@ -2287,7 +2377,7 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             enduranceDrain = 0.003
             enduranceFloor = 0.82
             feverTarget = 37.6
-            feverStep = 0.0010
+            feverStep = 0.030
         end
 
         if curativeTreatment then
@@ -2299,6 +2389,15 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             feverTarget = stage == 3 and 38.2 or 37.6
             feverStep = feverStep * 1.8
             disease.aspergillosisHealthCap = nil
+        end
+
+        if feverRelief > 0 then
+            local strongFeverReducer = feverRelief >= 0.60
+            local feverFloor = strongFeverReducer and 37.0 or 37.4
+            local feverDrop = strongFeverReducer and 4.0 or math.min(1.4, feverRelief * 1.9)
+            feverTarget = math.max(feverFloor, feverTarget - feverDrop)
+            feverStep = feverStep * math.max(0.35, 1 - feverRelief)
+            sicknessTarget = sicknessTarget * math.max(0.65, 1 - (feverRelief * 0.35))
         end
 
         local enduranceFallbackFatigueCap = stage == 2 and 0.20 or nil
@@ -2355,8 +2454,11 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         end
 
     elseif diseaseId == "tuberculosis" then
+        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
         EHR_DiseaseDrainEndurance(stats, 0.0015 * severity * stageMult, 0.35)
         EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.FATIGUE, 0.0006 * severity * stageMult)
+        EHR_DiseaseApplyBodyFever(player, "tuberculosis", disease, severity, symptomMult, curativeTreatment)
 
         local coughChance = (stage == 3 and 0.006 or stage == 2 and 0.003 or 0.001) * severity
         trySymptom("tb_cough", coughChance, 0.12, function()
@@ -3317,6 +3419,10 @@ function EHR.Disease.Cure(player, diseaseId)
             end
         end
 
+        if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+            EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+        end
+
         EHR.Log("Cured disease: " .. tostring(diseaseId))
 
         -- MP: Trigger server sync after disease cure
@@ -3392,6 +3498,10 @@ function EHR.Disease.CureAll(player)
 
     end
 
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+    end
+
 
     if count > 0 then
         EHR.Log("Cured all diseases: " .. count .. " removed")
@@ -3449,6 +3559,10 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
 
         if stage == 4 then
             disease.warmthBlocked = nil
+        end
+
+        if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+            EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
         end
 
         if oldStage ~= stage and def and def.stageEntryDialogue and def.stageEntryDialogue[stage] and EHR.Dialogue then
@@ -4056,9 +4170,11 @@ local function processPlayerTick(player)
 
     local state = getTickState(player)
 
-    -- MP FIX: Don't initialize during debug grace period
+    -- MP FIX: Preserve debug-set disease data during the short sync grace period.
     if EHR.Disease.IsInDebugGracePeriod(player) then
-        -- During grace period, trust whatever data exists and mark initialized
+        -- During grace period, trust whatever data exists and mark initialized.
+        -- Do not pause disease ticking: debug stage switching should immediately
+        -- show symptoms/effects for testing.
         if modData.EHR_Disease and modData.EHR_Disease.active then
             modData.EHR_Disease_Initialized = true
             -- Count actual diseases (only log once per second to reduce spam)
@@ -4074,7 +4190,6 @@ local function processPlayerTick(player)
                 print("[EHR Disease] Grace period: " .. diseaseCount .. " active diseases preserved")
             end
         end
-        return  -- Skip normal processing during grace period
     end
 
     -- Initialize if needed

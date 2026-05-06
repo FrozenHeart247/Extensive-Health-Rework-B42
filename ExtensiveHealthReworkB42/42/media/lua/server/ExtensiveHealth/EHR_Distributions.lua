@@ -266,6 +266,7 @@ local function EHR_InitDistributions()
 
     -- Pharmacy/Drug Store Shelves
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ColdFluTablets", 8)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntipyreticTablets", 7)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.CoughSyrup", 7)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiNauseaTablets", 7)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiDiarrheal", 7)
@@ -278,6 +279,7 @@ local function EHR_InitDistributions()
 
     -- Medicine Cabinets (bathroom)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntipyreticTablets", 4)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.CoughSyrup", 3)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiNauseaTablets", 3)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiDiarrheal", 3)
@@ -286,6 +288,7 @@ local function EHR_InitDistributions()
 
     -- Medical Storage / Clinic (OTC items)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntipyreticTablets", 6)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.CoughSyrup", 6)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ElectrolytePowder", 6)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.BronchodilatorInhaler", 4)
@@ -360,6 +363,7 @@ local function EHR_InitDistributions()
     -- First Aid Kits (basic supplies)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.AntipyreticTablets", 4)
     tryAddMed("FirstAidKit", "ExtensiveHealth.Syringe", 3)
 
     -- =========================================
@@ -384,6 +388,7 @@ local function EHR_InitDistributions()
     -- Tier 1 OTC - Very low chance (someone might keep cold meds in nightstand)
     local tier1Household = {
         ["ExtensiveHealth.ColdFluTablets"] = 0.3,
+        ["ExtensiveHealth.AntipyreticTablets"] = 0.3,
         ["ExtensiveHealth.CoughSyrup"] = 0.2,
         ["ExtensiveHealth.AntiNauseaTablets"] = 0.2,
         ["ExtensiveHealth.AntiDiarrheal"] = 0.2,

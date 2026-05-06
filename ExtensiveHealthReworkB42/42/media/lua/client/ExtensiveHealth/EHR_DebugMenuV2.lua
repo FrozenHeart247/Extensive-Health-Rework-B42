@@ -561,6 +561,9 @@ function EHR_DebugMenuV2:onFullHeal()
     if EHR.Disease and EHR.Disease.CureAll then
         EHR.Disease.CureAll(self.player)
     end
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFever then
+        EHR.BodyTemp.ResetDiseaseFever(self.player, true)
+    end
 
     -- Clear wound infections
     clearAllWounds(data)
@@ -659,6 +662,7 @@ function EHR_DebugMenuV2:onResetAll()
     data.EHR_SideEffects = nil
     data.EHR_Corpse = nil
     data.EHR_Corpse_Initialized = nil
+    data.EHR_Temperature = nil
 
     if EHR.ResetLockedHealth then
         EHR.ResetLockedHealth(playerID)
@@ -668,6 +672,9 @@ function EHR_DebugMenuV2:onResetAll()
     end
     if EHR and EHR.InitializePlayer then
         EHR.InitializePlayer(self.player)
+    end
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFever then
+        EHR.BodyTemp.ResetDiseaseFever(self.player, true)
     end
 
     EHR.DebugV2.Log("Reset All EHR data executed", "ACTIONS", "INFO")
@@ -918,6 +925,9 @@ function EHR_DebugMenuV2:onCureAllDiseases()
                 data.EHR_Disease.active[id] = nil
             end
         end
+    end
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(self.player, true)
     end
 
     EHR.DebugV2.Log("Cured all diseases", "DISEASES", "INFO")
@@ -2306,6 +2316,9 @@ EHR.DebugV2.Scenarios = {
                 for id in pairs(data.EHR_Disease.active) do
                     data.EHR_Disease.active[id] = nil
                 end
+            end
+            if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFever then
+                EHR.BodyTemp.ResetDiseaseFever(player, true)
             end
             -- Clear infections
             clearAllWounds(data)

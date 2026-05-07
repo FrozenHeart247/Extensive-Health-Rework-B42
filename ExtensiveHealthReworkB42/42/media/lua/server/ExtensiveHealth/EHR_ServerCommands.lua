@@ -504,6 +504,9 @@ function EHR.ServerCommands.InflictDisease(player, args)
         peakTime = currentHour + (duration * 0.4),
         diagnosed = false,
     }
+    if EHR.Disease and EHR.Disease.SetStage then
+        EHR.Disease.SetStage(player, diseaseId, 2)
+    end
 
     log("[EHR Server] Created disease: " .. diseaseId .. " duration=" .. duration .. "h")
 
@@ -1146,6 +1149,9 @@ function EHR.ServerCommands.ApplyScenario(player, args)
             peakTime = currentHour + 28,
             diagnosed = false,
         }
+        if EHR.Disease and EHR.Disease.SetStage then
+            EHR.Disease.SetStage(player, "common_cold", 2)
+        end
         -- Food poisoning (24 hour duration)
         data.EHR_Disease.active["food_poisoning"] = {
             stage = 2,
@@ -1156,6 +1162,9 @@ function EHR.ServerCommands.ApplyScenario(player, args)
             peakTime = currentHour + 10,
             diagnosed = false,
         }
+        if EHR.Disease and EHR.Disease.SetStage then
+            EHR.Disease.SetStage(player, "food_poisoning", 2)
+        end
 
     elseif scenarioId == "critical_condition" then
         -- Blood at 30%

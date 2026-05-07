@@ -3552,6 +3552,7 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
         disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
         disease.peakTime = disease.startTime + (totalDuration * 0.40)
         disease.stage = stage
+        disease.progress = progress
         disease.stageProgress = 0
         disease.stageStartTime = currentHour
         disease.lastStageTime = currentHour

@@ -66,6 +66,90 @@ EHR.DebugV2.Colors = {
     buttonHover = {r=0.25, g=0.35, b=0.3, a=1},
 }
 
+local function debugClamp(value, minValue, maxValue)
+    value = tonumber(value) or 0
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function debugWorldAgeHours()
+    local gameTime = getGameTime and getGameTime() or nil
+    if gameTime and gameTime.getWorldAgeHours then
+        return gameTime:getWorldAgeHours()
+    end
+    return 0
+end
+
+local function debugDiseaseStageProgress(stage)
+    local progressByStage = {
+        [1] = 0.05,
+        [2] = 0.20,
+        [3] = 0.50,
+        [4] = 0.80,
+    }
+    return progressByStage[tonumber(stage) or 1] or 0.20
+end
+
+local function debugGetDiseaseTotalDuration(diseaseId, disease)
+    local started = disease and tonumber(disease.startTime)
+    local ended = disease and tonumber(disease.endTime)
+    if started and ended and ended > started and (ended - started) >= 6 then
+        return ended - started
+    end
+
+    local def = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] or nil
+    local maxDuration = def and tonumber(def.durationMax) or nil
+    local minDuration = def and tonumber(def.durationMin) or nil
+    return math.max(6, maxDuration or minDuration or 72)
+end
+
+local function debugNormalizeDiseaseTiming(diseaseId, disease, stage)
+    if type(disease) ~= "table" then return end
+
+    local currentHour = debugWorldAgeHours()
+    local normalizedStage = math.max(1, math.min(4, tonumber(stage or disease.stage) or 1))
+    local totalDuration = debugGetDiseaseTotalDuration(diseaseId, disease)
+    local progress = debugDiseaseStageProgress(normalizedStage)
+
+    disease.stage = normalizedStage
+    disease.startTime = currentHour - (totalDuration * progress)
+    disease.endTime = disease.startTime + totalDuration
+    disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
+    disease.peakTime = disease.startTime + (totalDuration * 0.40)
+    disease.progress = progress
+    disease.stageProgress = 0
+    disease.stageStartTime = currentHour
+    disease.lastStageTime = currentHour
+    disease.debugForcedStageAt = currentHour
+end
+
+local function debugGetDiseaseProgress(disease)
+    if type(disease) ~= "table" then return 0 end
+
+    local currentHour = debugWorldAgeHours()
+    local started = tonumber(disease.startTime)
+    local ended = tonumber(disease.endTime)
+    if started and ended and ended > started then
+        return debugClamp(((currentHour - started) / (ended - started)) * 100, 0, 100)
+    end
+
+    local duration = tonumber(disease.duration)
+    if started and duration and duration > 0 then
+        return debugClamp(((currentHour - started) / duration) * 100, 0, 100)
+    end
+
+    local progress = tonumber(disease.progress)
+    if progress then
+        if progress <= 1 then
+            return debugClamp(progress * 100, 0, 100)
+        end
+        return debugClamp(progress, 0, 100)
+    end
+
+    return debugDiseaseStageProgress(disease.stage) * 100
+end
+
 -- ============================================
 -- WOUND INFECTION V2 HELPERS (Debug)
 -- ============================================
@@ -896,7 +980,22 @@ function EHR_DebugMenuV2:createDiseasesPanel()
                 local remaining = math.max(0, (tonumber(disease.endTime) or currentHour) - currentHour)
                 self:drawText(string.format("  Time remaining: %.1f hours", remaining),
                     x + 10, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, FONT)
-                y = y + 20
+                y = y + 18
+
+                local progress = debugGetDiseaseProgress(disease)
+                local barX = x + 12
+                local barY = y
+                local barW = 260
+                local barH = 7
+                local filledW = math.floor(barW * (progress / 100))
+                self:drawRect(barX, barY, barW, barH, 0.55, 0.04, 0.04, 0.04)
+                if filledW > 0 then
+                    self:drawRect(barX, barY, filledW, barH, 0.85, stageColor.r, stageColor.g, stageColor.b)
+                end
+                self:drawRectBorder(barX, barY, barW, barH, c.border.a, c.border.r, c.border.g, c.border.b)
+                self:drawText(string.format("%d%%", math.floor(progress + 0.5)),
+                    barX + barW + 10, barY - 5, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, FONT)
+                y = y + 18
             end
         end
 
@@ -1034,7 +1133,7 @@ function EHR_DebugMenuV2:onInflictDisease(button)
     end
 
     -- Create disease entry directly
-    data.EHR_Disease.active[diseaseId] = {
+    local disease = {
         stage = 2,  -- Start at Early stage (skip incubation for debug)
         severity = 0.5,
         startTime = currentHour,
@@ -1043,6 +1142,8 @@ function EHR_DebugMenuV2:onInflictDisease(button)
         peakTime = currentHour + (duration * 0.4),
         diagnosed = false,
     }
+    debugNormalizeDiseaseTiming(diseaseId, disease, 2)
+    data.EHR_Disease.active[diseaseId] = disease
     print("[EHR Debug] v2.7.1-MP Created disease locally: " .. diseaseId .. " with " .. duration .. "h duration")
 
     EHR.DebugV2.Log("Inflicted disease: " .. diseaseId, "DISEASES", "INFO")
@@ -2368,8 +2469,11 @@ EHR.DebugV2.Scenarios = {
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.food_poisoning = { stage = 3, severity = 0.5 }
+            debugNormalizeDiseaseTiming("food_poisoning", data.EHR_Disease.active.food_poisoning, 3)
             data.EHR_Disease.active.pneumonia = { stage = 2, severity = 0.7 }
+            debugNormalizeDiseaseTiming("pneumonia", data.EHR_Disease.active.pneumonia, 2)
             data.EHR_Disease.active.hypothermia = { stage = 2, severity = 0.6 }
+            debugNormalizeDiseaseTiming("hypothermia", data.EHR_Disease.active.hypothermia, 2)
             -- Bad stats
             local stats = player:getStats()
             if stats and CharacterStat then
@@ -2402,6 +2506,7 @@ EHR.DebugV2.Scenarios = {
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.food_poisoning = { stage = 3, elapsedTime = 12, severity = 0.5 }
+            debugNormalizeDiseaseTiming("food_poisoning", data.EHR_Disease.active.food_poisoning, 3)
             local stats = player:getStats()
             if stats and CharacterStat then
                 pcall(function()
@@ -2420,6 +2525,7 @@ EHR.DebugV2.Scenarios = {
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.hypothermia = { stage = 3, severity = 0.6 }
+            debugNormalizeDiseaseTiming("hypothermia", data.EHR_Disease.active.hypothermia, 3)
             local stats = player:getStats()
             if stats and CharacterStat then
                 pcall(function()
@@ -2437,6 +2543,7 @@ EHR.DebugV2.Scenarios = {
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.heat_stroke = { stage = 2, severity = 0.7 }
+            debugNormalizeDiseaseTiming("heat_stroke", data.EHR_Disease.active.heat_stroke, 2)
             local stats = player:getStats()
             if stats and CharacterStat then
                 pcall(function()
@@ -2454,8 +2561,11 @@ EHR.DebugV2.Scenarios = {
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.common_cold = { stage = 2, severity = 0.3 }
+            debugNormalizeDiseaseTiming("common_cold", data.EHR_Disease.active.common_cold, 2)
             data.EHR_Disease.active.gastroenteritis = { stage = 2, severity = 0.6 }
+            debugNormalizeDiseaseTiming("gastroenteritis", data.EHR_Disease.active.gastroenteritis, 2)
             data.EHR_Disease.active.dysentery = { stage = 1, severity = 0.7 }
+            debugNormalizeDiseaseTiming("dysentery", data.EHR_Disease.active.dysentery, 1)
         end
     },
     {
@@ -2686,6 +2796,7 @@ function EHR_DebugMenuV2:onRunTestSuite()
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.food_poisoning = { stage = 1, severity = 0.5 }
+            debugNormalizeDiseaseTiming("food_poisoning", data.EHR_Disease.active.food_poisoning, 1)
             return data.EHR_Disease.active.food_poisoning ~= nil
         end },
         { name = "Disease: Cure disease", test = function(p)
@@ -2700,8 +2811,8 @@ function EHR_DebugMenuV2:onRunTestSuite()
             data.EHR_Disease = data.EHR_Disease or { active = {} }
             data.EHR_Disease.active = data.EHR_Disease.active or {}
             data.EHR_Disease.active.stage_test = { stage = 1, severity = 0.5 }
-            data.EHR_Disease.active.stage_test.stage = 2
-            return data.EHR_Disease.active.stage_test.stage == 2
+            debugNormalizeDiseaseTiming("stage_test", data.EHR_Disease.active.stage_test, 2)
+            return data.EHR_Disease.active.stage_test.stage == 2 and debugGetDiseaseProgress(data.EHR_Disease.active.stage_test) > 0
         end },
 
         -- Blood tests (v2.7.0+: use API)

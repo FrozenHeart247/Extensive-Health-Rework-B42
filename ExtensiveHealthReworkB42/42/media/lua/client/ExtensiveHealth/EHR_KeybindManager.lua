@@ -11,6 +11,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+require "ExtensiveHealth/EHR_HealthPanelUI"
 
 EHR = EHR or {}
 EHR.Keybinds = {}
@@ -249,9 +250,11 @@ function EHR.Keybinds.OnKeyPressed(key)
         end
     end
 
-    -- Toggle Medical Monitor
+    -- Toggle Medical Monitor / Health Panel
     if EHR.Keybinds.IsToggleMonitorKey(key) then
-        if EHR.UI and EHR.UI.ToggleMonitor then
+        if EHR.UI and EHR.UI.ToggleHealthPanel then
+            EHR.UI.ToggleHealthPanel(player)
+        elseif EHR.UI and EHR.UI.ToggleMonitor then
             EHR.UI.ToggleMonitor(player)
         end
         return

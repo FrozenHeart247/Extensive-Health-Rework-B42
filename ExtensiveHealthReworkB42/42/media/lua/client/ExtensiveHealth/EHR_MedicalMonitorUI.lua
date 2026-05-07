@@ -2638,6 +2638,26 @@ local function onTickHandler()
     -- Only check every 5 ticks to reduce overhead
     if tickCount % 5 ~= 0 then return end
 
+    if EHR.UI then
+        local suppressTicks = tonumber(EHR.UI.SuppressLegacyMonitorTicks) or 0
+        if suppressTicks > 0 then
+            EHR.UI.SuppressLegacyMonitorTicks = suppressTicks - 1
+            if EHR.UI.MonitorVisible then
+                EHR.UI.HideMonitor()
+            end
+            lastCharWindowVisible = false
+            return
+        end
+
+        if EHR.UI.HealthPanelVisible then
+            if EHR.UI.MonitorVisible then
+                EHR.UI.HideMonitor()
+            end
+            lastCharWindowVisible = false
+            return
+        end
+    end
+
     local player = getPlayer()
     if not player then return end
 

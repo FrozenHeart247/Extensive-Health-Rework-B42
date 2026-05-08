@@ -785,16 +785,26 @@ end
 
 local function isRainingNow()
     local climate = getClimateManager and getClimateManager() or nil
-    if not climate then return false end
+    if climate then
+        if climate.getPrecipitationIntensity then
+            local ok, intensity = pcall(function() return climate:getPrecipitationIntensity() end)
+            if ok and tonumber(intensity) and tonumber(intensity) > 0.03 then return true end
+        end
 
-    if climate.isRaining then
-        local ok, raining = pcall(function() return climate:isRaining() end)
-        if ok and raining ~= nil then return raining == true end
+        if climate.getRainIntensity then
+            local ok, intensity = pcall(function() return climate:getRainIntensity() end)
+            if ok and tonumber(intensity) and tonumber(intensity) > 0.03 then return true end
+        end
+
+        if climate.isRaining then
+            local ok, raining = pcall(function() return climate:isRaining() end)
+            if ok and raining == true then return true end
+        end
     end
 
-    if climate.getRainIntensity then
-        local ok, intensity = pcall(function() return climate:getRainIntensity() end)
-        if ok and intensity then return intensity > 0.05 end
+    if RainManager and RainManager.isRaining then
+        local ok, raining = pcall(function() return RainManager.isRaining() end)
+        if ok and raining == true then return true end
     end
 
     return false

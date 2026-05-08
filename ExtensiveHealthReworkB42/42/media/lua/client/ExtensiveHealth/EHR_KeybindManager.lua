@@ -276,6 +276,9 @@ function EHR.Keybinds.OnKeyPressed(key)
 
     -- Toggle Medical Journal
     if EHR.Keybinds.IsToggleJournalKey(key) then
+        if EHR.UI and EHR.UI.SuppressLegacyHealthUI then
+            EHR.UI.SuppressLegacyHealthUI(12)
+        end
         if EHR_MedicalJournalUI and EHR_MedicalJournalUI.Toggle then
             EHR_MedicalJournalUI.Toggle(player)
         end

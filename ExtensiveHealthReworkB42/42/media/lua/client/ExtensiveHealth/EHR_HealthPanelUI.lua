@@ -23,7 +23,7 @@ EHR.UI = EHR.UI or {}
 EHR_HealthPanelUI = ISPanel:derive("EHR_HealthPanelUI")
 EHR_HealthBodyPartPanel = ISBodyPartPanel:derive("EHR_HealthBodyPartPanel")
 
-EHR_HealthPanelUI.EXPANDED_WIDTH = 930
+EHR_HealthPanelUI.EXPANDED_WIDTH = 990
 EHR_HealthPanelUI.COLLAPSED_WIDTH = 500
 EHR_HealthPanelUI.HEIGHT = 780
 EHR_HealthPanelUI.MIN_WIDTH = 460
@@ -76,6 +76,11 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     trichinosis = "media/textures/EHR_Disease_Trichinosis.png",
     tuberculosis = "media/textures/EHR_Disease_Tuberculosis.png",
     wound_infection = "media/textures/EHR_Disease_Wound_Infection.png",
+}
+
+EHR_HealthPanelUI.PanelIconPaths = {
+    overview = "media/textures/EHR_Overview.png",
+    body_status = "media/textures/EHR_BodyStatus.png",
 }
 
 local suppressVanillaTicks = 0
@@ -166,6 +171,8 @@ local function suppressLegacyHealthUI(ticks)
         EHR.UI.HideMonitor()
     end
 end
+
+EHR.UI.SuppressLegacyHealthUI = suppressLegacyHealthUI
 
 local function tableValuesSortedByName(tbl, nameGetter)
     local values = {}
@@ -826,14 +833,34 @@ function EHR_HealthPanelUI:drawPanelFrame(x, y, w, h, title, iconLabel)
     if title then
         local titleX = x + 12
         if iconLabel then
-            self:drawRect(x + 10, y + 13, 16, 16, 0.18, c.red.r, c.red.g, c.red.b)
-            self:drawRectBorder(x + 10, y + 13, 16, 16, 0.85, c.border.r, c.border.g, c.border.b)
-            self:drawDockedTextCenter(iconLabel, x + 10, y + 13, 16, 16, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Small)
-            titleX = x + 34
+            local iconTexture = self:getPanelIconTexture(iconLabel)
+            if iconTexture and self.drawTextureScaled then
+                self:drawTextureScaled(iconTexture, x + 8, y + 9, 24, 24, 1.0, 1.0, 1.0, 1.0)
+                titleX = x + 38
+            else
+                self:drawRect(x + 10, y + 13, 16, 16, 0.18, c.red.r, c.red.g, c.red.b)
+                self:drawRectBorder(x + 10, y + 13, 16, 16, 0.85, c.border.r, c.border.g, c.border.b)
+                self:drawDockedTextCenter(iconLabel, x + 10, y + 13, 16, 16, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Small)
+                titleX = x + 34
+            end
         end
         self:drawDockedText(title, titleX, y + 8, w - 24, 28, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
         self:drawRect(x + 12, y + 40, w - 24, 1, 0.70, c.border.r, c.border.g, c.border.b)
     end
+end
+
+function EHR_HealthPanelUI:getPanelIconTexture(iconKey)
+    if not getTexture or not iconKey then return nil end
+    local path = EHR_HealthPanelUI.PanelIconPaths[tostring(iconKey)]
+    if not path then return nil end
+
+    self.panelIconTextures = self.panelIconTextures or {}
+    if self.panelIconTextures[iconKey] ~= nil then
+        return self.panelIconTextures[iconKey] or nil
+    end
+
+    self.panelIconTextures[iconKey] = getTexture(path) or false
+    return self.panelIconTextures[iconKey] or nil
 end
 
 function EHR_HealthPanelUI:getTabIconTexture(tabId)
@@ -998,7 +1025,7 @@ end
 function EHR_HealthPanelUI:drawSectionTitle(text, x, y, w)
     local c = EHR_HealthPanelUI.Colors
     self:drawRect(x, y, w, 28, 0.46, c.redDark.r, c.redDark.g, c.redDark.b)
-    self:drawDockedText(text, x + 8, y, w - 16, 28, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Medium)
+    self:drawDockedText(text, x + 8, y + 3, w - 16, 28, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Medium)
     self:drawRect(x + 8, y + 27, w - 16, 1, 0.72, c.border.r, c.border.g, c.border.b)
 end
 
@@ -1222,6 +1249,36 @@ function EHR_HealthPanelUI:buildActiveDiseaseTable(diseaseData)
     return activeDiseases
 end
 
+function EHR_HealthPanelUI:getCadavericExposureDisplay(exposure, config)
+    exposure = tonumber(exposure) or 0
+    local highThreshold = tonumber(config and config.ASPERGILLOSIS_EXPOSURE_THRESHOLD) or 120
+    if highThreshold <= 0 or exposure <= 0 then
+        return "None"
+    end
+
+    if exposure >= highThreshold then
+        return "High"
+    elseif exposure >= highThreshold * 0.60 then
+        return "Medium"
+    elseif exposure >= highThreshold * 0.30 then
+        return "Low"
+    end
+
+    return "None"
+end
+
+function EHR_HealthPanelUI:getCorpseExposureColor(exposureLevel)
+    if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureColor then
+        local ok, result = pcall(function()
+            return EHR.CorpseSickness.GetExposureColor(exposureLevel)
+        end)
+        if ok then
+            return result
+        end
+    end
+    return nil
+end
+
 function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
     data = data or {}
 
@@ -1270,6 +1327,35 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
                 isCorpseExposure = true,
                 iconKey = "corpse_exposure",
             }
+        end
+    end
+
+    if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureData and self.player and not activeDiseases["cadaveric_aspergillosis"] then
+        local ok, exposureData = pcall(function()
+            return EHR.CorpseSickness.GetExposureData(self.player)
+        end)
+
+        if ok and type(exposureData) == "table" then
+            local config = EHR.CorpseSickness.Config or {}
+            local exposure = tonumber(exposureData.fungalExposure) or 0
+            local exposureLevel = self:getCadavericExposureDisplay(exposure, config)
+
+            if exposureLevel ~= "None" then
+                local highThreshold = tonumber(config.ASPERGILLOSIS_EXPOSURE_THRESHOLD) or 120
+                local stageByLevel = { Low = 1, Medium = 2, High = 3 }
+                local stage = stageByLevel[exposureLevel] or 1
+
+                activeDiseases["cadaveric_aspergillosis_exposure"] = {
+                    displayName = safeText("UI_EHR_CadavericAspergillosisExposure", "Cadaveric Aspergillosis Exposure"),
+                    exposureLevel = exposureLevel,
+                    exposureColor = self:getCorpseExposureColor(exposureLevel),
+                    severity = stage,
+                    progress = highThreshold > 0 and clamp(exposure / highThreshold, 0, 1) or 0,
+                    stage = stage,
+                    isCorpseExposure = true,
+                    iconKey = "cadaveric_aspergillosis",
+                }
+            end
         end
     end
 
@@ -1556,11 +1642,20 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     self:drawBloodBar(barX, barY, barW, 30, summary, true)
 
     self:drawDockedTextRight(string.format("%d%%", math.floor(summary.bloodPct + 0.5)), x + w - 18, y + 46, 36, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Large)
-    self:drawTextRight(string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)), x + w - 18, y + 88, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    if self.rightExpanded then
+        self:drawTextRight(string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)), x + w - 18, y + 88, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    end
 
     local stripY = y + h - 38
     local stripX = barX + 2
     local stripFont = self:getCompactFont()
+
+    if not self.rightExpanded then
+        local bloodText = string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5))
+        self:drawText(self:truncateText(bloodText, math.max(80, barW - 4), stripFont), stripX, stripY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, stripFont)
+        return
+    end
+
     local stripRight = math.min(barX + barW, x + w - 196)
     if stripRight < stripX + 220 then
         stripRight = barX + barW
@@ -1628,23 +1723,21 @@ function EHR_HealthPanelUI:drawTabBar()
 
         local active = self.activeTab == tab.id
         local bg = active and c.redDark or c.background
-        local text = active and c.text or c.textDim
         local border = active and c.red or c.borderDim
         local tabY = y + 6
         local tabH = h - 12
-        local iconSize = math.min(28, math.max(20, math.floor(tabH * 0.43)))
+        local iconSize = math.min(50, math.max(30, math.min(tabH - 10, tabW - 14)))
 
         self:drawRect(x, tabY, tabW, tabH, active and 0.98 or 0.82, bg.r, bg.g, bg.b)
         self:drawRectBorder(x, tabY, tabW, tabH, active and 0.95 or 0.62, border.r, border.g, border.b)
         self:drawRect(x + 1, tabY + 1, tabW - 2, 1, active and 0.88 or 0.26, border.r, border.g, border.b)
         self:drawRect(x + 1, tabY + tabH - 2, tabW - 2, 1, active and 0.56 or 0.18, border.r, border.g, border.b)
         if active then
-            self:drawRect(x + 2, tabY + 2, tabW - 4, math.floor(tabH * 0.42), 0.30, c.red.r, c.red.g, c.red.b)
+            self:drawRect(x + 2, tabY + 2, tabW - 4, tabH - 4, 0.18, c.red.r, c.red.g, c.red.b)
             self:drawRect(x + 3, tabY + tabH - 5, tabW - 6, 2, 0.70, c.red.r, c.red.g, c.red.b)
         end
-        self:drawTabGlyph(tab.id, x + math.floor((tabW - iconSize) / 2), tabY + 9, iconSize, active)
-        self:drawDockedTextCenter(self:truncateText(label, tabW - 12, UIFont.Small), x, tabY + tabH - 25, tabW, 18, text.r, text.g, text.b, text.a, UIFont.Small)
-        table.insert(self.tabBounds, { id = tab.id, x = x, y = tabY, w = tabW, h = tabH })
+        self:drawTabGlyph(tab.id, x + math.floor((tabW - iconSize) / 2), tabY + math.floor((tabH - iconSize) / 2), iconSize, active)
+        table.insert(self.tabBounds, { id = tab.id, label = label, x = x, y = tabY, w = tabW, h = tabH })
 
         x = x + tabW + gap
         if x >= maxRight then break end
@@ -1657,6 +1750,46 @@ function EHR_HealthPanelUI:drawEmbeddedTabFrame()
 
     self:drawRect(bounds.x, bounds.y, bounds.w, bounds.h, c.panel.a, c.panel.r, c.panel.g, c.panel.b)
     self:drawRectBorder(bounds.x, bounds.y, bounds.w, bounds.h, c.border.a, c.border.r, c.border.g, c.border.b)
+end
+
+function EHR_HealthPanelUI:getLocalMousePosition()
+    local mouseX = getMouseX and getMouseX() or 0
+    local mouseY = getMouseY and getMouseY() or 0
+    local absX = self.getAbsoluteX and self:getAbsoluteX() or (self.x or 0)
+    local absY = self.getAbsoluteY and self:getAbsoluteY() or (self.y or 0)
+    return mouseX - absX, mouseY - absY
+end
+
+function EHR_HealthPanelUI:getHoveredTab()
+    local mouseX, mouseY = self:getLocalMousePosition()
+    for _, tab in ipairs(self.tabBounds or {}) do
+        if mouseX >= tab.x and mouseX <= tab.x + tab.w and mouseY >= tab.y and mouseY <= tab.y + tab.h then
+            return tab
+        end
+    end
+    return nil
+end
+
+function EHR_HealthPanelUI:drawTabTooltip()
+    local tab = self:getHoveredTab()
+    if not tab or not tab.label then return end
+
+    local c = EHR_HealthPanelUI.Colors
+    local text = tostring(tab.label)
+    local font = UIFont.Small
+    local tooltipW = self:getTextWidth(text, font) + 22
+    local tooltipH = 28
+    local x = tab.x + math.floor((tab.w - tooltipW) / 2)
+    local y = tab.y + tab.h + 8
+
+    x = clamp(x, 6, math.max(6, self.width - tooltipW - 6))
+    if y + tooltipH > self.height - 6 then
+        y = tab.y - tooltipH - 6
+    end
+
+    self:drawRect(x, y, tooltipW, tooltipH, 0.96, 0.015, 0.012, 0.012)
+    self:drawRectBorder(x, y, tooltipW, tooltipH, 0.88, c.border.r, c.border.g, c.border.b)
+    self:drawDockedTextCenter(text, x, y, tooltipW, tooltipH, c.text.r, c.text.g, c.text.b, c.text.a, font, -1)
 end
 
 function EHR_HealthPanelUI:drawResizeHandle()
@@ -1940,17 +2073,16 @@ function EHR_HealthPanelUI:drawOverallHealthBar(x, y, w)
     local c = EHR_HealthPanelUI.Colors
     local percent = self:getOverallHealthPercent()
     local fillColor = self:getOverallHealthColor(percent)
-    local barH = 18
+    local barH = 28
     local fillW = math.floor(w * clamp(percent / 100, 0, 1))
 
     self:drawRect(x, y, w, barH, 0.90, 0.035, 0.030, 0.030)
     if fillW > 0 then
         self:drawRect(x, y, fillW, barH, fillColor.a, fillColor.r, fillColor.g, fillColor.b)
-        self:drawRect(x, y, fillW, 3, 0.22, 1.0, 0.86, 0.72)
+        self:drawRect(x, y, fillW, 4, 0.22, 1.0, 0.86, 0.72)
     end
     self:drawRectBorder(x, y, w, barH, 0.82, c.border.r, c.border.g, c.border.b)
-    self:drawDockedText("Overall Health", x + 6, y, math.max(80, w - 62), barH, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small, -1)
-    self:drawDockedTextRight(string.format("%d%%", math.floor(percent + 0.5)), x + w - 6, y, barH, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small, -1)
+    self:drawDockedTextRight(string.format("%d%%", math.floor(percent + 0.5)), x + w - 8, y, barH, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium, -1)
 end
 
 function EHR_HealthPanelUI:drawBodyLegend(x, y)
@@ -1979,9 +2111,9 @@ function EHR_HealthPanelUI:drawVanillaBodyPanelFrame(x, y, w, h)
     local c = EHR_HealthPanelUI.Colors
     self.markerBounds = {}
 
-    self:drawPanelFrame(x, y, w, h, "BODY STATUS", "+")
+    self:drawPanelFrame(x, y, w, h, "BODY STATUS", "body_status")
     self:drawOverallHealthBar(x + 16, y + 50, w - 32)
-    self:drawSubtleGrid(x + 12, y + 78, w - 24, math.max(40, h - 114), 22)
+    self:drawSubtleGrid(x + 12, y + 90, w - 24, math.max(40, h - 126), 22)
 
     local bodyPartPanel = self:ensureBodyPartPanel()
     if bodyPartPanel then
@@ -1992,13 +2124,13 @@ function EHR_HealthPanelUI:drawVanillaBodyPanelFrame(x, y, w, h)
             bodyX = math.max(x + 18, bodyX - 44)
         end
         self.bodyPartPanel:setX(bodyX)
-        self.bodyPartPanel:setY(y + 76)
+        self.bodyPartPanel:setY(y + 88)
         self:updateVanillaBodyPartPanel()
         if legendVisible then
-            self:drawBodyLegend(x + w - 164, y + 104)
+            self:drawBodyLegend(x + w - 164, y + 116)
         end
     else
-        self:drawText("Body panel unavailable", x + 10, y + 78, c.orange.r, c.orange.g, c.orange.b, c.orange.a, UIFont.Small)
+        self:drawText("Body panel unavailable", x + 10, y + 90, c.orange.r, c.orange.g, c.orange.b, c.orange.a, UIFont.Small)
     end
 
     local selectedText = "Selected: " .. self:getSelectedBodyPartText()
@@ -2027,7 +2159,7 @@ function EHR_HealthPanelUI:drawLeftPanel()
     self:drawPanelFrame(x, y, w, h, nil, nil)
 
     local overviewH = 112
-    self:drawPanelFrame(x + 10, y + 10, w - 20, overviewH, "OVERVIEW", "=")
+    self:drawPanelFrame(x + 10, y + 10, w - 20, overviewH, "OVERVIEW", "overview")
 
     local healingText = "Healing: Active"
     local healingColor = c.green
@@ -2035,7 +2167,7 @@ function EHR_HealthPanelUI:drawLeftPanel()
         healingText = "Healing: Slowed"
         healingColor = c.orange
     end
-    self:drawText(healingText, x + 22, y + 58, healingColor.r, healingColor.g, healingColor.b, healingColor.a, UIFont.Medium)
+    self:drawText(healingText, x + 22, y + 53, healingColor.r, healingColor.g, healingColor.b, healingColor.a, UIFont.Medium)
 
     if summary.healBlockReason and summary.canHeal == false then
         self:drawText("Reason: " .. tostring(summary.healBlockReason), x + 22, y + 84, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
@@ -2043,15 +2175,72 @@ function EHR_HealthPanelUI:drawLeftPanel()
 
     local bodyY = y + overviewH + 12
     self:drawVanillaBodyPanelFrame(x + 10, bodyY, w - 20, math.max(180, y + h - bodyY - 10))
-
-    if not self.rightExpanded then
-        self:drawTextCenter("[Click + to open details]", 0, self.width, self.height - 72, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
-    end
 end
 
 function EHR_HealthPanelUI:getTreatmentName(treatment)
     if type(treatment) ~= "table" then return "Treatment" end
     return treatment.medicationName or treatment.medKey or "Treatment"
+end
+
+function EHR_HealthPanelUI:getMedicationIconCandidates(treatment)
+    local candidates = {}
+    local seen = {}
+
+    local function addCandidate(value)
+        value = tostring(value or "")
+        if value == "" then return end
+        value = value:gsub("^%s+", ""):gsub("%s+$", "")
+        if value == "" or seen[value] then return end
+        seen[value] = true
+        table.insert(candidates, value)
+    end
+
+    if type(treatment) == "table" then
+        local medKey = tostring(treatment.medKey or "")
+        local shortKey = medKey:match("%.([^%.]+)$") or medKey
+        addCandidate(shortKey)
+
+        local medData = EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+        if type(medData) == "table" then
+            addCandidate(medData.icon)
+            addCandidate(medData.itemType)
+            addCandidate(medData.item)
+        end
+
+        local name = tostring(treatment.medicationName or "")
+        name = name:gsub("%b()", "")
+        name = name:gsub("[^%w]+", "")
+        addCandidate(name)
+    end
+
+    return candidates
+end
+
+function EHR_HealthPanelUI:getMedicationIconTexture(treatment)
+    if not getTexture then return nil end
+
+    self.medicationIconTextures = self.medicationIconTextures or {}
+    for _, candidate in ipairs(self:getMedicationIconCandidates(treatment)) do
+        local path = "media/textures/Item_" .. candidate .. ".png"
+        if self.medicationIconTextures[path] == nil then
+            self.medicationIconTextures[path] = getTexture(path) or false
+        end
+        if self.medicationIconTextures[path] then
+            return self.medicationIconTextures[path]
+        end
+    end
+
+    return nil
+end
+
+function EHR_HealthPanelUI:drawMedicationIcon(treatment, x, y, size)
+    local c = EHR_HealthPanelUI.Colors
+    local texture = self:getMedicationIconTexture(treatment)
+    if texture and self.drawTextureScaled then
+        self:drawTextureScaled(texture, x, y, size, size, 1.0, 1.0, 1.0, 1.0)
+        return
+    end
+    self:drawRoundIcon(x, y, size, c.panel, c.borderDim, "+", c.textDim)
 end
 
 function EHR_HealthPanelUI:buildActiveMedicationList(treatments, doseStatuses)
@@ -2212,9 +2401,10 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
     local rowH = doseText ~= "" and 78 or 58
     self:drawRect(x, y, w, rowH, 0.32, c.panelSoft.r, c.panelSoft.g, c.panelSoft.b)
     self:drawWornFrame(x, y, w, rowH, c.borderDim, 4)
-    self:drawRoundIcon(x + 8, y + 9, 26, c.panel, c.borderDim, "+", c.textDim)
+    self:drawMedicationIcon(treatment, x + 7, y + 7, 34)
 
-    self:drawText(self:truncateText(name, w - 230, UIFont.Small), x + 44, y + 7, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    local textX = x + 50
+    self:drawText(self:truncateText(name, w - 236, UIFont.Small), textX, y + 7, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
     if isTreatingDisease then
         local valueW = self:getTextWidth(cureRemaining, UIFont.Small)
         self:drawTextRight(cureRemaining, x + w - 10, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
@@ -2224,7 +2414,7 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
     end
 
     if doseText ~= "" then
-        self:drawText(doseText, x + 44, y + 30, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawText(doseText, textX, y + 30, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
         if scheduleValue ~= "" then
             local valueW = self:getTextWidth(scheduleValue, UIFont.Small)
             self:drawTextRight(scheduleValue, x + w - 10, y + 30, scheduleColor.r, scheduleColor.g, scheduleColor.b, scheduleColor.a, UIFont.Small)
@@ -2234,9 +2424,9 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
         end
     end
 
-    local barX = x + 44
+    local barX = textX
     local barY = y + rowH - 14
-    local barW = math.max(40, w - 58)
+    local barW = math.max(40, w - (barX - x) - 14)
     local filled = math.floor(barW * progress)
     self:drawRect(barX, barY, barW, 5, 1, 0.05, 0.05, 0.05)
     if filled > 0 then
@@ -2386,6 +2576,7 @@ end
 
 function EHR_HealthPanelUI:render()
     self:drawResizeHandle()
+    self:drawTabTooltip()
 end
 
 function EHR_HealthPanelUI:onMouseWheel(del)

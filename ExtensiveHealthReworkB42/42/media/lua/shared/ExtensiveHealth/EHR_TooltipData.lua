@@ -141,6 +141,25 @@ EHR.Tooltips.Data = {
             "Single use - consumed on use",
         },
     },
+    ["ExtensiveHealth.SterilizedBandages"] = {
+        category = "Medical Supply",
+        description = "Sealed pack of clean bandages.",
+        effects = {
+            "Applies as a normal clean bandage",
+            "Holds up to 5 bandages",
+            "Can be refilled with clean bandages",
+        },
+        warning = "Does not disinfect wounds",
+    },
+    ["ExtensiveHealth.AlchoholicBandage"] = {
+        category = "Medical Supply",
+        description = "Alcohol-prepared clean bandage.",
+        effects = {
+            "Disinfects the wound",
+            "Applies a clean bandage",
+            "Single use - consumed on use",
+        },
+    },
     ["ExtensiveHealth.Epinephrine"] = {
         category = "Emergency",
         description = "Emergency epinephrine auto-injector.",

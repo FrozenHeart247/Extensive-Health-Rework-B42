@@ -18,6 +18,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_WoundInfection"
 require "ExtensiveHealth/EHR_Sepsis"
+require "ExtensiveHealth/EHR_Medication"
 
 EHR = EHR or {}
 EHR.WoundHook = {}
@@ -34,6 +35,7 @@ EHR.WoundHook.DisinfectantItems = {
     ["Base.AlcoholWipes"] = true,
     ["Base.Disinfectant"] = true,
     ["Base.AlcoholBandage"] = true,
+    ["ExtensiveHealth.AlchoholicBandage"] = true,
     ["Base.Alcohol"] = true,  -- Bourbon/whiskey used as disinfectant
     ["Base.Whiskey"] = true,
     ["Base.WhiskeyFull"] = true,
@@ -80,6 +82,23 @@ function EHR.WoundHook.IsIVAntibiotics(item)
     if not item then return false end
     local fullType = item:getFullType()
     return EHR.WoundHook.IVAntibioticItems[fullType] == true
+end
+
+function EHR.WoundHook.HasTreatableWoundInfection(player)
+    if not player or not EHR.WoundInfection or not EHR.WoundInfection.GetData then
+        return false
+    end
+
+    local data = EHR.WoundInfection.GetData(player)
+    if not data then return false end
+    if data.parts then
+        for _, partData in pairs(data.parts) do
+            if partData and (tonumber(partData.stage) or 0) > 0 then
+                return true
+            end
+        end
+    end
+    return (tonumber(data.worstStage) or 0) > 0
 end
 
 -- ============================================
@@ -338,12 +357,13 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
         end
 
         if item and EHR.WoundHook.IsIVAntibiotics(item) then
-            -- Check if player has sepsis
             local hasSepsis = EHR.Sepsis and EHR.Sepsis.HasSepsis and EHR.Sepsis.HasSepsis(player)
+            local hasWoundInfection = EHR.WoundHook.HasTreatableWoundInfection(player)
+            local hasTreatableCondition = hasSepsis or hasWoundInfection
             local inventory = player:getInventory()
             local hasIVKit = inventory and inventory:containsTypeRecurse("ExtensiveHealth.IVKit")
 
-            if hasSepsis and hasIVKit then
+            if hasTreatableCondition and hasIVKit then
                 -- Add "Administer IV Antibiotics" option
                 local option = context:addOption(
                     "Administer IV Antibiotics",
@@ -356,18 +376,10 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
                 tooltip:setName("IV Antibiotics")
 
-                local data = EHR.Sepsis.GetData(player)
-                local required = EHR.Sepsis.TreatmentDosesRequired[data.stage] or 3
-                local doses = data.treatmentDoses or 0
-
-                tooltip.description = string.format(
-                    "Treats sepsis infection.\n" ..
-                    "Current doses: %d/%d\n" ..
-                    "Stage: %d",
-                    doses, required, data.stage
-                )
+                local targetText = hasSepsis and "sepsis" or "wound infection"
+                tooltip.description = "Starts IV antibiotic treatment for " .. targetText .. "."
                 option.toolTip = tooltip
-            elseif hasSepsis then
+            elseif hasTreatableCondition then
                 local option = context:addOption("Administer IV Antibiotics (Requires IV Kit)", player)
                 option.notAvailable = true
 
@@ -376,13 +388,12 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
                 tooltip.description = "Requires an IV Administration Kit."
                 option.toolTip = tooltip
             else
-                -- No sepsis - option grayed out
-                local option = context:addOption("Administer IV Antibiotics (No Sepsis)", player)
+                local option = context:addOption("Administer IV Antibiotics (No Infection)", player)
                 option.notAvailable = true
 
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
                 tooltip:setName("IV Antibiotics")
-                tooltip.description = "You don't have sepsis."
+                tooltip.description = "No sepsis or wound infection to treat."
                 option.toolTip = tooltip
             end
         end
@@ -432,7 +443,13 @@ function EHR.WoundHook.OnAdministerIVAntibiotics(player, item)
         return
     end
 
-    -- Use the item
+    if EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[item:getFullType()]
+        and EHR.Medication.UseMedication then
+        EHR.Medication.UseMedication(player, item)
+        return
+    end
+
+    -- Legacy fallback for non-database IV antibiotic items.
     local consumed = false
     if EHR.Sepsis and EHR.Sepsis.OnTakeIVAntibiotics then
         consumed = EHR.Sepsis.OnTakeIVAntibiotics(player)

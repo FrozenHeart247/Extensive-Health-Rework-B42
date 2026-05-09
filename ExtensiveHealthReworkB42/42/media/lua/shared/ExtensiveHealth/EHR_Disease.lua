@@ -1738,11 +1738,15 @@ local function EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, reduction
 
     local activeReduction = 0
     for medKey, doseData in pairs(activeDoses) do
-        if type(doseData) == "table" and doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
+        local moduleTargets = type(doseData) == "table" and doseData.moduleTargets or nil
+        local matchesDisease = type(doseData) == "table"
+            and (doseData.treatingDisease == diseaseId
+                or (type(moduleTargets) == "table" and moduleTargets[diseaseId] == true))
+        if matchesDisease and doseData.lastDoseTime and doseData.intervalHours then
             local effectActive = false
             if EHR.Medication.GetDoseStatus then
                 local status = EHR.Medication.GetDoseStatus(player, medKey)
-                effectActive = status and status.isDoseActive and status.treatingDisease == diseaseId
+                effectActive = status and status.isDoseActive
             else
                 local elapsed = currentHour - doseData.lastDoseTime
                 effectActive = elapsed >= 0 and elapsed <= doseData.intervalHours

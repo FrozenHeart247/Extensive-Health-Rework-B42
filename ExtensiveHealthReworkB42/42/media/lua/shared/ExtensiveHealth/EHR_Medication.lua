@@ -1310,7 +1310,6 @@ end
 
 function EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
     if not player or not medData then return nil end
-    if medData.isTopical then return nil end
 
     local medTracking = EHR.Medication.GetMedicationData(player)
     if not medTracking or not medTracking.activeDoses then return nil end
@@ -1355,11 +1354,44 @@ function EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
         intervalHours = doseTiming.doseInterval,
         intensity = intensity,
         duration = math.min(10, 7 + intensity),
+        nonLethalOverdose = medData.isTopical == true or medData.overdoseNonLethal == true,
         sicknessTarget = math.min(0.60, 0.42 + (0.04 * intensity)),
         enduranceCap = math.max(0.45, 0.57 - (0.04 * intensity)),
         thirstTarget = math.min(0.78, 0.64 + (0.04 * intensity)),
         healthCap = math.max(45, 70 - (7 * intensity)),
     }
+end
+
+function EHR.Medication.KillFromOverdose(player, overdoseInfo, offScheduleCount)
+    if not player then return false end
+
+    local medName = overdoseInfo and overdoseInfo.medicationName or "medication"
+    local cause = string.format(
+        "Medication Overdose - repeated off-schedule doses of %s (%d early doses)",
+        tostring(medName),
+        tonumber(offScheduleCount) or 3
+    )
+
+    if EHR.RecordDeathCause then
+        EHR.RecordDeathCause(player, cause)
+    end
+
+    if player.isLocalPlayer and player:isLocalPlayer() and player.Say then
+        player:Say("Too many doses... something is very wrong...")
+    end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if bodyDamage and bodyDamage.setOverallBodyHealth then
+        pcall(function() bodyDamage:setOverallBodyHealth(0) end)
+    end
+
+    if player.setHealth then
+        pcall(function() player:setHealth(0) end)
+    end
+
+    EHR.Log(cause)
+    return true
 end
 
 function EHR.Medication.ApplyEarlyDoseOverdose(player, overdoseInfo)
@@ -1384,10 +1416,20 @@ function EHR.Medication.ApplyEarlyDoseOverdose(player, overdoseInfo)
         duration = math.max(duration, remaining)
     end
 
+    local offScheduleCount = (existing and tonumber(existing.offScheduleCount)) or 0
+    offScheduleCount = offScheduleCount + 1
+    local lethalOffScheduleCount = (existing and tonumber(existing.lethalOffScheduleCount)) or 0
+    if overdoseInfo.nonLethalOverdose ~= true then
+        lethalOffScheduleCount = lethalOffScheduleCount + 1
+    end
+
     medTracking.activeSideEffects[overdoseInfo.effectId] = {
         startTime = currentHour,
         duration = duration,
         intensity = overdoseInfo.intensity or 1,
+        offScheduleCount = offScheduleCount,
+        lethalOffScheduleCount = lethalOffScheduleCount,
+        nonLethalOverdose = overdoseInfo.nonLethalOverdose == true,
         medKey = overdoseInfo.medKey,
         medicationName = overdoseInfo.medicationName,
         earlyBy = overdoseInfo.earlyBy,
@@ -1400,6 +1442,11 @@ function EHR.Medication.ApplyEarlyDoseOverdose(player, overdoseInfo)
 
     if sideEffect.effects then
         sideEffect.effects(player, medTracking.activeSideEffects[overdoseInfo.effectId])
+    end
+
+    if lethalOffScheduleCount >= 3 then
+        EHR.Medication.KillFromOverdose(player, overdoseInfo, lethalOffScheduleCount)
+        return true
     end
 
     if player:isLocalPlayer() then
@@ -1415,7 +1462,8 @@ function EHR.Medication.ApplyEarlyDoseOverdose(player, overdoseInfo)
 
     EHR.Log("Early dose overdose from " .. tostring(overdoseInfo.medicationName) ..
             " (" .. string.format("%.2f", overdoseInfo.earlyBy or 0) .. "h early, intensity " ..
-            tostring(overdoseInfo.intensity or 1) .. ")")
+            tostring(overdoseInfo.intensity or 1) .. ", count " .. tostring(offScheduleCount) ..
+            ", lethal count " .. tostring(lethalOffScheduleCount) .. ")")
     return true
 end
 
@@ -1846,6 +1894,27 @@ function EHR.Medication.UseMedication(player, item)
         for _, diseaseId in ipairs(medData.treats) do
             if diseaseData.active[diseaseId] then
                 EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, itemFullType)
+                treatedAny = true
+            end
+        end
+    end
+
+    -- Some EHR conditions are module-backed instead of stored in EHR_Disease.active.
+    local moduleTreatmentApplied = {}
+    if EHR.Medication.ApplyModuleTreatment then
+        for _, diseaseId in ipairs(medData.treats) do
+            if EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEffects, itemFullType) then
+                moduleTreatmentApplied[diseaseId] = true
+                treatedAny = true
+            end
+        end
+    end
+
+    -- Symptom-only meds still need a disease target so active relief is visible.
+    if EHR.Medication.ApplyModuleSymptomTreatment then
+        for _, diseaseId in ipairs(medData.treats) do
+            if not moduleTreatmentApplied[diseaseId]
+                and EHR.Medication.ApplyModuleSymptomTreatment(player, diseaseId, medData, tierEffects, itemFullType) then
                 treatedAny = true
             end
         end
@@ -2536,6 +2605,179 @@ local function EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medD
     end
 end
 
+function EHR.Medication.IsModuleDiseaseActive(player, diseaseId)
+    if not player or not diseaseId then return false end
+
+    if diseaseId == "wound_infection" then
+        if EHR.WoundInfection and EHR.WoundInfection.GetData then
+            local woundData = EHR.WoundInfection.GetData(player)
+            if woundData and (tonumber(woundData.worstStage) or 0) > 0 then
+                return true
+            end
+            if woundData and woundData.parts then
+                for _, partData in pairs(woundData.parts) do
+                    if partData and (tonumber(partData.stage) or 0) > 0 then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    if diseaseId == "sepsis" then
+        if EHR.Sepsis and EHR.Sepsis.HasSepsis then
+            return EHR.Sepsis.HasSepsis(player)
+        end
+        if EHR.Sepsis and EHR.Sepsis.GetData then
+            local sepsisData = EHR.Sepsis.GetData(player)
+            return sepsisData and sepsisData.active == true and (tonumber(sepsisData.stage) or 0) > 0
+        end
+        local modData = player:getModData()
+        local sepsisData = modData and modData.EHR_Sepsis
+        return sepsisData and sepsisData.active == true and (tonumber(sepsisData.stage) or 0) > 0
+    end
+
+    return false
+end
+
+function EHR.Medication.ApplyModuleSymptomTreatment(player, diseaseId, medData, tierEffects, itemFullType)
+    if not player or not diseaseId or not medData or not medData.symptomReduction then return false end
+    if not EHR.Medication.IsModuleDiseaseActive or not EHR.Medication.IsModuleDiseaseActive(player, diseaseId) then
+        return false
+    end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local timing = EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
+    local medKey = itemFullType or medData.displayName
+
+    EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medData, timing, currentHour)
+
+    if not medTracking.activeDoses[medKey] then
+        medTracking.activeDoses[medKey] = {
+            lastDoseTime = currentHour,
+            doseCount = 1,
+            totalDosesNeeded = timing.dosesRequired,
+            intervalHours = timing.doseInterval,
+            activeHours = timing.activeHours,
+            medicationName = medData.displayName,
+            tier = medData.tier,
+            treatingDisease = diseaseId,
+            moduleTargets = { [diseaseId] = true },
+            symptomOnly = true,
+            requiresDoseCourse = false,
+        }
+    else
+        local doseData = medTracking.activeDoses[medKey]
+        local sameDoseEvent = math.abs((tonumber(doseData.lastDoseTime) or -999999) - currentHour) < 0.001
+        doseData.lastDoseTime = currentHour
+        if not sameDoseEvent then
+            doseData.doseCount = (doseData.doseCount or 0) + 1
+        end
+        doseData.totalDosesNeeded = timing.dosesRequired
+        doseData.intervalHours = timing.doseInterval
+        doseData.activeHours = timing.activeHours
+        doseData.medicationName = medData.displayName
+        doseData.tier = medData.tier
+        doseData.treatingDisease = doseData.treatingDisease or diseaseId
+        doseData.moduleTargets = doseData.moduleTargets or {}
+        doseData.moduleTargets[diseaseId] = true
+        doseData.symptomOnly = true
+        doseData.requiresDoseCourse = false
+    end
+
+    EHR.Log("Applied module symptom relief from " .. (medData.displayName or medKey) .. " to " .. tostring(diseaseId))
+    return true
+end
+
+function EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEffects, itemFullType)
+    if not player or not diseaseId or not medData then return false end
+    if not tierEffects or tierEffects.canCure ~= true then return false end
+    if not EHR.Medication.IsModuleDiseaseActive or not EHR.Medication.IsModuleDiseaseActive(player, diseaseId) then
+        return false
+    end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local doseTiming = EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
+    local medKey = itemFullType or medData.displayName
+
+    if tierEffects.symptomRelief > 0 then
+        EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medData, doseTiming, currentHour)
+    end
+
+    local doseData = medTracking.activeDoses[medKey]
+    if not doseData then
+        doseData = {
+            lastDoseTime = currentHour,
+            doseCount = 1,
+            totalDosesNeeded = doseTiming.dosesRequired,
+            intervalHours = doseTiming.doseInterval,
+            activeHours = doseTiming.activeHours,
+            medicationName = medData.displayName,
+            tier = medData.tier,
+            treatingDisease = diseaseId,
+            moduleTargets = { [diseaseId] = true },
+            symptomOnly = false,
+            requiresDoseCourse = true,
+        }
+        medTracking.activeDoses[medKey] = doseData
+    else
+        local sameDoseEvent = math.abs((tonumber(doseData.lastDoseTime) or -999999) - currentHour) < 0.001
+        doseData.lastDoseTime = currentHour
+        if not sameDoseEvent then
+            doseData.doseCount = (doseData.doseCount or 0) + 1
+        end
+        doseData.totalDosesNeeded = doseTiming.dosesRequired
+        doseData.intervalHours = doseTiming.doseInterval
+        doseData.activeHours = doseTiming.activeHours
+        doseData.medicationName = medData.displayName
+        doseData.tier = medData.tier
+        doseData.treatingDisease = doseData.treatingDisease or diseaseId
+        doseData.moduleTargets = doseData.moduleTargets or {}
+        doseData.moduleTargets[diseaseId] = true
+        doseData.symptomOnly = false
+        doseData.requiresDoseCourse = true
+    end
+
+    if medData.respiratorySupport and EHR.Medication.StartRespiratorySupport then
+        EHR.Medication.StartRespiratorySupport(player, medData)
+    end
+
+    local cureTimeHours = EHR.Medication.GetCureTimeHours(medData, diseaseId, tierEffects)
+    local existingTreatment = medTracking.activeTreatments[diseaseId]
+    if existingTreatment and existingTreatment.medKey == medKey then
+        existingTreatment.cureTimeHours = existingTreatment.cureTimeHours or cureTimeHours
+        existingTreatment.medicationName = medData.displayName
+        existingTreatment.tier = medData.tier
+        existingTreatment.medKey = medKey
+        existingTreatment.moduleBacked = true
+        existingTreatment.awaitingDoses = nil
+    else
+        medTracking.activeTreatments[diseaseId] = {
+            startTime = currentHour,
+            cureTimeHours = cureTimeHours,
+            medicationName = medData.displayName,
+            tier = medData.tier,
+            medKey = medKey,
+            moduleBacked = true,
+            awaitingDoses = nil,
+        }
+    end
+
+    EHR.Log("Applied module treatment from " .. (medData.displayName or medKey) ..
+        " to " .. tostring(diseaseId) .. " - dose " ..
+        tostring(doseData.doseCount or 0) .. "/" .. tostring(doseData.totalDosesNeeded or 1))
+    return true
+end
+
 function EHR.Medication.ApplyGeneralSymptomRelief(player, medData)
     local reductions = medData and medData.symptomReduction
     if not reductions then return false end
@@ -2906,6 +3148,34 @@ function EHR.Medication.ApplySideEffect(player, effectId)
     EHR.Log("Applied side effect: " .. effectId .. " (duration: " .. sideEffect.duration .. " hours)")
 end
 
+function EHR.Medication.CureModuleDisease(player, diseaseId, treatment)
+    if not player or not diseaseId then return false end
+
+    if diseaseId == "wound_infection" then
+        if EHR.WoundInfection and EHR.WoundInfection.CureAll then
+            EHR.WoundInfection.CureAll(player, treatment and treatment.medicationName or "medication")
+        elseif EHR.WoundInfection and EHR.WoundInfection.OnTakeAntibiotics then
+            EHR.WoundInfection.OnTakeAntibiotics(player)
+        end
+        return true
+    end
+
+    if diseaseId == "sepsis" then
+        if EHR.Sepsis and EHR.Sepsis.Cure then
+            local hasSepsis = true
+            if EHR.Sepsis.HasSepsis then
+                hasSepsis = EHR.Sepsis.HasSepsis(player)
+            end
+            if hasSepsis then
+                EHR.Sepsis.Cure(player)
+            end
+        end
+        return true
+    end
+
+    return false
+end
+
 -- ============================================
 -- MEDICATION UPDATE LOOP
 -- ============================================
@@ -2941,7 +3211,13 @@ function EHR.Medication.Update(player)
 
                 if elapsed >= cureTimeHours and courseComplete then
                     -- Treatment complete - cure the disease
-                    if EHR.Disease and EHR.Disease.Cure then
+                    local moduleCured = EHR.Medication.CureModuleDisease
+                        and EHR.Medication.CureModuleDisease(player, diseaseId, treatment)
+                    if moduleCured then
+                        if player:isLocalPlayer() then
+                            player:Say("Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
+                        end
+                    elseif EHR.Disease and EHR.Disease.Cure then
                         EHR.Disease.Cure(player, diseaseId)
                         if player:isLocalPlayer() then
                             player:Say("Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")

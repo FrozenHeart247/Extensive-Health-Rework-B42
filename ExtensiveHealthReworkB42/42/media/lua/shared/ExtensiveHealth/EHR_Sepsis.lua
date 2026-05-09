@@ -112,23 +112,39 @@ EHR.Sepsis.TreatmentDosesRequired = {
 EHR.Sepsis.StageEffects = {
     [1] = {
         feverBonus = 0.15,      -- +15% sickness stat (mild fever)
+        fatigueTarget = 0.30,
+        fatigueStep = 0.010,
+        healthDamagePerHour = 0.25,
+        minHealth = 85,
         confusionChance = 0.0,
         deathChancePerCheck = 0.0,
     },
     [2] = {
         feverBonus = 0.30,      -- +30% sickness (moderate fever)
+        fatigueTarget = 0.50,
+        fatigueStep = 0.015,
+        healthDamagePerHour = 1.0,
+        minHealth = 65,
         confusionChance = 0.1,  -- 10% per check
         deathChancePerCheck = 0.0,
     },
     [3] = {
         feverBonus = 0.50,      -- +50% sickness (high fever)
+        fatigueTarget = 0.70,
+        fatigueStep = 0.020,
+        healthDamagePerHour = 4.0,
+        minHealth = 30,
         confusionChance = 0.3,  -- 30% per check
-        deathChancePerCheck = 0.01,  -- 1% per check
+        deathChancePerCheck = 0.0,
     },
     [4] = {
         feverBonus = 0.70,      -- +70% sickness (critical)
+        fatigueTarget = 0.80,
+        fatigueStep = 0.025,
+        healthDamagePerHour = 10.0,
+        minHealth = 0,
         confusionChance = 0.5,  -- 50% per check
-        deathChancePerCheck = 0.05,  -- 5% per check
+        deathChancePerCheck = 0.0,
     },
 }
 
@@ -138,6 +154,195 @@ local EHR_SepsisBodyFeverTargets = {
     [3] = { temp = 39.4, step = 0.060 },
     [4] = { temp = 40.0, step = 0.075 },
 }
+
+local function EHR_SepsisGetActiveCurativeTreatment(player)
+    if not player or not EHR.Medication or not EHR.Medication.GetMedicationData then
+        return nil
+    end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    local treatment = medTracking and medTracking.activeTreatments and medTracking.activeTreatments["sepsis"] or nil
+    if type(treatment) ~= "table" then return nil end
+
+    if treatment.medKey and EHR.Medication.GetDoseStatus then
+        local status = EHR.Medication.GetDoseStatus(player, treatment.medKey)
+        if status and status.isStaleOverdue then return nil end
+        if status and status.isOverdue and not status.treatmentComplete then return nil end
+    end
+
+    return treatment
+end
+
+function EHR.Sepsis.IsTreatmentActive(player)
+    return EHR_SepsisGetActiveCurativeTreatment(player) ~= nil
+end
+
+local function EHR_SepsisClampBodyHealth(player, maxHealth)
+    if not player or not maxHealth then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return nil end
+
+    local healthCap = math.max(0, math.min(100, tonumber(maxHealth) or 100))
+    if currentHealth <= healthCap then
+        return currentHealth
+    end
+
+    local clamped = false
+    if bodyDamage.ReduceGeneralHealth then
+        clamped = pcall(function()
+            bodyDamage:ReduceGeneralHealth(currentHealth - healthCap)
+        end)
+    end
+
+    if clamped then
+        local okAfter, afterHealth = pcall(function()
+            return bodyDamage:getOverallBodyHealth()
+        end)
+        if okAfter and afterHealth and afterHealth <= healthCap + 0.05 then
+            return afterHealth
+        end
+    end
+
+    pcall(function()
+        bodyDamage:setOverallBodyHealth(healthCap)
+    end)
+
+    return healthCap
+end
+
+local function EHR_SepsisApplyBodyHealthDamage(player, amount, cause)
+    if not player or not amount or amount <= 0 then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return nil end
+
+    local reduced = false
+    if bodyDamage.ReduceGeneralHealth then
+        reduced = pcall(function()
+            bodyDamage:ReduceGeneralHealth(amount)
+        end)
+    end
+
+    if reduced then
+        local okAfter, afterHealth = pcall(function()
+            return bodyDamage:getOverallBodyHealth()
+        end)
+        if okAfter and afterHealth then
+            if afterHealth <= 0 then
+                EHR.Sepsis.OnDeath(player, cause or "sepsis_health_failure")
+                return 0
+            end
+            if afterHealth < currentHealth then
+                return afterHealth
+            end
+        end
+    end
+
+    local newHealth = math.max(0, currentHealth - amount)
+    pcall(function()
+        bodyDamage:setOverallBodyHealth(newHealth)
+    end)
+
+    if newHealth <= 0 then
+        EHR.Sepsis.OnDeath(player, cause or "sepsis_health_failure")
+        return 0
+    end
+
+    return newHealth
+end
+
+local function EHR_SepsisApplyHealthDamage(player, data, effects, currentHour)
+    if not player or not data or not effects or not currentHour then return false end
+
+    local damagePerHour = tonumber(effects.healthDamagePerHour) or 0
+    if damagePerHour <= 0 then
+        data.lastHealthDamageHour = currentHour
+        return false
+    end
+
+    if EHR_SepsisGetActiveCurativeTreatment(player) then
+        data.healthCap = nil
+        data.lastHealthDamageHour = currentHour
+        return false
+    end
+
+    local lastHour = tonumber(data.lastHealthDamageHour)
+    if data.healthCap then
+        EHR_SepsisClampBodyHealth(player, data.healthCap)
+    end
+
+    if not lastHour or lastHour > currentHour then
+        data.lastHealthDamageHour = currentHour
+        return false
+    end
+
+    local elapsedHours = currentHour - lastHour
+    if elapsedHours <= 0 then return false end
+
+    -- Avoid giant catch-up hits after load/sync hiccups while still respecting time acceleration.
+    elapsedHours = math.min(elapsedHours, 1.0)
+    data.lastHealthDamageHour = currentHour
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return false end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return false end
+
+    local storedCap = tonumber(data.healthCap)
+    if not storedCap or storedCap <= 0 or storedCap > 100 then
+        storedCap = currentHealth
+        data.healthCap = storedCap
+    elseif currentHealth > storedCap then
+        currentHealth = EHR_SepsisClampBodyHealth(player, storedCap) or storedCap
+    end
+
+    local requiredDoses = EHR.Sepsis.TreatmentDosesRequired[data.stage] or 1
+    local doseProgress = math.min(1.0, math.max(0, (tonumber(data.treatmentDoses) or 0) / math.max(1, requiredDoses)))
+    local treatmentMultiplier = 1.0 - (doseProgress * 0.55)
+    if data.lastIVAntibiotics then
+        treatmentMultiplier = math.min(treatmentMultiplier, 0.65)
+    end
+    treatmentMultiplier = math.max(0.25, treatmentMultiplier)
+
+    local damage = damagePerHour * elapsedHours * treatmentMultiplier
+    local minHealth = tonumber(effects.minHealth) or 0
+    if damage <= 0 or currentHealth <= minHealth then return false end
+
+    local newHealth = math.max(minHealth, currentHealth - damage)
+    if newHealth >= currentHealth then return false end
+
+    local finalHealth = EHR_SepsisApplyBodyHealthDamage(
+        player,
+        currentHealth - newHealth,
+        "sepsis_health_failure"
+    ) or newHealth
+
+    if finalHealth <= 0 then
+        return true
+    end
+
+    data.healthCap = math.min(data.healthCap or currentHealth, finalHealth)
+    EHR_SepsisClampBodyHealth(player, data.healthCap)
+
+    return false
+end
 
 -- ============================================
 -- DIALOGUE
@@ -262,6 +467,7 @@ function EHR.Sepsis.InitializePlayer(player)
         stageStartTime = nil,
         sourceBodyPart = nil,
         lastIVAntibiotics = nil,
+        lastHealthDamageHour = nil,
         treatmentDoses = 0,
         lastCuredTime = nil,  -- Cooldown to prevent immediate re-trigger after cure
     }
@@ -286,14 +492,11 @@ end
 
 --[[
     Check if player has active sepsis
-    STABILITY FIX: Use stage > 0 as source of truth, not the active flag
-    This prevents flickering - once triggered, stays until properly cured
 ]]--
 function EHR.Sepsis.HasSepsis(player)
     local data = EHR.Sepsis.GetData(player)
     if not data then return false end
-    -- Stage > 0 is the real indicator, active flag is secondary
-    return data.stage and data.stage > 0
+    return data.active == true and data.stage and data.stage > 0
 end
 
 --[[
@@ -350,6 +553,8 @@ function EHR.Sepsis.Trigger(player, sourcePartName)
     data.sourceBodyPart = sourcePartName
     data.treatmentDoses = 0
     data.lastIVAntibiotics = nil
+    data.lastHealthDamageHour = currentHour
+    data.healthCap = nil
 
     EHR.Log(string.format("SEPSIS TRIGGERED! Source: %s", sourcePartName or "unknown"))
 
@@ -373,6 +578,18 @@ function EHR.Sepsis.UpdateProgression(player)
     local gameTime = getGameTime()
     local currentHour = gameTime:getWorldAgeHours()
 
+    if EHR_SepsisGetActiveCurativeTreatment(player) then
+        data.stageStartTime = currentHour
+        data.lastHealthDamageHour = currentHour
+        data.healthCap = nil
+        if data.progressionHeldByTreatment ~= data.stage then
+            data.progressionHeldByTreatment = data.stage
+            EHR.Log("Sepsis progression held by active treatment")
+        end
+        return
+    end
+    data.progressionHeldByTreatment = nil
+
     local stage = data.stage
     local hoursInStage = currentHour - (data.stageStartTime or currentHour)
     local baseDuration = EHR.Sepsis.StageDuration[stage]
@@ -388,13 +605,15 @@ function EHR.Sepsis.UpdateProgression(player)
         local newStage = stage + 1
 
         if newStage > EHR.Sepsis.Stage.TERMINAL then
-            -- Death
-            EHR.Sepsis.OnDeath(player, "sepsis_timeout")
+            data.stage = EHR.Sepsis.Stage.TERMINAL
+            data.stageStartTime = currentHour
+            data.lastHealthDamageHour = currentHour
             return
         end
 
         data.stage = newStage
         data.stageStartTime = currentHour
+        data.lastHealthDamageHour = currentHour
 
         EHR.Log(string.format("Sepsis progressed: stage %d -> %d", oldStage, newStage))
 
@@ -422,8 +641,14 @@ function EHR.Sepsis.ApplyEffects(player)
     local effects = EHR.Sepsis.StageEffects[data.stage]
     if not effects then return end
 
-    -- 1. Fever (via SICKNESS stat for moodle display)
-    if CharacterStat and CharacterStat.SICKNESS and effects.feverBonus > 0 then
+    local gameTime = getGameTime()
+    local currentHour = gameTime:getWorldAgeHours()
+    local bodyFeverAvailable = EHR.BodyTemp and EHR.BodyTemp.MoveDiseaseFeverToward
+    local curativeTreatment = EHR_SepsisGetActiveCurativeTreatment(player)
+
+    -- 1. Fever. Prefer the body temperature system; only fall back to SICKNESS
+    -- if fever control is unavailable, otherwise the sickness moodle flickers.
+    if not bodyFeverAvailable and CharacterStat and CharacterStat.SICKNESS and effects.feverBonus > 0 then
         pcall(function()
             -- Set sickness to show fever moodle
             local current = stats:get(CharacterStat.SICKNESS) or 0
@@ -433,7 +658,7 @@ function EHR.Sepsis.ApplyEffects(player)
     end
 
     local feverInfo = EHR_SepsisBodyFeverTargets[data.stage]
-    if feverInfo and EHR.BodyTemp and EHR.BodyTemp.MoveDiseaseFeverToward then
+    if feverInfo and bodyFeverAvailable then
         local feverTarget = feverInfo.temp
         local feverStep = feverInfo.step
         local feverRelief = 0
@@ -450,7 +675,26 @@ function EHR.Sepsis.ApplyEffects(player)
         EHR.BodyTemp.MoveDiseaseFeverToward(player, feverTarget, feverStep)
     end
 
-    -- 2. Confusion (via STRESS stat spike)
+    -- 2. Extreme weakness (fatigue pressure, capped by stage)
+    if CharacterStat and CharacterStat.FATIGUE and effects.fatigueTarget then
+        pcall(function()
+            local current = stats:get(CharacterStat.FATIGUE) or 0
+            local target = math.min(0.80, effects.fatigueTarget)
+            if current < target then
+                stats:set(CharacterStat.FATIGUE, math.min(target, current + (effects.fatigueStep or 0.015)))
+            end
+        end)
+    end
+
+    -- 3. Sepsis is systemic: untreated stages steadily damage overall health.
+    if curativeTreatment then
+        data.healthCap = nil
+        data.lastHealthDamageHour = currentHour
+    elseif EHR_SepsisApplyHealthDamage(player, data, effects, currentHour) then
+        return
+    end
+
+    -- 4. Confusion (via STRESS stat spike)
     if effects.confusionChance > 0 and ZombRand(100) < (effects.confusionChance * 100) then
         if CharacterStat and CharacterStat.STRESS then
             pcall(function()
@@ -466,12 +710,7 @@ function EHR.Sepsis.ApplyEffects(player)
         end
     end
 
-    -- 3. Random death check (severe/terminal stages)
-    if effects.deathChancePerCheck > 0 then
-        if ZombRand(100) < (effects.deathChancePerCheck * 100) then
-            EHR.Sepsis.OnDeath(player, "sepsis_organ_failure")
-        end
-    end
+    -- No random death rolls: sepsis becomes lethal only through health damage.
 end
 
 -- ============================================
@@ -540,8 +779,7 @@ function EHR.Sepsis.OnTakeIVAntibiotics(player)
     local data = EHR.Sepsis.GetData(player)
     if not data then return false end
 
-    -- Use stage > 0 as source of truth
-    if not data.stage or data.stage <= 0 then
+    if data.active ~= true or not data.stage or data.stage <= 0 then
         if player.Say then
             player:Say("I don't need this right now...")
         end
@@ -615,6 +853,8 @@ function EHR.Sepsis.Cure(player)
     data.sourceBodyPart = nil
     data.treatmentDoses = 0
     data.lastIVAntibiotics = nil
+    data.lastHealthDamageHour = nil
+    data.healthCap = nil
     data.lastCuredTime = currentHour  -- Set cooldown to prevent immediate re-trigger
 
     -- CRITICAL FIX: Clear SEPTIC wounds to prevent re-triggering
@@ -767,6 +1007,7 @@ end
 -- ============================================
 
 -- Debug: track last known stage and data reference to detect unexpected resets
+local DEBUG_SEPSIS_TICK = false
 local lastKnownSepsisStage = {}
 local lastKnownSepsisData = {}
 local function processPlayerTick(player)
@@ -788,7 +1029,7 @@ local function processPlayerTick(player)
     local rawStage = rawSepsisExists and modData.EHR_Sepsis.stage or -1
 
     -- Log every 60 ticks (~2 seconds) when sepsis should be active
-    if lastKnownSepsisStage[playerID] and lastKnownSepsisStage[playerID] > 0 then
+    if DEBUG_SEPSIS_TICK and lastKnownSepsisStage[playerID] and lastKnownSepsisStage[playerID] > 0 then
         if state.debug >= 60 then
             state.debug = 0
             print("[EHR SEPSIS DEBUG] Tick check: rawExists=" .. tostring(rawSepsisExists) .. ", rawStage=" .. tostring(rawStage) .. ", lastKnown=" .. tostring(lastKnownSepsisStage[playerID]))
@@ -815,64 +1056,15 @@ local function processPlayerTick(player)
 
     local data = EHR.Sepsis.GetData(player)
 
-    -- DEBUG: Detect unexpected resets (data nil OR stage 0)
-    local currentStage = data and data.stage or 0
-    local lastStage = lastKnownSepsisStage[playerID] or 0
-
-    if lastStage > 0 and currentStage == 0 then
-        -- Check if this was an INTENTIONAL cure (lastCuredTime is set)
-        -- If so, don't recover - the cure was deliberate!
-        local wasCured = modData.EHR_Sepsis and modData.EHR_Sepsis.lastCuredTime ~= nil
-
-        if wasCured then
-            -- Intentional cure - clear tracking and don't recover
-            print("[EHR SEPSIS] Stage cleared intentionally (cure detected), clearing tracking")
-            lastKnownSepsisStage[playerID] = 0
-        else
-            -- Stage was reset unexpectedly! Log it
-            print("[EHR SEPSIS BUG] Stage reset detected!")
-            print("[EHR SEPSIS BUG] Was stage " .. lastStage .. ", now " .. currentStage)
-            print("[EHR SEPSIS BUG] data exists: " .. tostring(data ~= nil))
-            print("[EHR SEPSIS BUG] modData.EHR_Sepsis exists: " .. tostring(modData.EHR_Sepsis ~= nil))
-            print("[EHR SEPSIS BUG] EHR_Sepsis_Initialized: " .. tostring(modData.EHR_Sepsis_Initialized))
-
-            -- RECOVERY: Restore the data if possible
-            if not modData.EHR_Sepsis then
-                -- Data object was destroyed! Recreate it
-                print("[EHR SEPSIS BUG] Data object was DESTROYED! Recreating...")
-                local gameTime = getGameTime()
-                local currentHour = gameTime:getWorldAgeHours()
-                modData.EHR_Sepsis = {
-                    active = true,
-                    stage = lastStage,
-                    startTime = currentHour,
-                    stageStartTime = currentHour,
-                    sourceBodyPart = "Recovered",
-                    treatmentDoses = 0,
-                    lastIVAntibiotics = nil,
-                    lastCuredTime = nil,
-                }
-                print("[EHR SEPSIS BUG] RECOVERED - Recreated data with stage " .. lastStage)
-            elseif modData.EHR_Sepsis.stage == 0 then
-                -- Stage was reset but data exists
-                print("[EHR SEPSIS BUG] Stage was zeroed! Restoring...")
-                modData.EHR_Sepsis.stage = lastStage
-                modData.EHR_Sepsis.active = true
-                print("[EHR SEPSIS BUG] RECOVERED - Restored stage to " .. lastStage)
-            end
-
-            -- Update data reference after recovery
-            data = EHR.Sepsis.GetData(player)
-        end
+    if not data or data.active ~= true or not data.stage or data.stage <= 0 then
+        lastKnownSepsisStage[playerID] = 0
+        return
     end
 
-    -- Update tracking
-    if data and data.stage and data.stage > 0 then
-        lastKnownSepsisStage[playerID] = data.stage
+    lastKnownSepsisStage[playerID] = data.stage
+    if data.healthCap and not EHR_SepsisGetActiveCurativeTreatment(player) then
+        EHR_SepsisClampBodyHealth(player, data.healthCap)
     end
-
-    -- Use stage > 0 as source of truth (more stable than active flag)
-    if not data or not data.stage or data.stage <= 0 then return end
 
     -- Sepsis checks (every ~10 seconds)
     state.sepsis = state.sepsis + 1

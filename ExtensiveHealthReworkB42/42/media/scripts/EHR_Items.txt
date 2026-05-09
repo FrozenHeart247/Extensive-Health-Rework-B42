@@ -239,6 +239,42 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item SterilizedBandages
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Clean Bandages (Pack),
+        Icon = SterilizedBandages,
+        Weight = 0.3,
+        Tooltip = Tooltip_SterilizedBandages,
+        UseDelta = 0.2,
+        UseWhileEquipped = false,
+        BandagePower = 4.0,
+        CanBandage = true,
+        ConsolidateOption = ContextMenu_Merge,
+        Medical = true,
+        WorldStaticModel = MedicalParcel_Green,
+    }
+
+    item AlchoholicBandage
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:normal,
+        DisplayName = Alcoholic Bandage,
+        Icon = AlchoholicBandage,
+        Weight = 0.1,
+        Tooltip = Tooltip_AlchoholicBandage,
+        Alcoholic = true,
+        AlwaysWelcomeGift = true,
+        BandagePower = 4.0,
+        CanBandage = true,
+        count = 1,
+        Medical = true,
+        ReplaceOnUse = Base.BandageDirty,
+        WorldStaticModel = Bandage,
+        Tags = base:nopour,
+    }
+
     item Epinephrine
     {
         DisplayCategory = FirstAid,

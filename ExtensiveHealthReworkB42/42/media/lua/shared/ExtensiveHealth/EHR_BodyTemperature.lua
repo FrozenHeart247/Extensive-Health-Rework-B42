@@ -273,6 +273,10 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [3] = 39.4,
         [4] = 40.0,
     },
+    wound_infection = {
+        [3] = 38.0,
+        [4] = 38.0,
+    },
 }
 
 local function EHR_BodyTempGetStageTarget(targets, stage)
@@ -316,6 +320,15 @@ function EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
     local sepsisStage = sepsis and tonumber(sepsis.stage) or 0
     if sepsisStage > 0 then
         local target = EHR_BodyTempGetStageTarget(EHR.BodyTemp.DiseaseFeverTargets.sepsis, sepsisStage)
+        if target then
+            bestTarget = math.max(bestTarget or target, target)
+        end
+    end
+
+    local woundData = modData.EHR_WoundInfection
+    local woundStage = woundData and tonumber(woundData.worstStage) or 0
+    if woundStage > 0 then
+        local target = EHR_BodyTempGetStageTarget(EHR.BodyTemp.DiseaseFeverTargets.wound_infection, woundStage)
         if target then
             bestTarget = math.max(bestTarget or target, target)
         end

@@ -12,6 +12,7 @@ if isClient() then
 end
 
 EHR = EHR or {}
+pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -36,6 +37,67 @@ log("[EHR] isServer() = " .. tostring(isServer()))
 log("[EHR] isClient() = " .. tostring(isClient()))
 log("=========================================")
 EHR.ServerCommands = {}
+
+local DEBUG_WOUND_VANILLA_LEVELS = {
+    [1] = 2,
+    [2] = 6,
+    [3] = 11,
+    [4] = 15,
+}
+
+local DEBUG_WOUND_BODY_PARTS = {
+    "Hand_L", "Hand_R", "ForeArm_L", "ForeArm_R",
+    "UpperArm_L", "UpperArm_R", "Foot_L", "Foot_R",
+    "LowerLeg_L", "LowerLeg_R", "UpperLeg_L", "UpperLeg_R",
+    "Torso_Upper", "Torso_Lower", "Head", "Neck", "Groin",
+}
+
+local function getDebugBodyPart(player, partName)
+    if not player or not partName or not BodyPartType then return nil end
+
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return nil end
+
+    local partType = BodyPartType[partName]
+    if not partType and BodyPartType.FromString then
+        local okString, result = pcall(function() return BodyPartType.FromString(partName) end)
+        if okString then partType = result end
+    end
+    if not partType then return nil end
+
+    local okPart, bodyPart = pcall(function()
+        return bodyDamage:getBodyPart(partType)
+    end)
+
+    return okPart and bodyPart or nil
+end
+
+local function setDebugVanillaWoundInfection(player, partName, stage)
+    local bodyPart = getDebugBodyPart(player, partName)
+    if not bodyPart then return false end
+
+    stage = math.max(0, math.min(4, tonumber(stage) or 0))
+    if stage <= 0 then
+        if EHR and EHR.WoundInfection and EHR.WoundInfection.ClearVanillaInfection then
+            EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+        else
+            pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+            pcall(function() bodyPart:setInfectedWound(false) end)
+        end
+        return true
+    end
+
+    local level = DEBUG_WOUND_VANILLA_LEVELS[stage] or 2
+    pcall(function() bodyPart:setInfectedWound(true) end)
+    pcall(function() bodyPart:setWoundInfectionLevel(level) end)
+    return true
+end
+
+local function clearDebugVanillaWoundInfections(player)
+    for _, partName in ipairs(DEBUG_WOUND_BODY_PARTS) do
+        setDebugVanillaWoundInfection(player, partName, 0)
+    end
+end
 
 -- ============================================
 -- HELPER: Generate blood type (server-authoritative)
@@ -119,10 +181,13 @@ end
 local function ensureWoundData(data)
     data.EHR_WoundInfection = data.EHR_WoundInfection or {
         parts = {},
+        incubating = {},
         totalInfectedParts = 0,
         worstStage = 0,
         lastCheck = 0,
     }
+    data.EHR_WoundInfection.parts = data.EHR_WoundInfection.parts or {}
+    data.EHR_WoundInfection.incubating = data.EHR_WoundInfection.incubating or {}
     return data.EHR_WoundInfection
 end
 
@@ -142,27 +207,75 @@ local function recalcWoundStats(woundData)
     woundData.worstStage = worst
 end
 
-local function setWoundStage(data, partName, stage)
+local function setWoundStage(data, partName, stage, player)
     if not partName then return end
     local woundData = ensureWoundData(data)
     local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+    stage = math.max(0, math.min(4, tonumber(stage) or 0))
 
-    woundData.parts[partName] = woundData.parts[partName] or {}
-    woundData.parts[partName].stage = stage
-    woundData.parts[partName].stageStartTime = currentHour
-    woundData.parts[partName].startTime = woundData.parts[partName].startTime or currentHour
+    woundData.incubating[partName] = nil
 
-    recalcWoundStats(woundData)
+    if stage <= 0 then
+        if player and EHR and EHR.WoundInfection and EHR.WoundInfection.ClearPartSymptomPain then
+            EHR.WoundInfection.ClearPartSymptomPain(player, partName)
+        end
+        woundData.parts[partName] = nil
+        setDebugVanillaWoundInfection(player, partName, 0)
+    else
+        local vanillaLevel = DEBUG_WOUND_VANILLA_LEVELS[stage] or 2
+        woundData.parts[partName] = woundData.parts[partName] or {}
+        woundData.parts[partName].stage = stage
+        woundData.parts[partName].stageStartTime = currentHour
+        woundData.parts[partName].startTime = woundData.parts[partName].startTime or currentHour
+        woundData.parts[partName].vanillaLevel = vanillaLevel
+        woundData.parts[partName].debugForced = true
+        woundData.parts[partName].debugForcedTime = currentHour
+        setDebugVanillaWoundInfection(player, partName, stage)
+
+        if stage >= 4 and data then
+            data.EHR_Sepsis = data.EHR_Sepsis or {
+                active = true,
+                stage = 1,
+                startTime = currentHour,
+                treatmentDoses = 0,
+                lastHealthDamageHour = currentHour,
+                healthCap = nil,
+            }
+            data.EHR_Sepsis.active = true
+            data.EHR_Sepsis.stage = math.max(1, tonumber(data.EHR_Sepsis.stage) or 1)
+            data.EHR_Sepsis.stageStartTime = currentHour
+            data.EHR_Sepsis.lastHealthDamageHour = currentHour
+            data.EHR_Sepsis.healthCap = nil
+            data.EHR_Sepsis.sourceBodyPart = partName
+            data.EHR_Sepsis_Initialized = true
+
+            woundData.parts[partName].stage = 3
+            woundData.parts[partName].stageStartTime = currentHour
+            woundData.parts[partName].sepsisTriggered = true
+            woundData.parts[partName].lastSepsisTrigger = currentHour
+        end
+    end
+
+    if player and EHR and EHR.WoundInfection and EHR.WoundInfection.RecalculateStats then
+        EHR.WoundInfection.RecalculateStats(player)
+    else
+        recalcWoundStats(woundData)
+    end
 end
 
-local function clearAllWounds(data)
+local function clearAllWounds(data, player)
     local woundData = ensureWoundData(data)
+    if player and EHR and EHR.WoundInfection and EHR.WoundInfection.ClearAllSymptomPain then
+        EHR.WoundInfection.ClearAllSymptomPain(player)
+    end
     woundData.parts = {}
+    woundData.incubating = {}
     woundData.totalInfectedParts = 0
     woundData.worstStage = 0
     woundData.lastCheck = getGameTime() and getGameTime():getWorldAgeHours() or 0
     data.EHR_WoundInfections = nil
     data.EHR_WoundInfections_Initialized = nil
+    clearDebugVanillaWoundInfections(player)
 end
 
 -- ============================================
@@ -326,7 +439,7 @@ function EHR.ServerCommands.FullHeal(player, args)
     end
 
     -- Clear wound infections
-    clearAllWounds(data)
+    clearAllWounds(data, player)
 
     -- Clear sepsis
     EHR.ServerCommands.ClearSepsis(player, args)
@@ -388,6 +501,10 @@ function EHR.ServerCommands.ResetAll(player, args)
 
     local data = player:getModData()
 
+    if EHR and EHR.WoundInfection and EHR.WoundInfection.ClearAllSymptomPain then
+        EHR.WoundInfection.ClearAllSymptomPain(player)
+    end
+
     -- Clear all EHR data
     data.EHR_Blood = nil
     data.EHR_Blood_Initialized = nil
@@ -406,6 +523,7 @@ function EHR.ServerCommands.ResetAll(player, args)
     data.EHR_Corpse = nil
     data.EHR_Corpse_Initialized = nil
     data.EHR_Temperature = nil
+    clearDebugVanillaWoundInfections(player)
 
     -- Re-initialize
     if EHR and EHR.InitializePlayer then
@@ -718,6 +836,8 @@ function EHR.ServerCommands.ClearSepsis(player, args)
         data.EHR_Sepsis.sourceBodyPart = nil
         data.EHR_Sepsis.treatmentDoses = 0
         data.EHR_Sepsis.lastIVAntibiotics = nil
+        data.EHR_Sepsis.lastHealthDamageHour = nil
+        data.EHR_Sepsis.healthCap = nil
         -- Set cure cooldown
         local gameTime = getGameTime()
         if gameTime then
@@ -765,6 +885,8 @@ function EHR.ServerCommands.TriggerSepsis(player, args)
         sourceBodyPart = "Debug",
         treatmentDoses = 0,
         lastIVAntibiotics = nil,
+        lastHealthDamageHour = currentHour,
+        healthCap = nil,
         lastCuredTime = nil,
     }
     data.EHR_Sepsis_Initialized = true
@@ -793,10 +915,25 @@ function EHR.ServerCommands.InfectRandom(player, args)
     local randomPart = bodyParts[ZombRand(#bodyParts) + 1]
     local severity = args and args.severity or ZombRand(1, 4)
 
-    setWoundStage(data, randomPart, severity)
+    setWoundStage(data, randomPart, severity, player)
 
     syncModDataToClient(player)
     log("[EHR Server] InfectRandom command executed: " .. randomPart .. " severity " .. severity)
+end
+
+--[[
+    Set a specific wound infection stage (server-side)
+]]--
+function EHR.ServerCommands.SetWoundStage(player, args)
+    if not player or not args or not args.partId then return end
+
+    local partName = tostring(args.partId)
+    local stage = math.max(0, math.min(4, tonumber(args.stage) or 0))
+    local data = player:getModData()
+
+    setWoundStage(data, partName, stage, player)
+    syncModDataToClient(player)
+    log("[EHR Server] SetWoundStage command executed: " .. partName .. " -> " .. tostring(stage))
 end
 
 --[[
@@ -808,7 +945,7 @@ function EHR.ServerCommands.ClearAllInfections(player, args)
     log("[EHR Server] ClearAllInfections command received")
 
     local data = player:getModData()
-    clearAllWounds(data)
+    clearAllWounds(data, player)
 
     syncModDataToClient(player)
     log("[EHR Server] ClearAllInfections command executed")
@@ -1107,8 +1244,10 @@ function EHR.ServerCommands.ApplyScenario(player, args)
             stageStartTime = currentHour,
             sourceBodyPart = "Debug",
             treatmentDoses = 0,
+            lastHealthDamageHour = currentHour,
+            healthCap = nil,
         }
-        setWoundStage(data, "Torso_Upper", 4)
+        setWoundStage(data, "Torso_Upper", 4, player)
 
     elseif scenarioId == "late_sepsis" then
         data.EHR_Sepsis = {
@@ -1118,12 +1257,14 @@ function EHR.ServerCommands.ApplyScenario(player, args)
             stageStartTime = currentHour,
             sourceBodyPart = "Debug",
             treatmentDoses = 0,
+            lastHealthDamageHour = currentHour,
+            healthCap = nil,
         }
 
     elseif scenarioId == "multiple_infections" then
-        setWoundStage(data, "Hand_L", 2)
-        setWoundStage(data, "ForeArm_R", 3)
-        setWoundStage(data, "Torso_Upper", 2)
+        setWoundStage(data, "Hand_L", 2, player)
+        setWoundStage(data, "ForeArm_R", 3, player)
+        setWoundStage(data, "Torso_Upper", 2, player)
 
     elseif scenarioId == "disease_combo" then
         -- MP FIX: Always create directly to avoid Contract() early return
@@ -1183,10 +1324,12 @@ function EHR.ServerCommands.ApplyScenario(player, args)
             stageStartTime = currentHour,
             sourceBodyPart = "Debug",
             treatmentDoses = 0,
+            lastHealthDamageHour = currentHour,
+            healthCap = nil,
         }
         -- Multiple infections
-        setWoundStage(data, "Torso_Upper", 4)
-        setWoundStage(data, "UpperLeg_L", 3)
+        setWoundStage(data, "Torso_Upper", 4, player)
+        setWoundStage(data, "UpperLeg_L", 3, player)
         -- Bad stats
         local stats = player:getStats()
         if stats and CharacterStat then
@@ -1449,6 +1592,8 @@ local function OnClientCommand(module, command, player, args)
         EHR.ServerCommands.TriggerSepsis(player, args)
     elseif command == "InfectRandom" then
         EHR.ServerCommands.InfectRandom(player, args)
+    elseif command == "SetWoundStage" then
+        EHR.ServerCommands.SetWoundStage(player, args)
     elseif command == "ClearAllInfections" then
         EHR.ServerCommands.ClearAllInfections(player, args)
 
@@ -1672,6 +1817,7 @@ local function processPlayerProgression(player)
             -- Progress to next stage
             sepsis.stage = currentStage + 1
             sepsis.stageStartTime = currentHour
+            sepsis.lastHealthDamageHour = currentHour
             log("[EHR Server] Player " .. player:getUsername() .. " sepsis progressed to stage " .. sepsis.stage)
         end
 
@@ -1730,21 +1876,35 @@ local function processPlayerProgression(player)
                 local progressionTime = 18 - (partData.stage * 2)  -- Faster at higher stages
 
                 if stageTime >= progressionTime then
-                    partData.stage = partData.stage + 1
-                    partData.stageStartTime = currentHour
-                    log("[EHR Server] Player " .. player:getUsername() .. " wound " .. partName .. " progressed to stage " .. partData.stage)
+                    local nextStage = partData.stage + 1
 
-                    -- Stage 4 can trigger sepsis (handled by client normally, but track here)
-                    if partData.stage >= 4 and (not data.EHR_Sepsis or not data.EHR_Sepsis.active) then
-                        data.EHR_Sepsis = {
-                            active = true,
-                            stage = 1,
-                            startTime = currentHour,
-                            stageStartTime = currentHour,
-                            sourceBodyPart = partName,
-                            treatmentDoses = 0,
-                        }
-                        log("[EHR Server] Player " .. player:getUsername() .. " developed sepsis from wound " .. partName)
+                    if nextStage >= 4 then
+                        -- Stage 4 is a handoff into systemic sepsis. Keep the
+                        -- local wound severe so the UI does not stick at 100%.
+                        if not data.EHR_Sepsis or not data.EHR_Sepsis.active then
+                            data.EHR_Sepsis = {
+                                active = true,
+                                stage = 1,
+                                startTime = currentHour,
+                                stageStartTime = currentHour,
+                                sourceBodyPart = partName,
+                                treatmentDoses = 0,
+                                lastHealthDamageHour = currentHour,
+                                healthCap = nil,
+                            }
+                            data.EHR_Sepsis_Initialized = true
+                            log("[EHR Server] Player " .. player:getUsername() .. " developed sepsis from wound " .. partName)
+                        end
+
+                        partData.stage = 3
+                        partData.stageStartTime = currentHour
+                        partData.sepsisTriggered = true
+                        partData.lastSepsisTrigger = currentHour
+                        log("[EHR Server] Player " .. player:getUsername() .. " wound " .. partName .. " handed off to sepsis")
+                    else
+                        partData.stage = nextStage
+                        partData.stageStartTime = currentHour
+                        log("[EHR Server] Player " .. player:getUsername() .. " wound " .. partName .. " progressed to stage " .. partData.stage)
                     end
                 end
             end

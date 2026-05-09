@@ -126,6 +126,79 @@ local function getWorldAgeHours()
     return 0
 end
 
+local function getSepsisProgress(sepsisData)
+    local stage = clamp(tonumber(sepsisData and sepsisData.stage) or 0, 0, 4)
+    if stage <= 0 then
+        return 0, 0
+    end
+
+    local now = getWorldAgeHours()
+    local duration = EHR.Sepsis and EHR.Sepsis.StageDuration and tonumber(EHR.Sepsis.StageDuration[stage]) or nil
+    local speedMult = 1.0
+    if EHR.Sepsis and EHR.Sepsis.GetSpeedMultiplier then
+        local ok, value = pcall(EHR.Sepsis.GetSpeedMultiplier)
+        value = tonumber(value)
+        if ok and value and value > 0 then
+            speedMult = value
+        end
+    end
+
+    local stageFraction = 0
+    if stage >= 4 then
+        stageFraction = 1
+    elseif duration and duration > 0 then
+        local started = tonumber(sepsisData.stageStartTime) or now
+        stageFraction = clamp((now - started) / (duration / speedMult), 0, 1)
+    end
+
+    return clamp(((stage - 1) + stageFraction) / 4, 0, 1), stage
+end
+
+local function getWoundInfectionProgress(woundData)
+    if type(woundData) ~= "table" or type(woundData.parts) ~= "table" then
+        return 0, 0, nil
+    end
+
+    local now = getWorldAgeHours()
+    local config = EHR.WoundInfection and EHR.WoundInfection.Config or nil
+    local durations = config and config.STAGE_DURATION or nil
+    local speedMult = 1.0
+    if EHR.WoundInfection and EHR.WoundInfection.GetSpeedMultiplier then
+        local ok, value = pcall(EHR.WoundInfection.GetSpeedMultiplier)
+        value = tonumber(value)
+        if ok and value and value > 0 then
+            speedMult = value
+        end
+    end
+
+    local bestStage = 0
+    local bestProgress = 0
+    local worstPart = nil
+
+    for partName, partData in pairs(woundData.parts) do
+        local stage = clamp(tonumber(partData and partData.stage) or 0, 0, 4)
+        if stage > 0 then
+            local stageFraction = 0
+            local duration = durations and tonumber(durations[stage]) or nil
+            if stage >= 4 then
+                stageFraction = 1
+            elseif duration and duration > 0 then
+                local started = tonumber(partData.stageStartTime) or now
+                stageFraction = clamp((now - started) / (duration / speedMult), 0, 1)
+            end
+
+            local progress = clamp(((stage - 1) + stageFraction) / 4, 0, 1)
+            if stage > bestStage or (stage == bestStage and progress > bestProgress) then
+                bestStage = stage
+                bestProgress = progress
+                worstPart = partName
+            end
+        end
+    end
+
+    return bestProgress, bestStage, worstPart
+end
+
 local function safeText(key, fallback)
     local text = nil
     if getText then
@@ -1369,11 +1442,11 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
         end
     end
 
-    local sepsisStage = tonumber(sepsisData and sepsisData.stage) or 0
+    local sepsisProgress, sepsisStage = getSepsisProgress(sepsisData)
     if sepsisStage > 0 then
         activeDiseases["Sepsis"] = {
             severity = sepsisStage,
-            progress = clamp(sepsisStage / 4, 0, 1),
+            progress = sepsisProgress,
             treating = (tonumber(sepsisData.treatmentDoses) or 0) > 0,
             stage = sepsisStage,
             isSepsis = true,
@@ -1428,13 +1501,17 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
     end
 
     if worstStage > 0 then
+        local woundProgress, calculatedStage, calculatedPart = getWoundInfectionProgress(woundData)
+        if calculatedStage > 0 then
+            worstStage = calculatedStage
+        end
         activeDiseases["Wound_Infection"] = {
             severity = worstStage,
-            progress = clamp(worstStage / 4, 0, 1),
+            progress = woundProgress,
             stage = worstStage,
             isWoundInfection = true,
             infectedCount = math.max(1, infectedCount),
-            worstPart = woundData and woundData.worstPart or nil,
+            worstPart = calculatedPart or (woundData and woundData.worstPart or nil),
         }
     end
 end

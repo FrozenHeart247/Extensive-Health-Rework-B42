@@ -196,6 +196,8 @@ local function EHR_InitDistributions()
         end
         tryAdd("AmbulanceMedical", "ExtensiveHealth.SalineBag", 4)
         tryAdd("AmbulanceMedical", "ExtensiveHealth.EmptyBloodBag", 5)
+        tryAddMed("AmbulanceMedical", "ExtensiveHealth.SterilizedBandages", 5)
+        tryAddMed("AmbulanceMedical", "ExtensiveHealth.AlchoholicBandage", 3)
     end
 
     -- Medical cabinets
@@ -209,6 +211,8 @@ local function EHR_InitDistributions()
 
     -- Pharmacy shelves (saline only, no blood bags)
     tryAdd("PharmacyShelfMeds", "ExtensiveHealth.SalineBag", 1)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.SterilizedBandages", 4)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.AlchoholicBandage", 2)
 
     -- Military medical
     if ProceduralDistributions.list["ArmyStorageMedical"] then
@@ -285,6 +289,8 @@ local function EHR_InitDistributions()
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiDiarrheal", 3)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntisepticCream", 4)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiInflammatory", 3)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.SterilizedBandages", 2)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
 
     -- Medical Storage / Clinic (OTC items)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
@@ -296,6 +302,8 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiInflammatory", 7)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.MuscleRelaxants", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Syringe", 10)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SterilizedBandages", 8)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AlchoholicBandage", 5)
 
     -- =========================================
     -- TIER 2 - PRESCRIPTION MEDICATION
@@ -311,6 +319,8 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SterilizedBandages", 6)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AlchoholicBandage", 4)
 
     -- Medical Storage Drugs (Tier 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 6)
@@ -346,6 +356,8 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SalineBag", 7)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SterilizedBandages", 8)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlchoholicBandage", 5)
 
     -- Army Surplus / Military
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVAntibiotics", 5)
@@ -359,12 +371,16 @@ local function EHR_InitDistributions()
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Syringe", 8)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SalineBag", 7)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.BroadSpectrumAntibiotics", 6)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SterilizedBandages", 6)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.AlchoholicBandage", 4)
 
     -- First Aid Kits (basic supplies)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntipyreticTablets", 4)
     tryAddMed("FirstAidKit", "ExtensiveHealth.Syringe", 3)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.SterilizedBandages", 7)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.AlchoholicBandage", 3)
 
     -- =========================================
     -- HOUSEHOLD SPAWNS (Very Rare)

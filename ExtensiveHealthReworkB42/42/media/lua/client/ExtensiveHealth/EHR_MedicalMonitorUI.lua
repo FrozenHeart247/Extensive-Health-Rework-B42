@@ -47,6 +47,93 @@ local function ehrFormatText(key, fallback, ...)
     end
     return fallback
 end
+
+local function ehrClamp(value, minValue, maxValue)
+    value = tonumber(value) or 0
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function ehrWorldAgeHours()
+    local gameTime = getGameTime and getGameTime() or nil
+    if gameTime and gameTime.getWorldAgeHours then
+        return gameTime:getWorldAgeHours()
+    end
+    return 0
+end
+
+local function ehrGetWoundInfectionProgress(woundData)
+    if type(woundData) ~= "table" or type(woundData.parts) ~= "table" then
+        return 0, 0, nil
+    end
+
+    local now = ehrWorldAgeHours()
+    local config = EHR.WoundInfection and EHR.WoundInfection.Config or nil
+    local durations = config and config.STAGE_DURATION or nil
+    local speedMult = 1.0
+    if EHR.WoundInfection and EHR.WoundInfection.GetSpeedMultiplier then
+        local ok, value = pcall(EHR.WoundInfection.GetSpeedMultiplier)
+        value = tonumber(value)
+        if ok and value and value > 0 then
+            speedMult = value
+        end
+    end
+
+    local bestStage = 0
+    local bestProgress = 0
+    local worstPart = nil
+    for partName, partData in pairs(woundData.parts) do
+        local stage = ehrClamp(tonumber(partData and partData.stage) or 0, 0, 4)
+        if stage > 0 then
+            local stageFraction = 0
+            local duration = durations and tonumber(durations[stage]) or nil
+            if stage >= 4 then
+                stageFraction = 1
+            elseif duration and duration > 0 then
+                local started = tonumber(partData.stageStartTime) or now
+                stageFraction = ehrClamp((now - started) / (duration / speedMult), 0, 1)
+            end
+
+            local progress = ehrClamp(((stage - 1) + stageFraction) / 4, 0, 1)
+            if stage > bestStage or (stage == bestStage and progress > bestProgress) then
+                bestStage = stage
+                bestProgress = progress
+                worstPart = partName
+            end
+        end
+    end
+
+    return bestProgress, bestStage, worstPart
+end
+
+local function ehrGetSepsisProgress(sepsisData)
+    local stage = ehrClamp(tonumber(sepsisData and sepsisData.stage) or 0, 0, 4)
+    if stage <= 0 then
+        return 0, 0
+    end
+
+    local now = ehrWorldAgeHours()
+    local duration = EHR.Sepsis and EHR.Sepsis.StageDuration and tonumber(EHR.Sepsis.StageDuration[stage]) or nil
+    local speedMult = 1.0
+    if EHR.Sepsis and EHR.Sepsis.GetSpeedMultiplier then
+        local ok, value = pcall(EHR.Sepsis.GetSpeedMultiplier)
+        value = tonumber(value)
+        if ok and value and value > 0 then
+            speedMult = value
+        end
+    end
+
+    local stageFraction = 0
+    if stage >= 4 then
+        stageFraction = 1
+    elseif duration and duration > 0 then
+        local started = tonumber(sepsisData.stageStartTime) or now
+        stageFraction = ehrClamp((now - started) / (duration / speedMult), 0, 1)
+    end
+
+    return ehrClamp(((stage - 1) + stageFraction) / 4, 0, 1), stage
+end
 -- ============================================
 -- MEDICAL MONITOR PANEL CLASS
 -- ============================================
@@ -865,9 +952,7 @@ function EHR_MedicalMonitorUI:updateCachedData()
     end
 
     if sepsisData and sepsisData.stage and sepsisData.stage > 0 then
-        -- Calculate progress based on stage (stages 1-4)
-        local sepsisStage = sepsisData.stage or 1
-        local sepsisProgress = sepsisStage / 4  -- 25%, 50%, 75%, 100%
+        local sepsisProgress, sepsisStage = ehrGetSepsisProgress(sepsisData)
 
         -- Add sepsis to the diseases table for unified display
         self.cachedData.diseases["Sepsis"] = {
@@ -912,15 +997,16 @@ function EHR_MedicalMonitorUI:updateCachedData()
     end
 
     if woundData and woundData.worstStage and woundData.worstStage > 0 then
+        local woundProgress, calculatedStage, calculatedPart = ehrGetWoundInfectionProgress(woundData)
         -- Add wound infection to diseases display
         self.cachedData.diseases["Wound_Infection"] = {
-            severity = woundData.worstStage,
-            progress = (woundData.worstStage or 1) / 4,  -- Stages 1-4
-            stage = woundData.worstStage,
+            severity = calculatedStage > 0 and calculatedStage or woundData.worstStage,
+            progress = woundProgress,
+            stage = calculatedStage > 0 and calculatedStage or woundData.worstStage,
             isWoundInfection = true,
             diagnosed = true,
             infectedCount = woundData.infectedCount or 1,
-            worstPart = woundData.worstPart,
+            worstPart = calculatedPart or woundData.worstPart,
         }
     end
 

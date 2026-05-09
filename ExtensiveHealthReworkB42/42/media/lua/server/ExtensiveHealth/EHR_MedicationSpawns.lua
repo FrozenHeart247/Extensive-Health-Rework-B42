@@ -112,6 +112,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     -- EHR Supplies
     ["ExtensiveHealth.IVKit"] = true,
     ["ExtensiveHealth.Syringe"] = true,
+    ["ExtensiveHealth.SterilizedBandages"] = true,
 
     -- Knox treatment
     ["ExtensiveHealth.PhalanxPills"] = true,

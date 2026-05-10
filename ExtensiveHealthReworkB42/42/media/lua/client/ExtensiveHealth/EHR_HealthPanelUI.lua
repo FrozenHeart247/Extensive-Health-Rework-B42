@@ -2702,9 +2702,13 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
     local rowH = doseText ~= "" and 78 or 58
     self:drawRect(x, y, w, rowH, 0.32, c.panelSoft.r, c.panelSoft.g, c.panelSoft.b)
     self:drawWornFrame(x, y, w, rowH, c.borderDim, 4)
-    self:drawMedicationIcon(treatment, x + 7, y + 7, 34)
 
-    local textX = x + 50
+    local iconSize = 34
+    local iconX = x + 10
+    local iconY = y + math.floor((rowH - iconSize) / 2)
+    self:drawMedicationIcon(treatment, iconX, iconY, iconSize)
+
+    local textX = iconX + iconSize + 9
     self:drawText(self:truncateText(name, w - 236, UIFont.Small), textX, y + 7, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
     if isTreatingDisease then
         local valueW = self:getTextWidth(cureRemaining, UIFont.Small)

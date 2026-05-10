@@ -2608,6 +2608,7 @@ EHR.UI.MonitorInstance = nil
 EHR.UI.MonitorVisible = false
 EHR.UI.AttachSide = "right"
 EHR.UI.AttachGap = 5
+EHR.UI.LegacyHealthPanelAttachmentEnabled = false
 
 -- ============================================
 -- FIND HEALTH PANEL (ISCharacterInfoWindow)
@@ -2786,7 +2787,9 @@ local function onTickHandler()
     end
 end
 
-Events.OnTick.Add(onTickHandler)
+if EHR.UI.LegacyHealthPanelAttachmentEnabled then
+    Events.OnTick.Add(onTickHandler)
+end
 
 -- ============================================
 -- KEY BINDING (handled by EHR_KeybindManager.lua)
@@ -2803,8 +2806,8 @@ local function onKeyPressedHandler(key)
     -- Fallback to hardcoded H key if manager not loaded
     if key == Keyboard.KEY_H then
         local player = getPlayer()
-        if player then
-            EHR.UI.ToggleMonitor(player)
+        if player and EHR.UI and EHR.UI.ToggleHealthPanel then
+            EHR.UI.ToggleHealthPanel(player)
         end
     end
 end

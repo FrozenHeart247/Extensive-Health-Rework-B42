@@ -149,7 +149,7 @@
     Sandbox_EHR_FirstAidXPEnabled = "Enable First Aid XP Rewards",
     Sandbox_EHR_FirstAidXPEnabled_tooltip = "Award First Aid skill XP for medical actions like taking medication, treating diseases, blood transfusions, and self-examination.",
     Sandbox_EHR_FirstAidXPMultiplier = "First Aid XP Multiplier",
-    Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Multiplier for First Aid XP gained from EHR medical actions. <LINE> <LINE> EXAMPLES: <LINE> - 0.0 = No XP (disabled) <LINE> - 0.5 = Half XP <LINE> - 1.0 = Normal XP (default) <LINE> - 2.0 = Double XP <LINE> - 5.0 = 5x XP (fast learning) <LINE> <LINE> BASE XP VALUES: <LINE> - Take medication: 1-6 XP (based on tier) <LINE> - Correct treatment: 3 XP <LINE> - Cure disease: 20 XP <LINE> - Blood transfusion: 10 XP <LINE> - Self-examination: 1-5 XP",
+    Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Multiplier for First Aid XP gained from EHR medical actions. <LINE> <LINE> EXAMPLES: <LINE> - 0.0 = No XP (disabled) <LINE> - 0.5 = Half XP <LINE> - 1.0 = Normal XP (default) <LINE> - 2.0 = Double XP <LINE> - 5.0 = 5x XP (fast learning) <LINE> <LINE> BASE XP VALUES: <LINE> - Take medication: 5 XP <LINE> - Correct treatment: 3 XP <LINE> - Cure disease: 20 XP <LINE> - Blood transfusion: 10 XP <LINE> - Self-examination: 1-5 XP",
 
     -- ============================================
     -- KNOX VIRUS CURE

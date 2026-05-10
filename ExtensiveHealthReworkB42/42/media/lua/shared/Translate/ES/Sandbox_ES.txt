@@ -149,7 +149,7 @@
     Sandbox_EHR_FirstAidXPEnabled = "Habilitar XP de primeros auxilios",
     Sandbox_EHR_FirstAidXPEnabled_tooltip = "Otorga XP por acciones medicas de EHR.",
     Sandbox_EHR_FirstAidXPMultiplier = "Multiplicador de XP de primeros auxilios",
-    Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Multiplicador de XP. <LINE> <LINE> EJEMPLOS: <LINE> - 0.0 = Sin XP <LINE> - 0.5 = Mitad <LINE> - 1.0 = Normal (defecto) <LINE> - 2.0 = Doble <LINE> - 5.0 = 5x (rapido) <LINE> <LINE> VALORES BASE: <LINE> - Tomar medicamento: 1-6 XP <LINE> - Tratamiento correcto: 3 XP <LINE> - Curar enfermedad: 20 XP <LINE> - Transfusion: 10 XP <LINE> - Autoexamen: 1-5 XP",
+    Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Multiplicador de XP. <LINE> <LINE> EJEMPLOS: <LINE> - 0.0 = Sin XP <LINE> - 0.5 = Mitad <LINE> - 1.0 = Normal (defecto) <LINE> - 2.0 = Doble <LINE> - 5.0 = 5x (rapido) <LINE> <LINE> VALORES BASE: <LINE> - Tomar medicamento: 5 XP <LINE> - Tratamiento correcto: 3 XP <LINE> - Curar enfermedad: 20 XP <LINE> - Transfusion: 10 XP <LINE> - Autoexamen: 1-5 XP",
 
     -- ============================================
     -- KNOX VIRUS CURE

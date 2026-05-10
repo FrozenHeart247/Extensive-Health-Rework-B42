@@ -395,6 +395,61 @@ function EHR_HealthPanelUI:ensureBodyPartPanel()
     return self.bodyPartPanel
 end
 
+function EHR_HealthPanelUI:destroyPlayerBoundViews()
+    self:stopPointerInteraction()
+
+    if self.bodyPartPanel then
+        pcall(function()
+            self.bodyPartPanel:setVisible(false)
+        end)
+        pcall(function()
+            self:removeChild(self.bodyPartPanel)
+        end)
+        self.bodyPartPanel = nil
+    end
+
+    if self.embeddedTabs then
+        for _, view in pairs(self.embeddedTabs) do
+            pcall(function()
+                view:setVisible(false)
+            end)
+            pcall(function()
+                self:removeChild(view)
+            end)
+        end
+    end
+
+    self.embeddedTabs = {}
+    self.embeddedTabsCreated = false
+    self.vanillaHealthAdapter = nil
+    self.cachedData = {}
+    self.markerBounds = {}
+    self.contentScrollY = 0
+    self.selectedZone = "overview"
+end
+
+function EHR_HealthPanelUI:bindPlayer(player, force)
+    if not player then return false end
+
+    local playerNum = player.getPlayerNum and player:getPlayerNum() or 0
+    if not force and self.player == player and self.playerNum == playerNum then
+        return false
+    end
+
+    self.player = player
+    self.playerNum = playerNum
+    self:destroyPlayerBoundViews()
+    self:ensureBodyPartPanel()
+    self:createEmbeddedVanillaTabs()
+    self:syncTabVisibility()
+
+    if EHR.DEBUG then
+        EHR.Log("HealthPanelUI: rebound to player " .. tostring(playerNum))
+    end
+
+    return true
+end
+
 function EHR_HealthPanelUI:getTabDefinitions()
     local vanillaText = xpSystemText or {}
     if self.width < 560 then
@@ -548,6 +603,22 @@ function EHR_HealthPanelUI:prepareInfoLiteratureButton(view)
     end
 end
 
+function EHR_HealthPanelUI:prepareInfoAvatarRefresh(view)
+    if not view or view.ehrInfoAvatarRefreshPrepared then return end
+    view.ehrInfoAvatarRefreshPrepared = true
+
+    local originalPrerender = view.prerender
+    view.prerender = function(viewSelf, ...)
+        viewSelf.ehrAvatarRefreshTick = (tonumber(viewSelf.ehrAvatarRefreshTick) or 0) + 1
+        if viewSelf.ehrVisible and (viewSelf.ehrAvatarRefreshTick == 1 or viewSelf.ehrAvatarRefreshTick % 15 == 0) then
+            viewSelf.refreshNeeded = true
+        end
+        if originalPrerender then
+            originalPrerender(viewSelf, ...)
+        end
+    end
+end
+
 function EHR_HealthPanelUI:prepareTemperatureView(view)
     if not view or view.ehrTemperaturePrepared then return end
     view.ehrTemperaturePrepared = true
@@ -684,12 +755,14 @@ function EHR_HealthPanelUI:createEmbeddedVanillaTabs()
             ISCharacterInfo.instance = oldCharacterInfoInstance
         end
         if ok and view then
+            view.ehrTabId = spec.id
             self:prepareEmbeddedVanillaView(view)
             view:initialise()
             if not view.javaObject and view.instantiate then
                 view:instantiate()
             end
             if spec.id == "info" then
+                self:prepareInfoAvatarRefresh(view)
                 self:prepareInfoLiteratureButton(view)
             elseif spec.id == "temperature" then
                 self:prepareTemperatureView(view)
@@ -729,6 +802,10 @@ function EHR_HealthPanelUI:syncTabVisibility()
             if view.ehrVisible ~= shouldShow then
                 view.ehrVisible = shouldShow
                 view:setVisible(shouldShow)
+                if shouldShow and id == "info" then
+                    view.refreshNeeded = true
+                    view.ehrAvatarRefreshTick = 0
+                end
             end
         end
     end
@@ -1532,7 +1609,11 @@ end
 function EHR_HealthPanelUI:updateCachedData()
     local player = getSpecificPlayer and getSpecificPlayer(self.playerNum or 0)
     if player then
-        self.player = player
+        if player ~= self.player then
+            self:bindPlayer(player, true)
+        else
+            self.player = player
+        end
     end
 
     local data = nil
@@ -2946,8 +3027,7 @@ function EHR.UI.ShowHealthPanel(player)
         EHR.UI.HealthPanelInstance = panel
     end
 
-    EHR.UI.HealthPanelInstance.player = player
-    EHR.UI.HealthPanelInstance.playerNum = player:getPlayerNum()
+    EHR.UI.HealthPanelInstance:bindPlayer(player)
     EHR.UI.HealthPanelInstance.activeTab = "ehr"
     EHR.UI.HealthPanelInstance.contentScrollY = 0
     EHR.UI.HealthPanelInstance:syncTabVisibility()
@@ -2965,6 +3045,29 @@ function EHR.UI.HideHealthPanel()
     suppressLegacyHealthUI(12)
 end
 
+function EHR.UI.DestroyHealthPanel()
+    local panel = EHR.UI.HealthPanelInstance
+    if not panel then
+        EHR.UI.HealthPanelVisible = false
+        return
+    end
+
+    pcall(function()
+        panel:destroyPlayerBoundViews()
+    end)
+    pcall(function()
+        panel:setVisible(false)
+    end)
+    pcall(function()
+        if panel.removeFromUIManager then
+            panel:removeFromUIManager()
+        end
+    end)
+
+    EHR.UI.HealthPanelInstance = nil
+    EHR.UI.HealthPanelVisible = false
+end
+
 function EHR.UI.ToggleHealthPanel(player)
     if EHR.UI.HealthPanelInstance and EHR.UI.HealthPanelInstance:isVisible() then
         EHR.UI.HideHealthPanel()
@@ -2975,6 +3078,22 @@ end
 
 if Events then
     Events.OnTick.Add(onTickHideVanilla)
+    if Events.OnPlayerDeath then
+        Events.OnPlayerDeath.Add(function(player)
+            if EHR.UI and EHR.UI.DestroyHealthPanel then
+                EHR.UI.DestroyHealthPanel()
+            end
+        end)
+    end
+    if Events.OnCreatePlayer then
+        Events.OnCreatePlayer.Add(function(playerIndex, player)
+            if EHR.UI and EHR.UI.HealthPanelInstance and player then
+                EHR.UI.HealthPanelInstance:bindPlayer(player, true)
+                EHR.UI.HealthPanelInstance:setVisible(false)
+                EHR.UI.HealthPanelVisible = false
+            end
+        end)
+    end
 end
 
 EHR.Log("HealthPanelUI prototype loaded")

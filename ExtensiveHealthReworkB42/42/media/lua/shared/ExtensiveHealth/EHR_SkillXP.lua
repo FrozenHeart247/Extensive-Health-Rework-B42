@@ -29,7 +29,8 @@ EHR.SkillXP.Rewards = {
     examination_detailed = 5,        -- Expert-level detailed examination
 
     -- Medication use
-    medication_take_basic = 1,       -- Take OTC medication (painkillers, vitamins)
+    medication_take_any = 5,         -- Successful medication use, regardless of tier
+    medication_take_basic = 1,       -- Legacy tiered medication XP
     medication_take_otc = 2,         -- Take over-the-counter medication
     medication_take_rx = 4,          -- Take prescription medication
     medication_take_clinical = 6,    -- Take clinical-grade medication (IV, injections)
@@ -154,10 +155,12 @@ function EHR.SkillXP.AwardXP(player, amount, actionType, cooldownKey)
     local finalXP = math.floor(amount * multiplier)
     if finalXP <= 0 then return false end
 
-    -- Award XP to Doctor (First Aid) perk
+    -- Award XP to Doctor (First Aid) perk.
+    -- EHR already applies its own sandbox multiplier above; bypass the vanilla
+    -- trait/occupation multiplier so configured rewards are the XP actually seen.
     local xpObj = player:getXp()
     if xpObj and Perks and Perks.Doctor then
-        xpObj:AddXP(Perks.Doctor, finalXP)
+        xpObj:AddXP(Perks.Doctor, finalXP, false, false, false, false)
 
         -- Track statistics
         data.totalXPAwarded = (data.totalXPAwarded or 0) + finalXP
@@ -203,24 +206,9 @@ end
 function EHR.SkillXP.OnMedicationTaken(player, medData)
     if not player or not medData then return end
 
-    local tier = medData.tier or 0
-    local actionType = "medication_take_basic"
-
-    if tier == 0 then
-        actionType = "medication_take_basic"
-    elseif tier == 1 then
-        actionType = "medication_take_otc"
-    elseif tier == 2 then
-        actionType = "medication_take_rx"
-    elseif tier >= 3 then
-        actionType = "medication_take_clinical"
-    end
-
-    -- Cooldown key includes medication name to prevent spamming same med
-    local medName = medData.displayName or medData.medId or "unknown"
-    local cooldownKey = "med_" .. medName
-
-    EHR.SkillXP.AwardForAction(player, actionType, cooldownKey)
+    -- Medication XP is awarded only after EHR.Medication.UseMedication successfully
+    -- consumes a dose, so blocked actions cannot farm First Aid.
+    EHR.SkillXP.AwardForAction(player, "medication_take_any")
 end
 
 --[[

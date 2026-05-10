@@ -15,7 +15,7 @@ module Base
         DisplayCategory = FirstAid,
         ItemType = base:drainable,
         Weight = 0.2,
-        Icon = PillsPainkiller,
+        Icon = Painkillers,
         Medical = true,
         Tooltip = Tooltip_Painkillers,
         UseDelta = 0.0625,

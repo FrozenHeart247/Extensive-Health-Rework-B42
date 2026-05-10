@@ -24,6 +24,9 @@ EHR.TendonWeakness.Config = {
     WALKING_CHANCE = 22,
     RUNNING_CHANCE = 45,
     SPRINTING_CHANCE = 65,
+
+    TETANUS_FALL_COOLDOWN_HOURS = 0.5,
+    TETANUS_FALL_CHANCE = 42,
 }
 
 EHR.TendonWeakness.Dialogue = {
@@ -31,6 +34,13 @@ EHR.TendonWeakness.Dialogue = {
     "My tendons feel weak...",
     "I can't trust my legs...",
     "My knees buckled...",
+}
+
+EHR.TendonWeakness.TetanusDialogue = {
+    "My whole body just seized...",
+    "The spasms threw me off balance...",
+    "I can't control these cramps...",
+    "Everything locked up at once...",
 }
 
 EHR.TendonWeakness.State = EHR.TendonWeakness.State or {}
@@ -125,6 +135,30 @@ function EHR.TendonWeakness.IsActive(player)
     return false
 end
 
+function EHR.TendonWeakness.IsTetanusFallActive(player)
+    if not isPlayerValid(player) then return false end
+
+    local modData = player:getModData()
+    local diseaseData = modData and modData.EHR_Disease
+    local tetanus = diseaseData and diseaseData.active and diseaseData.active.tetanus
+    if not tetanus then return false end
+
+    local stage = tonumber(tetanus.stage) or 1
+    if stage ~= 3 then return false end
+
+    if EHR.Disease and EHR.Disease.HasActiveCurativeTreatment
+        and EHR.Disease.HasActiveCurativeTreatment(player, "tetanus") then
+        return false
+    end
+
+    if EHR.Disease and EHR.Disease.GetActiveSymptomReduction then
+        local muscleRelief = EHR.Disease.GetActiveSymptomReduction(player, "tetanus", "muscleSpasms") or 0
+        if muscleRelief >= 0.65 then return false end
+    end
+
+    return true
+end
+
 function EHR.TendonWeakness.GetMovementState(player)
     if safeBool(player, "isSprinting") then return "sprinting" end
     if safeBool(player, "isRunning") or safeBool(player, "IsRunning") then return "running" end
@@ -178,6 +212,26 @@ function EHR.TendonWeakness.SayFallLine(player, state)
     end
 end
 
+function EHR.TendonWeakness.SayTetanusFallLine(player, state)
+    if not player or not player.Say then return end
+
+    local lines = EHR.TendonWeakness.TetanusDialogue
+    if not lines or #lines == 0 then return end
+
+    local index = ZombRand(#lines) + 1
+    if #lines > 1 and state and state.lastTetanusLineIndex == index then
+        index = (index % #lines) + 1
+    end
+    if state then state.lastTetanusLineIndex = index end
+
+    local line = lines[index]
+    if EHR.Dialogue and EHR.Dialogue.SayPeriodic then
+        EHR.Dialogue.SayPeriodic(player, line, 1)
+    else
+        player:Say(line)
+    end
+end
+
 function EHR.TendonWeakness.GetBumpFallType(movementState)
     if movementState == "running" or movementState == "sprinting" then
         return "pushedBehind"
@@ -218,8 +272,44 @@ function EHR.TendonWeakness.ResetState(state)
     state.nextAllowedFallHour = nil
 end
 
+function EHR.TendonWeakness.UpdateTetanusFalls(player, state, currentHour)
+    if not state then return end
+
+    if not EHR.TendonWeakness.IsTetanusFallActive(player) then
+        state.tetanusNextAllowedFallHour = nil
+        return
+    end
+
+    if not state.tetanusNextAllowedFallHour then
+        state.tetanusNextAllowedFallHour = currentHour + randomMinutesAsHours(4, 10)
+        return
+    end
+
+    if currentHour < state.tetanusNextAllowedFallHour then return end
+    if not EHR.TendonWeakness.CanFall(player) then return end
+
+    local fallChance = EHR.TendonWeakness.Config.TETANUS_FALL_CHANCE
+    if EHR.Disease and EHR.Disease.GetActiveSymptomReduction then
+        local muscleRelief = EHR.Disease.GetActiveSymptomReduction(player, "tetanus", "muscleSpasms") or 0
+        fallChance = math.floor(fallChance * math.max(0.20, 1 - (muscleRelief * 1.4)))
+    end
+
+    if ZombRand(100) >= fallChance then
+        state.tetanusNextAllowedFallHour = currentHour + EHR.TendonWeakness.Config.TETANUS_FALL_COOLDOWN_HOURS
+        return
+    end
+
+    -- Use the standing bump profile: this is the backward fall animation, not the running face-forward one.
+    if EHR.TendonWeakness.TriggerFall(player, "standing") then
+        state.tetanusNextAllowedFallHour = currentHour + EHR.TendonWeakness.Config.TETANUS_FALL_COOLDOWN_HOURS
+        EHR.TendonWeakness.SayTetanusFallLine(player, state)
+        EHR.Log("TendonWeakness: triggered tetanus backward fall")
+    end
+end
+
 function EHR.TendonWeakness.UpdatePlayer(player, playerIndex, currentHour)
     local state = EHR.TendonWeakness.GetState(playerIndex)
+    EHR.TendonWeakness.UpdateTetanusFalls(player, state, currentHour)
 
     if not EHR.TendonWeakness.IsActive(player) then
         if state.active then

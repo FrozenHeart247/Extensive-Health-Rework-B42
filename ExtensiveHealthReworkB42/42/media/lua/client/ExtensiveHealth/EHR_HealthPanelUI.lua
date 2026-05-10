@@ -210,6 +210,17 @@ local function safeText(key, fallback)
     return text
 end
 
+local function callBodyPartMethod(bodyPart, methodName, fallback)
+    if not bodyPart or not methodName then return fallback end
+    local method = bodyPart[methodName]
+    if not method then return fallback end
+    local ok, result = pcall(function()
+        return method(bodyPart)
+    end)
+    if ok then return result end
+    return fallback
+end
+
 local function hideWindow(instance)
     if not instance then return end
     local ok = pcall(function()
@@ -372,9 +383,11 @@ function EHR_HealthPanelUI:ensureBodyPartPanel()
     self.bodyPartPanel:setAlphas(0.62, 1.0, 1.0, 0.38, 0.38)
     self.bodyPartPanel:setColorScheme({
         { val = 0.00, color = Color.new(0.76, 0.86, 0.80, 1) },
-        { val = 0.35, color = Color.new(0.82, 0.70, 0.20, 1) },
-        { val = 0.70, color = Color.new(0.95, 0.38, 0.12, 1) },
-        { val = 1.00, color = Color.new(0.95, 0.08, 0.08, 1) },
+        { val = 0.20, color = Color.new(0.22, 0.88, 0.30, 1) },
+        { val = 0.40, color = Color.new(0.95, 0.74, 0.18, 1) },
+        { val = 0.60, color = Color.new(1.00, 0.36, 0.12, 1) },
+        { val = 0.80, color = Color.new(0.58, 0.20, 0.72, 1) },
+        { val = 1.00, color = Color.new(0.86, 0.05, 0.045, 1) },
     })
     self.bodyPartPanel:enableNodes("media/ui/BodyParts/bps_node_diamond", "media/ui/BodyParts/bps_node_diamond_outline")
     self:addChild(self.bodyPartPanel)
@@ -1967,6 +1980,142 @@ function EHR_HealthPanelUI:dropItemsOnBodyPart(bodyPart, items)
     ISHealthPanel.dropItemsOnBodyPart(adapter, bodyPart, items)
 end
 
+function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
+    local c = EHR_HealthPanelUI.Colors
+    local statuses = {}
+    local seen = {}
+
+    local function add(key, label, color, visualValue, priority)
+        if not key or seen[key] then return end
+        seen[key] = true
+        table.insert(statuses, {
+            key = key,
+            label = label,
+            color = color or c.textDim,
+            visualValue = visualValue,
+            priority = priority or 0,
+        })
+    end
+
+    if not bodyPart then return statuses end
+
+    local health = tonumber(callBodyPartMethod(bodyPart, "getHealth", 100)) or 100
+    local bandaged = callBodyPartMethod(bodyPart, "bandaged", false) == true
+    local bandageLife = tonumber(callBodyPartMethod(bodyPart, "getBandageLife", 1)) or 1
+    local infected = callBodyPartMethod(bodyPart, "isInfectedWound", false) == true
+    local infectionLevel = tonumber(callBodyPartMethod(bodyPart, "getWoundInfectionLevel", 0)) or 0
+    local additionalPain = tonumber(callBodyPartMethod(bodyPart, "getAdditionalPain", 0)) or 0
+    local stiffness = tonumber(callBodyPartMethod(bodyPart, "getStiffness", 0)) or 0
+    local ehrWoundPartData = nil
+
+    if self.player and EHR.WoundInfection and EHR.WoundInfection.GetData then
+        local data = EHR.WoundInfection.GetData(self.player)
+        local partName = tostring(callBodyPartMethod(bodyPart, "getType", ""))
+        ehrWoundPartData = data and data.parts and data.parts[partName] or nil
+    end
+
+    if callBodyPartMethod(bodyPart, "bleeding", false) == true then
+        add("bleeding", "Bleeding", c.red, 1.00, 110)
+    end
+
+    if infected or infectionLevel > 0 or (type(ehrWoundPartData) == "table" and (tonumber(ehrWoundPartData.stage) or 0) > 0) then
+        add("infected", "Infected", c.purple, 0.80, 100)
+    end
+
+    if (tonumber(callBodyPartMethod(bodyPart, "getFractureTime", 0)) or 0) > 0 then
+        add("fracture", "Fracture", c.red, 1.00, 95)
+    end
+    if callBodyPartMethod(bodyPart, "haveBullet", false) == true then
+        add("bullet", "Lodged bullet", c.red, 1.00, 94)
+    end
+    if callBodyPartMethod(bodyPart, "haveGlass", false) == true then
+        add("glass", "Glass shards", c.red, 1.00, 92)
+    end
+    if (tonumber(callBodyPartMethod(bodyPart, "getBurnTime", 0)) or 0) > 0 then
+        local label = callBodyPartMethod(bodyPart, "isNeedBurnWash", false) == true and "Burn needs cleaning" or "Burn"
+        add("burn", label, c.orange, 0.60, 88)
+    end
+
+    if callBodyPartMethod(bodyPart, "deepWounded", false) == true then
+        add("deep_wound", "Deep wound", c.orange, 0.60, 84)
+    end
+    if callBodyPartMethod(bodyPart, "bitten", false) == true then
+        add("bite", "Bite", c.red, 1.00, 82)
+    end
+    if callBodyPartMethod(bodyPart, "isCut", false) == true then
+        add("cut", "Cut", c.orange, 0.60, 78)
+    end
+    if callBodyPartMethod(bodyPart, "scratched", false) == true then
+        add("scratch", "Scratch", c.orange, 0.60, 74)
+    end
+
+    if additionalPain > 50 then
+        add("pain", "Heavy pain", c.orange, 0.60, 72)
+    elseif additionalPain > 10 then
+        add("pain", "Pain", c.orange, 0.60, 68)
+    elseif additionalPain >= 1 then
+        add("pain", "Minor pain", c.orange, 0.60, 42)
+    end
+
+    if stiffness >= 20 then
+        add("stiffness", "Muscle strain", c.orange, 0.60, 70)
+    elseif stiffness >= 5 then
+        add("stiffness", "Minor stiffness", c.yellow, 0.40, 45)
+    elseif stiffness >= 1 then
+        add("stiffness", "Slight stiffness", c.yellow, 0.40, 38)
+    end
+
+    if bandaged then
+        if bandageLife <= 0 then
+            add("dirty_bandage", "Dirty bandage", c.yellow, 0.40, 73)
+        else
+            add("bandaged", "Bandaged", c.green, 0.20, 73)
+        end
+    end
+    if callBodyPartMethod(bodyPart, "stitched", false) == true then
+        add("stitched", "Stitched", c.green, 0.20, 32)
+    end
+    if (tonumber(callBodyPartMethod(bodyPart, "getSplintFactor", 0)) or 0) > 0 then
+        add("splinted", "Splinted", c.green, 0.20, 30)
+    end
+    if (tonumber(callBodyPartMethod(bodyPart, "getPlantainFactor", 0)) or 0) > 0 then
+        add("plantain", "Plantain poultice", c.green, 0.20, 26)
+    end
+    if (tonumber(callBodyPartMethod(bodyPart, "getComfreyFactor", 0)) or 0) > 0 then
+        add("comfrey", "Comfrey poultice", c.green, 0.20, 26)
+    end
+
+    if health < 45 then
+        add("damaged", "Severe damage", c.red, 1.00, 86)
+    elseif health < 85 then
+        local color = health < 45 and c.red or c.orange
+        local visualValue = health < 45 and 1.00 or 0.60
+        add("damaged", "Damaged", color, visualValue, 40)
+    end
+
+    if callBodyPartMethod(bodyPart, "HasInjury", false) == true and #statuses == 0 then
+        add("injury", "Injury", c.orange, 0.60, 46)
+    end
+
+    table.sort(statuses, function(a, b)
+        return (a.priority or 0) > (b.priority or 0)
+    end)
+
+    return statuses
+end
+
+function EHR_HealthPanelUI:getBodyPartVisualValue(bodyPart)
+    local health = tonumber(callBodyPartMethod(bodyPart, "getHealth", 100)) or 100
+    local value = clamp((100 - health) / 100, 0, 1)
+    local statuses = self:getBodyPartStatuses(bodyPart)
+
+    if #statuses > 0 and statuses[1].visualValue then
+        value = statuses[1].visualValue
+    end
+
+    return clamp(value, 0, 1)
+end
+
 function EHR_HealthPanelUI:updateVanillaBodyPartPanel()
     if not self.bodyPartPanel or not self.player then return end
 
@@ -1979,52 +2128,7 @@ function EHR_HealthPanelUI:updateVanillaBodyPartPanel()
     for i = 0, bodyParts:size() - 1 do
         local bodyPart = bodyParts:get(i)
         if bodyPart and bodyPart.getType then
-            local health = tonumber(bodyPart:getHealth()) or 100
-            local value = clamp((100 - health) / 100, 0, 1)
-
-            if bodyPart.bleeding and bodyPart:bleeding() then
-                value = math.max(value, 0.90)
-            elseif bodyPart.deepWounded and bodyPart:deepWounded() then
-                value = math.max(value, 0.80)
-            elseif bodyPart.bitten and bodyPart:bitten() then
-                value = math.max(value, 0.72)
-            elseif bodyPart.scratched and bodyPart:scratched() then
-                value = math.max(value, 0.45)
-            elseif bodyPart.bandaged and bodyPart:bandaged() then
-                value = math.max(value, 0.25)
-            elseif bodyPart.HasInjury and bodyPart:HasInjury() then
-                value = math.max(value, 0.35)
-            end
-
-            local stiffness = 0
-            if bodyPart.getStiffness then
-                local ok, result = pcall(function() return bodyPart:getStiffness() end)
-                stiffness = (ok and tonumber(result)) or 0
-            end
-
-            local additionalPain = 0
-            if bodyPart.getAdditionalPain then
-                local ok, result = pcall(function() return bodyPart:getAdditionalPain() end)
-                additionalPain = (ok and tonumber(result)) or 0
-            end
-
-            if additionalPain > 50 then
-                value = math.max(value, 0.72)
-            elseif additionalPain > 10 then
-                value = math.max(value, 0.45)
-            elseif additionalPain >= 1 then
-                value = math.max(value, 0.28)
-            end
-
-            if stiffness >= 20 then
-                value = math.max(value, 0.62)
-            elseif stiffness >= 5 then
-                value = math.max(value, 0.35)
-            elseif stiffness >= 1 then
-                value = math.max(value, 0.28)
-            end
-
-            self.bodyPartPanel:setValue(bodyPart:getType(), value)
+            self.bodyPartPanel:setValue(bodyPart:getType(), self:getBodyPartVisualValue(bodyPart))
         end
     end
 end
@@ -2040,45 +2144,19 @@ function EHR_HealthPanelUI:getSelectedBodyPartText()
     return "None"
 end
 
-function EHR_HealthPanelUI:getSelectedBodyPartStatus()
+function EHR_HealthPanelUI:getSelectedBodyPartStatuses()
     if not self.bodyPartPanel or not self.bodyPartPanel.selectedBp or not self.bodyPartPanel.selectedBp.bodyPart then
-        return nil
+        return {}
     end
 
-    local bodyPart = self.bodyPartPanel.selectedBp.bodyPart
-    local c = EHR_HealthPanelUI.Colors
-    local stiffness = 0
-    local additionalPain = 0
+    return self:getBodyPartStatuses(self.bodyPartPanel.selectedBp.bodyPart)
+end
 
-    if bodyPart.getStiffness then
-        local ok, result = pcall(function() return bodyPart:getStiffness() end)
-        stiffness = (ok and tonumber(result)) or 0
+function EHR_HealthPanelUI:getSelectedBodyPartStatus()
+    local statuses = self:getSelectedBodyPartStatuses()
+    if statuses and statuses[1] then
+        return statuses[1].label, statuses[1].color
     end
-
-    if bodyPart.getAdditionalPain then
-        local ok, result = pcall(function() return bodyPart:getAdditionalPain() end)
-        additionalPain = (ok and tonumber(result)) or 0
-    end
-
-    if additionalPain > 50 then
-        return "Heavy pain", c.red
-    end
-    if stiffness >= 20 then
-        return "Muscle strain", c.orange
-    end
-    if additionalPain > 10 then
-        return "Pain", c.orange
-    end
-    if stiffness >= 5 then
-        return "Minor stiffness", c.yellow
-    end
-    if additionalPain >= 1 then
-        return "Minor pain", c.yellow
-    end
-    if stiffness >= 1 then
-        return "Slight stiffness", c.yellow
-    end
-
     return nil
 end
 
@@ -2162,25 +2240,69 @@ function EHR_HealthPanelUI:drawOverallHealthBar(x, y, w)
     self:drawDockedTextRight(string.format("%d%%", math.floor(percent + 0.5)), x + w - 8, y, barH, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium, -1)
 end
 
-function EHR_HealthPanelUI:drawBodyLegend(x, y)
+function EHR_HealthPanelUI:drawBodyLegend(x, y, w)
     local c = EHR_HealthPanelUI.Colors
     local items = {
         { label = "Bandaged", color = c.green },
-        { label = "Dirty Bandage", color = c.yellow },
-        { label = "Bleeding", color = c.red },
+        { label = "Dirty bandage", color = c.yellow },
+        { label = "Pain / wound", color = c.orange },
         { label = "Infected", color = c.purple },
-        { label = "Pain", color = c.orange },
+        { label = "Bleeding", color = c.red },
     }
 
-    local rowH = 18
-    local w = 146
+    local rowH = 20
+    local textLift = 9
+    w = w or 146
     local h = #items * rowH + 10
     self:drawRect(x, y, w, h, 0.56, 0.025, 0.025, 0.028)
     self:drawRectBorder(x, y, w, h, 0.62, c.borderDim.r, c.borderDim.g, c.borderDim.b)
     for i, item in ipairs(items) do
         local rowY = y + 5 + (i - 1) * rowH
         self:drawRect(x + 8, rowY + 5, 8, 8, item.color.a, item.color.r, item.color.g, item.color.b)
-        self:drawText(self:truncateText(item.label, w - 30, UIFont.Small), x + 22, rowY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawText(self:truncateText(item.label, w - 30, UIFont.Small), x + 22, rowY - textLift, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    end
+
+    return h
+end
+
+function EHR_HealthPanelUI:drawSelectedBodyPartDetails(x, y, w, h, partName, statuses)
+    local c = EHR_HealthPanelUI.Colors
+    if h < 48 then return end
+
+    statuses = statuses or {}
+    local font = self:getCompactFont()
+    local rowH = 20
+    local textLift = 9
+    local title = partName and partName ~= "None" and partName or "No part selected"
+
+    self:drawRect(x, y, w, h, 0.56, 0.025, 0.025, 0.028)
+    self:drawRectBorder(x, y, w, h, 0.62, c.borderDim.r, c.borderDim.g, c.borderDim.b)
+    self:drawDockedText(self:truncateText(title, w - 16, font), x + 8, y - 5, w - 16, 22, c.green.r, c.green.g, c.green.b, c.green.a, font, -1)
+    self:drawRect(x + 8, y + 22, w - 16, 1, 0.45, c.border.r, c.border.g, c.border.b)
+
+    local rowY = y + 33
+    if #statuses == 0 then
+        local text = partName == "None" and "Hover a body part" or "No active issues"
+        self:drawText(self:truncateText(text, w - 16, font), x + 8, rowY - textLift, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, font)
+        return
+    end
+
+    local drawn = 0
+    for i, status in ipairs(statuses) do
+        if rowY + rowH > y + h - 4 then
+            local remaining = #statuses - drawn
+            if remaining > 0 then
+                local more = "+" .. tostring(remaining) .. " more"
+                self:drawText(more, x + 8, rowY - 1, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, font)
+            end
+            break
+        end
+
+        local color = status.color or c.textDim
+        self:drawRect(x + 8, rowY + 4, 8, 8, color.a, color.r, color.g, color.b)
+        self:drawText(self:truncateText(status.label or "Status", w - 30, font), x + 22, rowY - textLift, color.r, color.g, color.b, color.a, font)
+        rowY = rowY + rowH
+        drawn = drawn + 1
     end
 end
 
@@ -2198,25 +2320,46 @@ function EHR_HealthPanelUI:drawVanillaBodyPanelFrame(x, y, w, h)
         local legendVisible = w >= 320 and h >= 260
         local bodyX = x + math.floor((w - self.bodyPartPanel.width) / 2)
         if legendVisible then
-            bodyX = math.max(x + 18, bodyX - 44)
+            bodyX = x + 24
         end
         self.bodyPartPanel:setX(bodyX)
         self.bodyPartPanel:setY(y + 88)
         self:updateVanillaBodyPartPanel()
         if legendVisible then
-            self:drawBodyLegend(x + w - 164, y + 116)
+            local sideX = bodyX + self.bodyPartPanel.width + 30
+            local sideW = x + w - sideX - 14
+            if sideW < 146 then
+                sideW = 146
+                sideX = x + w - sideW - 14
+                bodyX = math.max(x + 14, sideX - self.bodyPartPanel.width - 24)
+                self.bodyPartPanel:setX(bodyX)
+            end
+            local legendH = self:drawBodyLegend(sideX, y + 108, sideW)
+            local detailsY = y + 108 + legendH + 8
+            local detailsH = y + h - 44 - detailsY
+            if detailsH >= 48 then
+                self:drawSelectedBodyPartDetails(sideX, detailsY, sideW, detailsH, self:getSelectedBodyPartText(), self:getSelectedBodyPartStatuses())
+            end
         end
     else
         self:drawText("Body panel unavailable", x + 10, y + 90, c.orange.r, c.orange.g, c.orange.b, c.orange.a, UIFont.Small)
     end
 
     local selectedText = "Selected: " .. self:getSelectedBodyPartText()
-    local statusText, statusColor = self:getSelectedBodyPartStatus()
-    if statusText then
-        selectedText = selectedText .. " - " .. statusText
-        statusColor = statusColor or c.green
-    else
-        statusColor = c.green
+    local statuses = self:getSelectedBodyPartStatuses()
+    local statusColor = c.green
+    if statuses and statuses[1] then
+        statusColor = statuses[1].color or statusColor
+        if w < 320 then
+            local compactStatuses = {}
+            for i, status in ipairs(statuses) do
+                if i > 3 then break end
+                table.insert(compactStatuses, status.label)
+            end
+            if #compactStatuses > 0 then
+                selectedText = selectedText .. " - " .. table.concat(compactStatuses, ", ")
+            end
+        end
     end
     local selectedFont = self:getCompactFont()
     local selectedW = math.max(60, w - 22)
@@ -2274,15 +2417,15 @@ function EHR_HealthPanelUI:getMedicationIconCandidates(treatment)
 
     if type(treatment) == "table" then
         local medKey = tostring(treatment.medKey or "")
-        local shortKey = medKey:match("%.([^%.]+)$") or medKey
-        addCandidate(shortKey)
-
         local medData = EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
         if type(medData) == "table" then
             addCandidate(medData.icon)
             addCandidate(medData.itemType)
             addCandidate(medData.item)
         end
+
+        local shortKey = medKey:match("%.([^%.]+)$") or medKey
+        addCandidate(shortKey)
 
         local name = tostring(treatment.medicationName or "")
         name = name:gsub("%b()", "")

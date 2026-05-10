@@ -267,6 +267,10 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [3] = 38.4,
         [4] = 37.3,
     },
+    tetanus = {
+        [3] = 39.0,
+        [4] = 37.4,
+    },
     sepsis = {
         [1] = 38.0,
         [2] = 38.6,

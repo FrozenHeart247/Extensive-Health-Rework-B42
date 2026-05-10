@@ -231,7 +231,7 @@ module ExtensiveHealth
         DisplayCategory = FirstAid,
         ItemType = base:drainable,
         DisplayName = Sterile Syringe (Pack),
-        Icon = Syringe,
+        Icon = SterileSyringe,
         Weight = 0.1,
         Tooltip = Tooltip_Syringe,
         UseDelta = 0.2,

@@ -173,6 +173,16 @@ EHR.Tooltips.Data = {
     -- =========================================
     -- TIER 1 - OTC (OVER THE COUNTER)
     -- =========================================
+    ["Base.Pills"] = {
+        category = "Vanilla Medication",
+        tier = 0,
+        description = "Standard painkiller bottle.",
+        relieves = {"Pain"},
+        effects = {
+            "Uses vanilla painkiller behavior",
+            "Multi-dose bottle",
+        },
+    },
     ["ExtensiveHealth.ColdFluTablets"] = {
         category = "OTC Medication",
         tier = 1,
@@ -242,8 +252,8 @@ EHR.Tooltips.Data = {
         category = "OTC Medication",
         tier = 1,
         description = "Non-steroidal anti-inflammatory pills (NSAIDs).",
-        relieves = {"Swelling", "Pain", "Inflammation"},
-        effects = {"40% inflammation reduction"},
+        relieves = {"Swelling", "Pain", "Inflammation", "Mild fever"},
+        effects = {"50% inflammation reduction", "55% pain relief", "30% fever relief"},
         warning = "Does NOT cure infections",
     },
     ["ExtensiveHealth.AntiDiarrheal"] = {
@@ -274,12 +284,12 @@ EHR.Tooltips.Data = {
         warning = "Does NOT cure",
     },
     ["ExtensiveHealth.AntisepticCream"] = {
-        category = "OTC Medication",
-        tier = 1,
+        category = "Prescription",
+        tier = 2,
         description = "Topical antiseptic cream.",
         effects = {
             "Apply to wounds to prevent infection",
-            "25% infection prevention",
+            "100% wound infection prevention while active",
         },
         warning = "Does NOT cure established infections",
     },

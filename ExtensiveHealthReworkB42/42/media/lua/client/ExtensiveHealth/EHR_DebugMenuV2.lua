@@ -196,6 +196,10 @@ local function debugNormalizeDiseaseTiming(diseaseId, disease, stage)
     disease.stageStartTime = currentHour
     disease.lastStageTime = currentHour
     disease.debugForcedStageAt = currentHour
+    if diseaseId == "tetanus" then
+        disease.tetanusHealthCap = nil
+        disease.tetanusSevereHealthCap = nil
+    end
 end
 
 local function debugGetDiseaseProgress(disease)
@@ -1277,6 +1281,9 @@ function EHR_DebugMenuV2:onInflictDisease(button)
     }
     debugNormalizeDiseaseTiming(diseaseId, disease, 2)
     data.EHR_Disease.active[diseaseId] = disease
+    if EHR.Disease and EHR.Disease.SetStage then
+        EHR.Disease.SetStage(self.player, diseaseId, 2)
+    end
     print("[EHR Debug] v2.7.1-MP Created disease locally: " .. diseaseId .. " with " .. duration .. "h duration")
 
     EHR.DebugV2.Log("Inflicted disease: " .. diseaseId, "DISEASES", "INFO")

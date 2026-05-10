@@ -124,8 +124,11 @@ EHR.Medication.Database = {
     -- Base.Pills (vanilla painkillers)
     ["Base.Pills"] = {
         tier = 0,
-        treats = {"common_cold", "pneumonia", "heat_exhaustion"},
+        treats = {},
         displayName = "Painkillers",
+        icon = "Painkillers",
+        useVanillaActionOnly = true,
+        skipDrugInteractions = true,
         usageMessage = "You take painkillers. The pain eases slightly.",
     },
 
@@ -251,8 +254,9 @@ EHR.Medication.Database = {
         displayName = "Anti-Inflammatory Pills",
         usageMessage = "You take anti-inflammatory pills. Swelling begins to reduce.",
         symptomReduction = {
-            inflammation = 0.40,
-            pain = 0.35,
+            inflammation = 0.50,
+            pain = 0.55,
+            fever = 0.30,
         },
     },
 
@@ -289,13 +293,16 @@ EHR.Medication.Database = {
     },
 
     ["ExtensiveHealth.AntisepticCream"] = {
-        tier = 1,
+        tier = 2,
         treats = {"wound_infection"},
         displayName = "Antiseptic Cream",
         usageMessage = "You apply antiseptic cream to the wound.",
         isTopical = true,
+        requiresActiveWound = true,
+        preventionOnly = true,
+        effectDurationHours = 8,
         symptomReduction = {
-            infection = 0.25,
+            infection = 1.00,
         },
     },
 
@@ -370,6 +377,12 @@ EHR.Medication.Database = {
         usageMessage = "You inject the tetanus antitoxin. It neutralizes the toxin.",
         requiresSyringe = true,
         cureTimeHours = 120, -- 5 days to cure
+        symptomReduction = {
+            muscleSpasms = 0.55,
+            pain = 0.45,
+            fever = 0.45,
+            weakness = 0.35,
+        },
     },
 
     ["ExtensiveHealth.TBAntibiotics"] = {
@@ -503,6 +516,12 @@ EHR.Medication.Database = {
         usageMessage = "You inject Tetanus Immunoglobulin. Immediate protection granted.",
         requiresSyringe = true,
         cureTimeHours = 48,
+        symptomReduction = {
+            muscleSpasms = 0.75,
+            pain = 0.60,
+            fever = 0.60,
+            weakness = 0.50,
+        },
         sideEffects = {"injection_site_pain", "fever"},
     },
 
@@ -1275,7 +1294,11 @@ local function EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
 
     local dosingSchedule = (itemFullType and EHR.Medication.DosingSchedules[itemFullType]) or EHR.Medication.DefaultDosing
     local doseInterval = medData.doseIntervalHours or medData.intervalHours or dosingSchedule.doseInterval or 6
-    local canCure = (tierEffects and tierEffects.canCure)
+    local tierCanCure = tierEffects and tierEffects.canCure
+    if medData.preventionOnly == true or medData.canCure == false then
+        tierCanCure = false
+    end
+    local canCure = tierCanCure
         or medData.cureTimeHours ~= nil
         or medData.diseaseCureTimeHours ~= nil
         or medData.isKnoxCure == true
@@ -1810,6 +1833,58 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
     return true, "removed", useDelta, 1.0
 end
 
+local function EHR_MedicationBodyPartHasActiveWound(bodyPart)
+    if not bodyPart then return false end
+
+    local function check(call)
+        local ok, value = pcall(call)
+        return ok and value == true
+    end
+
+    local function checkPositive(call)
+        local ok, value = pcall(call)
+        return ok and tonumber(value) and tonumber(value) > 0
+    end
+
+    if check(function() return bodyPart:bleeding() end) then return true end
+    if check(function() return bodyPart:scratched() end) then return true end
+    if check(function() return bodyPart:isCut() end) then return true end
+    if check(function() return bodyPart:bitten() end) then return true end
+    if check(function() return bodyPart:deepWounded() end) then return true end
+    if check(function() return bodyPart:isDeepWounded() end) then return true end
+    if check(function() return bodyPart:isBurnt() end) then return true end
+    if check(function() return bodyPart:haveGlass() end) then return true end
+    if check(function() return bodyPart:haveBullet() end) then return true end
+
+    if checkPositive(function() return bodyPart:getBleedingTime() end) then return true end
+    if checkPositive(function() return bodyPart:getScratchTime() end) then return true end
+    if checkPositive(function() return bodyPart:getCutTime() end) then return true end
+    if checkPositive(function() return bodyPart:getBiteTime() end) then return true end
+    if checkPositive(function() return bodyPart:getDeepWoundTime() end) then return true end
+    if checkPositive(function() return bodyPart:getBurnTime() end) then return true end
+
+    return false
+end
+
+function EHR.Medication.HasActiveWound(player)
+    if not player or not player.getBodyDamage then return false end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return false end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return false end
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local bodyPart = partType and bodyDamage:getBodyPart(partType) or nil
+        if EHR_MedicationBodyPartHasActiveWound(bodyPart) then
+            return true
+        end
+    end
+
+    return false
+end
+
 function EHR.Medication.CanUseMedication(player, item)
     if not player or not item then return false, "Invalid parameters" end
 
@@ -1818,6 +1893,10 @@ function EHR.Medication.CanUseMedication(player, item)
 
     if not medData then
         return false, "Not a recognized medication"
+    end
+
+    if medData.requiresActiveWound and not EHR.Medication.HasActiveWound(player) then
+        return false, "Requires an active wound"
     end
 
     -- Check for required supplies
@@ -1890,7 +1969,7 @@ function EHR.Medication.UseMedication(player, item)
     local treatedAny = false
 
     -- Apply treatment to all matching diseases (if any)
-    if diseaseData and diseaseData.active then
+    if diseaseData and diseaseData.active and medData.preventionOnly ~= true then
         for _, diseaseId in ipairs(medData.treats) do
             if diseaseData.active[diseaseId] then
                 EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, itemFullType)
@@ -1941,6 +2020,11 @@ function EHR.Medication.UseMedication(player, item)
         for _, effectId in ipairs(medData.sideEffects) do
             EHR.Medication.ApplySideEffect(player, effectId)
         end
+    end
+
+    if diseaseId == "tetanus" then
+        disease.tetanusHealthCap = nil
+        disease.tetanusSevereHealthCap = nil
     end
 
     -- Check for drug interactions
@@ -2124,6 +2208,31 @@ local function EHR_MedicationReducePain(player, reduction)
         end) or changed
     end
 
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if bodyDamage and BodyPartType and BodyPartType.ToIndex and BodyPartType.FromIndex then
+        local partDrop = math.max(2.0, reduction * 18)
+        local partChanged = false
+        for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+            local partType = BodyPartType.FromIndex(i)
+            local part = partType and bodyDamage:getBodyPart(partType) or nil
+            if part and part.getAdditionalPain and part.setAdditionalPain then
+                pcall(function()
+                    local currentPain = part:getAdditionalPain() or 0
+                    if currentPain > 0 then
+                        part:setAdditionalPain(math.max(0, currentPain - partDrop))
+                        partChanged = true
+                    end
+                end)
+            end
+        end
+
+        if partChanged and bodyDamage.DamageUpdate then
+            pcall(function() bodyDamage:DamageUpdate() end)
+        end
+        changed = changed or partChanged
+    end
+
     return changed
 end
 
@@ -2182,12 +2291,13 @@ local function EHR_MedicationSetStat(player, stat, value)
     return ok == true
 end
 
-local function EHR_MedicationReduceFever(player, reduction)
+local function EHR_MedicationReduceFever(player, reduction, activeHours)
     if not player or not reduction or reduction <= 0 then return false end
 
     local strongFeverReducer = reduction >= 0.60
     local feverFloor = strongFeverReducer and 37.0 or 37.4
     local drop = strongFeverReducer and 4.0 or math.max(0.10, math.min(1.0, reduction * 0.85))
+    local targetDrop = strongFeverReducer and 4.0 or math.min(1.2, reduction * 1.8)
     local changed = false
 
     if EHR and EHR.BodyTemp then
@@ -2204,6 +2314,19 @@ local function EHR_MedicationReduceFever(player, reduction)
             if current > feverFloor then
                 tempData.bodyTemp = math.max(feverFloor, current - drop)
                 tempData.targetTemp = math.min(tonumber(tempData.targetTemp) or tempData.bodyTemp, tempData.bodyTemp)
+                changed = true
+            end
+
+            local diseaseTarget = tonumber(tempData.diseaseTargetTemp)
+            if diseaseTarget and diseaseTarget > feverFloor then
+                local loweredTarget = math.max(feverFloor, diseaseTarget - targetDrop)
+                tempData.diseaseTargetTemp = math.min(diseaseTarget, loweredTarget)
+                tempData.targetTemp = math.min(tonumber(tempData.targetTemp) or loweredTarget, loweredTarget)
+                local gameTime = getGameTime and getGameTime() or nil
+                if gameTime then
+                    local hours = tonumber(activeHours) or 0.25
+                    tempData.diseaseTargetTempUntil = gameTime:getWorldAgeHours() + math.max(0.25, hours)
+                end
                 changed = true
             end
         end
@@ -2568,7 +2691,7 @@ local function EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medD
     end
 
     if reductions.fever then
-        didRelieve = EHR_MedicationReduceFever(player, reductions.fever) or didRelieve
+        didRelieve = EHR_MedicationReduceFever(player, reductions.fever, doseTiming and doseTiming.activeHours) or didRelieve
     end
 
     if reductions.breathingDifficulty then
@@ -2696,6 +2819,7 @@ end
 
 function EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEffects, itemFullType)
     if not player or not diseaseId or not medData then return false end
+    if medData.preventionOnly == true then return false end
     if not tierEffects or tierEffects.canCure ~= true then return false end
     if not EHR.Medication.IsModuleDiseaseActive or not EHR.Medication.IsModuleDiseaseActive(player, diseaseId) then
         return false
@@ -2948,8 +3072,9 @@ function EHR.Medication.GetActiveCategories(player)
     for medKey, doseData in pairs(medTracking.activeDoses) do
         local status = EHR.Medication.GetDoseStatus(player, medKey)
         if status and status.isDoseActive then
+            local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
             local category = EHR.Medication.DrugCategories[doseData.medicationName]
-            if category then
+            if category and not (medData and medData.skipDrugInteractions) then
                 categories[category] = true
             end
         end
@@ -3039,8 +3164,10 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     local activeHours = doseData.activeHours
     if activeHours == nil then activeHours = doseTiming.activeHours end
     local totalDosesNeeded = doseData.totalDosesNeeded or doseTiming.dosesRequired
+    local medCanCure = tierEffects and tierEffects.canCure == true
+        and not (medData and (medData.preventionOnly == true or medData.canCure == false))
     local requiresDoseCourse = doseData.requiresDoseCourse == true
-        or (doseData.treatingDisease ~= nil and tierEffects and tierEffects.canCure == true)
+        or (doseData.treatingDisease ~= nil and medCanCure)
     if doseTiming.symptomOnly and not requiresDoseCourse then
         totalDosesNeeded = 1
     end

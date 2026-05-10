@@ -140,6 +140,83 @@ function EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
     return success and (result or 0) or 0
 end
 
+local function BodyPartHasActiveWound(bodyPart)
+    if not bodyPart then return false end
+
+    local function check(call)
+        local ok, value = pcall(call)
+        return ok and value == true
+    end
+
+    local function checkPositive(call)
+        local ok, value = pcall(call)
+        return ok and tonumber(value) and tonumber(value) > 0
+    end
+
+    if check(function() return bodyPart:bleeding() end) then return true end
+    if check(function() return bodyPart:scratched() end) then return true end
+    if check(function() return bodyPart:isCut() end) then return true end
+    if check(function() return bodyPart:bitten() end) then return true end
+    if check(function() return bodyPart:deepWounded() end) then return true end
+    if check(function() return bodyPart:isDeepWounded() end) then return true end
+    if check(function() return bodyPart:isBurnt() end) then return true end
+    if check(function() return bodyPart:haveGlass() end) then return true end
+    if check(function() return bodyPart:haveBullet() end) then return true end
+
+    if checkPositive(function() return bodyPart:getBleedingTime() end) then return true end
+    if checkPositive(function() return bodyPart:getScratchTime() end) then return true end
+    if checkPositive(function() return bodyPart:getCutTime() end) then return true end
+    if checkPositive(function() return bodyPart:getBiteTime() end) then return true end
+    if checkPositive(function() return bodyPart:getDeepWoundTime() end) then return true end
+    if checkPositive(function() return bodyPart:getBurnTime() end) then return true end
+
+    return false
+end
+
+local function SuppressVanillaInfectionDuringAntiseptic(player, data, partName, bodyPart, vanillaLevel)
+    if not data or not partName or not bodyPart then return end
+
+    data.antisepticBlocked = data.antisepticBlocked or {}
+    data.antisepticBlocked[partName] = {
+        blockedTime = getGameTime() and getGameTime():getWorldAgeHours() or 0,
+        vanillaLevel = math.max(1, tonumber(vanillaLevel) or 1),
+    }
+
+    if data.incubating then
+        data.incubating[partName] = nil
+    end
+
+    EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+    EHR.Log("Antiseptic cream suppressed wound infection on " .. tostring(partName))
+end
+
+local function RestoreSuppressedVanillaInfection(data, partName, bodyPart)
+    if not data or not data.antisepticBlocked or not partName or not bodyPart then
+        return false
+    end
+
+    local blocked = data.antisepticBlocked[partName]
+    if type(blocked) ~= "table" then
+        data.antisepticBlocked[partName] = nil
+        return false
+    end
+
+    if not BodyPartHasActiveWound(bodyPart) then
+        data.antisepticBlocked[partName] = nil
+        return false
+    end
+
+    local level = math.max(1, tonumber(blocked.vanillaLevel) or 1)
+    pcall(function()
+        bodyPart:setWoundInfectionLevel(level)
+        bodyPart:setInfectedWound(true)
+    end)
+
+    data.antisepticBlocked[partName] = nil
+    EHR.Log("Antiseptic protection expired; wound infection risk returned on " .. tostring(partName))
+    return true
+end
+
 local function GetBodyPartByName(player, partName)
     if not player or not partName or not BodyPartType then return nil, nil end
 
@@ -274,6 +351,8 @@ function EHR.WoundInfection.MigrateLegacyData(player, modData)
 
     modData.EHR_WoundInfection = modData.EHR_WoundInfection or {
         parts = {},
+        incubating = {},
+        antisepticBlocked = {},
         totalInfectedParts = 0,
         worstStage = 0,
         lastCheck = 0,
@@ -319,6 +398,7 @@ function EHR.WoundInfection.InitializePlayer(player)
         modData.EHR_WoundInfection = {
             parts = {},              -- Keyed by body part name (active infections)
             incubating = {},         -- Keyed by body part name (infections in incubation)
+            antisepticBlocked = {},  -- Keyed by body part name (temporarily suppressed infections)
             totalInfectedParts = 0,
             worstStage = 0,
             lastCheck = 0,
@@ -326,6 +406,7 @@ function EHR.WoundInfection.InitializePlayer(player)
     end
     -- Ensure incubating table exists for older saves
     modData.EHR_WoundInfection.incubating = modData.EHR_WoundInfection.incubating or {}
+    modData.EHR_WoundInfection.antisepticBlocked = modData.EHR_WoundInfection.antisepticBlocked or {}
 
     EHR.WoundInfection.MigrateLegacyData(player, modData)
 
@@ -393,6 +474,20 @@ function EHR.WoundInfection.IsTreatmentActive(player)
     return true
 end
 
+function EHR.WoundInfection.IsAntisepticProtectionActive(player)
+    if not player or not EHR.Medication or not EHR.Medication.GetDoseStatus then
+        return false
+    end
+
+    local status = EHR.Medication.GetDoseStatus(player, "ExtensiveHealth.AntisepticCream")
+    if status and status.isDoseActive == true then
+        return true
+    end
+
+    status = EHR.Medication.GetDoseStatus(player, "Antiseptic Cream")
+    return status and status.isDoseActive == true
+end
+
 -- ============================================
 -- CORE LOGIC
 -- ============================================
@@ -414,6 +509,7 @@ function EHR.WoundInfection.ScanForInfections(player)
         data = EHR.WoundInfection.GetData(player)
         if not data then return end
     end
+    data.antisepticBlocked = data.antisepticBlocked or {}
 
     local currentHour = getGameTime():getWorldAgeHours()
     local config = EHR.WoundInfection.Config
@@ -424,6 +520,7 @@ function EHR.WoundInfection.ScanForInfections(player)
     local worseningCount = 0
     local severeCount = 0
     local worstStage = 0
+    local antisepticProtection = EHR.WoundInfection.IsAntisepticProtectionActive(player)
 
     -- Iterate all body parts (B42-safe, with fallbacks)
     if not BodyPartType then
@@ -455,8 +552,21 @@ function EHR.WoundInfection.ScanForInfections(player)
                 local vanillaInfected = EHR.WoundInfection.IsVanillaInfected(bodyPart)
                 local vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
                 local partData = data.parts[partName]
+                if not antisepticProtection and not vanillaInfected and not partData then
+                    vanillaInfected = RestoreSuppressedVanillaInfection(data, partName, bodyPart)
+                    if vanillaInfected then
+                        vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
+                    end
+                elseif not BodyPartHasActiveWound(bodyPart) and data.antisepticBlocked then
+                    data.antisepticBlocked[partName] = nil
+                end
 
                 if vanillaInfected then
+                    if antisepticProtection and not partData then
+                        SuppressVanillaInfectionDuringAntiseptic(player, data, partName, bodyPart, vanillaLevel)
+                        return
+                    end
+
                     -- Vanilla infection detected
                     local incubationData = data.incubating and data.incubating[partName]
 
@@ -466,6 +576,7 @@ function EHR.WoundInfection.ScanForInfections(player)
                         data.incubating[partName] = {
                             detectedTime = currentHour,
                             vanillaLevel = vanillaLevel,
+                            vanillaFlagActive = true,
                         }
                         EHR.Log("Wound infection incubating on " .. partName .. " (will show symptoms in " .. config.INCUBATION_HOURS .. "h)")
                         -- No dialogue yet - infection not symptomatic
@@ -494,6 +605,8 @@ function EHR.WoundInfection.ScanForInfections(player)
                         else
                             -- Still incubating - update vanilla level but don't count it yet
                             incubationData.vanillaLevel = vanillaLevel
+                            incubationData.vanillaFlagActive = true
+                            incubationData.vanillaClearedTime = nil
                         end
                     elseif partData then
                         -- Existing infection - update vanilla level
@@ -526,10 +639,45 @@ function EHR.WoundInfection.ScanForInfections(player)
                         partData.vanillaFlagActive = false
                         partData.vanillaClearedTime = partData.vanillaClearedTime or currentHour
                     end
-                    -- Also clear from incubation if it was there
-                    if data.incubating and data.incubating[partName] then
-                        EHR.Log("Vanilla cleared incubating infection on " .. partName)
-                        data.incubating[partName] = nil
+                    -- Vanilla can briefly clear its wound infection flag before EHR incubation finishes.
+                    -- Once EHR has caught the infection, keep incubation alive; explicit disinfect actions
+                    -- clear it through OnDisinfect instead.
+                    local incubationData = data.incubating and data.incubating[partName]
+                    if incubationData then
+                        incubationData.vanillaFlagActive = false
+                        incubationData.vanillaClearedTime = incubationData.vanillaClearedTime or currentHour
+
+                        local incubationTime = currentHour - incubationData.detectedTime
+                        local adjustedIncubation = config.INCUBATION_HOURS / EHR.WoundInfection.GetSpeedMultiplier()
+
+                        if incubationTime >= adjustedIncubation then
+                            data.parts[partName] = {
+                                stage = Stage.INFECTED,
+                                stageStartTime = currentHour,
+                                startTime = incubationData.detectedTime,
+                                vanillaLevel = incubationData.vanillaLevel or 0,
+                                vanillaFlagActive = false,
+                                vanillaClearedTime = incubationData.vanillaClearedTime,
+                            }
+                            partData = data.parts[partName]
+                            data.incubating[partName] = nil
+
+                            if player.Say then
+                                player:Say(EHR.WoundInfection.StageDialogue[1])
+                            end
+                            EHR.Log("Wound infection now symptomatic on " .. partName .. " (vanilla flag cleared during incubation)")
+                        end
+                    end
+
+                    if partData and partData.stage then
+                        if partData.stage >= Stage.SEVERE then
+                            severeCount = severeCount + 1
+                        elseif partData.stage >= Stage.WORSENING then
+                            worseningCount = worseningCount + 1
+                        elseif partData.stage >= Stage.INFECTED then
+                            infectedCount = infectedCount + 1
+                        end
+                        worstStage = math.max(worstStage, partData.stage)
                     end
                 end
             end
@@ -580,8 +728,19 @@ function EHR.WoundInfection.ScanForInfections(player)
                     local vanillaInfected = EHR.WoundInfection.IsVanillaInfected(bodyPart)
                     local vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
                     local partData = data.parts[partName]
+                    if not antisepticProtection and not vanillaInfected and not partData then
+                        vanillaInfected = RestoreSuppressedVanillaInfection(data, partName, bodyPart)
+                        if vanillaInfected then
+                            vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
+                        end
+                    elseif not BodyPartHasActiveWound(bodyPart) and data.antisepticBlocked then
+                        data.antisepticBlocked[partName] = nil
+                    end
 
                     if vanillaInfected then
+                        if antisepticProtection and not partData then
+                            SuppressVanillaInfectionDuringAntiseptic(player, data, partName, bodyPart, vanillaLevel)
+                        else
                         if not partData then
                             data.parts[partName] = {
                                 stage = Stage.INFECTED,
@@ -612,6 +771,7 @@ function EHR.WoundInfection.ScanForInfections(player)
                         end
 
                         worstStage = math.max(worstStage, partData.stage)
+                        end
                     else
                         if partData and partData.stage > 0 then
                             partData.vanillaLevel = 0

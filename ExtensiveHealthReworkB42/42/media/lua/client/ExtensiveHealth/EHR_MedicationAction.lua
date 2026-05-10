@@ -146,7 +146,7 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
             local itemFullType = item:getFullType()
             local medData = EHR.Medication.Database[itemFullType]
 
-            if medData then
+            if medData and not medData.useVanillaActionOnly then
                 local canUse, reason = EHR.Medication.CanUseMedication(playerObj, item)
                 local tierName = ""
                 if medData.tier == 0 then tierName = " (Basic)"

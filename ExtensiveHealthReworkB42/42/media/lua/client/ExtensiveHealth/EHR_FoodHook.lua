@@ -19,6 +19,35 @@ EHR.FoodHook = {}
 EHR.FoodHook.initialized = false
 EHR.FoodHook.drinkInitialized = false
 
+local function shouldBlockEatingForTetanus(action)
+    if not action or not action.character or not action.item then return false end
+    if not EHR.Disease or not EHR.Disease.ShouldBlockEatingDueToTetanus then return false end
+
+    local blocked = EHR.Disease.ShouldBlockEatingDueToTetanus(action.character, action.item)
+    if blocked and EHR.Disease.WarnTetanusEatingBlocked then
+        EHR.Disease.WarnTetanusEatingBlocked(action.character)
+    end
+    return blocked == true
+end
+
+local function markTetanusEatingBlocked(action)
+    if not action then return end
+    action.EHR_TetanusEatingBlocked = true
+    if action.item and action.item.setJobDelta then
+        pcall(function() action.item:setJobDelta(0.0) end)
+    end
+end
+
+local function isTetanusEatingBlocked(action)
+    if not action then return false end
+    if action.EHR_TetanusEatingBlocked then return true end
+    if shouldBlockEatingForTetanus(action) then
+        markTetanusEatingBlocked(action)
+        return true
+    end
+    return false
+end
+
 --[[
     Override ISEatFoodAction:perform to detect food consumption
     This is called when the eat action completes
@@ -28,9 +57,74 @@ function EHR.FoodHook.Initialize()
 
     -- Store original perform function
     local originalPerform = ISEatFoodAction.perform
+    local originalIsValidStart = ISEatFoodAction.isValidStart
+    local originalIsValid = ISEatFoodAction.isValid
+    local originalComplete = ISEatFoodAction.complete
+    local originalServerStop = ISEatFoodAction.serverStop
+    local originalEat = ISEatFoodAction.eat
+
+    ISEatFoodAction.isValidStart = function(self)
+        if shouldBlockEatingForTetanus(self) then
+            markTetanusEatingBlocked(self)
+            return false
+        end
+
+        if originalIsValidStart then
+            return originalIsValidStart(self)
+        end
+        return true
+    end
+
+    ISEatFoodAction.isValid = function(self)
+        if originalIsValid and not originalIsValid(self) then
+            return false
+        end
+
+        if shouldBlockEatingForTetanus(self) then
+            markTetanusEatingBlocked(self)
+            return false
+        end
+
+        return true
+    end
+
+    ISEatFoodAction.complete = function(self)
+        if isTetanusEatingBlocked(self) then
+            return false
+        end
+
+        return originalComplete(self)
+    end
+
+    ISEatFoodAction.serverStop = function(self)
+        if isTetanusEatingBlocked(self) then
+            if self.item and self.item.setJobDelta then
+                pcall(function() self.item:setJobDelta(0.0) end)
+            end
+            return
+        end
+
+        return originalServerStop(self)
+    end
+
+    ISEatFoodAction.eat = function(self, food, percentage)
+        if isTetanusEatingBlocked(self) then
+            return
+        end
+
+        return originalEat(self, food, percentage)
+    end
 
     -- Override with our version
     ISEatFoodAction.perform = function(self)
+        if isTetanusEatingBlocked(self) then
+            if self.item and self.item.setJobDelta then
+                pcall(function() self.item:setJobDelta(0.0) end)
+            end
+            originalPerform(self)
+            return
+        end
+
         -- Call original first
         originalPerform(self)
 

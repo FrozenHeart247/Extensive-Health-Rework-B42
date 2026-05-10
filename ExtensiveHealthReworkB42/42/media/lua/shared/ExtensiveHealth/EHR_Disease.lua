@@ -241,7 +241,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         canProgress = "pneumonia",  -- Can progress to pneumonia if untreated
         treatments = {
-            tier0 = {"Base.Pills"},
+            tier0 = {},
             tier1 = {"ExtensiveHealth.ColdFluTablets", "ExtensiveHealth.AntipyreticTablets", "ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant"},
             tier2 = {"ExtensiveHealth.AntiviralCapsules"},  -- Cures in 48h
             tier3 = {},
@@ -271,7 +271,7 @@ EHR.Disease.Diseases = {
         canKill = true,
         stageCount = 4,
         treatments = {
-            tier0 = {"Base.Pills", "Base.Antibiotics"},
+            tier0 = {"Base.Antibiotics"},
             tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.PrescriptionAntibiotics"},  -- Cures in 72h
             tier3 = {"ExtensiveHealth.CorticosteroidInjection"},  -- Fast cure 24h
@@ -362,7 +362,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         canProgress = "heat_stroke",
         treatments = {
-            tier0 = {"Base.Pills", "Base.PillsBeta"},
+            tier0 = {"Base.PillsBeta"},
             tier1 = {"ExtensiveHealth.ElectrolytePowder"},
             tier2 = {"ExtensiveHealth.OralRehydrationKit"},  -- Cures in 48h
             tier3 = {},
@@ -584,13 +584,12 @@ EHR.Disease.Diseases = {
             tier3 = {"ExtensiveHealth.TetanusImmunoglobulin"},  -- Fast cure 48h
         },
         stageEntryDialogue = {
-            [1] = "That deep wound from the rusty metal is worrying me...",
             [2] = "My jaw feels stiff... lockjaw starting?",
             [3] = "*muscle spasms* The tetanus is severe! I can't open my mouth!",
             [4] = "The spasms are reducing...",
         },
         dialogue = {
-            [1] = {"Should have cleaned that rusty cut...", "Feeling odd..."},
+            [1] = {},
             [2] = {"*jaw stiffness*", "Hard to swallow...", "Is this lockjaw?"},
             [3] = {"*violent spasms*", "Can't eat... can't breathe...", "Dying from tetanus..."},
             [4] = {"Finally able to eat again...", "The antitoxin is working..."},
@@ -1196,6 +1195,11 @@ function EHR.Disease.OnRecovery(player, diseaseId)
         EHR.Disease.ClearVanillaPoison(player)
     end
 
+    if diseaseId == "tetanus" then
+        local modData = player and player:getModData() or nil
+        if modData then modData.EHR_TetanusEatWarnAfter = nil end
+    end
+
     if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
         EHR.CorpseSickness.ResetAfterCure(player)
     elseif def and def.category == "food" and EHR.Disease.ResetFoodSicknessAfterCure then
@@ -1355,6 +1359,10 @@ local EHR_DiseaseBodyFeverTargets = {
         [3] = { temp = 38.4, step = 0.026 },
         [4] = { temp = 37.3, step = 0.012 },
     },
+    tetanus = {
+        [3] = { temp = 39.0, step = 0.050 },
+        [4] = { temp = 37.4, step = 0.018 },
+    },
 }
 
 local function EHR_DiseaseClampSicknessStat(stats, maxAllowed)
@@ -1414,6 +1422,62 @@ local function EHR_DiseaseRaisePainToward(stats, target, step)
             local current = stats:get(CharacterStat.PAIN) or 0
             if current < target then
                 stats:set(CharacterStat.PAIN, math.min(target, math.min(current + step, 1)))
+            end
+        end)
+    end
+end
+
+local function EHR_DiseaseMovePainToward(stats, target, raiseStep, lowerStep)
+    if not stats or not target then return end
+    raiseStep = raiseStep or 0
+    lowerStep = lowerStep or raiseStep
+    if raiseStep <= 0 and lowerStep <= 0 then return end
+
+    local effectScale = EHR_DiseaseEffectTimeScale or 1
+    raiseStep = math.max(0, raiseStep) * effectScale
+    lowerStep = math.max(0, lowerStep) * effectScale
+    target = math.min(1, math.max(0, target))
+
+    local function scaledValues(current)
+        if current and current > 1.5 then
+            return target * 100, raiseStep * 100, lowerStep * 100
+        end
+        return target, raiseStep, lowerStep
+    end
+
+    local function move(current)
+        local targetValue, up, down = scaledValues(current)
+        if math.abs(current - targetValue) < 0.01 then return current end
+        if current < targetValue then
+            return math.min(targetValue, current + up)
+        end
+        return math.max(targetValue, current - down)
+    end
+
+    if stats.getPain and stats.setPain then
+        local okGet, current = pcall(function()
+            return stats:getPain()
+        end)
+
+        if okGet and current then
+            local nextValue = move(current)
+            if nextValue ~= current then
+                local okSet = pcall(function()
+                    stats:setPain(nextValue)
+                end)
+                if okSet then return end
+            else
+                return
+            end
+        end
+    end
+
+    if CharacterStat and CharacterStat.PAIN then
+        pcall(function()
+            local current = stats:get(CharacterStat.PAIN) or 0
+            local nextValue = move(current)
+            if nextValue ~= current then
+                stats:set(CharacterStat.PAIN, nextValue)
             end
         end)
     end
@@ -1678,6 +1742,10 @@ local function EHR_DiseaseGetActiveCurativeTreatment(player, diseaseId)
     return treatment
 end
 
+function EHR.Disease.HasActiveCurativeTreatment(player, diseaseId)
+    return EHR_DiseaseGetActiveCurativeTreatment(player, diseaseId) ~= nil
+end
+
 local function EHR_DiseaseGetActiveSymptomMultiplier(player, diseaseId, disease)
     if not player or not diseaseId or not disease then return 1.0 end
 
@@ -1774,6 +1842,55 @@ function EHR.Disease.GetActiveSymptomMultiplier(player, diseaseId, disease)
     return EHR_DiseaseGetActiveSymptomMultiplier(player, diseaseId, disease)
 end
 
+function EHR.Disease.HasActiveTetanusLockjaw(player)
+    if not player then return false end
+
+    local modData = player:getModData()
+    local diseaseData = modData and modData.EHR_Disease
+    local tetanus = diseaseData and diseaseData.active and diseaseData.active.tetanus
+    if not tetanus then return false end
+
+    local stage = tonumber(tetanus.stage) or 1
+    if stage ~= 2 and stage ~= 3 then return false end
+
+    -- Muscle relaxants are the explicit window where the character can eat despite lockjaw.
+    local muscleRelief = EHR_DiseaseGetActiveSymptomReduction(player, "tetanus", "muscleSpasms")
+    return muscleRelief <= 0
+end
+
+function EHR.Disease.ShouldBlockEatingDueToTetanus(player, item)
+    if not player or not item then return false end
+    if not EHR.Disease.HasActiveTetanusLockjaw(player) then return false end
+
+    local fullType = nil
+    pcall(function() fullType = item:getFullType() end)
+    if fullType and EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[fullType] then
+        return false
+    end
+
+    local hungerChange = 0
+    if item.getHungChange then
+        pcall(function() hungerChange = item:getHungChange() or 0 end)
+    elseif item.getHungerChange then
+        pcall(function() hungerChange = item:getHungerChange() or 0 end)
+    end
+
+    return math.abs(hungerChange or 0) > 0.0001
+end
+
+function EHR.Disease.WarnTetanusEatingBlocked(player)
+    if not player or not player.Say then return end
+
+    local modData = player:getModData()
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local nextWarn = modData and tonumber(modData.EHR_TetanusEatWarnAfter) or nil
+    if nextWarn and currentHour < nextWarn then return end
+    if modData then modData.EHR_TetanusEatWarnAfter = currentHour + 0.05 end
+
+    EHR_DiseaseSay(player, {"My jaw won't open...", "I can't chew like this...", "The spasms make eating impossible..."})
+end
+
 local function EHR_DiseaseApplyBodyFever(player, diseaseId, disease, severity, symptomMult, curativeTreatment)
     if not player or not diseaseId or not disease then return end
 
@@ -1787,6 +1904,9 @@ local function EHR_DiseaseApplyBodyFever(player, diseaseId, disease, severity, s
     if curativeTreatment then
         feverTarget = math.min(feverTarget, stage == 3 and 38.1 or 37.6)
         feverStep = feverStep * 1.5
+        if diseaseId == "tetanus" then
+            feverTarget = math.min(feverTarget, stage == 3 and 37.7 or 37.3)
+        end
     end
 
     local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, "fever")
@@ -1829,6 +1949,178 @@ local function EHR_DiseaseIsMusclePart(partType, part)
         or partName:find("groin", 1, true)
 end
 
+local function EHR_DiseaseGetBodyPartName(partType, part)
+    local partName = nil
+
+    if BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(partType)
+        end)
+    end
+
+    if (not partName or partName == "") and part and part.getType and BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(part:getType())
+        end)
+    end
+
+    return tostring(partName or partType or ""):lower()
+end
+
+local function EHR_DiseaseIsNeckPart(partType, part)
+    return EHR_DiseaseGetBodyPartName(partType, part):find("neck", 1, true) ~= nil
+end
+
+local function EHR_DiseaseApplyTargetedMuscleStrain(player, targetStiffness, step, includePart, painTarget, painStep)
+    if not player or not includePart or not targetStiffness or targetStiffness <= 0 then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    targetStiffness = math.min(100, math.max(0, targetStiffness))
+    step = math.min(6, math.max(0.1, step or 0.5))
+    painTarget = painTarget and math.min(100, math.max(0, painTarget)) or nil
+    painStep = math.min(8, math.max(0.1, painStep or (step * 1.2)))
+    local effectScale = EHR_DiseaseEffectTimeScale or 1
+    step = step * effectScale
+    painStep = painStep * effectScale
+    local changed = false
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and includePart(partType, part) then
+            local okCurrent, currentStiffness = pcall(function()
+                return part:getStiffness()
+            end)
+            currentStiffness = (okCurrent and currentStiffness) or 0
+
+            if currentStiffness < targetStiffness then
+                local amount = math.min(step, targetStiffness - currentStiffness)
+                local okAdd = false
+
+                if player.addStiffness then
+                    okAdd = pcall(function()
+                        player:addStiffness(partType, amount)
+                    end)
+                end
+
+                if not okAdd and bodyDamage.addStiffness then
+                    okAdd = pcall(function()
+                        bodyDamage:addStiffness(partType, amount)
+                    end)
+                end
+
+                if not okAdd and part.addStiffness then
+                    okAdd = pcall(function()
+                        part:addStiffness(amount)
+                    end)
+                end
+
+                if not okAdd and part.setStiffness then
+                    okAdd = pcall(function()
+                        part:setStiffness(math.min(targetStiffness, currentStiffness + amount))
+                    end)
+                end
+
+                changed = changed or okAdd
+            end
+
+            if painTarget and part.getAdditionalPain and part.setAdditionalPain then
+                pcall(function()
+                    local currentPain = part:getAdditionalPain() or 0
+                    if currentPain < painTarget then
+                        part:setAdditionalPain(math.min(painTarget, currentPain + painStep))
+                    elseif currentPain > painTarget then
+                        part:setAdditionalPain(math.max(painTarget, currentPain - painStep))
+                    end
+                end)
+            end
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+end
+
+local function EHR_DiseaseReduceTargetedMuscleStrainToward(player, targetStiffness, step, includePart)
+    if not player or targetStiffness == nil or not includePart then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    targetStiffness = math.min(100, math.max(0, targetStiffness))
+    step = math.min(8, math.max(0.05, step or 0.5))
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
+    local changed = false
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and includePart(partType, part) then
+            if part.getStiffness and part.setStiffness then
+                pcall(function()
+                    local currentStiffness = part:getStiffness() or 0
+                    if currentStiffness > targetStiffness then
+                        part:setStiffness(math.max(targetStiffness, currentStiffness - step))
+                        changed = true
+                    end
+                end)
+            end
+
+            if part.getAdditionalPain and part.setAdditionalPain then
+                pcall(function()
+                    local currentPain = part:getAdditionalPain() or 0
+                    part:setAdditionalPain(math.max(0, currentPain - (step * 1.5)))
+                end)
+            end
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+end
+
+local function EHR_DiseaseReduceTargetedPainToward(player, targetPain, step, includePart)
+    if not player or targetPain == nil or not includePart then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    targetPain = math.min(100, math.max(0, targetPain))
+    step = math.min(8, math.max(0.05, step or 0.5)) * (EHR_DiseaseEffectTimeScale or 1)
+    local changed = false
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and includePart(partType, part) and part.getAdditionalPain and part.setAdditionalPain then
+            pcall(function()
+                local currentPain = part:getAdditionalPain() or 0
+                if currentPain > targetPain then
+                    part:setAdditionalPain(math.max(targetPain, currentPain - step))
+                    changed = true
+                end
+            end)
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+end
+
 local function EHR_DiseaseApplyMuscleStrain(player, targetStiffness, step)
     if not player or not targetStiffness or targetStiffness <= 0 then return end
     if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
@@ -1839,6 +2131,7 @@ local function EHR_DiseaseApplyMuscleStrain(player, targetStiffness, step)
 
     targetStiffness = math.min(100, math.max(0, targetStiffness))
     step = math.min(6, math.max(0.1, step or 0.5))
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
     local changed = false
 
     for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
@@ -1915,6 +2208,7 @@ local function EHR_DiseaseReduceMuscleStrainToward(player, targetStiffness, step
 
     targetStiffness = math.min(100, math.max(0, targetStiffness))
     step = math.min(5, math.max(0.05, step or 0.5))
+    step = step * (EHR_DiseaseEffectTimeScale or 1)
     local changed = false
 
     for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
@@ -2249,6 +2543,131 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             end
         end
 
+    elseif diseaseId == "tetanus" then
+        -- Lockjaw and spasms from contaminated deep wounds. Stage 1 is incubation and has no active effects.
+        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tetanus")
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tetanus", disease)
+        local muscleRelief = EHR_DiseaseGetActiveSymptomReduction(player, "tetanus", "muscleSpasms")
+        local painRelief = math.max(
+            EHR_DiseaseGetActiveSymptomReduction(player, "tetanus", "pain"),
+            EHR_DiseaseGetActiveSymptomReduction(player, "tetanus", "inflammation") * 0.6
+        )
+        local hasSpasmRelief = muscleRelief > 0 or curativeTreatment ~= nil
+        local hasPainRelief = painRelief > 0 or curativeTreatment ~= nil
+        local spasmFloor = hasSpasmRelief and 0.04 or 0.10
+        local painFloor = hasPainRelief and 0.04 or 0.18
+        local spasmMult = math.max(spasmFloor, symptomMult * (1 - (muscleRelief * 2.4)))
+        local painMult = math.max(painFloor, symptomMult * (1 - (painRelief * 1.5)) * (1 - (muscleRelief * 1.2)))
+        local treatmentSymptomMult = curativeTreatment and 0.55 or 1.0
+
+        spasmMult = spasmMult * treatmentSymptomMult
+        painMult = painMult * treatmentSymptomMult
+
+        if stage == 2 then
+            local neckStiffness = math.max(hasSpasmRelief and 4 or 20, 42 * severity * spasmMult)
+            local neckPain = math.max(hasPainRelief and 1 or 8, 24 * severity * painMult)
+
+            EHR_DiseaseApplyTargetedMuscleStrain(player, neckStiffness, 0.75 * severity, EHR_DiseaseIsNeckPart, neckPain, 1.4 * severity)
+            if hasSpasmRelief then
+                EHR_DiseaseReduceTargetedMuscleStrainToward(player, neckStiffness, 2.0 + (6.0 * muscleRelief), EHR_DiseaseIsNeckPart)
+            end
+
+            EHR_DiseaseDrainEndurance(stats, 0.0035 * severity * spasmMult, 0.70)
+            local generalPainTarget = 0.16 * severity * painMult
+            local generalPainStep = 0.005 * severity * painMult
+            if hasPainRelief then
+                generalPainTarget = math.max(0.08, 0.34 - (painRelief * 0.28))
+                EHR_DiseaseMovePainToward(stats, generalPainTarget, generalPainStep, 0.10 + (0.12 * painRelief))
+            else
+                EHR_DiseaseRaisePainToward(stats, generalPainTarget, generalPainStep)
+            end
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, 0.22 * severity * spasmMult, 0.0018 * severity, 1)
+
+            trySymptom("tetanus_lockjaw", 0.004 * severity * spasmMult, 0.25, function()
+                EHR_DiseaseSay(player, {"My jaw is locking up...", "My neck feels rigid...", "It hurts to swallow..."})
+            end)
+
+            if curativeTreatment then
+                disease.tetanusHealthCap = nil
+                disease.tetanusSevereHealthCap = nil
+            elseif EHR_DiseaseCanTriggerSymptom(disease, "tetanus_health_damage", 0.70) then
+                local currentHealth = EHR_DiseaseGetBodyHealth(player)
+                if currentHealth and currentHealth > 30 then
+                    local damage = math.min(currentHealth - 30, 0.25 + (0.45 * severity))
+                    local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                        player,
+                        damage,
+                        "Tetanus complications - untreated lockjaw and spasms are weakening the body"
+                    )
+                    if newHealth then
+                        disease.tetanusHealthCap = math.max(30, math.min(disease.tetanusHealthCap or 100, newHealth))
+                        EHR_DiseaseClampBodyHealth(player, disease.tetanusHealthCap)
+                    end
+                end
+            end
+
+        elseif stage == 3 then
+            local fullBodyStiffness = math.max(hasSpasmRelief and 16 or 42, 82 * severity * spasmMult)
+            local fullBodyPain = math.max(hasPainRelief and 3 or 18, 46 * severity * painMult)
+
+            local includeTetanusMuscles = function(partType, part)
+                return EHR_DiseaseIsNeckPart(partType, part) or EHR_DiseaseIsMusclePart(partType, part)
+            end
+
+            EHR_DiseaseApplyTargetedMuscleStrain(player, fullBodyStiffness, 1.55 * severity, includeTetanusMuscles, fullBodyPain, 2.2 * severity)
+            if hasSpasmRelief then
+                EHR_DiseaseReduceTargetedMuscleStrainToward(player, fullBodyStiffness, 2.2 + (5.5 * muscleRelief), includeTetanusMuscles)
+            end
+
+            EHR_DiseaseDrainEndurance(stats, 0.012 * severity * spasmMult, 0.50)
+            local generalPainTarget = 0.40 * severity * painMult
+            local generalPainStep = 0.012 * severity * painMult
+            if hasPainRelief then
+                generalPainTarget = math.max(0.18, 0.62 - (painRelief * 0.55))
+                EHR_DiseaseMovePainToward(stats, generalPainTarget, generalPainStep, 0.16 + (0.22 * painRelief))
+            else
+                EHR_DiseaseRaisePainToward(stats, generalPainTarget, generalPainStep)
+            end
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.FATIGUE, 0.58 * severity * spasmMult, 0.0032 * severity, 1)
+            EHR_DiseaseApplyBodyFever(player, "tetanus", disease, severity, symptomMult, curativeTreatment)
+
+            trySymptom("tetanus_spasm", 0.010 * severity * spasmMult, 0.18, function()
+                EHR_DiseaseTriggerCramp(player)
+            end)
+            trySymptom("tetanus_fever_line", 0.004 * severity, 0.25, function()
+                EHR_DiseaseSay(player, {"I'm burning up...", "Every muscle is locking...", "I can't stop the spasms..."})
+            end)
+
+            disease.tetanusHealthCap = nil
+            if not curativeTreatment and EHR_DiseaseCanTriggerSymptom(disease, "tetanus_severe_health_damage", 0.35) then
+                local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                    player,
+                    1.0 + (1.8 * severity),
+                    "Tetanus complications - severe spasms and fever became fatal"
+                )
+                if newHealth then
+                    disease.tetanusSevereHealthCap = math.min(disease.tetanusSevereHealthCap or 100, newHealth)
+                    EHR_DiseaseClampBodyHealth(player, disease.tetanusSevereHealthCap)
+                end
+            elseif curativeTreatment then
+                disease.tetanusSevereHealthCap = nil
+            end
+
+        elseif stage == 4 then
+            local includeTetanusMuscles = function(partType, part)
+                return EHR_DiseaseIsNeckPart(partType, part) or EHR_DiseaseIsMusclePart(partType, part)
+            end
+
+            disease.tetanusHealthCap = nil
+            disease.tetanusSevereHealthCap = nil
+            EHR_DiseaseReduceTargetedMuscleStrainToward(player, 4, 1.4 + (3.0 * muscleRelief), includeTetanusMuscles)
+            EHR_DiseaseApplyBodyFever(player, "tetanus", disease, severity, symptomMult, curativeTreatment)
+            EHR_DiseaseDrainEndurance(stats, 0.0015 * severity * spasmMult, 0.86)
+        else
+            disease.tetanusHealthCap = nil
+            disease.tetanusSevereHealthCap = nil
+        end
+
     elseif diseaseId == "corpse_sickness" then
         -- Current active corpse illness covers old putrefaction gas symptoms and mild spore irritation.
         local gameTime = getGameTime and getGameTime() or nil
@@ -2539,6 +2958,25 @@ local function EHR_DiseaseEnforceHealthCaps(player, modData)
             EHR_DiseaseClampBodyHealth(player, aspergillosis.aspergillosisHealthCap)
         elseif aspergillosis.stage ~= 3 then
             aspergillosis.aspergillosisHealthCap = nil
+        end
+    end
+
+    local tetanus = modData.EHR_Disease.active.tetanus
+    if tetanus then
+        if EHR_DiseaseGetActiveCurativeTreatment(player, "tetanus") then
+            tetanus.tetanusHealthCap = nil
+            tetanus.tetanusSevereHealthCap = nil
+        elseif tetanus.stage == 2 and tetanus.tetanusHealthCap then
+            EHR_DiseaseClampBodyHealth(player, tetanus.tetanusHealthCap)
+            tetanus.tetanusSevereHealthCap = nil
+        elseif tetanus.stage == 3 and tetanus.tetanusSevereHealthCap then
+            EHR_DiseaseClampBodyHealth(player, tetanus.tetanusSevereHealthCap)
+            tetanus.tetanusHealthCap = nil
+        elseif tetanus.stage ~= 2 then
+            tetanus.tetanusHealthCap = nil
+            if tetanus.stage ~= 3 then
+                tetanus.tetanusSevereHealthCap = nil
+            end
         end
     end
 end
@@ -3410,6 +3848,11 @@ function EHR.Disease.Cure(player, diseaseId)
 
         end
 
+        if diseaseId == "tetanus" then
+            local modData = player and player:getModData() or nil
+            if modData then modData.EHR_TetanusEatWarnAfter = nil end
+        end
+
         if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
             EHR.CorpseSickness.ResetAfterCure(player)
@@ -3454,6 +3897,7 @@ function EHR.Disease.CureAll(player)
     local curedCorpseSickness = false
     local curedFoodSickness = false
     local curedToxinPoisoning = false
+    local curedTetanus = false
 
     for diseaseId, _ in pairs(data.active) do
 
@@ -3461,6 +3905,10 @@ function EHR.Disease.CureAll(player)
 
             curedToxinPoisoning = true
 
+        end
+
+        if diseaseId == "tetanus" then
+            curedTetanus = true
         end
 
         if diseaseId == "corpse_sickness" then
@@ -3500,6 +3948,11 @@ function EHR.Disease.CureAll(player)
 
         EHR.Disease.ClearVanillaPoison(player)
 
+    end
+
+    if curedTetanus then
+        local modData = player and player:getModData() or nil
+        if modData then modData.EHR_TetanusEatWarnAfter = nil end
     end
 
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
@@ -3564,6 +4017,11 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
 
         if stage == 4 then
             disease.warmthBlocked = nil
+        end
+
+        if diseaseId == "tetanus" then
+            disease.tetanusHealthCap = nil
+            disease.tetanusSevereHealthCap = nil
         end
 
         if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then

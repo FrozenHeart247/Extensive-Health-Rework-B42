@@ -339,68 +339,70 @@ end
 -- TETANUS SYSTEM
 -- ============================================
 
+local TETANUS_INITIAL_RISK = 0.40
+local TETANUS_REROLL_INTERVAL_HOURS = 12
+local TETANUS_RISK_STEP = 0.15
+local TETANUS_MAX_RISK = 0.70
+
+local function getWorldAgeHoursSafe()
+    local gameTime = getGameTime and getGameTime() or nil
+    if not gameTime then return 0 end
+
+    local ok, hours = pcall(function()
+        return gameTime:getWorldAgeHours()
+    end)
+
+    if ok and tonumber(hours) then
+        return tonumber(hours)
+    end
+
+    return 0
+end
+
+local function getTrackedTetanusRisk(trackedWound, currentHour)
+    if type(trackedWound) ~= "table" then
+        return TETANUS_INITIAL_RISK
+    end
+
+    local firstSeen = tonumber(trackedWound.firstSeenHour) or currentHour
+    local elapsed = math.max(0, currentHour - firstSeen)
+    local intervals = math.floor(elapsed / TETANUS_REROLL_INTERVAL_HOURS)
+
+    return math.min(TETANUS_MAX_RISK, TETANUS_INITIAL_RISK + (intervals * TETANUS_RISK_STEP))
+end
+
+local function playerAlreadyHasTetanus(player)
+    if not EHR.Disease or not EHR.Disease.GetDiseaseData then return false end
+
+    local data = EHR.Disease.GetDiseaseData(player)
+    return data and data.active and data.active.tetanus ~= nil
+end
+
 --[[
     Check if a wound should trigger tetanus risk
     Called from wound system when deep puncture occurs
 ]]--
-function EHR.Food.CheckTetanusRisk(player, woundType, woundSource)
+function EHR.Food.CheckTetanusRisk(player, woundType, woundSource, riskOverride)
     local options = SandboxVars and SandboxVars.ExtensiveHealthRework
-    if options and options.TetanusEnabled == false then return end
+    if options and options.TetanusEnabled == false then return false end
 
-    -- Only deep wounds carry tetanus risk
-    local deepWoundTypes = {
-        "DeepWound", "Laceration", "Puncture", "Stab", "Bite"
-    }
+    local woundTypeText = tostring(woundType or ""):lower()
+    local sourceText = tostring(woundSource or ""):lower()
+    local isDeepWound = woundTypeText:find("deep", 1, true) ~= nil
+        or woundTypeText:find("deepwound", 1, true) ~= nil
 
-    local isDeepWound = false
-    for _, wType in ipairs(deepWoundTypes) do
-        if woundType and string.find(woundType, wType) then
-            isDeepWound = true
-            break
-        end
-    end
+    if not isDeepWound then return false end
 
-    if not isDeepWound then return end
+    -- B42 does not expose a reliable "rusty puncture" source, so EHR uses
+    -- lodged glass in a deep wound as the concrete high-risk signal.
+    local hasGlass = sourceText:find("glass", 1, true) ~= nil
+        or sourceText:find("shard", 1, true) ~= nil
+    if not hasGlass then return false end
 
-    -- Check if wound source is rusty/dirty
-    local rustyPatterns = {"Rusty", "Metal", "Nail", "Wire", "Fence", "Scrap"}
-    local dirtyPatterns = {"Soil", "Dirt", "Garden", "Farm"}
-
-    local isRusty = false
-    local isDirty = false
-
-    if woundSource then
-        for _, pattern in ipairs(rustyPatterns) do
-            if string.find(woundSource, pattern) then
-                isRusty = true
-                break
-            end
-        end
-        for _, pattern in ipairs(dirtyPatterns) do
-            if string.find(woundSource, pattern) then
-                isDirty = true
-                break
-            end
-        end
-    end
-
-    -- Calculate risk
-    local baseRisk = 0.05  -- 5% base for any deep wound
-
-    if isRusty then
-        baseRisk = baseRisk + 0.15  -- +15% for rusty
-    end
-
-    if isDirty then
-        baseRisk = baseRisk + 0.10  -- +10% for dirt
-    end
-
-    -- Check if wound was cleaned/disinfected quickly
-    -- (This would need to be tracked elsewhere)
+    local baseRisk = math.max(0, math.min(1, tonumber(riskOverride) or TETANUS_INITIAL_RISK))
 
     if baseRisk > 0 then
-        EHR.Log(string.format("Tetanus risk from wound: %.0f%% (rusty=%s, dirty=%s)",
-            baseRisk * 100, tostring(isRusty), tostring(isDirty)))
+        EHR.Log(string.format("Tetanus risk from deep wound with glass: %.0f%%", baseRisk * 100))
 
         if EHR.Disease and EHR.Disease.TryContract then
             -- Tetanus has delayed contraction (incubation is already long)
@@ -410,9 +412,13 @@ function EHR.Food.CheckTetanusRisk(player, woundType, woundSource)
                 if player.Say then
                     player:Say("That was a nasty wound... hope it doesn't get infected.")
                 end
+
+                return true
             end
         end
     end
+
+    return false
 end
 
 -- ============================================
@@ -475,6 +481,109 @@ local function getActivePlayers()
     return players
 end
 
+local function getBodyPartDebugName(partType, fallback)
+    if BodyPartType and BodyPartType.ToString and partType then
+        local ok, name = pcall(function()
+            return BodyPartType.ToString(partType)
+        end)
+        if ok and name and name ~= "" then return tostring(name) end
+    end
+    return tostring(fallback or partType or "Unknown")
+end
+
+local function bodyPartHasDeepWound(bodyPart)
+    if not bodyPart then return false end
+
+    local ok, value = pcall(function()
+        return bodyPart:deepWounded()
+    end)
+    if ok and value == true then return true end
+
+    ok, value = pcall(function()
+        return bodyPart:isDeepWounded()
+    end)
+    if ok and value == true then return true end
+
+    ok, value = pcall(function()
+        return bodyPart:getDeepWoundTime()
+    end)
+    return ok and tonumber(value) and tonumber(value) > 0
+end
+
+local function bodyPartHasGlass(bodyPart)
+    if not bodyPart then return false end
+
+    local ok, value = pcall(function()
+        return bodyPart:haveGlass()
+    end)
+    return ok and value == true
+end
+
+function EHR.Food.ScanTetanusWounds(player)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if options and options.TetanusEnabled == false then return end
+    if not player or not player.getBodyDamage then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+    if playerAlreadyHasTetanus(player) then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    local modData = player:getModData()
+    if not modData then return end
+
+    modData.EHR_TetanusGlassWounds = modData.EHR_TetanusGlassWounds or {}
+    local tracked = modData.EHR_TetanusGlassWounds
+    local stillPresent = {}
+    local currentHour = getWorldAgeHoursSafe()
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local bodyPart = partType and bodyDamage:getBodyPart(partType) or nil
+        if bodyPart and bodyPartHasDeepWound(bodyPart) and bodyPartHasGlass(bodyPart) then
+            local partName = getBodyPartDebugName(partType, i)
+            stillPresent[partName] = true
+
+            if type(tracked[partName]) ~= "table" then
+                tracked[partName] = {
+                    firstSeenHour = currentHour,
+                    lastRiskHour = nil,
+                    attempts = 0,
+                    logged = false,
+                }
+            end
+
+            local woundState = tracked[partName]
+            if not woundState.logged then
+                EHR.Log("Tetanus scanner: deep wound with glass detected at " .. tostring(partName))
+                woundState.logged = true
+            end
+
+            local lastRiskHour = tonumber(woundState.lastRiskHour)
+            local shouldRoll = lastRiskHour == nil
+                or (currentHour - lastRiskHour) >= TETANUS_REROLL_INTERVAL_HOURS
+
+            if shouldRoll then
+                woundState.lastRiskHour = currentHour
+                woundState.attempts = (tonumber(woundState.attempts) or 0) + 1
+
+                local risk = getTrackedTetanusRisk(woundState, currentHour)
+                if EHR.Food.CheckTetanusRisk(player, "DeepWound", "Glass", risk) then
+                    woundState.contracted = true
+                    return
+                end
+            end
+        end
+    end
+
+    for partName, _ in pairs(tracked) do
+        if not stillPresent[partName] then
+            tracked[partName] = nil
+        end
+    end
+end
+
 local function processPlayerTick(player)
     if not player then return end
     if not player:isAlive() then return end
@@ -492,6 +601,9 @@ local function processPlayerTick(player)
 
     -- Update hand contamination decay
     EHR.Food.UpdateHandContamination(player)
+
+    -- Check deep wounds with lodged glass once per hand tick.
+    EHR.Food.ScanTetanusWounds(player)
 end
 
 function EHR.Food.UpdateHandContamination(player)

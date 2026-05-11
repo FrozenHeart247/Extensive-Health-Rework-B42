@@ -237,13 +237,14 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiNauseaTablets"] = {
         tier = 1,
-        treats = {"food_poisoning", "gastroenteritis", "toxin_poisoning", "corpse_sickness"},
+        treats = {"food_poisoning", "gastroenteritis", "toxin_poisoning", "corpse_sickness", "dysentery"},
         displayName = "Anti-Nausea Tablets",
         usageMessage = "You take anti-nausea tablets. Your stomach settles.",
         appliesWithoutDisease = true,
         symptomReduction = {
             nausea = 0.50,
             vomiting = 0.40,
+            dysenteryVomiting = 0.75,
             sickness = 0.30,
         },
     },
@@ -262,11 +263,13 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiDiarrheal"] = {
         tier = 1,
-        treats = {"dysentery", "food_poisoning", "gastroenteritis"},
+        treats = {"dysentery"},
         displayName = "Anti-Diarrheal Tablets",
-        usageMessage = "You take anti-diarrheal tablets. Your stomach calms.",
+        usageMessage = "You take anti-diarrheal tablets. The cramps and urgency ease.",
         symptomReduction = {
-            diarrhea = 0.50,
+            diarrhea = 0.85,
+            dysenteryCaps = 1.00,
+            bathroomNeed = 0.85,
         },
     },
 
@@ -368,6 +371,17 @@ EHR.Medication.Database = {
         displayName = "Oral Rehydration Kit",
         usageMessage = "You prepare and drink the rehydration solution.",
         cureTimeHours = 48, -- 2 days to cure
+        treatmentTimeText = "48 hours (8-dose course)",
+        hydrationSupport = {
+            durationHours = 1.0,
+            immediateBoost = 0.12,
+            hydrationBoost = 0.25,
+            restorePerHour = 0.65,
+        },
+        symptomReduction = {
+            dehydration = 0.75,
+            weakness = 0.25,
+        },
     },
 
     ["ExtensiveHealth.TetanusAntitoxin"] = {
@@ -404,7 +418,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = {
         tier = 2,
-        treats = {"wound_infection", "sepsis", "pneumonia", "cellulitis"},
+        treats = {"wound_infection", "sepsis", "pneumonia", "cellulitis", "dysentery"},
         displayName = "Broad Spectrum Antibiotics",
         usageMessage = "You take broad spectrum antibiotics. They fight multiple infections.",
         cureTimeHours = 72,
@@ -443,7 +457,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.IVAntibiotics"] = {
         tier = 3,
-        treats = {"sepsis", "wound_infection", "cellulitis"},
+        treats = {"sepsis", "wound_infection", "cellulitis", "dysentery"},
         displayName = "IV Antibiotics",
         usageMessage = "You administer IV antibiotics. The infection is being eliminated.",
         requiresIVKit = true,
@@ -1258,7 +1272,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.AntifungalTablets"] = { doseInterval = 12, dosesRequired = 10 },
     ["ExtensiveHealth.ActivatedCharcoal"] = { doseInterval = 0, dosesRequired = 1 },  -- Single dose absorbs toxins
     ["ExtensiveHealth.AntiparasiticPills"] = { doseInterval = 12, dosesRequired = 14 },
-    ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 4, dosesRequired = 3 },  -- Reduced from 6
+    ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9

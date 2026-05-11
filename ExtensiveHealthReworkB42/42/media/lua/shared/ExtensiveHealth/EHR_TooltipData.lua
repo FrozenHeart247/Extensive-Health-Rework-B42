@@ -260,8 +260,8 @@ EHR.Tooltips.Data = {
         category = "OTC Medication",
         tier = 1,
         description = "Anti-diarrheal tablets.",
-        relieves = {"Diarrhea"},
-        effects = {"50% symptom relief"},
+        relieves = {"Dysentery diarrhea", "Bathroom urgency", "Hunger/thirst caps"},
+        effects = {"85% diarrhea relief", "Temporarily suppresses dysentery caps", "Strongly lowers bathroom need"},
         warning = "Does NOT cure dysentery",
     },
     ["ExtensiveHealth.MuscleRelaxants"] = {
@@ -345,8 +345,8 @@ EHR.Tooltips.Data = {
         tier = 2,
         description = "Medical rehydration solution kit.",
         cures = {"Dysentery", "Heat Exhaustion"},
-        treatmentTime = "48 hours",
-        effects = {"CURES dehydration-based conditions"},
+        treatmentTime = "48 hours (8-dose course)",
+        effects = {"CURES dehydration-based conditions", "Restores hydration during treatment"},
     },
     ["ExtensiveHealth.TetanusAntitoxin"] = {
         category = "Prescription",

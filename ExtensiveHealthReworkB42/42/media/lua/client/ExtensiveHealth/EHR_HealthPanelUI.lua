@@ -2087,6 +2087,8 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     local infectionLevel = tonumber(callBodyPartMethod(bodyPart, "getWoundInfectionLevel", 0)) or 0
     local additionalPain = tonumber(callBodyPartMethod(bodyPart, "getAdditionalPain", 0)) or 0
     local stiffness = tonumber(callBodyPartMethod(bodyPart, "getStiffness", 0)) or 0
+    local hasInjury = callBodyPartMethod(bodyPart, "HasInjury", false) == true
+    local hasLocalizedDamage = hasInjury
     local ehrWoundPartData = nil
 
     if self.player and EHR.WoundInfection and EHR.WoundInfection.GetData then
@@ -2096,37 +2098,47 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     end
 
     if callBodyPartMethod(bodyPart, "bleeding", false) == true then
+        hasLocalizedDamage = true
         add("bleeding", "Bleeding", c.red, 1.00, 110)
     end
 
     if infected or infectionLevel > 0 or (type(ehrWoundPartData) == "table" and (tonumber(ehrWoundPartData.stage) or 0) > 0) then
+        hasLocalizedDamage = true
         add("infected", "Infected", c.purple, 0.80, 100)
     end
 
     if (tonumber(callBodyPartMethod(bodyPart, "getFractureTime", 0)) or 0) > 0 then
+        hasLocalizedDamage = true
         add("fracture", "Fracture", c.red, 1.00, 95)
     end
     if callBodyPartMethod(bodyPart, "haveBullet", false) == true then
+        hasLocalizedDamage = true
         add("bullet", "Lodged bullet", c.red, 1.00, 94)
     end
     if callBodyPartMethod(bodyPart, "haveGlass", false) == true then
+        hasLocalizedDamage = true
         add("glass", "Glass shards", c.red, 1.00, 92)
     end
     if (tonumber(callBodyPartMethod(bodyPart, "getBurnTime", 0)) or 0) > 0 then
+        hasLocalizedDamage = true
         local label = callBodyPartMethod(bodyPart, "isNeedBurnWash", false) == true and "Burn needs cleaning" or "Burn"
         add("burn", label, c.orange, 0.60, 88)
     end
 
     if callBodyPartMethod(bodyPart, "deepWounded", false) == true then
+        hasLocalizedDamage = true
         add("deep_wound", "Deep wound", c.orange, 0.60, 84)
     end
     if callBodyPartMethod(bodyPart, "bitten", false) == true then
+        hasLocalizedDamage = true
         add("bite", "Bite", c.red, 1.00, 82)
     end
     if callBodyPartMethod(bodyPart, "isCut", false) == true then
+        hasLocalizedDamage = true
         add("cut", "Cut", c.orange, 0.60, 78)
     end
     if callBodyPartMethod(bodyPart, "scratched", false) == true then
+        hasLocalizedDamage = true
         add("scratch", "Scratch", c.orange, 0.60, 74)
     end
 
@@ -2147,6 +2159,7 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     end
 
     if bandaged then
+        hasLocalizedDamage = true
         if bandageLife <= 0 then
             add("dirty_bandage", "Dirty bandage", c.yellow, 0.40, 73)
         else
@@ -2154,9 +2167,11 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
         end
     end
     if callBodyPartMethod(bodyPart, "stitched", false) == true then
+        hasLocalizedDamage = true
         add("stitched", "Stitched", c.green, 0.20, 32)
     end
     if (tonumber(callBodyPartMethod(bodyPart, "getSplintFactor", 0)) or 0) > 0 then
+        hasLocalizedDamage = true
         add("splinted", "Splinted", c.green, 0.20, 30)
     end
     if (tonumber(callBodyPartMethod(bodyPart, "getPlantainFactor", 0)) or 0) > 0 then
@@ -2166,15 +2181,15 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
         add("comfrey", "Comfrey poultice", c.green, 0.20, 26)
     end
 
-    if health < 45 then
+    if hasLocalizedDamage and health < 45 then
         add("damaged", "Severe damage", c.red, 1.00, 86)
-    elseif health < 85 then
+    elseif hasLocalizedDamage and health < 85 then
         local color = health < 45 and c.red or c.orange
         local visualValue = health < 45 and 1.00 or 0.60
         add("damaged", "Damaged", color, visualValue, 40)
     end
 
-    if callBodyPartMethod(bodyPart, "HasInjury", false) == true and #statuses == 0 then
+    if hasInjury and #statuses == 0 then
         add("injury", "Injury", c.orange, 0.60, 46)
     end
 

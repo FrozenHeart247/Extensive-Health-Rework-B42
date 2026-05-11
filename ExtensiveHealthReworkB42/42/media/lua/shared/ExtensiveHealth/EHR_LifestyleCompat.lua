@@ -1,10 +1,11 @@
 --[[
     EHR Lifestyle & Hobbies Mod Compatibility
-    READ-ONLY Integration - Does NOT modify Lifestyle data
+    Optional Integration - Does NOT modify Lifestyle source files
 
-    This module reads Lifestyle and Hobbies mod data to apply
-    healing bonuses in EHR. It does NOT interfere with Lifestyle's
-    normal functionality.
+    This module reads Lifestyle and Hobbies mod data to apply healing
+    bonuses in EHR. It can also write a small optional dysentery bathroom
+    pressure value into Lifestyle's own player modData when that system is
+    present. Without Lifestyle, these hooks silently do nothing.
 
     Lifestyle Data Read:
     - hygieneNeed (0-100, lower = cleaner)
@@ -20,7 +21,7 @@
     - Yoga skill: +1-10% healing based on level
     - Bad hygiene (hygieneNeed > 70): -10-25% healing penalty
 
-    v2.0.0 - Complete rewrite for read-only integration
+    v2.1.0 - Optional dysentery bathroom pressure bridge
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
@@ -54,6 +55,16 @@ EHR.LifestyleCompat.Config = {
     -- Healing penalty multipliers
     PENALTY_DIRTY = -0.10,           -- -10% healing
     PENALTY_FILTHY = -0.25,          -- -25% healing
+
+    -- Optional Lifestyle toilet integration. Values are bathroomNeed points
+    -- per in-game hour, before EHR medication symptom reductions.
+    DYSENTERY_BATHROOM_RATE = {
+        [1] = 2.0,
+        [2] = 14.0,
+        [3] = 26.0,
+        [4] = 2.0,
+    },
+    DYSENTERY_BATHROOM_MAX_DELTA_HOURS = 0.25,
 }
 
 -- Cache for current hygiene state to prevent flickering
@@ -62,6 +73,8 @@ local currentHygieneState = nil  -- "excellent", "good", "fresh", "neutral", "di
 -- Cache for mod detection (checked once)
 local modLoadedCache = nil
 local lastModCheckTime = 0
+local toiletCompatTick = 0
+local TOILET_COMPAT_TICK_INTERVAL = 90
 
 -- ============================================
 -- MOD DETECTION
@@ -115,7 +128,14 @@ function EHR.LifestyleCompat.IsModLoaded()
         detectionMethod = "LSHygiene"
     end
 
-    -- Method 6: Check player modData for Lifestyle markers
+    -- Method 6: Check for Lifestyle's toilet globals
+    if not detected and ((AdjustBladderNeed and type(AdjustBladderNeed) == "function")
+        or (LSUseToilet and type(LSUseToilet) == "table")) then
+        detected = true
+        detectionMethod = "LifestyleToilet"
+    end
+
+    -- Method 7: Check player modData for Lifestyle markers
     if not detected then
         local player = getPlayer and getPlayer()
         if player then
@@ -125,7 +145,9 @@ function EHR.LifestyleCompat.IsModLoaded()
                 if modData.hygieneNeed ~= nil or
                    modData.LSHygiene ~= nil or
                    modData.IsDoingShower ~= nil or
-                   modData.LSMoodles ~= nil then
+                   modData.LSMoodles ~= nil or
+                   modData.bathroomNeed ~= nil or
+                   modData.IsDoingToilet ~= nil then
                     detected = true
                     detectionMethod = "playerModData"
                 end
@@ -304,6 +326,182 @@ function EHR.LifestyleCompat.GetHygieneMoodle(player)
     end
 
     return "neutral", 0
+end
+
+-- ============================================
+-- OPTIONAL TOILET INTEGRATION
+-- ============================================
+
+function EHR.LifestyleCompat.HasToiletSystem(player)
+    if not player then return false end
+    if not EHR.LifestyleCompat.IsModLoaded() then return false end
+
+    if SandboxVars and SandboxVars.Text and SandboxVars.Text.DividerHygiene == false then
+        return false
+    end
+
+    local data = player:getModData()
+    if not data then return false end
+    if type(data.LSMoodles) ~= "table" then return false end
+    if type(data.LSMoodles.BladderNeed) ~= "table" then return false end
+
+    return data.bathroomNeed ~= nil
+        or data.IsDoingToilet ~= nil
+        or AdjustBladderNeed ~= nil
+        or LSUseToilet ~= nil
+end
+
+function EHR.LifestyleCompat.GetBathroomNeed(player)
+    if not EHR.LifestyleCompat.HasToiletSystem(player) then return nil end
+    local data = player:getModData()
+    return math.max(0, math.min(100, tonumber(data.bathroomNeed) or 0))
+end
+
+local function EHR_LifestyleCompatSyncBladderMoodle(data)
+    if not data or type(data.LSMoodles) ~= "table" then return end
+
+    local bladder = data.LSMoodles.BladderNeed
+    if type(bladder) ~= "table" then return end
+
+    local need = math.max(0, math.min(100, tonumber(data.bathroomNeed) or 0))
+    local value = 0
+
+    if need >= 90 then
+        value = 0.8
+    elseif need >= 80 then
+        value = 0.6
+    elseif need >= 60 then
+        value = 0.4
+    elseif need >= 30 then
+        value = 0.2
+    end
+
+    bladder.Value = value
+end
+
+local function EHR_LifestyleCompatGetDysenteryMultiplier(player, disease)
+    local multiplier = 1.0
+
+    if EHR.Disease and EHR.Disease.GetActiveSymptomMultiplier then
+        local ok, result = pcall(EHR.Disease.GetActiveSymptomMultiplier, player, "dysentery", disease)
+        if ok and type(result) == "number" then
+            multiplier = result
+        end
+    end
+
+    if EHR.Disease and EHR.Disease.GetActiveSymptomReduction then
+        local ok, reduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, "dysentery", "diarrhea")
+        if ok and type(reduction) == "number" and reduction > 0 then
+            multiplier = multiplier * math.max(0.10, 1 - reduction)
+        end
+
+        local okBathroom, bathroomReduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, "dysentery", "bathroomNeed")
+        if okBathroom and type(bathroomReduction) == "number" and bathroomReduction > 0 then
+            multiplier = multiplier * math.max(0.05, 1 - bathroomReduction)
+        end
+    end
+
+    return math.max(0.02, math.min(1.0, multiplier))
+end
+
+local function EHR_LifestyleCompatGetBathroomRelief(player)
+    if not (EHR.Disease and EHR.Disease.GetActiveSymptomReduction) then return 0 end
+
+    local ok, reduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, "dysentery", "bathroomNeed")
+    if ok and type(reduction) == "number" then
+        return math.max(0, math.min(1, reduction))
+    end
+
+    return 0
+end
+
+function EHR.LifestyleCompat.ApplyDysenteryBathroomPressure(player, disease)
+    if not player or not disease then return false end
+    if not EHR.LifestyleCompat.HasToiletSystem(player) then return false end
+
+    local data = player:getModData()
+    if not data then return false end
+
+    data.EHR_LifestyleDysenteryToilet = data.EHR_LifestyleDysenteryToilet or {}
+    local tracking = data.EHR_LifestyleDysenteryToilet
+
+    local currentHour = getGameTime and getGameTime():getWorldAgeHours() or 0
+    local lastHour = tonumber(tracking.lastHour)
+    local deltaHours = lastHour and (currentHour - lastHour) or 0.1
+
+    if deltaHours < 0 then deltaHours = 0 end
+    deltaHours = math.min(deltaHours, EHR.LifestyleCompat.Config.DYSENTERY_BATHROOM_MAX_DELTA_HOURS)
+    tracking.lastHour = currentHour
+
+    if data.IsDoingToilet == true then
+        EHR_LifestyleCompatSyncBladderMoodle(data)
+        return true
+    end
+
+    local stage = math.max(1, math.min(4, tonumber(disease.stage) or 1))
+    local rate = EHR.LifestyleCompat.Config.DYSENTERY_BATHROOM_RATE[stage] or 0
+    if rate <= 0 or deltaHours <= 0 then
+        EHR_LifestyleCompatSyncBladderMoodle(data)
+        return true
+    end
+
+    local multiplier = EHR_LifestyleCompatGetDysenteryMultiplier(player, disease)
+    local currentNeed = math.max(0, math.min(100, tonumber(data.bathroomNeed) or 0))
+    local bathroomRelief = EHR_LifestyleCompatGetBathroomRelief(player)
+    if bathroomRelief > 0 and currentNeed > 0 and deltaHours > 0 then
+        local reliefDrop = 35.0 * bathroomRelief * deltaHours
+        currentNeed = math.max(0, currentNeed - reliefDrop)
+        data.bathroomNeed = currentNeed
+    end
+
+    local addedNeed = rate * deltaHours * multiplier
+    local nextNeed = math.min(100, currentNeed + addedNeed)
+
+    if nextNeed ~= currentNeed then
+        data.bathroomNeed = nextNeed
+        EHR_LifestyleCompatSyncBladderMoodle(data)
+
+        if EHR.DEBUG and addedNeed >= 0.2 then
+            EHR.Log(string.format("LifestyleCompat: Dysentery added %.2f bathroomNeed (stage %d, now %.1f)",
+                addedNeed, stage, nextNeed))
+        end
+    end
+
+    return true
+end
+
+function EHR.LifestyleCompat.ProcessDysenteryToiletCompat(player)
+    if not player or not player:isAlive() then return end
+    if not EHR.LifestyleCompat.HasToiletSystem(player) then return end
+    if not (EHR.Disease and EHR.Disease.GetDiseaseData) then return end
+
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    local dysentery = diseaseData and diseaseData.active and diseaseData.active.dysentery
+    local data = player:getModData()
+
+    if dysentery then
+        EHR.LifestyleCompat.ApplyDysenteryBathroomPressure(player, dysentery)
+    elseif data then
+        data.EHR_LifestyleDysenteryToilet = nil
+    end
+end
+
+function EHR.LifestyleCompat.OnTick()
+    if isServer and isServer() and not (isClient and isClient()) then return end
+
+    toiletCompatTick = toiletCompatTick + 1
+    if toiletCompatTick < TOILET_COMPAT_TICK_INTERVAL then return end
+    toiletCompatTick = 0
+
+    local player = nil
+    if getSpecificPlayer then
+        player = getSpecificPlayer(0)
+    end
+    if not player and getPlayer then
+        player = getPlayer()
+    end
+
+    EHR.LifestyleCompat.ProcessDysenteryToiletCompat(player)
 end
 
 -- ============================================
@@ -669,6 +867,9 @@ function EHR.LifestyleCompat.DebugDetection()
             print("  IsDoingShower: " .. tostring(modData.IsDoingShower))
             print("  LSMoodles: " .. tostring(modData.LSMoodles ~= nil))
             print("  IsSitting: " .. tostring(modData.IsSitting))
+            print("  bathroomNeed: " .. tostring(modData.bathroomNeed))
+            print("  IsDoingToilet: " .. tostring(modData.IsDoingToilet))
+            print("  HasToiletSystem: " .. tostring(EHR.LifestyleCompat.HasToiletSystem(player)))
             print("  EHR_LastBathTime: " .. tostring(modData.EHR_LastBathTime))
 
             -- List all potentially Lifestyle-related keys
@@ -680,7 +881,8 @@ function EHR.LifestyleCompat.DebugDetection()
                     local kLower = k:lower()
                     if kLower:find("ls") or kLower:find("hygiene") or kLower:find("shower") or
                        kLower:find("bath") or kLower:find("dirty") or kLower:find("clean") or
-                       kLower:find("sitting") or kLower:find("yoga") or kLower:find("wellness") then
+                       kLower:find("sitting") or kLower:find("yoga") or kLower:find("wellness") or
+                       kLower:find("toilet") or kLower:find("bathroom") then
                         local valStr = tostring(v)
                         if type(v) == "table" then valStr = "(table)" end
                         print("  " .. k .. " = " .. valStr)
@@ -752,8 +954,11 @@ end
 if Events and Events.OnGameStart then
     Events.OnGameStart.Add(EHR.LifestyleCompat.Initialize)
 end
+if Events and Events.OnTick then
+    Events.OnTick.Add(EHR.LifestyleCompat.OnTick)
+end
 
 EHR.Log = EHR.Log or function(msg) print("[EHR] " .. tostring(msg)) end
-EHR.Log("EHR_LifestyleCompat.lua loaded (read-only integration v2.0.0)")
+EHR.Log("EHR_LifestyleCompat.lua loaded (optional integration v2.1.0)")
 
 return EHR.LifestyleCompat

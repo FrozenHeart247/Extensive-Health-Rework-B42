@@ -258,29 +258,41 @@ EHR.Disease.Diseases["dysentery"] = {
     -- Stage effects (handled by EHR_EnvironmentalDiseases)
     effects = {
         [1] = {
-            thirstDrain = 0.002,
-            hungerDrain = 0.001,
+            thirstDrain = 0.0003,
+            hungerDrain = 0.0002,
+            thirstCap = 0.10,
+            hungerCap = 0.10,
             vomitChance = 0,
             bloodLoss = 0,
+            abdominalPain = 0,
         },
         [2] = {
-            thirstDrain = 0.008,        -- Significant fluid loss
-            hungerDrain = 0.004,
-            vomitChance = 0.003,        -- Occasional vomiting
-            bloodLoss = 0.5,            -- mL per tick (diarrhea blood loss)
+            thirstDrain = 0.0025,       -- Moderate fluid loss, capped unless unsupported
+            hungerDrain = 0.0015,
+            thirstCap = 0.50,
+            hungerCap = 0.50,
+            vomitChance = 0.00035,      -- Very rare vomiting
+            bloodLoss = 0.05,           -- mL per tick (bloody diarrhea)
+            bloodLossFloor = 4550,
+            abdominalPain = 18,
         },
         [3] = {
-            thirstDrain = 0.020,        -- Extreme dehydration
-            hungerDrain = 0.010,
-            vomitChance = 0.010,        -- Frequent vomiting
-            bloodLoss = 1.5,            -- Significant blood loss
-            movementPenalty = 0.6,      -- 40% slower (weakness)
+            thirstDrain = 0.0065,       -- Dangerous dehydration, no cap
+            hungerDrain = 0.0035,
+            vomitChance = 0.004,        -- Frequent vomiting
+            bloodLoss = 0.18,           -- Noticeable blood loss, but not the kill path
+            bloodLossFloor = 3850,
+            abdominalPain = 28,
+            movementPenalty = 0.7,      -- 30% slower (weakness)
         },
         [4] = {
-            thirstDrain = 0.005,
-            hungerDrain = 0.002,
-            vomitChance = 0.001,
-            bloodLoss = 0.1,
+            thirstDrain = 0.0003,
+            hungerDrain = 0.0002,
+            thirstCap = 0.10,
+            hungerCap = 0.10,
+            vomitChance = 0,
+            bloodLoss = 0,
+            abdominalPain = 0,
         },
     },
     -- Stage entry dialogue

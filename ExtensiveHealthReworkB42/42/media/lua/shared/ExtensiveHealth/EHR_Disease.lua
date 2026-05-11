@@ -117,7 +117,7 @@ EHR.Disease.Diseases = {
         -- Treatment tiers - which medications work at which effectiveness
         treatments = {
             tier0 = {"Base.PillsVitamins"},  -- 15% symptom relief
-            tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.AntiDiarrheal", "ExtensiveHealth.ElectrolytePowder"},  -- 40% relief
+            tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.ElectrolytePowder"},  -- 40% relief
             tier2 = {"ExtensiveHealth.ActivatedCharcoal"},  -- Cures in 6h
             tier3 = {},  -- No clinical treatment needed
         },
@@ -147,7 +147,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.PillsVitamins"},
-            tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.AntiDiarrheal", "ExtensiveHealth.ElectrolytePowder"},
+            tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.ElectrolytePowder"},
             tier2 = {"ExtensiveHealth.AntiviralCapsules"},  -- Cures in 48h
             tier3 = {"ExtensiveHealth.IVCiprofloxacin"},  -- Severe bacterial GI infection
         },
@@ -302,9 +302,9 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},
-            tier1 = {"ExtensiveHealth.ElectrolytePowder", "ExtensiveHealth.AntiDiarrheal"},
-            tier2 = {"ExtensiveHealth.OralRehydrationKit"},  -- Cures in 48h
-            tier3 = {"ExtensiveHealth.IVMetronidazole", "ExtensiveHealth.IVCiprofloxacin"},  -- Fast cure 24h
+            tier1 = {"ExtensiveHealth.ElectrolytePowder", "ExtensiveHealth.AntiDiarrheal", "ExtensiveHealth.AntiNauseaTablets"},
+            tier2 = {"ExtensiveHealth.OralRehydrationKit", "ExtensiveHealth.BroadSpectrumAntibiotics"},  -- Cures in 48-72h
+            tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVMetronidazole", "ExtensiveHealth.IVCiprofloxacin"},  -- Fast cure 24-36h
         },
         stageEntryDialogue = {
             [1] = "That water tasted funny...",
@@ -3853,6 +3853,10 @@ function EHR.Disease.Cure(player, diseaseId)
             if modData then modData.EHR_TetanusEatWarnAfter = nil end
         end
 
+        if diseaseId == "dysentery" and EHR.Environmental and EHR.Environmental.ClearDysenteryPain then
+            EHR.Environmental.ClearDysenteryPain(player)
+        end
+
         if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
             EHR.CorpseSickness.ResetAfterCure(player)
@@ -3898,6 +3902,7 @@ function EHR.Disease.CureAll(player)
     local curedFoodSickness = false
     local curedToxinPoisoning = false
     local curedTetanus = false
+    local curedDysentery = false
 
     for diseaseId, _ in pairs(data.active) do
 
@@ -3909,6 +3914,10 @@ function EHR.Disease.CureAll(player)
 
         if diseaseId == "tetanus" then
             curedTetanus = true
+        end
+
+        if diseaseId == "dysentery" then
+            curedDysentery = true
         end
 
         if diseaseId == "corpse_sickness" then
@@ -3953,6 +3962,10 @@ function EHR.Disease.CureAll(player)
     if curedTetanus then
         local modData = player and player:getModData() or nil
         if modData then modData.EHR_TetanusEatWarnAfter = nil end
+    end
+
+    if curedDysentery and EHR.Environmental and EHR.Environmental.ClearDysenteryPain then
+        EHR.Environmental.ClearDysenteryPain(player)
     end
 
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
@@ -4026,6 +4039,10 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
 
         if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
             EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+        end
+
+        if diseaseId == "dysentery" and EHR.Environmental and EHR.Environmental.ApplyDiseaseEffects then
+            EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
         end
 
         if oldStage ~= stage and def and def.stageEntryDialogue and def.stageEntryDialogue[stage] and EHR.Dialogue then

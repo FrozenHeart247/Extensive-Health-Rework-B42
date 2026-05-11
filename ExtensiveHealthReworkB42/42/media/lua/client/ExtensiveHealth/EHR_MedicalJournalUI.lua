@@ -201,10 +201,11 @@ local CodexInfo = {
     },
     cellulitis = {
         category = "wound",
-        cause = "Spreading bacterial infection through damaged skin or untreated wounds.",
-        symptoms = "Hot red skin, swelling, pain, fever, and reduced limb function.",
-        prevention = "Treat wound infections early and keep injured skin clean.",
-        treatment = "Antibiotic ointment for mild cases; antibiotics or clinical antibiotics for severe infection.",
+        name = "Cellulitis (WIP)",
+        cause = "WIP: not currently triggered by gameplay. Planned as a spreading bacterial infection through damaged skin or untreated wounds.",
+        symptoms = "WIP: planned symptoms are hot red skin, swelling, pain, fever, and reduced limb function.",
+        prevention = "WIP: treat wound infections early and keep injured skin clean. Full gameplay mechanics are not active yet.",
+        treatment = "WIP: planned treatment is antibiotic ointment for mild cases; antibiotics or clinical antibiotics for severe infection.",
     },
     sepsis = {
         category = "wound",

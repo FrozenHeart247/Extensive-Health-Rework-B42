@@ -52,9 +52,9 @@ EHR.Environmental.Config = {
     heatMinimumExposure = 1.0,        -- Minimum hours before disease check can trigger
 
     -- Water contamination risk
-    untreatedWaterRisk = 0.35,      -- 35% base chance from untreated water
-    toiletWaterRisk = 0.60,         -- 60% from toilet water
-    riverWaterRisk = 0.25,          -- 25% from river (lower but still risky)
+    untreatedWaterRisk = 0.25,      -- 25% per drink from contaminated/untreated water
+    toiletWaterRisk = 0.50,         -- 50% per direct drink from toilets
+    riverWaterRisk = 0.15,          -- No extra river/lake multiplier
     rainCollectorRisk = 0.05,       -- 5% from rain collectors (mostly safe)
 
     -- Cold -> Pneumonia progression check interval (game hours)
@@ -1092,6 +1092,15 @@ end
 function EHR.Environmental.GetWaterContaminationRisk(waterItem, sourceType)
     local config = EHR.Environmental.Config
 
+    -- Known world-source hooks can override generic tainted water for clearer risk/logging.
+    if sourceType == "rainCollector" then
+        return config.rainCollectorRisk, "rain"
+    elseif sourceType == "toilet" then
+        return config.toiletWaterRisk, "toilet"
+    elseif sourceType == "river" or sourceType == "lake" then
+        return config.riverWaterRisk, "river"
+    end
+
     -- Check if water is already marked as tainted
     if waterItem then
         -- Try B42 methods for tainted water
@@ -1118,12 +1127,8 @@ function EHR.Environmental.GetWaterContaminationRisk(waterItem, sourceType)
     end
 
     -- Determine risk based on source type
-    if sourceType == "toilet" then
-        return config.toiletWaterRisk, "toilet"
-    elseif sourceType == "river" or sourceType == "lake" then
-        return config.riverWaterRisk, "river"
-    elseif sourceType == "rainCollector" then
-        return config.rainCollectorRisk, "rain"
+    if sourceType == "tainted" or sourceType == "contaminated" then
+        return config.untreatedWaterRisk, "tainted"
     elseif sourceType == "tap" then
         -- Tap water after power outage is risky
         -- Check if power is on
@@ -1224,6 +1229,349 @@ local function EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
     )
 end
 
+local function EHR_EnvironmentalGetCurrentHour()
+    local gameTime = getGameTime and getGameTime() or nil
+    return gameTime and gameTime:getWorldAgeHours() or 0
+end
+
+local function EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, reductionKey)
+    local multiplier = 1.0
+
+    if EHR.Disease and EHR.Disease.GetActiveSymptomMultiplier then
+        local ok, result = pcall(EHR.Disease.GetActiveSymptomMultiplier, player, diseaseId, disease)
+        if ok and type(result) == "number" then
+            multiplier = result
+        end
+    end
+
+    if reductionKey and EHR.Disease and EHR.Disease.GetActiveSymptomReduction then
+        local ok, reduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, diseaseId, reductionKey)
+        if ok and type(reduction) == "number" and reduction > 0 then
+            multiplier = multiplier * math.max(0, 1 - reduction)
+        end
+    end
+
+    return math.max(0.02, math.min(1.0, multiplier))
+end
+
+local function EHR_EnvironmentalHasHydrationSupport(player)
+    if not player then return false end
+
+    local modData = player:getModData()
+    local medTracking = modData and modData.EHR_Medication
+    local generalEffects = medTracking and medTracking.activeGeneralEffects
+    local hydration = generalEffects and generalEffects.electrolytes
+    if type(hydration) ~= "table" then return false end
+
+    local endTime = tonumber(hydration.endTime) or 0
+    return endTime > EHR_EnvironmentalGetCurrentHour()
+end
+
+local function EHR_EnvironmentalHasDysenteryCapRelief(player)
+    if not (EHR.Disease and EHR.Disease.GetActiveSymptomReduction) then return false end
+
+    local ok, reduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, "dysentery", "dysenteryCaps")
+    return ok and type(reduction) == "number" and reduction > 0
+end
+
+local function EHR_EnvironmentalApplyCappedStatDrain(stats, stat, drain, cap)
+    if not stats or not stat then return end
+
+    drain = tonumber(drain) or 0
+    if drain <= 0 then return end
+
+    local current = stats:get(stat) or 0
+    local nextValue = math.min(1, current + drain)
+    if cap ~= nil then
+        nextValue = math.min(nextValue, math.max(0, math.min(1, tonumber(cap) or 1)))
+    end
+
+    if nextValue > current then
+        pcall(function()
+            stats:set(stat, nextValue)
+        end)
+    end
+end
+
+local function EHR_EnvironmentalApplyBloodLossFloor(player, bloodLoss, bloodFloor)
+    bloodLoss = tonumber(bloodLoss) or 0
+    if bloodLoss <= 0 then return end
+    if not (EHR.Blood and EHR.Blood.ModifyBloodVolume) then return end
+
+    if bloodFloor ~= nil and EHR.GetPlayerData then
+        local data = EHR.GetPlayerData(player)
+        local bloodData = data and data.EHR_Blood
+        if bloodData then
+            local currentVolume = tonumber(bloodData.currentVolume) or tonumber(bloodData.maxVolume) or 5000
+            bloodFloor = tonumber(bloodFloor) or 0
+            if currentVolume <= bloodFloor then return end
+            bloodLoss = math.min(bloodLoss, currentVolume - bloodFloor)
+        end
+    end
+
+    if bloodLoss > 0 then
+        EHR.Blood.ModifyBloodVolume(player, -bloodLoss)
+    end
+end
+
+local function EHR_EnvironmentalGetBodyPartName(partType, part)
+    local partName = nil
+
+    if BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(partType)
+        end)
+    end
+
+    if (not partName or partName == "") and part and part.getType and BodyPartType and BodyPartType.ToString then
+        pcall(function()
+            partName = BodyPartType.ToString(part:getType())
+        end)
+    end
+
+    return tostring(partName or partType or "")
+end
+
+local function EHR_EnvironmentalFindAbdomenPart(bodyDamage)
+    if not bodyDamage or not BodyPartType then return nil, nil end
+
+    local preferred = {"Torso_Lower", "Groin", "Torso_Upper"}
+    for _, partName in ipairs(preferred) do
+        local partType = BodyPartType[partName]
+        if not partType and BodyPartType.FromString then
+            local ok, result = pcall(function()
+                return BodyPartType.FromString(partName)
+            end)
+            if ok then partType = result end
+        end
+        if not partType and BodyPartType.values then
+            local okValues, values = pcall(function()
+                return BodyPartType.values()
+            end)
+            if okValues and values then
+                local function checkCandidate(candidate)
+                    if candidate and tostring(candidate) == tostring(partName) then
+                        partType = candidate
+                        return true
+                    end
+                    return false
+                end
+
+                if type(values) == "table" then
+                    for _, candidate in ipairs(values) do
+                        if checkCandidate(candidate) then break end
+                    end
+                elseif type(values.size) == "function" and type(values.get) == "function" then
+                    for i = 0, values:size() - 1 do
+                        if checkCandidate(values:get(i)) then break end
+                    end
+                end
+            end
+        end
+
+        local part = nil
+        if partType then
+            pcall(function()
+                part = bodyDamage:getBodyPart(partType)
+            end)
+        end
+        if part then return part, partName end
+    end
+
+    if BodyPartType.ToIndex and BodyPartType.FromIndex and BodyPartType.MAX then
+        for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+            local partType = BodyPartType.FromIndex(i)
+            local part = partType and bodyDamage:getBodyPart(partType) or nil
+            local partName = EHR_EnvironmentalGetBodyPartName(partType, part)
+            local partKey = partName:lower()
+            if part and (partKey:find("torso_lower", 1, true)
+                    or partKey:find("lower_torso", 1, true)
+                    or partKey:find("lower torso", 1, true)
+                    or (partKey:find("torso", 1, true) and partKey:find("lower", 1, true))
+                    or partKey:find("abdomen", 1, true)
+                    or partKey:find("stomach", 1, true)
+                    or partKey:find("groin", 1, true)) then
+                return part, partName
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function EHR_EnvironmentalApplyTrackedAbdominalPain(player, targetPain)
+    if not player then return end
+
+    local bodyDamage = nil
+    pcall(function()
+        bodyDamage = player:getBodyDamage()
+    end)
+    if not bodyDamage then return end
+
+    local bodyPart, partName = EHR_EnvironmentalFindAbdomenPart(bodyDamage)
+    if not bodyPart or not bodyPart.getAdditionalPain or not bodyPart.setAdditionalPain then return end
+
+    local modData = player:getModData()
+    modData.EHR_DysenteryPain = modData.EHR_DysenteryPain or {}
+    local painData = modData.EHR_DysenteryPain
+    local painKey = tostring(partName or "abdomen")
+
+    local applied = tonumber(painData[painKey]) or 0
+    targetPain = math.max(0, math.min(60, tonumber(targetPain) or 0))
+    local step = targetPain > applied and 3.0 or 2.4
+
+    local nextApplied = applied
+    if targetPain > applied then
+        if applied <= 0.05 then
+            nextApplied = math.min(targetPain, math.max(step, targetPain * 0.35))
+        else
+            nextApplied = math.min(targetPain, applied + step)
+        end
+    elseif targetPain < applied then
+        nextApplied = math.max(targetPain, applied - step)
+    end
+
+    if math.abs(nextApplied - applied) < 0.01 then return end
+
+    local delta = nextApplied - applied
+    pcall(function()
+        local currentPain = bodyPart:getAdditionalPain() or 0
+        bodyPart:setAdditionalPain(math.max(0, currentPain + delta))
+    end)
+
+    if nextApplied <= 0.05 then
+        painData[painKey] = nil
+    else
+        painData[painKey] = nextApplied
+    end
+
+    if bodyDamage.DamageUpdate then
+        pcall(function()
+            bodyDamage:DamageUpdate()
+        end)
+    end
+end
+
+function EHR.Environmental.ClearDysenteryPain(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    local painData = modData and modData.EHR_DysenteryPain
+    if type(painData) ~= "table" then return end
+
+    local bodyDamage = nil
+    pcall(function()
+        bodyDamage = player:getBodyDamage()
+    end)
+    if not bodyDamage then
+        modData.EHR_DysenteryPain = nil
+        return
+    end
+
+    for painKey, applied in pairs(painData) do
+        local bodyPart = nil
+        if tostring(painKey) == "abdomen" then
+            bodyPart = EHR_EnvironmentalFindAbdomenPart(bodyDamage)
+        else
+            local partType = BodyPartType and BodyPartType[tostring(painKey)] or nil
+            if not partType and BodyPartType and BodyPartType.FromString then
+                local ok, result = pcall(function()
+                    return BodyPartType.FromString(tostring(painKey))
+                end)
+                if ok then partType = result end
+            end
+            if partType then
+                pcall(function()
+                    bodyPart = bodyDamage:getBodyPart(partType)
+                end)
+            end
+        end
+
+        if bodyPart and bodyPart.getAdditionalPain and bodyPart.setAdditionalPain then
+            pcall(function()
+                local currentPain = bodyPart:getAdditionalPain() or 0
+                bodyPart:setAdditionalPain(math.max(0, currentPain - (tonumber(applied) or 0)))
+            end)
+        end
+    end
+
+    modData.EHR_DysenteryPain = nil
+    if bodyDamage.DamageUpdate then
+        pcall(function()
+            bodyDamage:DamageUpdate()
+        end)
+    end
+end
+
+local function EHR_EnvironmentalApplyDysenteryEffects(player, disease, effects)
+    if not player or not disease or not effects then return false end
+
+    local stats = player:getStats()
+    if not stats then return false end
+
+    local diarrheaMultiplier = EHR_EnvironmentalGetSymptomMultiplier(player, "dysentery", disease, "diarrhea")
+    local vomitMultiplier = EHR_EnvironmentalGetSymptomMultiplier(player, "dysentery", disease, "vomiting")
+    local dysenteryVomitMultiplier = EHR_EnvironmentalGetSymptomMultiplier(player, "dysentery", disease, "dysenteryVomiting")
+    vomitMultiplier = math.min(vomitMultiplier, dysenteryVomitMultiplier)
+    local hydrationSupport = EHR_EnvironmentalHasHydrationSupport(player)
+    local capRelief = EHR_EnvironmentalHasDysenteryCapRelief(player)
+    local thirstCap = (hydrationSupport or capRelief) and nil or effects.thirstCap
+    local hungerCap = capRelief and nil or effects.hungerCap
+
+    if effects.vomitChance and effects.vomitChance > 0 then
+        local vomitChance = effects.vomitChance * vomitMultiplier
+        if ZombRand(10000) / 10000 < vomitChance then
+            EHR.Environmental.TriggerVomit(player, {
+                hungerLoss = 0.06,
+                thirstLoss = hydrationSupport and 0.03 or 0.08,
+                hungerCap = hungerCap,
+                thirstCap = thirstCap,
+            })
+        end
+    end
+
+    if effects.bloodLoss and effects.bloodLoss > 0 then
+        EHR_EnvironmentalApplyBloodLossFloor(
+            player,
+            effects.bloodLoss * diarrheaMultiplier,
+            effects.bloodLossFloor
+        )
+    end
+
+    if effects.thirstDrain and CharacterStat and CharacterStat.THIRST then
+        local thirstDrain = effects.thirstDrain * diarrheaMultiplier
+        if hydrationSupport then
+            thirstDrain = thirstDrain * 0.25
+        end
+        if capRelief then
+            thirstDrain = thirstDrain * 0.35
+        end
+        EHR_EnvironmentalApplyCappedStatDrain(
+            stats,
+            CharacterStat.THIRST,
+            thirstDrain,
+            thirstCap
+        )
+    end
+
+    if effects.hungerDrain and CharacterStat and CharacterStat.HUNGER then
+        local hungerDrain = effects.hungerDrain * diarrheaMultiplier
+        if capRelief then
+            hungerDrain = hungerDrain * 0.35
+        end
+        EHR_EnvironmentalApplyCappedStatDrain(
+            stats,
+            CharacterStat.HUNGER,
+            hungerDrain,
+            hungerCap
+        )
+    end
+
+    EHR_EnvironmentalApplyTrackedAbdominalPain(player, effects.abdominalPain or 0)
+
+    return true
+end
+
 --[[
     Apply environmental disease effects
     Called from disease progression system
@@ -1239,6 +1587,7 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     if not stats then return end
 
     EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
+    local dysenteryHandled = false
 
     -- COMMON COLD: Sneezing (zombie attraction)
     if diseaseId == "common_cold" and effects.sneezingChance then
@@ -1269,15 +1618,19 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
         end
     end
 
+    if diseaseId == "dysentery" then
+        dysenteryHandled = EHR_EnvironmentalApplyDysenteryEffects(player, disease, effects)
+    end
+
     -- DYSENTERY: Vomiting
-    if diseaseId == "dysentery" and effects.vomitChance then
+    if diseaseId == "dysentery" and not dysenteryHandled and effects.vomitChance then
         if ZombRand(1000) / 1000 < effects.vomitChance then
             EHR.Environmental.TriggerVomit(player)
         end
     end
 
     -- DYSENTERY: Blood loss (integration with Blood module)
-    if diseaseId == "dysentery" and effects.bloodLoss then
+    if diseaseId == "dysentery" and not dysenteryHandled and effects.bloodLoss then
         if EHR.Blood and EHR.Blood.ModifyBloodVolume then
             -- Apply blood loss using v2.7.0+ API (small amount per tick)
             EHR.Blood.ModifyBloodVolume(player, -effects.bloodLoss)
@@ -1334,14 +1687,14 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
         end)
     end
 
-    if effects.thirstDrain and CharacterStat and CharacterStat.THIRST then
+    if effects.thirstDrain and not dysenteryHandled and CharacterStat and CharacterStat.THIRST then
         local current = stats:get(CharacterStat.THIRST) or 0
         pcall(function()
             stats:set(CharacterStat.THIRST, math.min(1, current + effects.thirstDrain))
         end)
     end
 
-    if effects.hungerDrain and CharacterStat and CharacterStat.HUNGER then
+    if effects.hungerDrain and not dysenteryHandled and CharacterStat and CharacterStat.HUNGER then
         local current = stats:get(CharacterStat.HUNGER) or 0
         pcall(function()
             stats:set(CharacterStat.HUNGER, math.min(1, current + effects.hungerDrain))
@@ -1478,11 +1831,12 @@ function EHR.Environmental.TriggerCough(player, severe)
 end
 
 --[[
-    Trigger vomiting (dysentery)
+    Trigger vomiting (dysentery/heat)
     Causes food/water loss and noise
 ]]--
-function EHR.Environmental.TriggerVomit(player)
+function EHR.Environmental.TriggerVomit(player, options)
     local cfg = EHR.Environmental.Config.sound
+    options = options or {}
 
     -- Say vomit dialogue
     if player.Say then
@@ -1492,18 +1846,32 @@ function EHR.Environmental.TriggerVomit(player)
 
     -- Increase hunger (lost food)
     local stats = player:getStats()
-    if stats and CharacterStat and CharacterStat.HUNGER then
+    if stats and CharacterStat and CharacterStat.HUNGER and not options.skipHungerLoss then
         local current = stats:get(CharacterStat.HUNGER) or 0
+        local loss = tonumber(options.hungerLoss) or 0.1
+        local nextValue = math.min(1, current + loss)
+        if options.hungerCap ~= nil then
+            nextValue = math.min(nextValue, math.max(0, math.min(1, tonumber(options.hungerCap) or 1)))
+        end
         pcall(function()
-            stats:set(CharacterStat.HUNGER, math.min(1, current + 0.1))
+            if nextValue > current then
+                stats:set(CharacterStat.HUNGER, nextValue)
+            end
         end)
     end
 
     -- Increase thirst (lost fluids)
-    if stats and CharacterStat and CharacterStat.THIRST then
+    if stats and CharacterStat and CharacterStat.THIRST and not options.skipThirstLoss then
         local current = stats:get(CharacterStat.THIRST) or 0
+        local loss = tonumber(options.thirstLoss) or 0.15
+        local nextValue = math.min(1, current + loss)
+        if options.thirstCap ~= nil then
+            nextValue = math.min(nextValue, math.max(0, math.min(1, tonumber(options.thirstCap) or 1)))
+        end
         pcall(function()
-            stats:set(CharacterStat.THIRST, math.min(1, current + 0.15))
+            if nextValue > current then
+                stats:set(CharacterStat.THIRST, nextValue)
+            end
         end)
     end
 

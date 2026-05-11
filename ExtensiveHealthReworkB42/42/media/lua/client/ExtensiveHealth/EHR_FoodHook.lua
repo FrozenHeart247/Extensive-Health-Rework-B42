@@ -18,6 +18,8 @@ EHR.FoodHook = {}
 -- Track if we've already hooked
 EHR.FoodHook.initialized = false
 EHR.FoodHook.drinkInitialized = false
+EHR.FoodHook.worldDrinkInitialized = false
+EHR.FoodHook.lastDrinkRisk = EHR.FoodHook.lastDrinkRisk or {}
 
 local function shouldBlockEatingForTetanus(action)
     if not action or not action.character or not action.item then return false end
@@ -46,6 +48,110 @@ local function isTetanusEatingBlocked(action)
         return true
     end
     return false
+end
+
+local function safeCall(obj, methodName)
+    if not obj or not obj[methodName] then return nil end
+    local success, result = pcall(function() return obj[methodName](obj) end)
+    if success then return result end
+    return nil
+end
+
+local function safeProperty(obj, key)
+    local props = safeCall(obj, "getProperties")
+    if not props then return nil end
+    local success, result = pcall(function() return props:get(key) end)
+    if success then return result end
+    return nil
+end
+
+local function safeSpriteName(obj)
+    local sprite = safeCall(obj, "getSprite")
+    if not sprite then return nil end
+    return safeCall(sprite, "getName")
+end
+
+local function startsWith(value, prefix)
+    return type(value) == "string" and string.sub(value, 1, string.len(prefix)) == prefix
+end
+
+local function isTaintedWaterSource(source)
+    if not source then return false end
+    if source.isTaintedWater then
+        local success, result = pcall(function() return source:isTaintedWater() end)
+        if success then return result == true end
+    end
+    if source.getTaintedWater then
+        local success, result = pcall(function() return source:getTaintedWater() end)
+        if success then return result == true end
+    end
+    if source.getFluidContainer then
+        local fluidContainer = safeCall(source, "getFluidContainer")
+        if fluidContainer and fluidContainer.contains and Fluid and Fluid.TaintedWater then
+            local success, result = pcall(function() return fluidContainer:contains(Fluid.TaintedWater) end)
+            if success then return result == true end
+        end
+    end
+    return false
+end
+
+local function getWorldWaterSourceType(waterObject)
+    if not waterObject then return "unknown" end
+
+    local customName = safeProperty(waterObject, "CustomName")
+    if customName == "Toilet" then
+        return "toilet"
+    elseif customName == "Dispenser" then
+        return "tap"
+    end
+
+    local spriteName = safeSpriteName(waterObject)
+    if startsWith(spriteName, "blends_natural_02") then
+        return "river"
+    end
+
+    local objectName = safeCall(waterObject, "getName")
+    if objectName and string.find(string.lower(tostring(objectName)), "rain collector", 1, true) then
+        return "rainCollector"
+    end
+
+    if spriteName == "carpentry_02_52" or spriteName == "carpentry_02_53" or
+            spriteName == "carpentry_02_54" or spriteName == "carpentry_02_55" then
+        return "rainCollector"
+    end
+
+    if isTaintedWaterSource(waterObject) then
+        return "tainted"
+    end
+
+    return "tap"
+end
+
+function EHR.FoodHook.HandleWaterDrink(player, waterSource, sourceType)
+    if not player then return end
+    if player ~= getSpecificPlayer(0) then return end
+
+    sourceType = sourceType or "tainted"
+
+    local currentHour = getGameTime():getWorldAgeHours()
+    local playerNum = 0
+    if player.getPlayerNum then
+        local success, result = pcall(function() return player:getPlayerNum() end)
+        if success and result then playerNum = result end
+    end
+    local playerKey = tostring(playerNum)
+    local key = playerKey .. ":" .. tostring(sourceType)
+    local lastHour = EHR.FoodHook.lastDrinkRisk[key]
+    if lastHour and (currentHour - lastHour) < 0.001 then
+        return
+    end
+    EHR.FoodHook.lastDrinkRisk[key] = currentHour
+
+    if EHR.Environmental and EHR.Environmental.OnDrink then
+        EHR.Environmental.OnDrink(player, waterSource, sourceType)
+    elseif EHR.Disease and EHR.Disease.TryContract then
+        EHR.Disease.TryContract(player, "food_poisoning", 0.25)
+    end
 end
 
 --[[
@@ -166,40 +272,51 @@ function EHR.FoodHook.InitializeDrink()
         -- Call original first
         originalDrinkPerform(self)
 
-        -- Check water source
         if self.item and self.character then
             local player = self.character
 
-            if player == getSpecificPlayer(0) then
-                -- Check if water is tainted/not boiled (safely)
-                local item = self.item
-                local isTainted = false
-
-                -- Try multiple methods for tainted water check
-                if item.isTaintedWater then
-                    local success, result = pcall(function() return item:isTaintedWater() end)
-                    if success then isTainted = result end
-                elseif item.getTaintedWater then
-                    local success, result = pcall(function() return item:getTaintedWater() end)
-                    if success then isTainted = result end
-                end
-
-                if isTainted then
-                    EHR.Log("FoodHook: Player drank tainted water!")
-                    -- Use Environmental module for proper dysentery risk calculation
-                    if EHR.Environmental and EHR.Environmental.OnDrink then
-                        EHR.Environmental.OnDrink(player, item, "tainted")
-                    elseif EHR.Disease and EHR.Disease.TryContract then
-                        -- Fallback to food poisoning if Environmental not loaded
-                        EHR.Disease.TryContract(player, "food_poisoning", 0.25)
-                    end
-                end
+            if player == getSpecificPlayer(0) and isTaintedWaterSource(self.item) then
+                EHR.Log("FoodHook: Player drank tainted bottled water")
+                EHR.FoodHook.HandleWaterDrink(player, self.item, "tainted")
             end
         end
     end
 
     EHR.Log("FoodHook: ISDrinkFromBottle.perform hooked successfully")
     EHR.FoodHook.drinkInitialized = true
+end
+
+function EHR.FoodHook.InitializeWorldDrink()
+    if EHR.FoodHook.worldDrinkInitialized then return end
+
+    if not ISTakeWaterAction then
+        EHR.Log("FoodHook: ISTakeWaterAction not found, skipping world drink hook")
+        return
+    end
+
+    local originalTakeWaterComplete = ISTakeWaterAction.complete
+
+    ISTakeWaterAction.complete = function(self)
+        local result = originalTakeWaterComplete(self)
+
+        -- item == nil means the player drank directly from the world object.
+        -- Filling a bottle is handled later by ISDrinkFromBottle when that water is consumed.
+        if self and self.item == nil and self.character and self.waterObject then
+            local player = self.character
+            if player == getSpecificPlayer(0) then
+                local sourceType = getWorldWaterSourceType(self.waterObject)
+                if EHR.DEBUG then
+                    EHR.Log("FoodHook: Player drank from world water source: " .. tostring(sourceType))
+                end
+                EHR.FoodHook.HandleWaterDrink(player, self.waterObject, sourceType)
+            end
+        end
+
+        return result
+    end
+
+    EHR.Log("FoodHook: ISTakeWaterAction.complete hooked successfully")
+    EHR.FoodHook.worldDrinkInitialized = true
 end
 
 -- Initialize on game start
@@ -210,6 +327,11 @@ function EHR.FoodHook.OnGameStart()
     pcall(function()
         require "TimedActions/ISDrinkFromBottle"
         EHR.FoodHook.InitializeDrink()
+    end)
+
+    pcall(function()
+        require "TimedActions/ISTakeWaterAction"
+        EHR.FoodHook.InitializeWorldDrink()
     end)
 end
 

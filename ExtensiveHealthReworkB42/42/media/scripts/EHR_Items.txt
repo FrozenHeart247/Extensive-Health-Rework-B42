@@ -486,7 +486,7 @@ module ExtensiveHealth
         Icon = ActivatedCharcoal,
         Weight = 0.2,
         Tooltip = Tooltip_ActivatedCharcoal,
-        UseDelta = 0.3333,
+        UseDelta = 0.125,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -512,7 +512,7 @@ module ExtensiveHealth
         Icon = OralRehydrationKit,
         Weight = 0.2,
         Tooltip = Tooltip_OralRehydrationKit,
-        UseDelta = 0.3333,
+        UseDelta = 0.125,
         UseWhileEquipped = false,
         Medical = true,
     }

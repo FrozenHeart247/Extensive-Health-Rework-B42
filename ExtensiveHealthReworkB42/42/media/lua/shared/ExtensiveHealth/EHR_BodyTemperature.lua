@@ -1074,6 +1074,7 @@ function EHR.BodyTemp.CheckDiseaseThresholds(player, tempData, deltaHours)
         end
 
     -- Check heat exhaustion threshold (body temp > 40.5°C)
+    -- Heat disease risk is now handled by world-temperature exposure in EHR_EnvironmentalDiseases.
     elseif tempData.hotStage >= 4 then
         -- In hot danger zone
         if tempData.dangerZone ~= "hot" then
@@ -1085,11 +1086,6 @@ function EHR.BodyTemp.CheckDiseaseThresholds(player, tempData, deltaHours)
         end
 
         tempData.timeAtDangerousTemp = tempData.timeAtDangerousTemp + deltaHours
-
-        -- Check if time threshold reached
-        if tempData.timeAtDangerousTemp >= cfg.heatExhaustionTriggerTime then
-            EHR.BodyTemp.TryTriggerHeatExhaustion(player, tempData)
-        end
 
     else
         -- Not in danger zone, reset

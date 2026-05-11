@@ -517,6 +517,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item InstantIcePack
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Instant Ice Pack (Box),
+        Icon = InstantIcePack,
+        Weight = 0.4,
+        Tooltip = Tooltip_InstantIcePack,
+        UseDelta = 0.25,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item TetanusAntitoxin
     {
         DisplayCategory = FirstAid,

@@ -31,6 +31,9 @@ EHR.MedicationAction.Times = {
 -- Determine administration type from medication data
 function EHR.MedicationAction.GetAdminType(medData)
     if not medData then return "default" end
+    if medData.adminType and EHR.MedicationAction.Times[medData.adminType] then
+        return medData.adminType
+    end
 
     -- Check for IV medications
     if medData.requiresIVKit then

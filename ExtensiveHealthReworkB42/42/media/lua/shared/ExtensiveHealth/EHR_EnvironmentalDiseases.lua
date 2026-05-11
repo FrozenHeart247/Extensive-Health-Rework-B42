@@ -47,9 +47,18 @@ EHR.Environmental.Config = {
     -- Exposure time requirements (in game hours)
     coldExposureForCold = 2.0,      -- Hours of cold+wet for common cold
     coldExposureForHypo = 0.5,      -- Hours of freezing+wet for hypothermia
-    heatExposureForExhaustion = 3.0,  -- Hours of hot + exertion for heat exhaustion (was 1.0)
+    heatExposureForExhaustion = 4.0,  -- Hours from clean exposure to full heat exhaustion risk at 30C
     heatExposureForStroke = 0.5,      -- Hours at extreme heat for heat stroke
     heatMinimumExposure = 1.0,        -- Minimum hours before disease check can trigger
+    heatExposureLowRatio = 0.05,      -- UI card appears almost immediately once heat starts building
+    heatExposureMediumRatio = 0.50,   -- Medium exposure can trigger heat stroke
+    heatExposureHighRatio = 0.85,     -- High exposure is very dangerous
+    heatIndoorRecoveryRate = 2.25,    -- Indoor cooling removes exposure quickly
+    heatCoolRecoveryRate = 1.25,      -- Outdoor cool weather recovery
+    heatHeadwearMultiplier = 0.30,    -- Caps/hats reduce heat exposure by ~70%
+    heatStrokeRiskCheckInterval = 0.25, -- Check heat stroke risk every 15 game minutes
+    heatStrokeMediumChance = 0.08,
+    heatStrokeHighChance = 0.65,
 
     -- Water contamination risk
     untreatedWaterRisk = 0.25,      -- 25% per drink from contaminated/untreated water
@@ -122,6 +131,7 @@ function EHR.Environmental.InitializePlayer(player)
         -- Heat -> Heat Stroke progression
         heatExhaustionHour = nil,   -- When heat exhaustion was contracted
         lastHeatProgressionCheck = 0,
+        lastHeatStrokeRiskCheck = 0,
 
         -- Water tracking
         lastUntreatedWater = nil,   -- Last time drank untreated water
@@ -538,6 +548,79 @@ function EHR.Environmental.IsExerting(player)
     return false
 end
 
+function EHR.Environmental.GetHeatHeadwearMultiplier(player)
+    if not player then return 1.0 end
+
+    local function normalizeLocation(value)
+        local loc = string.lower(tostring(value or ""))
+        loc = string.gsub(loc, "^base:", "")
+        loc = string.gsub(loc, "[_%-%s]", "")
+        return loc
+    end
+
+    local function itemText(item)
+        local parts = {}
+        local methods = { "getFullType", "getDisplayName", "getName", "getType" }
+        for _, method in ipairs(methods) do
+            if item[method] then
+                local ok, value = pcall(function() return item[method](item) end)
+                if ok and value then
+                    table.insert(parts, tostring(value))
+                end
+            end
+        end
+        return string.lower(table.concat(parts, " "))
+    end
+
+    local function isHeadwear(item)
+        if not item then return false end
+
+        local location = nil
+        if item.getBodyLocation then
+            pcall(function() location = item:getBodyLocation() end)
+        end
+        local loc = normalizeLocation(location)
+        if loc == "hat" or loc == "fullhat" or loc == "jackethat" or
+           loc == "jackethatbulky" or loc == "sweaterhat" or loc == "fullsuithead" then
+            return true
+        end
+
+        if string.find(loc, "hat", 1, true) or string.find(loc, "head", 1, true) then
+            return true
+        end
+
+        local text = itemText(item)
+        return string.find(text, "hat", 1, true) ~= nil
+            or string.find(text, "cap", 1, true) ~= nil
+            or string.find(text, "beanie", 1, true) ~= nil
+            or string.find(text, "helmet", 1, true) ~= nil
+            or string.find(text, "fedora", 1, true) ~= nil
+            or string.find(text, "boonie", 1, true) ~= nil
+            or string.find(text, "beret", 1, true) ~= nil
+    end
+
+    local wornItems = nil
+    pcall(function() wornItems = player:getWornItems() end)
+    if not wornItems then
+        local headItem = nil
+        pcall(function()
+            if player.getClothingItem_Head then
+                headItem = player:getClothingItem_Head()
+            end
+        end)
+        return isHeadwear(headItem) and (EHR.Environmental.Config.heatHeadwearMultiplier or 0.50) or 1.0
+    end
+
+    for i = 0, wornItems:size() - 1 do
+        local item = wornItems:getItemByIndex(i)
+        if isHeadwear(item) then
+            return EHR.Environmental.Config.heatHeadwearMultiplier or 0.50
+        end
+    end
+
+    return 1.0
+end
+
 --[[
     Check if player is in shade/indoors (for heat protection)
 ]]--
@@ -673,9 +756,16 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     local exposure = EHR.Environmental.GetExposureData(player)
     if not exposure then return end
 
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or nil
+    if diseaseData and diseaseData.active and diseaseData.active["heat_stroke"] then
+        exposure.heatExposure = 0
+        exposure.heatStrokeExposure = 0
+        return
+    end
+
     local airTemp = EHR.Environmental.GetAirTemperature()
+    local isIndoors = EHR.Environmental.IsIndoors(player)
     local isExerting = EHR.Environmental.IsExerting(player)
-    local isInShade = EHR.Environmental.IsInShade(player)
     local thirst = 0
 
     local stats = player:getStats()
@@ -684,51 +774,43 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
         if success and t then thirst = t end
     end
 
-    -- Reset exposure if cool/shaded
-    if airTemp < config.hotTemp or (isInShade and airTemp < config.veryHotTemp) then
-        -- Recover from heat exposure while cool
-        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * 3)
-        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 4)
+    if isIndoors then
+        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatIndoorRecoveryRate or 2.25))
+        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 3)
+
+        if EHR.DEBUG and exposure.heatExposure > 0 then
+            EHR.Log(string.format("Heat exposure cooling indoors: %.2f hours (world temp=%.1f)",
+                exposure.heatExposure, airTemp))
+        end
         return
     end
 
-    -- Check heat conditions
-    local isHot = airTemp >= config.hotTemp
-    local isVeryHot = airTemp >= config.veryHotTemp
-    local isExtremeHeat = airTemp >= config.extremeHeatTemp
+    if airTemp < config.hotTemp then
+        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatCoolRecoveryRate or 1.25))
+        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 2)
+        return
+    end
+
     local isDehydrated = thirst > 0.4
     local isSeverelyDehydrated = thirst > 0.7
 
-    -- Heat exposure accumulates faster when exerting and dehydrated
-    -- (Reduced multipliers to prevent instant disease contraction)
+    -- World-temperature driven heat exposure. 30C+ is enough on its own;
+    -- exertion/dehydration only speed it up.
     local heatMultiplier = 1.0
-    if isExerting then heatMultiplier = heatMultiplier * 1.5 end          -- Was 2.0
-    if isDehydrated then heatMultiplier = heatMultiplier * 1.3 end        -- Was 1.5
-    if isSeverelyDehydrated then heatMultiplier = heatMultiplier * 1.5 end -- Was 2.0
-    if not isInShade then heatMultiplier = heatMultiplier * 1.2 end       -- Was 1.3
+    heatMultiplier = heatMultiplier * math.min(1.75, 1 + math.max(0, airTemp - config.hotTemp) * 0.06)
+    if isExerting then heatMultiplier = heatMultiplier * 1.25 end
+    if isDehydrated then heatMultiplier = heatMultiplier * 1.15 end
+    if isSeverelyDehydrated then heatMultiplier = heatMultiplier * 1.25 end
+    heatMultiplier = heatMultiplier * EHR.Environmental.GetHeatHeadwearMultiplier(player)
 
-    -- Accumulate heat exposure
-    if isHot and (isExerting or isDehydrated or not isInShade) then
-        exposure.heatExposure = exposure.heatExposure + (deltaHours * heatMultiplier)
+    exposure.heatExposure = math.max(0, exposure.heatExposure + (deltaHours * heatMultiplier))
 
-        if EHR.DEBUG then
-            EHR.Log(string.format("Heat exposure: %.2f hours (temp=%.1f, exert=%s, thirst=%.2f)",
-                exposure.heatExposure, airTemp, tostring(isExerting), thirst))
-        end
+    if EHR.DEBUG then
+        EHR.Log(string.format("Heat exposure: %.2f hours (world temp=%.1f, mult=%.2f, exert=%s, thirst=%.2f)",
+            exposure.heatExposure, airTemp, heatMultiplier, tostring(isExerting), thirst))
     end
 
-    -- Accumulate heat stroke exposure (requires extreme heat or very hot + dehydrated)
-    if isExtremeHeat or (isVeryHot and isSeverelyDehydrated) then
-        local strokeMultiplier = isExtremeHeat and 2.0 or 1.0
-        if not isInShade then strokeMultiplier = strokeMultiplier * 1.5 end
-
-        exposure.heatStrokeExposure = exposure.heatStrokeExposure + (deltaHours * strokeMultiplier)
-
-        if EHR.DEBUG then
-            EHR.Log(string.format("Heat stroke exposure: %.2f hours (temp=%.1f)",
-                exposure.heatStrokeExposure, airTemp))
-        end
-    end
+    exposure.heatStrokeExposure = exposure.heatExposure
 
     -- Check for disease contraction
     EHR.Environmental.CheckHeatDiseases(player, exposure)
@@ -744,55 +826,107 @@ function EHR.Environmental.CheckHeatDiseases(player, exposure)
     local options = SandboxVars and SandboxVars.ExtensiveHealthRework
     if options and options.HeatExhaustionEnabled == false then return end
 
-    -- If body temperature system is enabled, it handles heat exhaustion triggering
-    -- via body temperature thresholds instead of exposure time
-    if EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled() then
-        -- Body temp system handles disease triggering in EHR.BodyTemp.CheckDiseaseThresholds()
-        -- Still track exposure for logging purposes but don't trigger diseases here
-        if EHR.DEBUG then
-            EHR.Log("Heat diseases: Deferring to body temperature system")
+    if not (EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.TryContract) then return end
+
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    if diseaseData and diseaseData.active then
+        if diseaseData.active["heat_stroke"] then return end
+        if diseaseData.active["common_cold"] or diseaseData.active["pneumonia"] or diseaseData.active["hypothermia"] then
+            return
         end
-        return
     end
 
-    -- Fallback: Exposure-based triggering when body temp system is disabled
-    -- Require minimum exposure time before any disease check
-    -- This prevents instant disease contraction when sun moodle first appears
-    local minExposure = config.heatMinimumExposure or 1.0
-    if exposure.heatExposure < minExposure then
-        if EHR.DEBUG then
-            EHR.Log(string.format("Heat: Below minimum exposure (%.2f/%.2f hours)",
-                exposure.heatExposure, minExposure))
-        end
-        return
+    local threshold = config.heatExposureForExhaustion or 4.0
+    if threshold <= 0 then return end
+
+    local ratio = exposure.heatExposure / threshold
+    if ratio < (config.heatExposureMediumRatio or 0.50) then return end
+
+    local currentHour = getGameTime and getGameTime():getWorldAgeHours() or 0
+    local interval = config.heatStrokeRiskCheckInterval or 0.25
+    local elapsedSinceRiskCheck = currentHour - (exposure.lastHeatStrokeRiskCheck or 0)
+    if elapsedSinceRiskCheck < interval then return end
+    local skippedChecks = math.max(1, math.min(8, math.floor(elapsedSinceRiskCheck / interval)))
+    exposure.lastHeatStrokeRiskCheck = currentHour
+
+    local highRatio = config.heatExposureHighRatio or 0.85
+    local mediumRatio = config.heatExposureMediumRatio or 0.50
+    local chance
+    if ratio >= 1.0 then
+        chance = 0.95
+    elseif ratio >= highRatio then
+        chance = config.heatStrokeHighChance or 0.65
+    else
+        local t = math.max(0, math.min(1, (ratio - mediumRatio) / math.max(0.01, highRatio - mediumRatio)))
+        chance = (config.heatStrokeMediumChance or 0.08) + (t * 0.17)
     end
 
-    -- Check for Heat Exhaustion
-    if exposure.heatExposure >= config.heatExposureForExhaustion then
-        -- Don't contract if already have heat exhaustion or heat stroke
-        local diseaseData = EHR.Disease.GetDiseaseData(player)
-        if diseaseData and diseaseData.active then
-            if diseaseData.active["heat_exhaustion"] or diseaseData.active["heat_stroke"] then
-                return
+    local stats = player:getStats()
+    if stats and CharacterStat and CharacterStat.THIRST then
+        local ok, thirst = pcall(function() return stats:get(CharacterStat.THIRST) end)
+        if ok and thirst then
+            if thirst > 0.7 then
+                chance = chance * 1.35
+            elseif thirst > 0.4 then
+                chance = chance * 1.15
             end
-            -- BUG-010 FIX: Block if have cold diseases (mutual exclusion)
-            if diseaseData.active["common_cold"] or diseaseData.active["pneumonia"] or
-               diseaseData.active["hypothermia"] then
-                return
-            end
-        end
-
-        local exposureRatio = exposure.heatExposure / config.heatExposureForExhaustion
-        local baseChance = math.min(0.6, 0.2 * exposureRatio)
-
-        EHR.Log(string.format("Heat exhaustion check: %.2f hours exposure, base chance %.0f%%",
-            exposure.heatExposure, baseChance * 100))
-
-        if EHR.Disease.TryContract(player, "heat_exhaustion", baseChance) then
-            exposure.heatExhaustionHour = getGameTime():getWorldAgeHours()
-            exposure.heatExposure = 0
         end
     end
+    if EHR.Environmental.IsExerting(player) then
+        chance = chance * 1.15
+    end
+    chance = math.min(0.95, chance)
+    if skippedChecks > 1 then
+        chance = 1 - math.pow(1 - chance, skippedChecks)
+        chance = math.min(0.98, chance)
+    end
+
+    EHR.Log(string.format("Heat stroke risk: exposure %.0f%%, chance %.0f%%",
+        math.min(100, ratio * 100), chance * 100))
+
+    if EHR.Disease.TryContract(player, "heat_stroke", chance) then
+        exposure.heatExhaustionHour = currentHour
+        exposure.heatExposure = 0
+        exposure.heatStrokeExposure = 0
+    end
+end
+
+function EHR.Environmental.GetHeatExposureRatio(player)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if options and options.HeatExhaustionEnabled == false then return 0 end
+
+    local exposure = EHR.Environmental.GetExposureData(player)
+    local config = EHR.Environmental.Config or {}
+    local threshold = tonumber(config.heatExposureForExhaustion) or 4.0
+    if not exposure or threshold <= 0 then return 0 end
+
+    return math.max(0, math.min(1.25, (tonumber(exposure.heatExposure) or 0) / threshold))
+end
+
+function EHR.Environmental.GetHeatExposureDisplay(player)
+    local ratio = EHR.Environmental.GetHeatExposureRatio(player)
+    local config = EHR.Environmental.Config or {}
+    if ratio <= 0 then return "None" end
+
+    if ratio >= (config.heatExposureHighRatio or 0.85) then
+        return "High"
+    elseif ratio >= (config.heatExposureMediumRatio or 0.50) then
+        return "Medium"
+    elseif ratio >= (config.heatExposureLowRatio or 0.05) then
+        return "Low"
+    end
+
+    return "Low"
+end
+
+function EHR.Environmental.GetHeatExposureColor(level)
+    local colors = {
+        None = {0.5, 0.5, 0.5},
+        Low = {0.95, 0.74, 0.18},
+        Medium = {1.0, 0.45, 0.10},
+        High = {1.0, 0.12, 0.08},
+    }
+    return colors[level] or colors.None
 end
 
 --[[
@@ -1193,6 +1327,12 @@ local EHR_EnvironmentalDiseaseFeverTargets = {
         [3] = { temp = 39.0, step = 0.050 },
         [4] = { temp = 37.6, step = 0.025 },
     },
+    heat_stroke = {
+        [1] = { temp = 40.5, step = 0.110 },
+        [2] = { temp = 40.5, step = 0.120 },
+        [3] = { temp = 40.5, step = 0.130 },
+        [4] = { temp = 40.5, step = 0.100 },
+    },
 }
 
 local function EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
@@ -1252,6 +1392,115 @@ local function EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease,
     end
 
     return math.max(0.02, math.min(1.0, multiplier))
+end
+
+local function EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, reductionKey)
+    if not (EHR.Disease and EHR.Disease.GetActiveSymptomReduction) then return 0 end
+
+    local ok, reduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, diseaseId, reductionKey)
+    if not ok or type(reduction) ~= "number" then return 0 end
+    return math.max(0, math.min(0.95, reduction))
+end
+
+local function EHR_EnvironmentalKillPlayer(player, cause)
+    if not player then return end
+
+    if EHR.RecordDeathCause then
+        pcall(function() EHR.RecordDeathCause(player, cause or "Severe heat stroke") end)
+    end
+
+    pcall(function()
+        if player.setHealth then player:setHealth(0) end
+    end)
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if bodyDamage and bodyDamage.setOverallBodyHealth then
+        pcall(function() bodyDamage:setOverallBodyHealth(0) end)
+    end
+end
+
+local function EHR_EnvironmentalApplyBodyHealthDamage(player, amount, cause)
+    if not player or not amount or amount <= 0 then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return nil end
+
+    if currentHealth <= 0 then return 0 end
+
+    local reduced = false
+    if bodyDamage.ReduceGeneralHealth then
+        reduced = pcall(function()
+            bodyDamage:ReduceGeneralHealth(amount)
+        end)
+    end
+
+    if reduced then
+        local okAfter, afterHealth = pcall(function()
+            return bodyDamage:getOverallBodyHealth()
+        end)
+        if okAfter and afterHealth then
+            if afterHealth <= 0 then
+                EHR_EnvironmentalKillPlayer(player, cause)
+                return 0
+            end
+            if afterHealth < currentHealth then
+                return afterHealth
+            end
+        end
+    end
+
+    local newHealth = math.max(0, currentHealth - amount)
+    if newHealth <= 0 then
+        EHR_EnvironmentalKillPlayer(player, cause)
+        return 0
+    end
+
+    if bodyDamage.setOverallBodyHealth then
+        pcall(function()
+            bodyDamage:setOverallBodyHealth(newHealth)
+        end)
+    elseif player.setHealth and player.getHealth then
+        pcall(function()
+            player:setHealth(math.max(0, (player:getHealth() or currentHealth) - amount))
+        end)
+    end
+
+    return newHealth
+end
+
+local function EHR_EnvironmentalApplyHeatStrokeHealthDrain(player, disease, effects)
+    local drainPerHour = tonumber(effects and effects.healthDrainPerHour) or 0
+    if drainPerHour <= 0 then
+        if disease then disease.heatStrokeLastDamageHour = nil end
+        return
+    end
+
+    if EHR_EnvironmentalGetActiveSymptomReduction(player, "heat_stroke", "healthDrain") >= 0.95 then
+        disease.heatStrokeLastDamageHour = EHR_EnvironmentalGetCurrentHour()
+        return
+    end
+
+    local now = EHR_EnvironmentalGetCurrentHour()
+    local last = tonumber(disease and disease.heatStrokeLastDamageHour) or now
+    local elapsed = now - last
+    if elapsed < 0 or elapsed > 0.5 then
+        elapsed = 0
+    end
+    if disease then disease.heatStrokeLastDamageHour = now end
+    if elapsed <= 0 then return end
+
+    local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, "heat_stroke", disease, "healthDrain")
+    local damage = drainPerHour * elapsed * symptomMult
+    if damage <= 0.05 then return end
+
+    EHR_EnvironmentalApplyBodyHealthDamage(player, damage, "Heat Stroke - uncontrolled hyperthermia")
 end
 
 local function EHR_EnvironmentalHasHydrationSupport(player)
@@ -1587,6 +1836,9 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     if not stats then return end
 
     EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
+    if diseaseId == "heat_stroke" then
+        EHR_EnvironmentalApplyHeatStrokeHealthDrain(player, disease, effects)
+    end
     local dysenteryHandled = false
 
     -- COMMON COLD: Sneezing (zombie attraction)
@@ -1653,29 +1905,53 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
 
     -- HEAT EXHAUSTION/STROKE: Dizziness
     if (diseaseId == "heat_exhaustion" or diseaseId == "heat_stroke") and effects.dizzinessChance then
-        if ZombRand(1000) / 1000 < effects.dizzinessChance then
-            EHR.Environmental.TriggerDizziness(player)
+        local chance = effects.dizzinessChance
+        if diseaseId == "heat_stroke" then
+            if EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, "dizziness") >= 0.95 then
+                chance = 0
+            end
+            chance = chance * EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "dizziness")
+        end
+        if ZombRand(1000) / 1000 < chance then
+            EHR.Environmental.TriggerDizziness(player, diseaseId == "heat_stroke" and "heat_stroke_symptoms" or nil, 0.20)
         end
     end
 
     -- HEAT EXHAUSTION/STROKE: Vomiting from heat
     if (diseaseId == "heat_exhaustion" or diseaseId == "heat_stroke") and effects.vomitChance then
-        if ZombRand(1000) / 1000 < effects.vomitChance then
+        local chance = effects.vomitChance
+        if diseaseId == "heat_stroke" then
+            if EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, "vomiting") >= 0.85 then
+                chance = 0
+            end
+            chance = chance * EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "vomiting")
+        end
+        if ZombRand(1000) / 1000 < chance then
             EHR.Environmental.TriggerVomit(player)
         end
     end
 
     -- HEAT STROKE: Collapse
     if diseaseId == "heat_stroke" and effects.collapseChance then
-        if ZombRand(1000) / 1000 < effects.collapseChance then
-            EHR.Environmental.TriggerCollapse(player)
+        local chance = effects.collapseChance
+        if EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, "collapse") >= 0.95 then
+            chance = 0
+        end
+        chance = chance * EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "collapse")
+        if ZombRand(1000) / 1000 < chance then
+            EHR.Environmental.TriggerHeatStrokeBlackout(player)
         end
     end
 
     -- HEAT STROKE: Confusion
     if diseaseId == "heat_stroke" and effects.confusionChance then
-        if ZombRand(1000) / 1000 < effects.confusionChance then
-            EHR.Environmental.TriggerConfusion(player)
+        local chance = effects.confusionChance
+        if EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, "confusion") >= 0.95 then
+            chance = 0
+        end
+        chance = chance * EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "confusion")
+        if ZombRand(1000) / 1000 < chance then
+            EHR.Environmental.TriggerConfusion(player, "heat_stroke_symptoms", 0.20)
         end
     end
 
@@ -1688,9 +1964,17 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     end
 
     if effects.thirstDrain and not dysenteryHandled and CharacterStat and CharacterStat.THIRST then
+        local thirstDrain = effects.thirstDrain
+        if diseaseId == "heat_stroke" then
+            if EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, "dehydration") >= 0.95 then
+                thirstDrain = 0
+            else
+                thirstDrain = thirstDrain * EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "dehydration")
+            end
+        end
         local current = stats:get(CharacterStat.THIRST) or 0
         pcall(function()
-            stats:set(CharacterStat.THIRST, math.min(1, current + effects.thirstDrain))
+            stats:set(CharacterStat.THIRST, math.min(1, current + thirstDrain))
         end)
     end
 
@@ -1885,20 +2169,37 @@ function EHR.Environmental.TriggerVomit(player, options)
     EHR.Log("Player vomited")
 end
 
+local function EHR_EnvironmentalSayLimited(player, cooldownKey, cooldownHours, lines)
+    if not player or not player.Say or not lines or #lines == 0 then return false end
+
+    if cooldownKey and cooldownHours and cooldownHours > 0 then
+        local modData = player:getModData()
+        if modData then
+            modData.EHR_EnvironmentalDialogueCooldowns = modData.EHR_EnvironmentalDialogueCooldowns or {}
+            local currentHour = EHR_EnvironmentalGetCurrentHour()
+            local lastHour = tonumber(modData.EHR_EnvironmentalDialogueCooldowns[cooldownKey]) or -999999
+            if (currentHour - lastHour) >= 0 and (currentHour - lastHour) < cooldownHours then
+                return false
+            end
+            modData.EHR_EnvironmentalDialogueCooldowns[cooldownKey] = currentHour
+        end
+    end
+
+    player:Say(lines[ZombRand(#lines) + 1])
+    return true
+end
+
 --[[
     Trigger confusion effect (hypothermia)
     Causes disorientation
 ]]--
-function EHR.Environmental.TriggerConfusion(player)
+function EHR.Environmental.TriggerConfusion(player, cooldownKey, cooldownHours)
     -- Say confusion dialogue
-    if player.Say then
-        local confused = {
-            "*stumbles* Where... am I?",
-            "*confused* What was I doing...?",
-            "*disoriented* Can't... think straight...",
-        }
-        player:Say(confused[ZombRand(#confused) + 1])
-    end
+    EHR_EnvironmentalSayLimited(player, cooldownKey, cooldownHours, {
+        "*stumbles* Where... am I?",
+        "*confused* What was I doing...?",
+        "*disoriented* Can't... think straight...",
+    })
 
     -- Apply panic (disorientation effect)
     local stats = player:getStats()
@@ -1942,15 +2243,25 @@ end
     Trigger dizziness (heat exhaustion/stroke)
     Causes disorientation and stumbling
 ]]--
-function EHR.Environmental.TriggerDizziness(player)
-    if player.Say then
-        local dizzy = {
-            "*dizzy* World's spinning...",
-            "*stumbles*",
-            "*sways* Can't focus...",
-        }
-        player:Say(dizzy[ZombRand(#dizzy) + 1])
+function EHR.Environmental.TriggerDizziness(player, cooldownKey, cooldownHours)
+    local isLocalPlayer = false
+    if player and player.isLocalPlayer then
+        pcall(function()
+            isLocalPlayer = player:isLocalPlayer()
+        end)
     end
+
+    if isLocalPlayer and EHR.ToxinVision and EHR.ToxinVision.StartSymptomEpisode then
+        pcall(function()
+            EHR.ToxinVision.StartSymptomEpisode(player)
+        end)
+    end
+
+    EHR_EnvironmentalSayLimited(player, cooldownKey, cooldownHours, {
+        "*dizzy* World's spinning...",
+        "*stumbles*",
+        "*sways* Can't focus...",
+    })
 
     -- Apply panic (disorientation)
     local stats = player:getStats()
@@ -1962,6 +2273,132 @@ function EHR.Environmental.TriggerDizziness(player)
     end
 
     EHR.Log("Player dizzy (heat)")
+end
+
+local function EHR_EnvironmentalTriggerBackwardFall(player)
+    if not player then return false end
+
+    if EHR.TendonWeakness and EHR.TendonWeakness.TriggerFall then
+        local ok, result = pcall(EHR.TendonWeakness.TriggerFall, player, "standing")
+        if ok and result then return true end
+    end
+
+    if player.setBumpType and player.setVariable then
+        local ok = pcall(function()
+            player:setBumpType("stagger")
+            player:setVariable("BumpDone", false)
+            player:setVariable("BumpFall", true)
+            player:setVariable("BumpFallType", "pushedFront")
+        end)
+        if ok then return true end
+    end
+
+    if player.setKnockedDown then
+        local ok = pcall(function() player:setKnockedDown(true) end)
+        if ok then return true end
+    end
+
+    return false
+end
+
+local function EHR_EnvironmentalForceSleep(player, hours)
+    if not player then return false end
+
+    hours = math.max(0.25, tonumber(hours) or 1)
+
+    local stats = player:getStats()
+    if stats and CharacterStat and CharacterStat.FATIGUE then
+        pcall(function()
+            stats:set(CharacterStat.FATIGUE, 1)
+        end)
+    end
+
+    local timeOfDay = 0
+    local gameTime = GameTime and GameTime.getInstance and GameTime.getInstance() or (getGameTime and getGameTime() or nil)
+    if gameTime and gameTime.getTimeOfDay then
+        pcall(function()
+            timeOfDay = gameTime:getTimeOfDay()
+        end)
+    end
+
+    local wakeUpTime = timeOfDay + hours
+    while wakeUpTime >= 24 do
+        wakeUpTime = wakeUpTime - 24
+    end
+
+    pcall(function()
+        if player.setForceWakeUpTime then player:setForceWakeUpTime(wakeUpTime) end
+        if player.setAsleepTime then player:setAsleepTime(0.0) end
+        if player.setAsleep then player:setAsleep(true) end
+    end)
+
+    local sleepingEvent = getSleepingEvent and getSleepingEvent() or nil
+    if sleepingEvent and sleepingEvent.setPlayerFallAsleep then
+        pcall(function()
+            sleepingEvent:setPlayerFallAsleep(player, hours)
+        end)
+    end
+
+    if UIManager and player.getPlayerNum then
+        local playerNum = player:getPlayerNum()
+        pcall(function()
+            if UIManager.setFadeBeforeUI then UIManager.setFadeBeforeUI(playerNum, true) end
+            if UIManager.FadeOut then UIManager.FadeOut(playerNum, 1) end
+        end)
+    end
+
+    return true
+end
+
+function EHR.Environmental.TriggerHeatStrokeBlackout(player)
+    if not player then return false end
+    local alive = true
+    if player.isAlive then
+        pcall(function()
+            alive = player:isAlive()
+        end)
+    end
+    if not alive then return false end
+
+    local modData = player:getModData()
+    local now = EHR_EnvironmentalGetCurrentHour()
+    local cooldownHours = 0.75
+    local lastBlackout = tonumber(modData and modData.EHR_HeatStrokeBlackoutHour) or nil
+    if lastBlackout and (now - lastBlackout) >= 0 and (now - lastBlackout) < cooldownHours then
+        return false
+    end
+
+    local asleep = false
+    if player.isAsleep then
+        pcall(function()
+            asleep = player:isAsleep()
+        end)
+    end
+    if asleep then return false end
+
+    if modData then
+        modData.EHR_HeatStrokeBlackoutHour = now
+    end
+
+    EHR_EnvironmentalSayLimited(player, "heat_stroke_symptoms", 0.20, {
+        "*delirious* Too hot...",
+        "*confused* I can't stay awake...",
+        "*dazed* Everything is burning...",
+        "*collapses*",
+    })
+
+    local stats = player:getStats()
+    if stats and CharacterStat and CharacterStat.PANIC then
+        pcall(function()
+            stats:set(CharacterStat.PANIC, math.max(stats:get(CharacterStat.PANIC) or 0, 0.8))
+        end)
+    end
+
+    EHR_EnvironmentalTriggerBackwardFall(player)
+    EHR_EnvironmentalForceSleep(player, 1)
+
+    EHR.Log("Heat stroke blackout triggered - backward fall and 1 hour forced sleep")
+    return true
 end
 
 --[[
@@ -2128,6 +2565,10 @@ end
 ]]--
 function EHR.Environmental.CheckDiseaseLethal(player, diseaseId, disease, def)
     if not def.canKill then return end
+
+    -- Heat stroke is lethal through continuous health damage, not a random instant death roll.
+    if def.killMechanic == "healthDrain" then return end
+
     if disease.stage ~= def.deathStage then return end
 
     -- Special case: Dysentery kills through dehydration

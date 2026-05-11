@@ -605,7 +605,9 @@ local function getBodyLocationText(item)
     if not item or not item.getBodyLocation then return "" end
     local ok, value = pcall(function() return item:getBodyLocation() end)
     if not ok or not value then return "" end
-    return string.lower(tostring(value))
+    local loc = string.lower(tostring(value))
+    loc = string.gsub(loc, "^base:", "")
+    return loc
 end
 
 local function isFaceProtectionCandidate(item)
@@ -613,6 +615,20 @@ local function isFaceProtectionCandidate(item)
 
     local loc = getBodyLocationText(item)
     if containsAny(loc, { "mask", "mouth", "face", "neck" }) then
+        return true
+    end
+
+    if hasAnyTag(item, {
+        "GasMask", "gasMask", "gasmask", "base:gasmask",
+        "GasMaskNoFilter", "gasmasknofilter", "base:gasmasknofilter",
+        "Respirator", "respirator", "base:respirator",
+        "RespiratorNoFilter", "respiratornofilter", "base:respiratornofilter",
+        "AirFilter", "airfilter", "FilterMask", "filtermask",
+        "DustMask", "dustmask", "base:dustmask", "N95", "n95",
+        "SurgicalMask", "surgicalmask", "MedicalMask", "medicalmask",
+        "Bandana", "bandana", "Scarf", "scarf", "ClothMask", "clothmask",
+        "FaceCover", "facecover", "NBC", "nbc", "Hazmat", "hazmat",
+    }) then
         return true
     end
 

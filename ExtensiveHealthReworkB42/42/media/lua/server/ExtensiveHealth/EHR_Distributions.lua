@@ -198,6 +198,7 @@ local function EHR_InitDistributions()
         tryAdd("AmbulanceMedical", "ExtensiveHealth.EmptyBloodBag", 5)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.SterilizedBandages", 5)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.AlchoholicBandage", 3)
+        tryAddMed("AmbulanceMedical", "ExtensiveHealth.InstantIcePack", 4)
     end
 
     -- Medical cabinets
@@ -213,6 +214,7 @@ local function EHR_InitDistributions()
     tryAdd("PharmacyShelfMeds", "ExtensiveHealth.SalineBag", 1)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.SterilizedBandages", 4)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.AlchoholicBandage", 2)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.InstantIcePack", 2)
 
     -- Military medical
     if ProceduralDistributions.list["ArmyStorageMedical"] then
@@ -280,6 +282,7 @@ local function EHR_InitDistributions()
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.MuscleRelaxants", 5)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ElectrolytePowder", 6)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.BronchodilatorInhaler", 3)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.InstantIcePack", 4)
 
     -- Medicine Cabinets (bathroom)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
@@ -291,6 +294,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiInflammatory", 3)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.SterilizedBandages", 2)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.InstantIcePack", 1)
 
     -- Medical Storage / Clinic (OTC items)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
@@ -304,6 +308,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Syringe", 10)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SterilizedBandages", 8)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AlchoholicBandage", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.InstantIcePack", 5)
 
     -- =========================================
     -- TIER 2 - PRESCRIPTION MEDICATION
@@ -315,6 +320,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntifungalTablets", 3)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.OralRehydrationKit", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.InstantIcePack", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
@@ -358,6 +364,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SalineBag", 7)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SterilizedBandages", 8)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlchoholicBandage", 5)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.InstantIcePack", 4)
 
     -- Army Surplus / Military
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVAntibiotics", 5)
@@ -373,6 +380,7 @@ local function EHR_InitDistributions()
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.BroadSpectrumAntibiotics", 6)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SterilizedBandages", 6)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.AlchoholicBandage", 4)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.InstantIcePack", 3)
 
     -- First Aid Kits (basic supplies)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
@@ -381,6 +389,7 @@ local function EHR_InitDistributions()
     tryAddMed("FirstAidKit", "ExtensiveHealth.Syringe", 3)
     tryAddMed("FirstAidKit", "ExtensiveHealth.SterilizedBandages", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AlchoholicBandage", 3)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.InstantIcePack", 3)
 
     -- =========================================
     -- HOUSEHOLD SPAWNS (Very Rare)
@@ -420,6 +429,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.05,
         ["ExtensiveHealth.AntiviralCapsules"] = 0.05,
         ["ExtensiveHealth.ActivatedCharcoal"] = 0.1,
+        ["ExtensiveHealth.InstantIcePack"] = 0.1,
     }
 
     for _, container in ipairs(householdContainers) do

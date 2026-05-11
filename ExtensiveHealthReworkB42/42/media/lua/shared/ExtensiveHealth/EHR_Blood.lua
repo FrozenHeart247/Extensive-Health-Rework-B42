@@ -1234,10 +1234,36 @@ EHR.Blood.HealingRequirements = {
     maxThirst = 0.3,      -- 0-1 scale: Must be less than 30% thirsty
     maxStress = 0.5,      -- 0-1 scale: Must be less than 50% stressed
     maxPain = 5,          -- 0-100 scale: Must have less than 5 pain (moodle shows ~5+)
+    fatigueBypassCriticalHealth = 10, -- Emergency healing may continue at critical HP
 }
 
 -- Debug counter for CanHeal logging
 local canHealDebugCounter = 0
+
+local function EHR_BloodGetOverallBodyHealth(player)
+    if not player or not player.getBodyDamage then return nil end
+
+    local bodyDamage = nil
+    local okBody = pcall(function()
+        bodyDamage = player:getBodyDamage()
+    end)
+    if not okBody or not bodyDamage then return nil end
+
+    local okHealth, health = pcall(function()
+        if bodyDamage.getOverallBodyHealth then
+            return bodyDamage:getOverallBodyHealth()
+        end
+        if bodyDamage.getOverallHealth then
+            return bodyDamage:getOverallHealth()
+        end
+        return nil
+    end)
+
+    if okHealth then
+        return tonumber(health)
+    end
+    return nil
+end
 
 --[[
     Check if conditions allow healing
@@ -1332,7 +1358,18 @@ function EHR.Blood.CanHeal(player)
     -- Check fatigue (0 = rested, 1 = exhausted) - if enabled in sandbox
     if EHR.Blood.GetSetting("HealingRequiresRested", true) then
         if fatigue and fatigue > 0.5 then
-            return false, "tired"
+            local asleep = false
+            if player.isAsleep then
+                pcall(function()
+                    asleep = player:isAsleep()
+                end)
+            end
+
+            local overallHealth = EHR_BloodGetOverallBodyHealth(player)
+            local criticalHealth = reqs.fatigueBypassCriticalHealth or 10
+            if not asleep and (not overallHealth or overallHealth > criticalHealth) then
+                return false, "tired"
+            end
         end
     end
 

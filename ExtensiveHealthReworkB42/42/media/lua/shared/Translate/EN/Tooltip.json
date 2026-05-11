@@ -31,6 +31,7 @@
     "Tooltip_ActivatedCharcoal":  "Medical-grade activated charcoal. <LINE> Absorbs toxins - CURES food poisoning and toxin poisoning. <LINE> Treatment time: food poisoning 6h, toxin poisoning 12h.",
     "Tooltip_AntiparasiticPills":  "Antiparasitic medication. \u003cLINE\u003e CURES parasitic infections (trichinosis). \u003cLINE\u003e Treatment time: 7 days.",
     "Tooltip_OralRehydrationKit":  "Medical rehydration solution kit. \u003cLINE\u003e CURES dehydration-based conditions (dysentery, heat exhaustion). \u003cLINE\u003e Treatment time: 48 hours, 8-dose course.",
+    "Tooltip_InstantIcePack":  "Emergency instant cooling pack box. \u003cLINE\u003e CURES heat stroke with a 4-dose cooling course. \u003cLINE\u003e Reduces fever, confusion, collapse risk, dehydration and health loss.",
     "Tooltip_TetanusAntitoxin":  "Tetanus antitoxin injection. \u003cLINE\u003e Neutralizes tetanus toxin - CURES tetanus. \u003cLINE\u003e Requires syringe. Treatment time: 5 days.",
     "Tooltip_TBAntibiotics":  "Isoniazid - first-line TB treatment. \u003cLINE\u003e CURES tuberculosis with prolonged treatment. \u003cLINE\u003e Treatment time: 21 days (TB is chronic).",
     "Tooltip_AntibioticOintment":  "Prescription antibiotic ointment. \u003cLINE\u003e CURES skin infections (wounds, cellulitis). \u003cLINE\u003e Topical application. Treatment time: 72 hours.",

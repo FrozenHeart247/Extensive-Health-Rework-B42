@@ -199,7 +199,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.ElectrolytePowder"] = {
         tier = 1,
-        treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_exhaustion"},
+        treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_exhaustion", "heat_stroke"},
         displayName = "Electrolyte Powder",
         usageMessage = "You mix and drink the electrolyte solution. You feel more hydrated.",
         appliesWithoutDisease = true,
@@ -381,6 +381,29 @@ EHR.Medication.Database = {
         symptomReduction = {
             dehydration = 0.75,
             weakness = 0.25,
+        },
+    },
+
+    ["ExtensiveHealth.InstantIcePack"] = {
+        tier = 2,
+        treats = {"heat_stroke"},
+        displayName = "Instant Ice Pack",
+        usageMessage = "You crack an instant ice pack and start cooling down.",
+        adminType = "emergency",
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The current ice pack is still cooling you down.",
+        cureTimeHours = 4,
+        treatmentTimeText = "4 hours (4-dose cooling course)",
+        effectDurationHours = 1.1,
+        symptomReduction = {
+            fever = 0.95,
+            dehydration = 0.98,
+            dizziness = 0.98,
+            confusion = 0.98,
+            collapse = 0.98,
+            healthDrain = 0.98,
+            vomiting = 0.90,
+            weakness = 0.80,
         },
     },
 
@@ -1273,6 +1296,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.ActivatedCharcoal"] = { doseInterval = 0, dosesRequired = 1 },  -- Single dose absorbs toxins
     ["ExtensiveHealth.AntiparasiticPills"] = { doseInterval = 12, dosesRequired = 14 },
     ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
+    ["ExtensiveHealth.InstantIcePack"] = { doseInterval = 1, dosesRequired = 4 },  -- Emergency cooling course
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
@@ -1911,6 +1935,15 @@ function EHR.Medication.CanUseMedication(player, item)
 
     if medData.requiresActiveWound and not EHR.Medication.HasActiveWound(player) then
         return false, "Requires an active wound"
+    end
+
+    if medData.blockWhileDoseActive and EHR.Medication.GetDoseStatus then
+        local ok, status = pcall(EHR.Medication.GetDoseStatus, player, itemFullType)
+        local doseDue = ok and status and not status.treatmentComplete
+            and (status.isOverdue == true or (tonumber(status.hoursUntilNextDose) or 0) <= 0)
+        if ok and status and status.isDoseActive and not doseDue then
+            return false, medData.activeDoseMessage or "The current dose is still active"
+        end
     end
 
     -- Check for required supplies

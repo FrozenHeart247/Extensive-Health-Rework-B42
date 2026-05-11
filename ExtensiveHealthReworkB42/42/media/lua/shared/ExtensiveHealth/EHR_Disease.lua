@@ -2924,10 +2924,27 @@ function EHR.Disease.CheckDialogue(player, data)
                     -- Random chance to speak (lower in incubation)
                     -- Base chance: 5% incubation, 15% otherwise (converted to 1-in-X format)
                     local baseChance = disease.stage == 1 and 20 or 7  -- 1 in 20 = 5%, 1 in 7 approx 15%
+                    if def.dialogueChanceBase then
+                        if type(def.dialogueChanceBase) == "table" then
+                            baseChance = def.dialogueChanceBase[disease.stage] or def.dialogueChanceBase.default or baseChance
+                        else
+                            baseChance = def.dialogueChanceBase
+                        end
+                    end
 
-                    if EHR.Dialogue.ShouldSayRandom(baseChance) then
+                    local dialogueAllowed = true
+                    if def.dialogueCooldownHours and (def.dialogueCooldownHours or 0) > 0 then
+                        local lastDialogueHour = tonumber(disease.lastRandomDialogueHour) or -999999
+                        local currentHour = getGameTime():getWorldAgeHours()
+                        dialogueAllowed = (currentHour - lastDialogueHour) >= def.dialogueCooldownHours
+                    end
+
+                    if dialogueAllowed and EHR.Dialogue.ShouldSayRandom(baseChance) then
                         local line = stageDialogue[ZombRand(#stageDialogue) + 1]
                         EHR.Dialogue.SayStageChange(player, line)  -- Use stage change since it's symptom dialogue
+                        if def.dialogueCooldownHours and (def.dialogueCooldownHours or 0) > 0 then
+                            disease.lastRandomDialogueHour = getGameTime():getWorldAgeHours()
+                        end
                         return  -- Only one line per check
                     end
                 end

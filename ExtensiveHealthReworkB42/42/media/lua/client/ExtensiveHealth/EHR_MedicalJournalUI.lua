@@ -167,9 +167,9 @@ local CodexInfo = {
         incubation = "Can develop from untreated heat exhaustion.",
         duration = "Critical until body temperature is controlled.",
         cause = "Extreme heat exposure or severe dehydration.",
-        symptoms = "High body temperature, confusion, vomiting, collapse, and life-threatening weakness.",
+        symptoms = "Extreme body temperature, delirium, confusion, vomiting, collapse/blackouts, dehydration, and life-threatening health loss.",
         prevention = "Avoid extreme heat, hydrate aggressively, and treat heat exhaustion early.",
-        treatment = "Immediate cooling, rest, fluids, electrolytes, and urgent medical support.",
+        treatment = "Immediate cooling. Instant ice packs can cure heat stroke with a 4-dose cooling course; fluids and electrolytes help dehydration.",
     },
     corpse_sickness = {
         category = "corpse",

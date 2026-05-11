@@ -348,6 +348,17 @@ EHR.Tooltips.Data = {
         treatmentTime = "48 hours (8-dose course)",
         effects = {"CURES dehydration-based conditions", "Restores hydration during treatment"},
     },
+    ["ExtensiveHealth.InstantIcePack"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Emergency instant cooling pack box.",
+        cures = {"Heat Stroke"},
+        treatmentTime = "4 hours (4-dose cooling course)",
+        effects = {
+            "CURES heat stroke with repeated cooling",
+            "Reduces fever, confusion, collapse risk, dehydration and health loss",
+        },
+    },
     ["ExtensiveHealth.TetanusAntitoxin"] = {
         category = "Prescription",
         tier = 2,

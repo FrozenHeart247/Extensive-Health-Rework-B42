@@ -101,6 +101,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.ActivatedCharcoal"] = true,
     ["ExtensiveHealth.AntiparasiticPills"] = true,
     ["ExtensiveHealth.OralRehydrationKit"] = true,
+    ["ExtensiveHealth.InstantIcePack"] = true,
     ["ExtensiveHealth.TBAntibiotics"] = true,
     ["ExtensiveHealth.AntibioticOintment"] = true,
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,

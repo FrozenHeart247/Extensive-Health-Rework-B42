@@ -705,65 +705,106 @@ EHR.Disease.Diseases["heat_stroke"] = {
     name = "Heat Stroke",
     incubationMin = 0,      -- No incubation, immediate danger
     incubationMax = 0,
-    durationMin = 2,        -- 2 hours minimum
-    durationMax = 6,        -- 6 hours maximum
+    durationMin = 4,        -- 4 hours minimum
+    durationMax = 8,        -- 8 hours maximum
     stageDurations = {
-        [1] = 0.0,   -- Skip incubation
-        [2] = 0.20,  -- Brief early
-        [3] = 0.60,  -- Long peak (danger)
-        [4] = 0.20,  -- Recovery if survived
+        [1] = 0.15,  -- Immediate critical onset
+        [2] = 0.25,  -- Escalating dehydration and organ strain
+        [3] = 0.45,  -- Long peak (danger)
+        [4] = 0.15,  -- Recovery if survived and cooled
     },
     requiresCoolingForRecovery = true,
     baseSeverity = 0.95,
     canKill = true,
-    deathChancePerHour = 0.15,      -- 15% per hour - very dangerous
-    deathStage = 3,
+    killMechanic = "healthDrain",
+    deathStage = 2,
     treatmentCooling = true,
-    treatmentReducesDeath = 0.90,
+    treatmentReducesDeath = 0.85,
+    treatments = {
+        tier1 = {"ExtensiveHealth.ElectrolytePowder"},
+        tier2 = {"ExtensiveHealth.InstantIcePack"},
+    },
     stageCount = 4,
     effects = {
-        [1] = { },  -- Skipped
-        [2] = {
-            thirstDrain = 0.020,
+        [1] = {
+            thirstDrain = 0.004,
             staminaPenalty = 0.70,
+            movementPenalty = 0.65,
+            canSprint = false,
+            dizzinessChance = 0.080,
+            confusionChance = 0.080,
+            collapseChance = 0.060,
+        },
+        [2] = {
+            thirstDrain = 0.010,
+            healthDrainPerHour = 10,
+            staminaPenalty = 0.85,
             movementPenalty = 0.50,
             canSprint = false,
+            dizzinessChance = 0.120,
+            confusionChance = 0.120,
+            collapseChance = 0.100,
         },
         [3] = {
-            thirstDrain = 0.030,
+            thirstDrain = 0.016,
+            healthDrainPerHour = 24,
             staminaPenalty = 0.95,
-            movementPenalty = 0.30,
+            movementPenalty = 0.35,
             canSprint = false,
-            confusionChance = 0.020,
-            collapseChance = 0.010,     -- Can collapse
+            dizzinessChance = 0.180,
+            confusionChance = 0.180,
+            collapseChance = 0.140,
         },
         [4] = {
-            thirstDrain = 0.010,
-            staminaPenalty = 0.50,
+            thirstDrain = 0.008,
+            healthDrainPerHour = 16,
+            staminaPenalty = 0.75,
+            movementPenalty = 0.50,
+            canSprint = false,
+            dizzinessChance = 0.120,
+            confusionChance = 0.120,
+            collapseChance = 0.100,
         },
     },
     stageEntryDialogue = {
-        [1] = "",
+        [1] = "*dazed* I'm burning up... I need to cool down now...",
         [2] = "*gasping* Can't... think straight... so hot...",
         [3] = "*delirious* Where... am I? Everything's... burning...",
-        [4] = "*weak* I'm alive... barely...",
+        [4] = "*weak* Still too hot... need to keep cooling down...",
     },
     dialogue = {
-        [1] = {},
+        [1] = {
+            "So hot... can't think...",
+            "*dizzy* The air is shimmering...",
+            "Need shade... now...",
+            "*confused* Why is everything so bright?",
+        },
         [2] = {
             "*panting*",
             "Can't think...",
+            "*confused* I need water... or ice...",
+            "*mumbling* Too hot... too hot...",
         },
         [3] = {
             "*delirious mumbling*",
             "*collapses*",
             "Help...",
+            "Everything's burning...",
+            "*confused* Where am I?",
         },
         [4] = {
-            "Never again...",
-            "That almost killed me...",
+            "*weak* Still burning...",
+            "Need to cool down... keep cooling down...",
+            "*dizzy* Can't stay on my feet...",
         },
     },
+    dialogueChanceBase = {
+        [1] = 80,
+        [2] = 95,
+        [3] = 110,
+        [4] = 100,
+    },
+    dialogueCooldownHours = 0.35,
 }
 
 -- ============================================

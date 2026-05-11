@@ -1305,11 +1305,11 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
     local definition = self:getDiseaseDefinition(diseaseId, disease)
     local realName = (definition and definition.name) or tostring(diseaseId or "Unknown Disease")
 
-    if type(disease) == "table" and disease.isCorpseExposure then
+    if type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         return {
-            displayName = realName,
-            realName = realName,
-            sortName = realName,
+            displayName = disease.displayName or realName,
+            realName = disease.displayName or realName,
+            sortName = disease.displayName or realName,
             normalizedId = normalized,
             iconKey = disease.iconKey or normalized,
             canIdentify = true,
@@ -1318,7 +1318,8 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
             showTreatmentStatus = false,
             skillTier = skillTier,
             skillLevel = skillLevel,
-            isCorpseExposure = true,
+            isCorpseExposure = disease.isCorpseExposure == true,
+            isExposureCondition = disease.isExposureCondition == true,
         }
     end
 
@@ -1519,6 +1520,42 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
                     iconKey = "cadaveric_aspergillosis",
                 }
             end
+        end
+    end
+
+    if EHR.Environmental and EHR.Environmental.GetHeatExposureDisplay and self.player
+            and not activeDiseases["heat_exhaustion"] and not activeDiseases["heat_stroke"] then
+        local ok, exposureLevel = pcall(function()
+            return EHR.Environmental.GetHeatExposureDisplay(self.player)
+        end)
+
+        if ok and exposureLevel and exposureLevel ~= "None" then
+            local ratio = 0
+            local ratioOk, ratioResult = pcall(function()
+                return EHR.Environmental.GetHeatExposureRatio(self.player)
+            end)
+            if ratioOk then ratio = tonumber(ratioResult) or 0 end
+
+            local stageByLevel = { Low = 1, Medium = 2, High = 3 }
+            local stage = stageByLevel[exposureLevel] or 1
+            local exposureColor = nil
+            if EHR.Environmental.GetHeatExposureColor then
+                local colorOk, colorResult = pcall(function()
+                    return EHR.Environmental.GetHeatExposureColor(exposureLevel)
+                end)
+                if colorOk then exposureColor = colorResult end
+            end
+
+            activeDiseases["heat_exhaustion"] = {
+                displayName = safeText("UI_EHR_Disease_heat_exhaustion", "Heat Exhaustion"),
+                exposureLevel = exposureLevel,
+                exposureColor = exposureColor,
+                severity = stage,
+                progress = clamp(ratio, 0, 1),
+                stage = stage,
+                isExposureCondition = true,
+                iconKey = "heat_exhaustion",
+            }
         end
     end
 
@@ -2636,7 +2673,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local textW = displayInfo.showTreatmentStatus and (w - textOffset - 127) or (w - textOffset - 18)
     local detailsText = "Severity: ???"
     local detailsColor = c.textDim
-    if type(disease) == "table" and disease.isCorpseExposure then
+    if type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         local exposureLevel = tostring(disease.exposureLevel or "Low")
         detailsText = "Exposure: " .. exposureLevel
         if type(disease.exposureColor) == "table" then

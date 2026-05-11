@@ -264,6 +264,7 @@ UI_EN = {
     UI_EHR_Med_ActivatedCharcoal = "Activated Charcoal",
     UI_EHR_Med_AntiparasiticPills = "Antiparasitic Pills",
     UI_EHR_Med_OralRehydrationKit = "Oral Rehydration Kit",
+    UI_EHR_Med_InstantIcePack = "Instant Ice Pack",
     UI_EHR_Med_TetanusAntitoxin = "Tetanus Antitoxin",
     UI_EHR_Med_TBAntibiotics = "TB Antibiotics (Isoniazid)",
     UI_EHR_Med_AntibioticOintment = "Antibiotic Ointment",

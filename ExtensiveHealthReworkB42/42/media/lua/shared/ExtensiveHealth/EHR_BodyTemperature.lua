@@ -490,6 +490,11 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [3] = 39.0,
         [4] = 37.4,
     },
+    ahtr = {
+        [2] = 40.0,
+        [3] = 40.1,
+        [4] = 39.7,
+    },
     sepsis = {
         [1] = 38.0,
         [2] = 38.6,

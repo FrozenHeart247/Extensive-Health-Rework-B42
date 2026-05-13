@@ -132,4 +132,158 @@ module ExtensiveHealth
         StressChange = -5,
         UnhappyChange = -5,
     }
+
+    item DiseaseFlyer_Gastroenteritis
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Gastroenteritis,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_Gastroenteritis,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 8,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_Dysentery
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Dysentery,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_Dysentery,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 10,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_Trichinosis
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Trichinosis,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_Trichinosis,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 12,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_ToxinPoisoning
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Toxin Poisoning,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_ToxinPoisoning,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 10,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_HeatStroke
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Heat Stroke,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_HeatStroke,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 10,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_CadavericAspergillosis
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Cadaveric Aspergillosis,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_CadavericAspergillosis,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 14,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_Tetanus
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Tetanus,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_Tetanus,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 14,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_WoundInfection
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Wound Infection,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_WoundInfection,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 9,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_KnoxInfection
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Knox Infection,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_KnoxInfection,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 20,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_AHTR
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: AHTR,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_AHTR,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 16,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    item DiseaseFlyer_BloodType
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Medical Information: Blood Types,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_BloodType,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 12,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
 }

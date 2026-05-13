@@ -65,6 +65,8 @@ EHR.LifestyleCompat.Config = {
         [4] = 2.0,
     },
     DYSENTERY_BATHROOM_MAX_DELTA_HOURS = 0.25,
+    FUROSEMIDE_BATHROOM_RATE = 18.0,
+    FUROSEMIDE_BATHROOM_MAX_DELTA_HOURS = 0.25,
 }
 
 -- Cache for current hygiene state to prevent flickering
@@ -464,6 +466,49 @@ function EHR.LifestyleCompat.ApplyDysenteryBathroomPressure(player, disease)
         if EHR.DEBUG and addedNeed >= 0.2 then
             EHR.Log(string.format("LifestyleCompat: Dysentery added %.2f bathroomNeed (stage %d, now %.1f)",
                 addedNeed, stage, nextNeed))
+        end
+    end
+
+    return true
+end
+
+function EHR.LifestyleCompat.ApplyMedicationBathroomPressure(player, effectData, ratePerHour)
+    if not player or not effectData then return false end
+    if not EHR.LifestyleCompat.HasToiletSystem(player) then return false end
+
+    local data = player:getModData()
+    if not data then return false end
+
+    local currentHour = getGameTime and getGameTime():getWorldAgeHours() or 0
+    local lastHour = tonumber(effectData.lastBathroomHour)
+    local deltaHours = lastHour and (currentHour - lastHour) or 0.05
+
+    if deltaHours < 0 then deltaHours = 0 end
+    deltaHours = math.min(deltaHours, EHR.LifestyleCompat.Config.FUROSEMIDE_BATHROOM_MAX_DELTA_HOURS)
+    effectData.lastBathroomHour = currentHour
+
+    if data.IsDoingToilet == true then
+        EHR_LifestyleCompatSyncBladderMoodle(data)
+        return true
+    end
+
+    local rate = tonumber(ratePerHour) or EHR.LifestyleCompat.Config.FUROSEMIDE_BATHROOM_RATE
+    if rate <= 0 or deltaHours <= 0 then
+        EHR_LifestyleCompatSyncBladderMoodle(data)
+        return true
+    end
+
+    local currentNeed = math.max(0, math.min(100, tonumber(data.bathroomNeed) or 0))
+    local addedNeed = rate * deltaHours
+    local nextNeed = math.min(100, currentNeed + addedNeed)
+
+    if nextNeed ~= currentNeed then
+        data.bathroomNeed = nextNeed
+        EHR_LifestyleCompatSyncBladderMoodle(data)
+
+        if EHR.DEBUG and addedNeed >= 0.2 then
+            EHR.Log(string.format("LifestyleCompat: Medication diuretic added %.2f bathroomNeed (now %.1f)",
+                addedNeed, nextNeed))
         end
     end
 

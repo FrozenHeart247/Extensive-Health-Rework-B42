@@ -183,6 +183,7 @@ EHR.Medication.Database = {
             "tetanus",
             "sepsis",
             "tuberculosis",
+            "ahtr",
         },
         displayName = "Antipyretic Tablets",
         usageMessage = "You take antipyretic tablets. The fever begins to ease.",
@@ -242,7 +243,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiNauseaTablets"] = {
         tier = 1,
-        treats = {"food_poisoning", "gastroenteritis", "toxin_poisoning", "corpse_sickness", "dysentery"},
+        treats = {"food_poisoning", "gastroenteritis", "toxin_poisoning", "corpse_sickness", "dysentery", "ahtr"},
         displayName = "Anti-Nausea Tablets",
         usageMessage = "You take anti-nausea tablets. Your stomach settles.",
         appliesWithoutDisease = true,
@@ -256,7 +257,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiInflammatory"] = {
         tier = 1,
-        treats = {"wound_infection", "trichinosis", "tetanus"},
+        treats = {"wound_infection", "trichinosis", "tetanus", "ahtr"},
         displayName = "Anti-Inflammatory Pills",
         usageMessage = "You take anti-inflammatory pills. Swelling begins to reduce.",
         symptomReduction = {
@@ -412,6 +413,24 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.Furosemide"] = {
+        tier = 2,
+        treats = {"ahtr"},
+        displayName = "Furosemide",
+        usageMessage = "You take furosemide. It should help your body clear the transfusion reaction.",
+        alwaysApplySideEffects = true,
+        cureTimeHours = 48,
+        treatmentTimeText = "48 hours (6-dose course)",
+        symptomReduction = {
+            healthDrain = 0.45,
+            fever = 0.25,
+            pain = 0.25,
+            nausea = 0.25,
+            weakness = 0.25,
+        },
+        sideEffects = {"dehydration", "lower_back_pain", "diuretic_urination"},
+    },
+
     ["ExtensiveHealth.TetanusAntitoxin"] = {
         tier = 2,
         treats = {"tetanus"},
@@ -480,6 +499,30 @@ EHR.Medication.Database = {
             dizziness = 0.50,
             nausea = 0.35,
             weakness = 0.35,
+        },
+    },
+
+    ["ExtensiveHealth.IVFluids"] = {
+        tier = 3,
+        treats = {"ahtr"},
+        displayName = "IV Fluids",
+        usageMessage = "You start IV fluids. The reaction should stabilize over time.",
+        requiresIVKit = true,
+        cureTimeHours = 48, -- Tier 3 cure rate makes this a 24 hour course.
+        treatmentTimeText = "24 hours (IV support)",
+        hydrationSupport = {
+            durationHours = 2.0,
+            immediateBoost = 0.12,
+            hydrationBoost = 0.30,
+            restorePerHour = 0.50,
+        },
+        symptomReduction = {
+            dehydration = 0.80,
+            healthDrain = 0.70,
+            weakness = 0.50,
+            nausea = 0.35,
+            fever = 0.25,
+            pain = 0.20,
         },
     },
 
@@ -939,7 +982,7 @@ local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     if not activeSideEffects or not activeSideEffects.tendon_weakness then
         modData.EHR_TendonWeakness = nil
     end
-    if not activeSideEffects or not activeSideEffects.kidney_stress then
+    if not activeSideEffects or (not activeSideEffects.kidney_stress and not activeSideEffects.lower_back_pain) then
         modData.EHR_KidneyStress = nil
         EHRMedicationClearKidneyBackPain(player)
     end
@@ -1044,6 +1087,44 @@ EHR.Medication.SideEffects = {
             local stats = EHRMedicationGetStats(player)
             if stats and CharacterStat then
                 EHRMedicationRaiseStat(stats, CharacterStat.PAIN, 0.25)
+            end
+        end,
+    },
+
+    ["dehydration"] = {
+        displayName = "Dehydration",
+        duration = 8,
+        severity = 2,
+        effects = function(player)
+            local stats = EHRMedicationGetStats(player)
+            if stats and CharacterStat then
+                EHRMedicationRaiseStat(stats, CharacterStat.THIRST, 0.72)
+                EHRMedicationCapStat(stats, CharacterStat.ENDURANCE, 0.78)
+            end
+        end,
+    },
+
+    ["lower_back_pain"] = {
+        displayName = "Lower Back Pain",
+        duration = 8,
+        severity = 2,
+        effects = function(player, effectData)
+            local backPainApplied = EHRMedicationApplyKidneyBackPain(player, effectData)
+            local stats = EHRMedicationGetStats(player)
+            if stats and CharacterStat then
+                EHRMedicationRaiseStat(stats, CharacterStat.PAIN, backPainApplied and 0.24 or 0.30)
+                EHRMedicationRaiseStat(stats, CharacterStat.DISCOMFORT, 0.18)
+            end
+        end,
+    },
+
+    ["diuretic_urination"] = {
+        displayName = "Diuretic Effect",
+        duration = 8,
+        severity = 2,
+        effects = function(player, effectData)
+            if EHR.LifestyleCompat and EHR.LifestyleCompat.ApplyMedicationBathroomPressure then
+                EHR.LifestyleCompat.ApplyMedicationBathroomPressure(player, effectData, 18.0)
             end
         end,
     },
@@ -1303,6 +1384,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.AntiparasiticPills"] = { doseInterval = 12, dosesRequired = 14 },
     ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
     ["ExtensiveHealth.InstantIcePack"] = { doseInterval = 1, dosesRequired = 4 },  -- Emergency cooling course
+    ["ExtensiveHealth.Furosemide"] = { doseInterval = 8, dosesRequired = 6 },  -- Transfusion reaction support course
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
@@ -1311,6 +1393,7 @@ EHR.Medication.DosingSchedules = {
     -- Tier 3 - Clinical (mostly single dose for emergency/IV treatments)
     ["ExtensiveHealth.CorticosteroidInjection"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.RespiratorySupportKit"] = { doseInterval = 3, dosesRequired = 3 },  -- Short oxygen/airway support course
+    ["ExtensiveHealth.IVFluids"] = { doseInterval = 0, dosesRequired = 1 },  -- Single IV support session
     ["ExtensiveHealth.IVAntibiotics"] = { doseInterval = 0, dosesRequired = 1 },  -- Single IV infusion
     ["ExtensiveHealth.IVMetronidazole"] = { doseInterval = 0, dosesRequired = 1 },  -- Single IV infusion
     ["ExtensiveHealth.IVAmphotericin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single IV infusion
@@ -2076,8 +2159,8 @@ function EHR.Medication.UseMedication(player, item)
         EHR.Medication.ApplyEarlyDoseOverdose(player, earlyDoseOverdose)
     end
 
-    -- Apply side effects for Tier 3 medications
-    if tier == 3 and medData.sideEffects then
+    -- Apply side effects for Tier 3 medications and specifically flagged lower-tier drugs.
+    if medData.sideEffects and (tier == 3 or medData.alwaysApplySideEffects) then
         for _, effectId in ipairs(medData.sideEffects) do
             EHR.Medication.ApplySideEffect(player, effectId)
         end

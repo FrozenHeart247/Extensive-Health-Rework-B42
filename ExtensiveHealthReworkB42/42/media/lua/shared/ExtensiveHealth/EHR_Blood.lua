@@ -461,7 +461,7 @@ end
 
 --[[
     Process transfusion decay (MED-003 fix: works with cumulative model)
-    Saline decay reduces current volume; blood markers just track hemodilution
+    Saline decay reduces the dilution marker; blood volume stays restored.
     @param player - Player object
     @param data - Player modData
 ]]--

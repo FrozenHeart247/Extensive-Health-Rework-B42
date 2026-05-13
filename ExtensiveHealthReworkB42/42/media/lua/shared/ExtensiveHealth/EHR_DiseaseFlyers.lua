@@ -24,8 +24,21 @@ EHR.DiseaseFlyers.Config = {
         ["ExtensiveHealth.DiseaseFlyer_Sepsis"] = "sepsis",
         ["ExtensiveHealth.DiseaseFlyer_CorpseSickness"] = "corpse_sickness",
         ["ExtensiveHealth.DiseaseFlyer_Tuberculosis"] = "tuberculosis",
+        ["ExtensiveHealth.DiseaseFlyer_Gastroenteritis"] = "gastroenteritis",
+        ["ExtensiveHealth.DiseaseFlyer_Dysentery"] = "dysentery",
+        ["ExtensiveHealth.DiseaseFlyer_Trichinosis"] = "trichinosis",
+        ["ExtensiveHealth.DiseaseFlyer_ToxinPoisoning"] = "toxin_poisoning",
+        ["ExtensiveHealth.DiseaseFlyer_HeatStroke"] = "heat_stroke",
+        ["ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis"] = "cadaveric_aspergillosis",
+        ["ExtensiveHealth.DiseaseFlyer_Tetanus"] = "tetanus",
+        ["ExtensiveHealth.DiseaseFlyer_WoundInfection"] = "wound_infection",
+        ["ExtensiveHealth.DiseaseFlyer_KnoxInfection"] = "knox_infection",
+        ["ExtensiveHealth.DiseaseFlyer_AHTR"] = "ahtr",
+        ["ExtensiveHealth.DiseaseFlyer_BloodType"] = "blood_types",
     },
     KNOWLEDGE_IDS = {
+        ahtr = true,
+        blood_types = true,
         common_cold = true,
         flu = true,
         pneumonia = true,
@@ -55,6 +68,13 @@ EHR.DiseaseFlyers.Config = {
 }
 
 local diseaseAliases = {
+    AHTR = "ahtr",
+    AcuteHemolyticTransfusionReaction = "ahtr",
+    Acute_Hemolytic_Transfusion_Reaction = "ahtr",
+    BloodType = "blood_types",
+    BloodTypes = "blood_types",
+    Blood_Type = "blood_types",
+    Blood_Types = "blood_types",
     CommonCold = "common_cold",
     Cold = "common_cold",
     Flu = "flu",
@@ -87,6 +107,10 @@ local diseaseAliases = {
 }
 
 local compactDiseaseAliases = {
+    ahtr = "ahtr",
+    acutehemolytictransfusionreaction = "ahtr",
+    bloodtype = "blood_types",
+    bloodtypes = "blood_types",
     commoncold = "common_cold",
     cold = "common_cold",
     flu = "flu",
@@ -173,6 +197,8 @@ function EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
     diseaseId = normalizeDiseaseId(diseaseId)
 
     local names = {
+        ahtr = "AHTR",
+        blood_types = "Blood Types",
         common_cold = "Common Cold",
         flu = "Influenza",
         pneumonia = "Pneumonia",
@@ -240,6 +266,30 @@ function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
     return true
 end
 
+function EHR.DiseaseFlyers.GetFirstAidLevel(player)
+    if player and Perks and Perks.Doctor and player.getPerkLevel then
+        local ok, level = pcall(function()
+            return player:getPerkLevel(Perks.Doctor)
+        end)
+        if ok then
+            return tonumber(level) or 0
+        end
+    end
+    return 0
+end
+
+function EHR.DiseaseFlyers.HasMedicalKnowledge(player, knowledgeId, requiredFirstAidLevel)
+    if not player or not knowledgeId then return false end
+
+    local normalized = normalizeDiseaseId(knowledgeId)
+    if EHR.DiseaseFlyers.KnowsDisease(player, normalized) then
+        return true
+    end
+
+    local requiredLevel = requiredFirstAidLevel or 8
+    return EHR.DiseaseFlyers.GetFirstAidLevel(player) >= requiredLevel
+end
+
 function EHR.DiseaseFlyers.CanIdentifyDisease(player, diseaseId)
     if not player or not diseaseId then return false end
 
@@ -248,7 +298,7 @@ function EHR.DiseaseFlyers.CanIdentifyDisease(player, diseaseId)
         return true
     end
 
-    if EHR.DiseaseFlyers.KnowsDisease(player, normalized) then
+    if EHR.DiseaseFlyers.HasMedicalKnowledge(player, normalized, 8) then
         return true
     end
 
@@ -262,6 +312,7 @@ end
 function EHR.DiseaseFlyers.GetUnknownDiseaseDisplay(diseaseId)
     local normalized = normalizeDiseaseId(diseaseId)
     local categories = {
+        ahtr = { displayName = "Unknown Transfusion Reaction", description = "Your lower back aches after the transfusion and your body feels dangerously wrong." },
         common_cold = { displayName = "Unknown Respiratory Illness", description = "You feel unwell with respiratory symptoms." },
         flu = { displayName = "Unknown Respiratory Illness", description = "You feel very unwell with fever and body aches." },
         pneumonia = { displayName = "Severe Respiratory Illness", description = "Your lungs feel inflamed. This seems serious." },

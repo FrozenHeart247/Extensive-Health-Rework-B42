@@ -32,82 +32,82 @@ EHR.Tooltips.Data = {
     -- =========================================
     ["ExtensiveHealth.BloodBagONeg"] = {
         category = "Blood Product",
-        description = "Blood bag containing O- blood (Universal Donor).",
+        description = "Blood bag containing O- blood.",
         effects = {
-            "Can be given to ANY blood type",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: O-, O+, A-, A+, B-, B+, AB-, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagOPos"] = {
         category = "Blood Product",
         description = "Blood bag containing O+ blood.",
         effects = {
-            "Compatible with: O+, A+, B+, AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: O+, A+, B+, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagANeg"] = {
         category = "Blood Product",
         description = "Blood bag containing A- blood.",
         effects = {
-            "Compatible with: A-, A+, AB-, AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: A-, A+, AB-, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagAPos"] = {
         category = "Blood Product",
         description = "Blood bag containing A+ blood.",
         effects = {
-            "Compatible with: A+, AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: A+, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagBNeg"] = {
         category = "Blood Product",
         description = "Blood bag containing B- blood.",
         effects = {
-            "Compatible with: B-, B+, AB-, AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: B-, B+, AB-, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagBPos"] = {
         category = "Blood Product",
         description = "Blood bag containing B+ blood.",
         effects = {
-            "Compatible with: B+, AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: B+, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagABNeg"] = {
         category = "Blood Product",
         description = "Blood bag containing AB- blood.",
         effects = {
-            "Compatible with: AB-, AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: AB-, AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
     ["ExtensiveHealth.BloodBagABPos"] = {
         category = "Blood Product",
-        description = "Blood bag containing AB+ blood (Universal Recipient).",
+        description = "Blood bag containing AB+ blood.",
         effects = {
-            "Can only be given to AB+",
             "Restores 500mL blood volume",
         },
-        warning = "PERISHABLE: Freeze for long-term storage. Spoils 1hr after thawing!",
+        bloodCompatibility = "Compatible with: AB+",
+        warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
 
@@ -393,6 +393,15 @@ EHR.Tooltips.Data = {
         treatmentTime = "72 hours",
         effects = {"CURES multiple bacterial infections"},
     },
+    ["ExtensiveHealth.Furosemide"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Loop diuretic for severe transfusion reactions.",
+        cures = {"AHTR"},
+        treatmentTime = "48 hours (6-dose course)",
+        effects = {"CURES acute hemolytic transfusion reaction", "Reduces hemolysis-related health loss and fever"},
+        sideEffects = {"Dehydration", "Lower Back Pain", "Diuretic Effect"},
+    },
 
     -- =========================================
     -- TIER 3 - CLINICAL GRADE MEDICATION
@@ -418,6 +427,15 @@ EHR.Tooltips.Data = {
             "Strong breathing, dizziness, nausea and weakness relief",
             "3 uses per kit, one dose every 3 hours",
         },
+    },
+    ["ExtensiveHealth.IVFluids"] = {
+        category = "Clinical",
+        tier = 3,
+        description = "Intravenous fluid support.",
+        cures = {"AHTR"},
+        treatmentTime = "24 hours (IV support)",
+        effects = {"FAST CURE for acute transfusion reaction", "Strong hydration and health-loss relief"},
+        requirements = {"IV Kit"},
     },
     ["ExtensiveHealth.IVAntibiotics"] = {
         category = "Clinical",

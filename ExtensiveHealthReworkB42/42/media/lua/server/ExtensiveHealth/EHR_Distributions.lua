@@ -177,6 +177,7 @@ local function EHR_InitDistributions()
             tryAdd("MedicalStorageBlood", item, chance)
         end
         tryAdd("MedicalStorageBlood", "ExtensiveHealth.SalineBag", 6)
+        tryAddMed("MedicalStorageBlood", "ExtensiveHealth.IVFluids", 5)
         tryAdd("MedicalStorageBlood", "ExtensiveHealth.EmptyBloodBag", 8)
     end
 
@@ -186,6 +187,7 @@ local function EHR_InitDistributions()
             tryAdd("MedicalClinicDrugs", item, chance * 0.3)
         end
         tryAdd("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 3)
+        tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.IVFluids", 2)
         tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EmptyBloodBag", 4)
     end
 
@@ -195,7 +197,9 @@ local function EHR_InitDistributions()
             tryAdd("AmbulanceMedical", item, chance * 0.5)
         end
         tryAdd("AmbulanceMedical", "ExtensiveHealth.SalineBag", 4)
+        tryAddMed("AmbulanceMedical", "ExtensiveHealth.IVFluids", 3)
         tryAdd("AmbulanceMedical", "ExtensiveHealth.EmptyBloodBag", 5)
+        tryAddMed("AmbulanceMedical", "ExtensiveHealth.Furosemide", 2)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.SterilizedBandages", 5)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.AlchoholicBandage", 3)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.InstantIcePack", 4)
@@ -215,6 +219,7 @@ local function EHR_InitDistributions()
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.SterilizedBandages", 4)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.AlchoholicBandage", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.InstantIcePack", 2)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Furosemide", 1)
 
     -- Military medical
     if ProceduralDistributions.list["ArmyStorageMedical"] then
@@ -255,6 +260,17 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.DiseaseFlyer_Sepsis"] = 0.8,
         ["ExtensiveHealth.DiseaseFlyer_CorpseSickness"] = 1.5,
         ["ExtensiveHealth.DiseaseFlyer_Tuberculosis"] = 0.5,
+        ["ExtensiveHealth.DiseaseFlyer_Gastroenteritis"] = 2,
+        ["ExtensiveHealth.DiseaseFlyer_Dysentery"] = 1.2,
+        ["ExtensiveHealth.DiseaseFlyer_Trichinosis"] = 1.2,
+        ["ExtensiveHealth.DiseaseFlyer_ToxinPoisoning"] = 1,
+        ["ExtensiveHealth.DiseaseFlyer_HeatStroke"] = 1,
+        ["ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis"] = 0.8,
+        ["ExtensiveHealth.DiseaseFlyer_Tetanus"] = 0.8,
+        ["ExtensiveHealth.DiseaseFlyer_WoundInfection"] = 2,
+        ["ExtensiveHealth.DiseaseFlyer_KnoxInfection"] = 0.25,
+        ["ExtensiveHealth.DiseaseFlyer_AHTR"] = 0.5,
+        ["ExtensiveHealth.DiseaseFlyer_BloodType"] = 1.5,
     }
 
     for item, chance in pairs(flyerRarity) do
@@ -321,6 +337,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntifungalTablets", 3)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.OralRehydrationKit", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.InstantIcePack", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
@@ -333,11 +350,13 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ActivatedCharcoal", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiparasiticPills", 2)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Furosemide", 4)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TetanusAntitoxin", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntibioticOintment", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 4)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVKit", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVFluids", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SalineBag", 6)
 
     -- =========================================
@@ -351,6 +370,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAmphotericin", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVCiprofloxacin", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVVancomycin", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVFluids", 4)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.EmergencySepsisKit", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.CorticosteroidInjection", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RespiratorySupportKit", 2)
@@ -358,6 +378,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RifampicinComboPack", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Epinephrine", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
@@ -369,6 +390,7 @@ local function EHR_InitDistributions()
     -- Army Surplus / Military
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVAntibiotics", 5)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVCiprofloxacin", 3)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVFluids", 3)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.EmergencySepsisKit", 2)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.CorticosteroidInjection", 2)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.RespiratorySupportKit", 2)
@@ -378,6 +400,7 @@ local function EHR_InitDistributions()
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Syringe", 8)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SalineBag", 7)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.BroadSpectrumAntibiotics", 6)
+    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Furosemide", 2)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SterilizedBandages", 6)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.AlchoholicBandage", 4)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.InstantIcePack", 3)

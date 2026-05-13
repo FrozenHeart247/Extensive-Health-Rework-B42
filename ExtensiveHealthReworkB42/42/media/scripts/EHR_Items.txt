@@ -8,14 +8,13 @@ module ExtensiveHealth
 
     /** =========================================
         BLOOD BAGS (Single Use - Perishable)
-        Fresh for ~21 days refrigerated, rotten by day 35
-        Spoils MUCH faster at room temperature!
+        Fresh for ~1 hour outside frozen storage.
+        Spoiled by ~2 hours if not frozen.
         Using spoiled blood causes severe illness.
 
         STORAGE:
-        - Room temp: Spoils in ~3 days (DaysFresh=3 base, modified by temp)
-        - Fridge: Lasts ~21 days (FridgeLife modifier)
-        - Freezer: Can be frozen for long-term storage
+        - Room temp / fridge: Spoils in ~2 hours
+        - Freezer: Preserved while frozen
     ========================================= **/
 
     item BloodBagONeg
@@ -28,11 +27,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagONeg,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -48,11 +42,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagOPos,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -68,11 +57,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagANeg,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -88,11 +72,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagAPos,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -108,11 +87,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagBNeg,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -128,11 +102,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagBPos,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -148,11 +117,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagABNeg,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -168,11 +132,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_BloodBagABPos,
         WorldStaticModel = MedicalParcel_Red,
         Medical = true,
-        DaysFresh = 3,
-        DaysTotallyRotten = 7,
-        FridgeLife = 21,
-        FreezerLife = 180,
-        RequireInFreezer = true,
         CantEat = true,
         BadInMicrowave = true,
         IsCookable = false,
@@ -209,8 +168,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_SalineBag,
         WorldStaticModel = MedicalParcel_Green,
         Medical = true,
-        DaysFresh = 180,
-        DaysTotallyRotten = 365,
     }
 
     item IVKit
@@ -530,6 +487,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item Furosemide
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Furosemide,
+        Icon = Furosemide,
+        Weight = 0.1,
+        Tooltip = Tooltip_Furosemide,
+        UseDelta = 0.1667,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item TetanusAntitoxin
     {
         DisplayCategory = FirstAid,
@@ -606,6 +576,18 @@ module ExtensiveHealth
         Tooltip = Tooltip_RespiratorySupportKit,
         UseDelta = 0.3333,
         UseWhileEquipped = false,
+        Medical = true,
+    }
+
+    item IVFluids
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:normal,
+        DisplayName = IV Fluids,
+        Icon = IVFluids,
+        Weight = 0.6,
+        Tooltip = Tooltip_IVFluids,
+        WorldStaticScale = 0.06,
         Medical = true,
     }
 

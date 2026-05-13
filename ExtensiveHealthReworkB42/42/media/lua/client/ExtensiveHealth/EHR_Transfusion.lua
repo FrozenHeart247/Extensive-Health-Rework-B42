@@ -9,6 +9,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Blood"
 require "TimedActions/ISBaseTimedAction"
+pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 
 EHR = EHR or {}
 EHR.Transfusion = {}
@@ -17,6 +18,8 @@ EHR.Transfusion = {}
 EHR.Transfusion.BloodBagAmount = 500   -- mL
 EHR.Transfusion.SalineAmount = 250     -- mL
 EHR.Transfusion.DrawBloodAmount = 500  -- mL taken when drawing blood
+EHR.Transfusion.BLOOD_BAG_FRESH_HOURS = 1.0
+EHR.Transfusion.BLOOD_BAG_SPOIL_HOURS = 2.0
 
 -- Time to administer (in game ticks, ~30 ticks = 1 second)
 EHR.Transfusion.TransfusionTime = 300  -- ~10 seconds
@@ -26,6 +29,23 @@ EHR.Transfusion.DrawBloodTime = 400    -- ~13 seconds (drawing blood takes longe
 EHR.Transfusion.MinBloodToDrawPercent = 0.80  -- 80% - need healthy blood levels
 
 -- Blood bag types now consolidated in EHR_Blood.lua (EHR.Blood.BloodBagTypes)
+
+function EHR.Transfusion.HasBloodTypeKnowledge(player)
+    if not player then return false end
+
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.HasMedicalKnowledge then
+        return EHR.DiseaseFlyers.HasMedicalKnowledge(player, "blood_types", 8)
+    end
+
+    if Perks and Perks.Doctor and player.getPerkLevel then
+        local ok, level = pcall(function()
+            return player:getPerkLevel(Perks.Doctor)
+        end)
+        return ok and (tonumber(level) or 0) >= 8
+    end
+
+    return false
+end
 
 --[[
     Check if an item is a blood bag
@@ -48,7 +68,15 @@ end
     Check if blood/saline is spoiled (not fresh but not completely rotten)
     Returns: "fresh", "stale", or "rotten"
 ]]--
-function EHR.Transfusion.GetSpoilageState(item)
+function EHR.Transfusion.GetGameHour()
+    local gameTime = getGameTime()
+    if gameTime and gameTime.getWorldAgeHours then
+        return gameTime:getWorldAgeHours()
+    end
+    return 0
+end
+
+function EHR.Transfusion.GetVanillaSpoilageState(item)
     if not item then return "rotten" end
 
     -- Check if item has spoilage properties
@@ -67,6 +95,145 @@ function EHR.Transfusion.GetSpoilageState(item)
     else
         return "rotten"
     end
+end
+
+function EHR.Transfusion.IsItemFrozen(item)
+    if not item then return false end
+
+    local ok, result = pcall(function()
+        if item.isFrozen and item:isFrozen() then
+            return true
+        end
+        if item.getFreezingTime then
+            local freezingTime = item:getFreezingTime() or 0
+            return freezingTime >= 100
+        end
+        return false
+    end)
+
+    return ok and result == true
+end
+
+function EHR.Transfusion.IsBloodBagFrozenOrStored(item)
+    if not item then return false end
+    if EHR.Transfusion.IsItemFrozen(item) then return true end
+    if EHR.Transfusion.IsInFreezer then
+        local ok, result = pcall(function()
+            return EHR.Transfusion.IsInFreezer(item)
+        end)
+        if ok and result then return true end
+    end
+    return false
+end
+
+function EHR.Transfusion.GetBloodBagSpoilageData(item)
+    if not item then return nil end
+
+    local modData = item:getModData()
+    if not modData then return nil end
+
+    local now = EHR.Transfusion.GetGameHour()
+    modData.EHR_BloodSpoilage = modData.EHR_BloodSpoilage or {
+        createdHour = now,
+        lastCheckHour = now,
+        warmElapsed = 0,
+        stale = false,
+        rotten = false,
+        isFrozen = false,
+    }
+
+    local data = modData.EHR_BloodSpoilage
+    data.createdHour = data.createdHour or now
+    data.lastCheckHour = data.lastCheckHour or now
+    data.warmElapsed = data.warmElapsed or 0
+    data.stale = data.stale or false
+    data.rotten = data.rotten or false
+    data.isFrozen = data.isFrozen or false
+
+    return data
+end
+
+function EHR.Transfusion.UpdateBloodBagSpoilage(item)
+    if not item or not EHR.Transfusion.IsBloodBag(item) then return nil end
+
+    local data = EHR.Transfusion.GetBloodBagSpoilageData(item)
+    if not data then return nil end
+
+    local currentHour = EHR.Transfusion.GetGameHour()
+    local lastCheckHour = data.lastCheckHour or currentHour
+    local elapsed = currentHour - lastCheckHour
+    if elapsed < 0 then elapsed = 0 end
+    if elapsed > 24 then elapsed = 24 end
+
+    data.isFrozen = EHR.Transfusion.IsBloodBagFrozenOrStored(item)
+
+    if not data.isFrozen and not data.rotten then
+        data.warmElapsed = (data.warmElapsed or 0) + elapsed
+    end
+    data.lastCheckHour = currentHour
+
+    local vanillaState = EHR.Transfusion.GetVanillaSpoilageState(item)
+    if vanillaState == "rotten" then
+        data.rotten = true
+    elseif vanillaState == "stale" then
+        data.warmElapsed = math.max(data.warmElapsed or 0, EHR.Transfusion.BLOOD_BAG_FRESH_HOURS)
+    end
+
+    if (data.warmElapsed or 0) >= EHR.Transfusion.BLOOD_BAG_SPOIL_HOURS then
+        data.rotten = true
+    elseif (data.warmElapsed or 0) >= EHR.Transfusion.BLOOD_BAG_FRESH_HOURS then
+        data.stale = true
+    else
+        data.stale = false
+    end
+
+    if data.rotten then
+        pcall(function()
+            local offAgeMax = item:getOffAgeMax() or 0
+            if offAgeMax > 0 then
+                item:setAge(offAgeMax + 1)
+            end
+        end)
+    elseif data.isFrozen then
+        -- Keep vanilla food aging from advancing while the bag is frozen/preserved.
+        pcall(function() item:setAge(0) end)
+    end
+
+    return data
+end
+
+function EHR.Transfusion.GetBloodBagSpoilageInfo(item)
+    if not item or not EHR.Transfusion.IsBloodBag(item) then return nil end
+
+    local data = EHR.Transfusion.UpdateBloodBagSpoilage(item)
+    if not data then return nil end
+
+    local warmElapsed = data.warmElapsed or 0
+    local state = "fresh"
+    if data.rotten then
+        state = "rotten"
+    elseif warmElapsed >= EHR.Transfusion.BLOOD_BAG_FRESH_HOURS then
+        state = "stale"
+    end
+
+    return {
+        state = state,
+        warmElapsed = warmElapsed,
+        isFrozen = data.isFrozen == true,
+        hoursUntilStale = math.max(0, EHR.Transfusion.BLOOD_BAG_FRESH_HOURS - warmElapsed),
+        hoursUntilRotten = math.max(0, EHR.Transfusion.BLOOD_BAG_SPOIL_HOURS - warmElapsed),
+    }
+end
+
+function EHR.Transfusion.GetSpoilageState(item)
+    if EHR.Transfusion.IsBloodBag(item) then
+        local info = EHR.Transfusion.GetBloodBagSpoilageInfo(item)
+        if info and info.state then
+            return info.state
+        end
+    end
+
+    return EHR.Transfusion.GetVanillaSpoilageState(item)
 end
 
 --[[
@@ -277,72 +444,66 @@ function EHR.Transfusion.RestoreBlood(player, data, amount)
 end
 
 --[[
-    Apply bad reaction from incompatible blood
-    - Damage to body
-    - Nausea/sickness
-    - Fever
-    - Panic
+    Apply bad reaction from incompatible blood.
+    The immediate stat shock is intentionally brief; the serious gameplay is
+    handled by the AHTR disease module so it can progress, be monitored, and be treated.
 ]]--
 function EHR.Transfusion.ApplyBadReaction(player, data)
-    local bodyDamage = player:getBodyDamage()
     local stats = player:getStats()
 
-    -- 1. Damage to random body parts
-    if bodyDamage and BodyPartType then
-        -- Damage 3-5 random body parts
-        local numParts = ZombRand(3, 6)
-        for i = 1, numParts do
-            local partIndex = ZombRand(BodyPartType.ToIndex(BodyPartType.MAX))
-            local partType = BodyPartType.FromIndex(partIndex)
-            if partType then
-                local part = bodyDamage:getBodyPart(partType)
-                if part and part.ReduceHealth then
-                    pcall(function() part:ReduceHealth(ZombRand(5, 15)) end)
-                end
+    if stats and CharacterStat and CharacterStat.FOOD_SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
+            stats:set(CharacterStat.FOOD_SICKNESS, math.min(1, current + 0.12))
+        end)
+    end
+
+    if stats and CharacterStat and CharacterStat.SICKNESS then
+        pcall(function()
+            local current = stats:get(CharacterStat.SICKNESS) or 0
+            stats:set(CharacterStat.SICKNESS, math.min(1, current + 0.18))
+        end)
+    end
+
+    if stats and CharacterStat and CharacterStat.PANIC then
+        pcall(function()
+            local panic = stats:get(CharacterStat.PANIC) or 0
+            stats:set(CharacterStat.PANIC, math.min(1, panic + 0.35))
+        end)
+    end
+
+    if stats and CharacterStat and CharacterStat.PAIN then
+        pcall(function()
+            local pain = stats:get(CharacterStat.PAIN) or 0
+            stats:set(CharacterStat.PAIN, math.min(1, pain + 0.12))
+        end)
+    end
+
+    if EHR.Disease and EHR.Disease.Contract then
+        local diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or nil
+        local active = diseaseData and diseaseData.active and diseaseData.active.ahtr or nil
+        if active then
+            active.severity = math.min(1.25, (tonumber(active.severity) or 0.95) + 0.25)
+            active.endTime = math.max(tonumber(active.endTime) or 0, getGameTime():getWorldAgeHours() + 72)
+            active.incompatibleTransfusion = true
+        else
+            EHR.Disease.Contract(player, "ahtr")
+            diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or diseaseData
+            active = diseaseData and diseaseData.active and diseaseData.active.ahtr or nil
+            if active then
+                active.severity = math.max(tonumber(active.severity) or 0.95, 0.95)
+                active.incompatibleTransfusion = true
             end
         end
     end
 
-    -- 2. Nausea/Food sickness (B42 API)
-    if stats and CharacterStat and CharacterStat.FOOD_SICKNESS then
-        pcall(function()
-            local current = stats:get(CharacterStat.FOOD_SICKNESS) or 0
-            stats:set(CharacterStat.FOOD_SICKNESS, math.min(1, current + 0.5))
-        end)
-    end
-
-    -- 3. Sickness increase (B42 API - drives moodles)
-    if stats and CharacterStat and CharacterStat.SICKNESS then
-        pcall(function()
-            local current = stats:get(CharacterStat.SICKNESS) or 0
-            stats:set(CharacterStat.SICKNESS, math.min(1, current + 0.4))
-        end)
-    end
-
-    -- 4. Panic increase (B42 uses 0-1 scale)
-    if stats and CharacterStat and CharacterStat.PANIC then
-        pcall(function()
-            local panic = stats:get(CharacterStat.PANIC) or 0
-            stats:set(CharacterStat.PANIC, math.min(1, panic + 0.5))
-        end)
-    end
-
-    -- 5. Pain increase (B42 uses 0-1 scale)
-    if stats and CharacterStat and CharacterStat.PAIN then
-        pcall(function()
-            local pain = stats:get(CharacterStat.PAIN) or 0
-            stats:set(CharacterStat.PAIN, math.min(1, pain + 0.3))
-        end)
-    end
-
-    -- 6. Reduce some blood (reaction wastes some)
     if EHR.Blood and EHR.Blood.ModifyBloodVolume then
-        EHR.Blood.ModifyBloodVolume(player, -200)
+        EHR.Blood.ModifyBloodVolume(player, -150)
     else
-        data.EHR_Blood.currentVolume = math.max(0, (data.EHR_Blood.currentVolume or 5000) - 200)
+        data.EHR_Blood.currentVolume = math.max(0, (data.EHR_Blood.currentVolume or 5000) - 150)
     end
 
-    EHR.Log("BadReaction: Applied damage, sickness, fever, panic, pain")
+    EHR.Log("BadReaction: Started AHTR from incompatible transfusion")
 end
 
 
@@ -530,6 +691,19 @@ function EHRDrawBloodAction:perform()
     pcall(function()
         filledBag:setAge(0)
     end)
+    pcall(function()
+        local now = EHR.Transfusion.GetGameHour()
+        local modData = filledBag:getModData()
+        modData.EHR_BloodSpoilage = {
+            createdHour = now,
+            lastCheckHour = now,
+            warmElapsed = 0,
+            stale = false,
+            rotten = false,
+            isFrozen = EHR.Transfusion.IsBloodBagFrozenOrStored(filledBag),
+        }
+        modData.EHR_DonorBloodType = playerType
+    end)
 
     -- Remove blood from player
     EHR.Blood.ModifyBloodVolume(self.character, -EHR.Transfusion.DrawBloodAmount)
@@ -656,9 +830,13 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
             return
         end
 
-        -- Show compatibility info in tooltip
+        -- Show compatibility info only after the player learns blood typing.
+        local knowsBloodTypes = EHR.Transfusion.HasBloodTypeKnowledge(player)
         local compatible = data and EHR.Blood.IsCompatible(bagType, playerType)
-        local compatText = compatible and " (Compatible)" or " (INCOMPATIBLE!)"
+        local compatText = ""
+        if knowsBloodTypes then
+            compatText = compatible and " (Compatible)" or " (INCOMPATIBLE!)"
+        end
 
         -- Add spoilage warning to text
         if spoilageState == "stale" then
@@ -671,10 +849,13 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         local tooltip = ISWorldObjectContextMenu.addToolTip()
         local warningParts = {}
 
-        if not compatible then
+        if knowsBloodTypes and not compatible then
             tooltip:setName("WARNING")
             table.insert(warningParts, "<RGB:1,0.3,0.3> This blood type is NOT compatible with yours (" .. playerType .. ")!")
             table.insert(warningParts, "Using it will cause a severe reaction.")
+        elseif not knowsBloodTypes then
+            tooltip:setName("Blood Compatibility Unknown")
+            table.insert(warningParts, "<RGB:0.7,0.7,0.7> Read the Blood Types flyer or reach First Aid level 8 to assess compatibility.")
         end
 
         if spoilageState == "stale" then
@@ -808,11 +989,11 @@ end
 
 -- ============================================
 -- BLOOD BAG FREEZING SYSTEM
--- Blood bags can be frozen indefinitely, but if
--- they leave the freezer for 1+ hour, they spoil instantly.
+-- Blood bags can be frozen indefinitely. Outside frozen
+-- storage they become stale after 1 hour and spoil after 2 hours.
 -- ============================================
 
-EHR.Transfusion.FREEZE_GRACE_PERIOD = 1.0  -- Hours before frozen blood spoils when removed from freezer
+EHR.Transfusion.FREEZE_GRACE_PERIOD = EHR.Transfusion.BLOOD_BAG_SPOIL_HOURS
 
 -- Check if a container is a freezer (temperature below 0)
 function EHR.Transfusion.IsInFreezer(item)
@@ -902,36 +1083,10 @@ function EHR.Transfusion.ProcessBloodBagFreezing(item)
     if not item then return end
     if not EHR.Transfusion.IsBloodBag(item) then return end
 
-    local frozenData = EHR.Transfusion.GetFrozenData(item)
-    local isInFreezer = EHR.Transfusion.IsInFreezer(item)
-    local gameTime = getGameTime()
-    local currentHour = gameTime:getWorldAgeHours()
-
-    if isInFreezer then
-        -- Currently in freezer - mark as frozen and update time
-        frozenData.wasFrozen = true
-        frozenData.lastFreezerTime = currentHour
-
-        -- Reset age to keep it fresh while frozen
-        item:setAge(0)
-    else
-        -- Not in freezer
-        if frozenData.wasFrozen and frozenData.lastFreezerTime then
-            -- Was frozen before - check if grace period expired
-            local hoursOutOfFreezer = currentHour - frozenData.lastFreezerTime
-
-            if hoursOutOfFreezer >= EHR.Transfusion.FREEZE_GRACE_PERIOD then
-                -- Grace period expired - spoil the blood bag instantly
-                local offAgeMax = item:getOffAgeMax() or 35
-                item:setAge(offAgeMax + 1)  -- Set age past rotten threshold
-
-                -- Log for debugging
-                if EHR.DEBUG then
-                    print("[EHR Freezing] Blood bag spoiled! Was out of freezer for " ..
-                          string.format("%.1f", hoursOutOfFreezer) .. " hours")
-                end
-            end
-        end
+    local spoilageData = EHR.Transfusion.UpdateBloodBagSpoilage(item)
+    if EHR.DEBUG and spoilageData and spoilageData.rotten then
+        print("[EHR Blood Storage] Blood bag spoiled after " ..
+              string.format("%.1f", spoilageData.warmElapsed or 0) .. " warm hours")
     end
 end
 

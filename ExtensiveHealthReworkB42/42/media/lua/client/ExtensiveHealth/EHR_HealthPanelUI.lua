@@ -58,6 +58,7 @@ EHR_HealthPanelUI.Colors = {
 
 EHR_HealthPanelUI.DiseaseIconPaths = {
     unknown = "media/textures/EHR_Disease_Unknown.png",
+    ahtr = "media/textures/EHR_Disease_AHTR.png",
     cadaveric_aspergillosis = "media/textures/EHR_Disease_CadavericAspergillosis.png",
     cellulitis = "media/textures/EHR_Disease_Wound_Infection.png",
     common_cold = "media/textures/EHR_Disease_CommonCold.png",

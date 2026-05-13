@@ -18,6 +18,7 @@ if not EHR or not EHR.Tooltips or not EHR.Tooltips.Data then
     pcall(function() require "ExtensiveHealth/EHR_TooltipData" end)
 end
 pcall(function() require "ExtensiveHealth/EHR_Medication" end)
+pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 
 EHR = EHR or {}
 EHR.Tooltips = EHR.Tooltips or {}
@@ -26,10 +27,63 @@ EHR.Tooltips = EHR.Tooltips or {}
 -- HELPER FUNCTIONS
 -- ============================================
 
+local function getTooltipCharacter(panel)
+    local character = nil
+
+    if panel then
+        if panel.character then
+            character = panel.character
+        elseif panel.tooltip then
+            if panel.tooltip.getCharacter then
+                local ok, result = pcall(function()
+                    return panel.tooltip:getCharacter()
+                end)
+                if ok then character = result end
+            elseif panel.tooltip.character then
+                character = panel.tooltip.character
+            end
+        end
+    end
+
+    if not character and getPlayer then
+        local ok, result = pcall(getPlayer)
+        if ok then character = result end
+    end
+
+    return character
+end
+
+function EHR.Tooltips.HasBloodTypeKnowledge(panelOrPlayer)
+    local player = panelOrPlayer
+    if not (player and player.getModData and player.getPerkLevel) then
+        player = getTooltipCharacter(panelOrPlayer)
+    end
+
+    if not player then return false end
+
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.HasMedicalKnowledge then
+        return EHR.DiseaseFlyers.HasMedicalKnowledge(player, "blood_types", 8)
+    end
+
+    if Perks and Perks.Doctor and player.getPerkLevel then
+        local ok, level = pcall(function()
+            return player:getPerkLevel(Perks.Doctor)
+        end)
+        return ok and (tonumber(level) or 0) >= 8
+    end
+
+    return false
+end
+
 -- Format hours into human-readable time (e.g., "5 days", "12 hours", "2 days 6 hours")
 function EHR.Tooltips.FormatTimeRemaining(hours)
     if hours <= 0 then
         return "0 hours"
+    end
+
+    if hours < 1 then
+        local minutes = math.max(1, math.ceil(hours * 60))
+        return string.format("%d min", minutes)
     end
 
     local days = math.floor(hours / 24)
@@ -399,6 +453,15 @@ local function renderEHRTooltipImpl(self, data, item)
         end
     end
 
+    if data.bloodCompatibility then
+        local canReadCompatibility = EHR.Tooltips.HasBloodTypeKnowledge and EHR.Tooltips.HasBloodTypeKnowledge(self)
+        if canReadCompatibility then
+            addWrappedLines(data.bloodCompatibility, {r=0.3, g=0.8, b=1.0})
+        else
+            addWrappedLines("Compatibility: unknown (read Blood Types flyer or reach First Aid 8)", {r=0.7, g=0.7, b=0.7})
+        end
+    end
+
     -- Cures (with wrapping)
     if data.cures and #data.cures > 0 then
         local curesText = "CURES: " .. table.concat(data.cures, ", ")
@@ -511,55 +574,42 @@ local function renderEHRTooltipImpl(self, data, item)
             totalHeight = totalHeight + fontHeight + lineSpacing
         end
 
-        -- Check frozen status (with safety checks)
-        local frozenData = nil
-        local isInFreezer = false
-
+        -- Blood bags use EHR's warm-time spoilage so old saves and newly filled bags behave consistently.
+        local customSpoilage = nil
         pcall(function()
-            local modData = item:getModData()
-            if modData then
-                frozenData = modData.EHR_Frozen
-            end
-            if EHR.Transfusion and EHR.Transfusion.IsInFreezer then
-                isInFreezer = EHR.Transfusion.IsInFreezer(item)
+            if EHR.Transfusion and EHR.Transfusion.GetBloodBagSpoilageInfo then
+                customSpoilage = EHR.Transfusion.GetBloodBagSpoilageInfo(item)
             end
         end)
 
-        if isInFreezer then
-            -- Currently frozen - show frozen status
-            table.insert(lines, {text = "FROZEN - Preserved indefinitely", color = {r=0.4, g=0.8, b=1.0}})
-            totalHeight = totalHeight + fontHeight + lineSpacing
-            table.insert(lines, {text = "! Spoils 1hr after leaving freezer", color = {r=1.0, g=0.6, b=0.2}})
-            totalHeight = totalHeight + fontHeight + lineSpacing
-        elseif frozenData and frozenData.wasFrozen then
-            -- Was frozen, now out of freezer - wrap in pcall for safety
-            local thawingHandled = false
-            pcall(function()
-                local gameTime = getGameTime()
-                if gameTime then
-                    local currentHour = gameTime:getWorldAgeHours()
-                    local hoursOut = currentHour - (frozenData.lastFreezerTime or currentHour)
-                    local gracePeriod = EHR.Transfusion and EHR.Transfusion.FREEZE_GRACE_PERIOD or 1.0
-                    local hoursRemaining = gracePeriod - hoursOut
+        if customSpoilage then
+            local spoilText = ""
+            local spoilColor = {r=0.7, g=0.7, b=0.7}
 
-                    if hoursRemaining > 0 then
-                        -- Still in grace period
-                        local minsRemaining = math.ceil(hoursRemaining * 60)
-                        table.insert(lines, {text = "THAWING - Spoils in: " .. minsRemaining .. " min", color = {r=1.0, g=0.4, b=0.2}})
-                        totalHeight = totalHeight + fontHeight + lineSpacing
-                    else
-                        -- Grace period expired
-                        table.insert(lines, {text = "SPOILED - Was frozen, now ruined!", color = {r=1.0, g=0.2, b=0.2}})
-                        totalHeight = totalHeight + fontHeight + lineSpacing
-                    end
-                    thawingHandled = true
+            if customSpoilage.isFrozen then
+                spoilText = "FROZEN - spoil timer paused"
+                spoilColor = {r=0.4, g=0.8, b=1.0}
+            elseif customSpoilage.state == "rotten" then
+                spoilText = "SPOILED - Do not use!"
+                spoilColor = {r=1.0, g=0.2, b=0.2}
+            elseif customSpoilage.state == "stale" then
+                local timeText = tostring(math.floor(customSpoilage.hoursUntilRotten or 0)) .. " hours"
+                if EHR.Tooltips.FormatTimeRemaining then
+                    pcall(function() timeText = EHR.Tooltips.FormatTimeRemaining(customSpoilage.hoursUntilRotten or 0) end)
                 end
-            end)
-            if not thawingHandled then
-                -- Fallback if getGameTime failed
-                table.insert(lines, {text = "Previously frozen", color = {r=1.0, g=0.6, b=0.2}})
-                totalHeight = totalHeight + fontHeight + lineSpacing
+                spoilText = "STALE - Spoils in: " .. timeText
+                spoilColor = {r=1.0, g=0.6, b=0.2}
+            else
+                local timeText = tostring(math.floor(customSpoilage.hoursUntilStale or 0)) .. " hours"
+                if EHR.Tooltips.FormatTimeRemaining then
+                    pcall(function() timeText = EHR.Tooltips.FormatTimeRemaining(customSpoilage.hoursUntilStale or 0) end)
+                end
+                spoilText = "Fresh for: " .. timeText
+                spoilColor = {r=0.5, g=0.9, b=0.5}
             end
+
+            table.insert(lines, {text = spoilText, color = spoilColor})
+            totalHeight = totalHeight + fontHeight + lineSpacing
         elseif offAgeMax > 0 then
             local hoursUntilRotten = offAgeMax - age
             local hoursUntilStale = offAge - age

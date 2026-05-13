@@ -935,6 +935,7 @@ end
 
 -- Disease IDs for infliction dropdown
 EHR.DebugV2.DiseaseList = {
+    "ahtr",
     "food_poisoning",
     "toxin_poisoning",
     "common_cold",

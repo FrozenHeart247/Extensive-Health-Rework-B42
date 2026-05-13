@@ -102,6 +102,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.AntiparasiticPills"] = true,
     ["ExtensiveHealth.OralRehydrationKit"] = true,
     ["ExtensiveHealth.InstantIcePack"] = true,
+    ["ExtensiveHealth.Furosemide"] = true,
     ["ExtensiveHealth.TBAntibiotics"] = true,
     ["ExtensiveHealth.AntibioticOintment"] = true,
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,

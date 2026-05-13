@@ -41,6 +41,7 @@ local Colors = {
 
 local DiseaseIcons = {
     unknown = "media/textures/EHR_Disease_Unknown.png",
+    ahtr = "media/textures/EHR_Disease_AHTR.png",
     cadaveric_aspergillosis = "media/textures/EHR_Disease_CadavericAspergillosis.png",
     cellulitis = "media/textures/EHR_Disease_Wound_Infection.png",
     common_cold = "media/textures/EHR_Disease_CommonCold.png",
@@ -67,6 +68,7 @@ local CategoryNames = {
     wound = "Wound / trauma",
     corpse = "Corpse exposure",
     infection = "Infection",
+    blood = "Blood / transfusion",
 }
 
 local CategoryUnknownNames = {
@@ -75,6 +77,7 @@ local CategoryUnknownNames = {
     wound = "Unknown Wound Illness",
     corpse = "Unknown Corpse-related Illness",
     infection = "Unknown Infection",
+    blood = "Unknown Blood Reaction",
 }
 
 local CatalogOrder = {
@@ -95,6 +98,7 @@ local CatalogOrder = {
     "cellulitis",
     "sepsis",
     "tetanus",
+    "ahtr",
     "knox_infection",
 }
 
@@ -221,6 +225,16 @@ local CodexInfo = {
         symptoms = "Jaw stiffness, muscle spasms, pain, fever, and dangerous neuromuscular failure.",
         prevention = "Clean deep wounds quickly and use tetanus prophylaxis when possible.",
         treatment = "Muscle relaxants for symptoms; tetanus antitoxin or tetanus immunoglobulin with a syringe to cure.",
+    },
+    ahtr = {
+        category = "blood",
+        name = "Acute Hemolytic Transfusion Reaction",
+        incubation = "1-6 hours after incompatible blood transfusion.",
+        duration = "2-4 days without treatment; can become fatal quickly.",
+        cause = "Receiving blood that is incompatible with your body.",
+        symptoms = "Lower back pain, severe weakness, nausea, high fever, hemolysis, endurance loss, and dangerous health decline.",
+        prevention = "Use compatible blood and test compatibility whenever possible.",
+        treatment = "IV fluids and furosemide are the main treatments. Antipyretics, anti-nausea tablets, and anti-inflammatory pills reduce symptoms.",
     },
     knox_infection = {
         category = "infection",

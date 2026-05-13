@@ -567,6 +567,39 @@ EHR.Disease.Diseases = {
         },
     },
 
+    ["ahtr"] = {
+        name = "AHTR",
+        fullName = "Acute Hemolytic Transfusion Reaction",
+        category = "blood",
+        incubationMin = 1,
+        incubationMax = 6,
+        durationMin = 48,
+        durationMax = 96,
+        baseSeverity = 0.95,
+        canKill = true,
+        stageCount = 4,
+        applyEffectsInStage1 = true,
+        symptoms = {"Lower back pain", "Severe weakness", "Nausea", "High fever", "Hemolysis"},
+        treatments = {
+            tier0 = {},
+            tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
+            tier2 = {"ExtensiveHealth.Furosemide"},
+            tier3 = {"ExtensiveHealth.IVFluids"},
+        },
+        stageEntryDialogue = {
+            [1] = "Something is wrong with that transfusion...",
+            [2] = "My back hurts... I feel sick...",
+            [3] = "I'm burning up. My blood feels wrong...",
+            [4] = "I have to keep fighting this reaction...",
+        },
+        dialogue = {
+            [1] = {"That blood didn't feel right...", "My lower back aches...", "I'm suddenly so weak..."},
+            [2] = {"My back is killing me...", "I think I'm going to be sick...", "I'm burning up..."},
+            [3] = {"I can barely stand...", "My kidneys hurt...", "This transfusion is killing me..."},
+            [4] = {"Still burning...", "Need fluids...", "My body is tearing itself apart..."},
+        },
+    },
+
     ["tetanus"] = {
         name = "Tetanus",
         category = "wound",
@@ -1139,7 +1172,7 @@ function EHR.Disease.UpdateProgression(player, data)
             end
 
             -- Apply effects based on stage
-            if disease.stage > 1 or def.stageDrivenByBodyTemperature then
+            if disease.stage > 1 or def.stageDrivenByBodyTemperature or def.applyEffectsInStage1 then
                 local effectScale = EHR_DiseaseGetRuntimeTimeScale()
                 local previousEffectScale = EHR_DiseaseEffectTimeScale
                 EHR_DiseaseEffectTimeScale = effectScale
@@ -1177,7 +1210,7 @@ function EHR.Disease.OnRecovery(player, diseaseId)
     -- Food poisoning should stay fully risk-based on each bad meal.
     if diseaseId == "food_poisoning" then
         data.immunity[diseaseId] = 0
-    elseif diseaseId == "toxin_poisoning" then
+    elseif diseaseId == "toxin_poisoning" or diseaseId == "ahtr" then
         data.immunity[diseaseId] = 0
     else
         data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
@@ -1207,6 +1240,14 @@ function EHR.Disease.OnRecovery(player, diseaseId)
     if diseaseId == "tetanus" then
         local modData = player and player:getModData() or nil
         if modData then modData.EHR_TetanusEatWarnAfter = nil end
+    elseif diseaseId == "ahtr" then
+        local active = data.active and data.active[diseaseId] or nil
+        if active then
+            active.ahtrHealthCap = nil
+            active.ahtrSevereHealthCap = nil
+            active.ahtrSicknessTarget = nil
+            active.ahtrSicknessTargetUntil = nil
+        end
     end
 
     if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
@@ -1371,6 +1412,11 @@ local EHR_DiseaseBodyFeverTargets = {
     tetanus = {
         [3] = { temp = 39.0, step = 0.050 },
         [4] = { temp = 37.4, step = 0.018 },
+    },
+    ahtr = {
+        [2] = { temp = 40.0, step = 0.060 },
+        [3] = { temp = 40.1, step = 0.065 },
+        [4] = { temp = 39.7, step = 0.055 },
     },
 }
 
@@ -1978,6 +2024,12 @@ end
 
 local function EHR_DiseaseIsNeckPart(partType, part)
     return EHR_DiseaseGetBodyPartName(partType, part):find("neck", 1, true) ~= nil
+end
+
+local function EHR_DiseaseIsLowerBackPart(partType, part)
+    local partName = EHR_DiseaseGetBodyPartName(partType, part)
+    return partName:find("back", 1, true) ~= nil
+        or (partName:find("torso", 1, true) ~= nil and partName:find("lower", 1, true) ~= nil)
 end
 
 local function EHR_DiseaseApplyTargetedMuscleStrain(player, targetStiffness, step, includePart, painTarget, painStep)
@@ -2885,6 +2937,154 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             disease.aspergillosisHealthCap = nil
         end
 
+    elseif diseaseId == "ahtr" then
+        -- Acute hemolytic transfusion reaction from incompatible blood.
+        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "ahtr")
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "ahtr", disease)
+        local nauseaRelief = math.max(
+            EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "nausea"),
+            EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "sickness")
+        )
+        local painRelief = math.max(
+            EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "pain"),
+            EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "inflammation") * 0.65
+        )
+        local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "fever")
+        local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "weakness")
+        local healthDrainRelief = EHR_DiseaseGetActiveSymptomReduction(player, "ahtr", "healthDrain")
+
+        local enduranceFloor = 0.30
+        local enduranceDrain = 0.006
+        local sicknessTarget = 0.10
+        local painTarget = 18
+        local painStep = 1.0
+        local stiffnessTarget = 18
+        local feverTarget = nil
+        local feverStep = 0.035
+        local dialogueChance = 0.003
+        local healthCooldown = nil
+        local healthDamage = 0
+        local healthFloor = nil
+
+        if stage == 2 then
+            enduranceFloor = 0.40
+            enduranceDrain = 0.009
+            sicknessTarget = 0.46
+            painTarget = 28
+            painStep = 1.5
+            stiffnessTarget = 26
+            feverTarget = 40.0
+            feverStep = 0.060
+            dialogueChance = 0.006
+            healthCooldown = 0.42
+            healthDamage = 0.55 + (0.95 * severity)
+            healthFloor = 50
+        elseif stage == 3 then
+            enduranceFloor = 0.40
+            enduranceDrain = 0.013
+            sicknessTarget = 0.62
+            painTarget = 38
+            painStep = 2.0
+            stiffnessTarget = 36
+            feverTarget = 40.1
+            feverStep = 0.065
+            dialogueChance = 0.008
+            healthCooldown = 0.30
+            healthDamage = 1.15 + (1.95 * severity)
+        elseif stage == 4 then
+            enduranceFloor = 0.44
+            enduranceDrain = 0.012
+            sicknessTarget = 0.52
+            painTarget = 34
+            painStep = 1.8
+            stiffnessTarget = 32
+            feverTarget = 39.7
+            feverStep = 0.055
+            dialogueChance = 0.006
+            healthCooldown = 0.34
+            healthDamage = 0.95 + (1.65 * severity)
+        end
+
+        if curativeTreatment then
+            enduranceDrain = enduranceDrain * 0.35
+            enduranceFloor = math.min(0.88, enduranceFloor + 0.28)
+            sicknessTarget = sicknessTarget * 0.45
+            painTarget = math.max(8, painTarget * 0.40)
+            stiffnessTarget = math.max(8, stiffnessTarget * 0.35)
+            feverTarget = feverTarget and math.min(37.7, feverTarget - 2.8) or nil
+            feverStep = feverStep * 1.45
+            healthDamage = 0
+            healthCooldown = nil
+            disease.ahtrHealthCap = nil
+            disease.ahtrSevereHealthCap = nil
+        else
+            sicknessTarget = sicknessTarget * math.max(0.18, symptomMult * (1 - nauseaRelief))
+            painTarget = painTarget * math.max(0.18, symptomMult * (1 - painRelief))
+            stiffnessTarget = stiffnessTarget * math.max(0.18, symptomMult * (1 - painRelief))
+            enduranceDrain = enduranceDrain * math.max(0.20, symptomMult * (1 - weaknessRelief))
+            healthDamage = healthDamage * math.max(0.12, symptomMult * (1 - healthDrainRelief))
+        end
+
+        if feverTarget and feverRelief > 0 then
+            local strongFeverReducer = feverRelief >= 0.60
+            local feverFloor = strongFeverReducer and 37.0 or 37.4
+            local feverDrop = strongFeverReducer and 4.0 or math.min(1.5, feverRelief * 1.9)
+            feverTarget = math.max(feverFloor, feverTarget - feverDrop)
+            feverStep = feverStep * math.max(0.35, 1 - feverRelief)
+            sicknessTarget = sicknessTarget * math.max(0.55, 1 - (feverRelief * 0.40))
+        end
+
+        EHR_DiseaseDrainEndurance(stats, enduranceDrain * severity, enduranceFloor, 0.65)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat and CharacterStat.SICKNESS, sicknessTarget, 0.0045 * severity, 1)
+        EHR_DiseaseApplyTargetedMuscleStrain(player, stiffnessTarget, 0.9 * severity, EHR_DiseaseIsLowerBackPart, painTarget, painStep * severity)
+        if curativeTreatment or painRelief > 0 then
+            EHR_DiseaseReduceTargetedPainToward(player, math.max(4, painTarget), 1.3 + (painRelief * 4.0), EHR_DiseaseIsLowerBackPart)
+        end
+        EHR_DiseaseMovePainToward(stats, math.min(0.50, painTarget / 100), 0.0035 * severity, 0.010 + (0.025 * painRelief))
+
+        if feverTarget then
+            EHR_DiseaseMoveBodyTemperatureToward(player, feverTarget, feverStep * severity * math.max(0.25, symptomMult))
+        end
+
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        disease.ahtrSicknessTarget = math.max(0, math.min((EHR.Disease.VANILLA_SICKNESS_CAP or 65) / 100, sicknessTarget))
+        disease.ahtrSicknessTargetUntil = currentHour + 0.10
+
+        trySymptom("ahtr_dialogue", dialogueChance * severity * math.max(0.25, symptomMult), 0.22, function()
+            local lines = stage >= 3
+                and {"I'm burning up...", "My back is killing me...", "The transfusion is destroying me...", "I need fluids now..."}
+                or {"Something is wrong with that blood...", "My lower back hurts...", "I feel weak and sick..."}
+            EHR_DiseaseSay(player, lines)
+        end)
+
+        if healthCooldown and healthDamage > 0 and EHR_DiseaseCanTriggerSymptom(disease, "ahtr_health_damage", healthCooldown) then
+            local currentHealth = EHR_DiseaseGetBodyHealth(player)
+            if currentHealth and (not healthFloor or currentHealth > healthFloor) then
+                local damage = healthFloor and math.min(currentHealth - healthFloor, healthDamage) or healthDamage
+                local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                    player,
+                    damage,
+                    "Acute hemolytic transfusion reaction - incompatible blood caused systemic hemolysis"
+                )
+
+                if newHealth then
+                    if healthFloor then
+                        disease.ahtrHealthCap = math.max(healthFloor, math.min(disease.ahtrHealthCap or 100, newHealth))
+                        disease.ahtrSevereHealthCap = nil
+                        EHR_DiseaseClampBodyHealth(player, disease.ahtrHealthCap)
+                    else
+                        disease.ahtrSevereHealthCap = math.min(disease.ahtrSevereHealthCap or 100, newHealth)
+                        disease.ahtrHealthCap = nil
+                        EHR_DiseaseClampBodyHealth(player, disease.ahtrSevereHealthCap)
+                    end
+                end
+            end
+        elseif stage == 1 then
+            disease.ahtrHealthCap = nil
+            disease.ahtrSevereHealthCap = nil
+        end
+
     elseif diseaseId == "tuberculosis" then
         local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
         local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
@@ -3002,6 +3202,27 @@ local function EHR_DiseaseEnforceHealthCaps(player, modData)
             tetanus.tetanusHealthCap = nil
             if tetanus.stage ~= 3 then
                 tetanus.tetanusSevereHealthCap = nil
+            end
+        end
+    end
+
+    local ahtr = modData.EHR_Disease.active.ahtr
+    if ahtr then
+        if EHR_DiseaseGetActiveCurativeTreatment(player, "ahtr") then
+            ahtr.ahtrHealthCap = nil
+            ahtr.ahtrSevereHealthCap = nil
+        elseif ahtr.stage == 2 and ahtr.ahtrHealthCap then
+            EHR_DiseaseClampBodyHealth(player, ahtr.ahtrHealthCap)
+            ahtr.ahtrSevereHealthCap = nil
+        elseif (ahtr.stage == 3 or ahtr.stage == 4) and ahtr.ahtrSevereHealthCap then
+            EHR_DiseaseClampBodyHealth(player, ahtr.ahtrSevereHealthCap)
+            ahtr.ahtrHealthCap = nil
+        else
+            if ahtr.stage ~= 2 then
+                ahtr.ahtrHealthCap = nil
+            end
+            if ahtr.stage ~= 3 and ahtr.stage ~= 4 then
+                ahtr.ahtrSevereHealthCap = nil
             end
         end
     end
@@ -4256,6 +4477,53 @@ EHR.Disease.vanillaAPIChecked = false
 -- Cache for sickness level to prevent flickering (per-player)
 local cachedSicknessTargets = {}  -- playerID -> {target, lastSetTime}
 
+local function EHR_DiseaseSnapSicknessMoodleTarget(targetB42)
+    targetB42 = tonumber(targetB42) or 0
+    if targetB42 <= 0 then return 0 end
+
+    -- Moodle thresholds: 0.25 (Queasy), 0.50 (Nauseous), 0.75 (Sick), 0.90 (Fever)
+    local moodleThresholds = {0.25, 0.50, 0.75, 0.90}
+    for _, threshold in ipairs(moodleThresholds) do
+        if math.abs(targetB42 - threshold) < 0.05 then
+            if targetB42 < threshold then
+                return math.max(0, threshold - 0.06)
+            end
+            return math.min(1, threshold + 0.06)
+        end
+    end
+
+    return math.max(0, math.min(1, targetB42))
+end
+
+local function EHR_DiseaseGetSystemicSicknessTarget(player, ignoreDiseaseId)
+    local data = EHR.Disease.GetDiseaseData(player)
+    if not data or not data.active then return 0 end
+
+    local target = 0
+    local currentHour = getGameTime and getGameTime():getWorldAgeHours() or 0
+
+    local ahtr = data.active.ahtr
+    if ahtr and ignoreDiseaseId ~= "ahtr" then
+        local activeTarget = tonumber(ahtr.ahtrSicknessTarget)
+        local activeUntil = tonumber(ahtr.ahtrSicknessTargetUntil)
+        if activeTarget and activeUntil and activeUntil > currentHour then
+            target = math.max(target, activeTarget)
+        else
+            local stage = tonumber(ahtr.stage) or 1
+            local severity = tonumber(ahtr.severity) or 0.95
+            local stageTargets = {
+                [1] = 0.10,
+                [2] = 0.46,
+                [3] = 0.62,
+                [4] = 0.52,
+            }
+            target = math.max(target, (stageTargets[stage] or 0.10) * math.max(0.35, math.min(1.0, severity)))
+        end
+    end
+
+    return math.min(target, (EHR.Disease.VANILLA_SICKNESS_CAP or 65) / 100)
+end
+
 local function EHR_DiseaseGetGastroSicknessFloor(player, ignoreDiseaseId)
     if not player or ignoreDiseaseId == "gastroenteritis" then return nil end
 
@@ -4474,6 +4742,8 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
 
     -- Get our target level based on disease state (returns 0-100)
     local targetLevel = EHR.Disease.GetTargetVanillaSickness(player)
+    local systemicTargetB42 = EHR_DiseaseSnapSicknessMoodleTarget(EHR_DiseaseGetSystemicSicknessTarget(player))
+    local hasSystemicSickness = systemicTargetB42 > 0.001
 
     local corpseShouldSuppressFood = EHR.CorpseSickness
             and EHR.CorpseSickness.ShouldSuppressFoodSickness
@@ -4501,7 +4771,7 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
 
     -- Corpse exposure owns CharacterStat.SICKNESS directly. If no food disease is
     -- active, keep the food component suppressed without zeroing the corpse moodle.
-    if targetLevel == 0 and (activeCorpseIllness or corpseShouldSuppressFood or (corpseSicknessSignal and currentVanilla <= 0.01)) then
+    if targetLevel == 0 and not hasSystemicSickness and (activeCorpseIllness or corpseShouldSuppressFood or (corpseSicknessSignal and currentVanilla <= 0.01)) then
         if CharacterStat.FOOD_SICKNESS then
             pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, 0) end)
         end
@@ -4520,7 +4790,7 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
         return
     end
 
-    if targetLevel == 0 and currentVanilla > 0.01 then
+    if targetLevel == 0 and not hasSystemicSickness and currentVanilla > 0.01 then
         if EHR.Disease.ShouldSuppressExternalFoodSickness and EHR.Disease.ShouldSuppressExternalFoodSickness(player) then
             if CharacterStat.FOOD_SICKNESS then
                 pcall(function() stats:set(CharacterStat.FOOD_SICKNESS, 0) end)
@@ -4584,6 +4854,8 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
     -- Convert our target (0-100) to B42 scale (0-1)
     local targetB42 = targetLevel / 100
 
+    targetB42 = EHR_DiseaseSnapSicknessMoodleTarget(targetB42)
+
     -- Check for POISON stat (raw food triggers this, causes rapid death)
     local currentPoison = 0
     if CharacterStat.POISON then
@@ -4593,21 +4865,6 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
         end
     end
     local preserveVanillaPoison = EHR.Disease.ShouldPreserveVanillaPoison(player, currentPoison)
-
-    -- BUG-014 FIX: Snap values away from moodle thresholds to prevent flicker
-    -- Moodle thresholds: 0.25 (Queasy), 0.50 (Nauseous), 0.75 (Sick), 0.90 (Fever)
-    local moodleThresholds = {0.25, 0.50, 0.75, 0.90}
-    for _, threshold in ipairs(moodleThresholds) do
-        if math.abs(targetB42 - threshold) < 0.05 then
-            -- Snap to clearly above or below threshold (increased from 0.03 to 0.05)
-            if targetB42 < threshold then
-                targetB42 = threshold - 0.06
-            else
-                targetB42 = threshold + 0.06
-            end
-            break
-        end
-    end
 
     -- Hysteresis: Only change target if it's significantly different from cached
     local playerID = player:getUsername() or "default"
@@ -4638,6 +4895,8 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
         cachedSicknessTargets[playerID] = {target = targetB42, lastSetTime = currentHour}
     end
 
+    local sicknessTargetB42 = math.max(targetB42, systemicTargetB42)
+
     -- Update if sickness significantly different OR poison is active
     -- BUG-014 FIX: Increase dead zone to 0.12 (12%) to prevent oscillation
     -- BUG-021 FIX: ALWAYS suppress if vanilla is ABOVE our target (prevents moodle flash)
@@ -4649,8 +4908,8 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
         local ok, value = pcall(function() return stats:get(CharacterStat.SICKNESS) end)
         if ok and value then currentSickness = value end
     end
-    local sicknessDifference = math.abs(currentSickness - targetB42)
-    local sicknessBelowTarget = targetB42 > 0 and currentSickness < targetB42 - 0.02
+    local sicknessDifference = math.abs(currentSickness - sicknessTargetB42)
+    local sicknessBelowTarget = sicknessTargetB42 > 0 and currentSickness < sicknessTargetB42 - 0.02
     local needsUpdate = vanillaAboveTarget or difference > 0.12 or sicknessDifference > 0.08 or sicknessBelowTarget or (currentPoison > 0.1 and not preserveVanillaPoison)
 
     if needsUpdate then
@@ -4663,7 +4922,7 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
         local successSick = false
         if CharacterStat.SICKNESS then
             successSick = pcall(function()
-                stats:set(CharacterStat.SICKNESS, targetB42)
+                stats:set(CharacterStat.SICKNESS, sicknessTargetB42)
             end)
         end
 
@@ -4689,8 +4948,8 @@ function EHR.Disease.SyncVanillaFoodSickness(player)
                 EHR.Log(string.format("Suppressed POISON: %.3f -> 0", currentPoison))
             end
             if successFood or successSick then
-                EHR.Log(string.format("Synced vanilla sickness: %.3f -> %.3f (FOOD_SICKNESS=%s, SICKNESS=%s)",
-                    currentVanilla, targetB42, tostring(successFood), tostring(successSick)))
+                EHR.Log(string.format("Synced vanilla sickness: %.3f -> %.3f / systemic %.3f (FOOD_SICKNESS=%s, SICKNESS=%s)",
+                    currentVanilla, targetB42, sicknessTargetB42, tostring(successFood), tostring(successSick)))
             end
         end
 

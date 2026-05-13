@@ -1348,6 +1348,12 @@ end
 function EHR_HealthPanelUI:getDiseaseProgress(disease)
     if type(disease) ~= "table" then return 0 end
 
+    local progress = tonumber(disease.progress)
+    if disease.temperatureDriven and progress then
+        if progress <= 1 then return progress * 100 end
+        return progress
+    end
+
     local started = tonumber(disease.startTime)
     local ended = tonumber(disease.endTime)
     if started and ended and ended > started then
@@ -1359,7 +1365,7 @@ function EHR_HealthPanelUI:getDiseaseProgress(disease)
         return clamp(((getWorldAgeHours() - started) / duration) * 100, 0, 100)
     end
 
-    local progress = tonumber(disease.progress)
+    progress = tonumber(disease.progress)
     if progress then
         if progress <= 1 then return progress * 100 end
         return progress
@@ -2238,15 +2244,15 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
 end
 
 function EHR_HealthPanelUI:getBodyPartVisualValue(bodyPart)
-    local health = tonumber(callBodyPartMethod(bodyPart, "getHealth", 100)) or 100
-    local value = clamp((100 - health) / 100, 0, 1)
     local statuses = self:getBodyPartStatuses(bodyPart)
 
     if #statuses > 0 and statuses[1].visualValue then
-        value = statuses[1].visualValue
+        return clamp(statuses[1].visualValue, 0, 1)
     end
 
-    return clamp(value, 0, 1)
+    -- BodyPart:getHealth() can mirror low overall health from systemic illness,
+    -- so the silhouette should only tint for explicit local body-part statuses.
+    return 0
 end
 
 function EHR_HealthPanelUI:updateVanillaBodyPartPanel()

@@ -2917,6 +2917,10 @@ local function getClientVanillaTemperatureTarget(player)
 end
 
 local function suppressVanillaTemperatureClient()
+    -- Vanilla owns environmental body temperature again; disease fever is
+    -- handled by EHR.BodyTemp only when an active disease needs it.
+    do return end
+
     local player = getSpecificPlayer(0)
     if not player then return end
     if not player:isAlive() then return end
@@ -2960,6 +2964,26 @@ local function suppressVanillaTemperatureClient()
 
     if success and current ~= nil then
         local targetTemp = getClientVanillaTemperatureTarget(player)
+        local normalTemp = clientSuppression.NORMAL_BODY_TEMP or 37.0
+        local hasFeverSource = false
+        if EHR and EHR.BodyTemp and EHR.BodyTemp.HasActiveDiseaseFeverSource then
+            local okFever, fever = pcall(EHR.BodyTemp.HasActiveDiseaseFeverSource, player)
+            hasFeverSource = okFever and fever == true
+        end
+
+        local modData = nil
+        pcall(function() modData = player:getModData() end)
+        local tempData = modData and modData.EHR_Temperature or nil
+        local managedTemp = tempData and tonumber(tempData.bodyTemp) or nil
+        local plannedTarget = tempData and (tonumber(tempData.targetTemp) or tonumber(tempData.environmentTargetTemp)) or nil
+        local activelyCooling = managedTemp and plannedTarget and plannedTarget < managedTemp - 0.01
+
+        if current > 28.0 and managedTemp and current < managedTemp - 0.01 and targetTemp <= normalTemp + 0.2 and activelyCooling and not hasFeverSource then
+            if tempData then
+                tempData.bodyTemp = current
+            end
+            return
+        end
 
         -- Only force if significantly off from the mod-managed temperature
         if math.abs(current - targetTemp) > clientSuppression.TOLERANCE then

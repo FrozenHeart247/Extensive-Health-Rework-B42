@@ -29,7 +29,7 @@ end
 -- ============================================
 --[[
     Transmission: Cold weather + wet exposure (handled by EHR_EnvironmentalDiseases)
-    Duration: 2-4 days, can progress to pneumonia (30% chance after 72h untreated)
+    Duration: 2-4 days, untreated stage 4 has a 50% pneumonia complication roll
     Effects: Sneezing (attracts zombies), mild debuffs
     Not lethal on its own
 ]]--
@@ -54,8 +54,8 @@ EHR.Disease.Diseases["common_cold"] = {
     -- Can progress to another disease
     canProgress = true,
     progressTo = "pneumonia",
-    progressChance = 0.30,          -- 30% chance if untreated
-    progressAfterHours = 72,        -- After 72 hours untreated
+    progressChance = 0.50,          -- 50% chance for pneumonia on untreated stage 4
+    progressAfterHours = 0,         -- Stage 4 handles the late complication roll
     -- Treatment that prevents progression
     treatmentItem = "Pills",        -- Any pills help (B42 item type)
     treatmentReducesProgress = 0.5, -- Reduces progression chance by 50%
@@ -67,25 +67,30 @@ EHR.Disease.Diseases["common_cold"] = {
         [1] = {
             fatigueDrain = 0,
             staminaPenalty = 0,
-            sneezingChance = 0,
+            sneezeIntervalHours = 3,
         },
         -- Early: mild symptoms
         [2] = {
             fatigueDrain = 0.001,       -- Slight fatigue buildup
+            fatigueCap = 0.10,          -- Tired, but not bedridden
             staminaPenalty = 0.05,      -- 5% stamina penalty
-            sneezingChance = 0.002,     -- ~0.2% chance per tick to sneeze
+            coldStrength = 35,          -- Vanilla cold moodle
+            sneezeIntervalHours = 1,
         },
         -- Peak: worst symptoms
         [3] = {
             fatigueDrain = 0.003,
+            fatigueCap = 0.25,
             staminaPenalty = 0.15,
-            sneezingChance = 0.008,     -- ~0.8% chance per tick
+            coldStrength = 65,
+            sneezeIntervalHours = 0.5,
         },
-        -- Recovery: fading symptoms
+        -- Recovery/complication check: symptoms fade unless pneumonia triggers
         [4] = {
-            fatigueDrain = 0.0005,
-            staminaPenalty = 0.03,
-            sneezingChance = 0.001,
+            fatigueDrain = 0,
+            staminaPenalty = 0,
+            coldStrength = 0,
+            sneezeIntervalHours = 3,
         },
     },
     -- Stage entry dialogue (said ONCE when entering each stage)
@@ -134,6 +139,7 @@ EHR.Disease.Diseases["common_cold"] = {
 ]]--
 EHR.Disease.Diseases["pneumonia"] = {
     name = "Pneumonia",
+    category = "environmental",
     -- Timing (in game hours)
     incubationMin = 12,     -- 12 hours minimum
     incubationMax = 24,     -- 24 hours maximum
@@ -150,8 +156,7 @@ EHR.Disease.Diseases["pneumonia"] = {
     baseSeverity = 0.7,
     -- LETHAL without treatment
     canKill = true,
-    deathChancePerHour = 0.008,     -- ~0.8% per hour in peak = ~20% per day
-    deathStage = 3,                  -- Only lethal in peak stage
+    killMechanic = "healthDrain",    -- Stage 3/4 health drain handles lethality
     -- Treatment
     treatmentItem = "Antibiotics",   -- Requires antibiotics
     treatmentCured = true,           -- Antibiotics can cure (move to recovery)
@@ -163,26 +168,39 @@ EHR.Disease.Diseases["pneumonia"] = {
         [1] = {
             fatigueDrain = 0.001,
             staminaPenalty = 0.05,
-            coughingChance = 0,
+            coughIntervalHours = 2.0,
+            severeCough = false,
+            chestPain = 6,
             canSprint = true,
         },
         [2] = {
-            fatigueDrain = 0.004,
+            fatigueDrain = 0.005,
             staminaPenalty = 0.25,
-            coughingChance = 0.003,     -- Coughing attracts zombies
+            coughIntervalHours = 1.0,
+            severeCough = true,
+            enduranceCap = 0.70,
+            chestPain = 20,
             canSprint = true,
         },
         [3] = {
             fatigueDrain = 0.010,
-            staminaPenalty = 0.50,      -- Massive stamina penalty
-            coughingChance = 0.015,     -- Frequent coughing fits
-            canSprint = false,          -- Cannot sprint at all
-            movementPenalty = 0.7,      -- 30% slower
+            staminaPenalty = 0.50,
+            coughIntervalHours = 0.75,
+            severeCough = true,
+            enduranceCap = 0.70,
+            chestPain = 30,
+            healthDrainPerHour = 2.5,
+            healthDamageCap = 30,
+            canSprint = true,
         },
         [4] = {
-            fatigueDrain = 0.003,
-            staminaPenalty = 0.20,
-            coughingChance = 0.002,
+            fatigueDrain = 0.012,
+            staminaPenalty = 0.50,
+            coughIntervalHours = 0.75,
+            severeCough = true,
+            enduranceCap = 0.70,
+            chestPain = 35,
+            healthDrainPerHour = 4.0,
             canSprint = true,
         },
     },
@@ -352,14 +370,16 @@ EHR.Disease.Diseases["hypothermia"] = {
         [3] = 0.35,  -- 35% peak (cardiac risk)
         [4] = 0.25,  -- 25% recovery
     },
-    -- Special: requires warmth to progress to recovery
+    -- Special: stage is controlled directly by current body temperature.
+    stageDrivenByBodyTemperature = true,
     requiresWarmthForRecovery = true,
     -- Severity
     baseSeverity = 0.8,
-    -- LETHAL - cardiac arrest
+    -- LETHAL - continuous cold damage instead of random instant death
     canKill = true,
-    deathChancePerHour = 0.05,      -- 5% per hour in peak = high mortality
-    deathStage = 3,
+    killMechanic = "healthDrain",
+    deathChancePerHour = 0,
+    deathStage = 4,
     -- Treatment (warmth-based, not medicine)
     treatmentWarmth = true,          -- Requires getting warm
     treatmentItem = nil,             -- No pill fixes this
@@ -369,31 +389,41 @@ EHR.Disease.Diseases["hypothermia"] = {
     -- Stage effects (handled by EHR_EnvironmentalDiseases)
     effects = {
         [1] = {
-            temperatureDrain = 0.001,   -- Continue losing body heat
-            staminaPenalty = 0.10,
+            staminaPenalty = 0.12,
             canSprint = true,
-            movementPenalty = 1.0,      -- No penalty yet
+            movementPenalty = 0.90,
+            enduranceCap = 0.86,
+            fatigueDrain = 0.00035,
         },
         [2] = {
-            temperatureDrain = 0.003,
-            staminaPenalty = 0.30,
-            canSprint = false,          -- Too cold to sprint
-            movementPenalty = 0.8,      -- 20% slower
-            confusionChance = 0.002,    -- Occasional confusion
+            staminaPenalty = 0.35,
+            canSprint = false,
+            movementPenalty = 0.76,
+            enduranceCap = 0.70,
+            fatigueDrain = 0.00075,
+            healthDrainPerHour = 2.0,
+            confusionChance = 0.002,
         },
         [3] = {
-            temperatureDrain = 0.005,
-            staminaPenalty = 0.70,      -- Almost no stamina
+            staminaPenalty = 0.70,
             canSprint = false,
-            movementPenalty = 0.5,      -- 50% slower (stumbling)
-            confusionChance = 0.010,    -- Frequent confusion
-            cardiacRisk = true,         -- Can trigger cardiac arrest
+            movementPenalty = 0.52,
+            enduranceCap = 0.45,
+            fatigueDrain = 0.0012,
+            healthDrainPerHour = 8.0,
+            confusionChance = 0.006,
+            dizzinessChance = 0.010,
         },
         [4] = {
-            temperatureDrain = 0.001,
-            staminaPenalty = 0.15,
-            canSprint = true,
-            movementPenalty = 0.9,
+            staminaPenalty = 0.85,
+            canSprint = false,
+            movementPenalty = 0.42,
+            enduranceCap = 0.32,
+            fatigueDrain = 0.0018,
+            healthDrainPerHour = 18.0,
+            confusionChance = 0.010,
+            dizzinessChance = 0.016,
+            blackoutChance = 0.008,
         },
     },
     -- Stage entry dialogue

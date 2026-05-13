@@ -157,7 +157,12 @@ EHR.Medication.Database = {
         tier = 1,
         treats = {"common_cold"},
         displayName = "Cold & Flu Tablets",
-        usageMessage = "You take the cold & flu tablets. Symptoms begin to ease.",
+        usageMessage = "You take the cold & flu tablets. The cold should start clearing up.",
+        canCure = true,
+        cureTimeHours = 28,
+        treatmentTimeText = "28 hours (8-dose course)",
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The current cold medicine dose is still active.",
         symptomReduction = {
             fever = 0.35,
             fatigue = 0.30,
@@ -454,7 +459,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.CorticosteroidInjection"] = {
         tier = 3,
-        treats = {"corpse_sickness", "pneumonia"},
+        treats = {"corpse_sickness"},
         displayName = "Corticosteroid Injection",
         usageMessage = "You inject corticosteroids. Inflammation reduces rapidly.",
         requiresSyringe = true,
@@ -538,11 +543,12 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.IVCiprofloxacin"] = {
         tier = 3,
-        treats = {"gastroenteritis", "dysentery"},
+        treats = {"gastroenteritis", "dysentery", "pneumonia"},
         displayName = "IV Ciprofloxacin",
         usageMessage = "You administer IV Ciprofloxacin. Bacterial infection is being eliminated.",
         requiresIVKit = true,
         cureTimeHours = 24,
+        treatmentTimeText = "12 hours (FAST)",
         sideEffects = {"tendon_weakness", "dizziness"},
     },
 
@@ -1277,7 +1283,7 @@ EHR.Medication.DosingSchedules = {
     ["Base.PillsBeta"] = { doseInterval = 8, dosesRequired = 3 },
 
     -- Tier 1 - OTC (every 4-6 hours)
-    ["ExtensiveHealth.ColdFluTablets"] = { doseInterval = 4, dosesRequired = 4 },
+    ["ExtensiveHealth.ColdFluTablets"] = { doseInterval = 4, dosesRequired = 8 },
     ["ExtensiveHealth.AntipyreticTablets"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.CoughSyrup"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.ElectrolytePowder"] = { doseInterval = 4, dosesRequired = 4 },
@@ -1327,19 +1333,27 @@ EHR.Medication.DosingSchedules = {
 -- Default dosing for medications not in the schedule
 EHR.Medication.DefaultDosing = { doseInterval = 6, dosesRequired = 1 }
 
+local function EHR_MedicationCanCure(medData, tierEffects)
+    if medData and (medData.preventionOnly == true or medData.canCure == false) then
+        return false
+    end
+
+    return (tierEffects and tierEffects.canCure == true)
+        or (medData and (
+            medData.canCure == true
+            or medData.cureTimeHours ~= nil
+            or medData.diseaseCureTimeHours ~= nil
+            or medData.isKnoxCure == true
+        ))
+end
+
 local function EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
     medData = medData or {}
 
     local dosingSchedule = (itemFullType and EHR.Medication.DosingSchedules[itemFullType]) or EHR.Medication.DefaultDosing
     local doseInterval = medData.doseIntervalHours or medData.intervalHours or dosingSchedule.doseInterval or 6
-    local tierCanCure = tierEffects and tierEffects.canCure
-    if medData.preventionOnly == true or medData.canCure == false then
-        tierCanCure = false
-    end
-    local canCure = tierCanCure
-        or medData.cureTimeHours ~= nil
-        or medData.diseaseCureTimeHours ~= nil
-        or medData.isKnoxCure == true
+
+    local canCure = EHR_MedicationCanCure(medData, tierEffects)
     local hasSymptomRelief = medData.symptomReduction ~= nil
         or ((tierEffects and tierEffects.symptomRelief or 0) > 0)
     local symptomOnly = hasSymptomRelief and not canCure
@@ -2867,7 +2881,7 @@ end
 function EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEffects, itemFullType)
     if not player or not diseaseId or not medData then return false end
     if medData.preventionOnly == true then return false end
-    if not tierEffects or tierEffects.canCure ~= true then return false end
+    if not EHR_MedicationCanCure(medData, tierEffects) then return false end
     if not EHR.Medication.IsModuleDiseaseActive or not EHR.Medication.IsModuleDiseaseActive(player, diseaseId) then
         return false
     end
@@ -3021,6 +3035,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
     local currentHour = gameTime:getWorldAgeHours()
     local doseTiming = EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
     local medKey = itemFullType or medData.displayName
+    local canCure = EHR_MedicationCanCure(medData, tierEffects)
 
     -- Apply symptom relief
     if tierEffects.symptomRelief > 0 then
@@ -3053,7 +3068,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
             tier = medData.tier,
             treatingDisease = diseaseId,
             symptomOnly = doseTiming.symptomOnly,
-            requiresDoseCourse = tierEffects.canCure == true,
+            requiresDoseCourse = canCure,
         }
     else
         -- Subsequent dose
@@ -3067,11 +3082,11 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
         doseData.tier = medData.tier
         doseData.treatingDisease = diseaseId
         doseData.symptomOnly = doseTiming.symptomOnly
-        doseData.requiresDoseCourse = tierEffects.canCure == true
+        doseData.requiresDoseCourse = canCure
     end
 
     -- Start or continue cure process if tier can cure.
-    if tierEffects.canCure then
+    if canCure then
         local cureTimeHours = EHR.Medication.GetCureTimeHours(medData, diseaseId, tierEffects)
         local existingTreatment = medTracking.activeTreatments[diseaseId]
 
@@ -3211,8 +3226,7 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     local activeHours = doseData.activeHours
     if activeHours == nil then activeHours = doseTiming.activeHours end
     local totalDosesNeeded = doseData.totalDosesNeeded or doseTiming.dosesRequired
-    local medCanCure = tierEffects and tierEffects.canCure == true
-        and not (medData and (medData.preventionOnly == true or medData.canCure == false))
+    local medCanCure = EHR_MedicationCanCure(medData, tierEffects)
     local requiresDoseCourse = doseData.requiresDoseCourse == true
         or (doseData.treatingDisease ~= nil and medCanCure)
     if doseTiming.symptomOnly and not requiresDoseCourse then

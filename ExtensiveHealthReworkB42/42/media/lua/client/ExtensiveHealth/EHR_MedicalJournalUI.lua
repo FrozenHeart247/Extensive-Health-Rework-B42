@@ -138,14 +138,14 @@ local CodexInfo = {
         cause = "Cold, wet, or prolonged exposure while exhausted.",
         symptoms = "Coughing, sneezing, mild fever, fatigue, and reduced stamina.",
         prevention = "Stay warm, dry, rested, and protected from bad weather.",
-        treatment = "Rest, fluids, cough medicine, antipyretics for fever, and time.",
+        treatment = "Rest, fluids, cough medicine, antipyretics for fever; Cold & Flu tablets or antiviral capsules can cure it over time.",
     },
     pneumonia = {
         category = "environmental",
         cause = "Severe or untreated respiratory illness, cold exposure, or weakened health.",
-        symptoms = "Severe cough, fever, chest tightness, endurance loss, and weakness.",
+        symptoms = "Fever, coughing, chest pain, endurance loss, and potentially lethal respiratory failure.",
         prevention = "Treat respiratory illness early and avoid prolonged cold exposure.",
-        treatment = "Antibiotics for infection, bronchodilator inhaler for breathing support, antipyretics for fever.",
+        treatment = "Prescription or broad spectrum antibiotics cure over time; IV Ciprofloxacin is the fast clinical cure. Bronchodilator helps breathing, cough medicine suppresses coughing, antipyretics reduce fever.",
     },
     hypothermia = {
         category = "environmental",

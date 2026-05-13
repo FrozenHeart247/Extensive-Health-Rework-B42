@@ -59,4 +59,34 @@ module Base
             distanceMax = 45,
         }
     }
+
+    sound EHRSneeze
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_sneeze_male.ogg,
+            distanceMax = 25,
+        }
+    }
+
+    sound EHRSneezeMale
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_sneeze_male.ogg,
+            distanceMax = 25,
+        }
+    }
+
+    sound EHRSneezeFemale
+    {
+        category = Player,
+        clip
+        {
+            file = media/sound/ehr_sneeze_female.ogg,
+            distanceMax = 25,
+        }
+    }
 }

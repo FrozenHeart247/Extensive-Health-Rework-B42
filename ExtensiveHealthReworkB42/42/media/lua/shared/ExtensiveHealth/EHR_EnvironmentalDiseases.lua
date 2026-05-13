@@ -43,9 +43,11 @@ EHR.Environmental.Config = {
     -- Wetness thresholds (0-1 scale)
     wetThreshold = 0.3,         -- Above this counts as "wet"
     soakedThreshold = 0.7,      -- Above this counts as "soaked"
+    commonColdSoakedThreshold = 0.60, -- Heavy wetness can trigger cold exposure even without freezing weather
 
     -- Exposure time requirements (in game hours)
     coldExposureForCold = 2.0,      -- Hours of cold+wet for common cold
+    soakedExposureForCold = 1.0,    -- Hours at heavy wetness for wet-only common cold
     coldExposureForHypo = 0.5,      -- Hours of freezing+wet for hypothermia
     heatExposureForExhaustion = 4.0,  -- Hours from clean exposure to full heat exhaustion risk at 30C
     heatExposureForStroke = 0.5,      -- Hours at extreme heat for heat stroke
@@ -73,6 +75,9 @@ EHR.Environmental.Config = {
     sound = {
         sneezeRadius = 8,
         sneezeVolume = 5,
+        sneezeSfx = "EHRSneeze",
+        sneezeMaleSfx = "EHRSneezeMale",
+        sneezeFemaleSfx = "EHRSneezeFemale",
         coughRadius = 12,
         coughVolume = 8,
         coughSevereRadius = 25,
@@ -110,6 +115,7 @@ function EHR.Environmental.InitializePlayer(player)
     EHR.Environmental.ExposureData[playerID] = {
         -- Cold exposure tracking
         coldExposure = 0,           -- Accumulated cold exposure (hours)
+        soakedColdExposure = 0,     -- Accumulated heavy-wetness exposure (hours)
         hypothermiaExposure = 0,    -- Accumulated freezing exposure (hours)
         lastColdCheck = 0,          -- Last game hour we checked
 
@@ -369,7 +375,11 @@ function EHR.Environmental.SuppressVanillaCold(player)
             local disease = active[diseaseId]
             if disease and disease.stage then
                 local stageValue = EHR.Disease.VanillaSicknessLevels[disease.stage] or 0
-                if diseaseId == "corpse_sickness" then
+                if diseaseId == "common_cold" then
+                    -- Common cold now drives the vanilla cold moodle directly.
+                    -- Do not turn it into the nausea/sickness moodle.
+                    stageValue = 0
+                elseif diseaseId == "corpse_sickness" then
                     local symptomTarget = disease.corpseSicknessSymptomTarget
                     local symptomTargetUntil = disease.corpseSicknessSymptomTargetUntil
                     if symptomTarget and symptomTargetUntil and symptomTargetUntil > currentHour then
@@ -687,10 +697,24 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
             tostring(isIndoors), bodyTemp, airTemp, tostring(isWarm)))
     end
 
-    -- Reset exposure if warm
-    if isWarm then
+    -- Check cold conditions
+    local isWet = wetness > config.wetThreshold
+    local isSoaked = wetness > config.soakedThreshold
+    local isHeavilySoaked = wetness >= (config.commonColdSoakedThreshold or 0.85)
+    local isFreezing = airTemp <= config.freezingTemp
+    local isHypoRisk = airTemp < config.hypothermiaTemp
+
+    -- Common cold should require freezing world weather + wetness, or extreme wetness by itself.
+    -- Indoor shelter protects from the weather route, but being soaked through still matters unless near heat.
+    local freezingWetRisk = isFreezing and isWet and not isIndoors and not isNearHeat
+    local soakedRisk = isHeavilySoaked and not isNearHeat
+    local coldRiskActive = freezingWetRisk or soakedRisk
+
+    -- Reset exposure if warm and there is no active wet/freezing cold risk.
+    if isWarm and not coldRiskActive then
         -- Recover from cold exposure while warm
         exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours * 2)
+        exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours * 2)
         exposure.hypothermiaExposure = math.max(0, exposure.hypothermiaExposure - deltaHours * 3)
         exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours)
         exposure.indoorDuration = exposure.indoorDuration + deltaHours
@@ -704,25 +728,32 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
         exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours * 0.5)
     end
 
-    -- Check cold conditions
-    local isCold = airTemp < config.coldTemp
-    local isFreezing = airTemp < config.freezingTemp
-    local isHypoRisk = airTemp < config.hypothermiaTemp
-    local isWet = wetness > config.wetThreshold
-    local isSoaked = wetness > config.soakedThreshold
+    -- Freezing wetness and heavy wetness are tracked separately so wet-only balance
+    -- does not make the weather route too aggressive.
+    local coldMultiplier = freezingWetRisk and 1.5 or 0
+    if isSoaked and freezingWetRisk then
+        coldMultiplier = 2.25
+    end
 
-    -- Cold exposure accumulates faster when wet
-    local coldMultiplier = 1.0
-    if isWet then coldMultiplier = 1.5 end
-    if isSoaked then coldMultiplier = 2.5 end
-
-    -- Accumulate cold exposure
-    if isCold and (isWet or not isIndoors) then
+    -- Accumulate freezing+wet exposure
+    if freezingWetRisk then
         exposure.coldExposure = exposure.coldExposure + (deltaHours * coldMultiplier)
+    else
+        exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours)
+    end
 
+    -- Accumulate heavy-wetness-only exposure
+    if soakedRisk then
+        exposure.soakedColdExposure = (exposure.soakedColdExposure or 0) + deltaHours
+    else
+        exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours)
+    end
+
+    if coldRiskActive then
         if EHR.DEBUG then
-            EHR.Log(string.format("Cold exposure: %.2f hours (temp=%.1f, wet=%.2f, mult=%.1f)",
-                exposure.coldExposure, airTemp, wetness, coldMultiplier))
+            EHR.Log(string.format("Cold exposure: freezing=%.2f, soaked=%.2f (temp=%.1f, wet=%.2f, mult=%.2f, freezingWet=%s, soakedRisk=%s)",
+                exposure.coldExposure, exposure.soakedColdExposure or 0, airTemp, wetness, coldMultiplier,
+                tostring(freezingWetRisk), tostring(soakedRisk)))
         end
     end
 
@@ -1041,7 +1072,12 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
     local config = EHR.Environmental.Config
 
     -- Check for Common Cold
-    if exposure.coldExposure >= config.coldExposureForCold then
+    local freezingExposure = exposure.coldExposure or 0
+    local soakedExposure = exposure.soakedColdExposure or 0
+    local freezingReady = freezingExposure >= config.coldExposureForCold
+    local soakedReady = soakedExposure >= (config.soakedExposureForCold or 1.0)
+
+    if freezingReady or soakedReady then
         -- Don't contract if already have cold, pneumonia, or hypothermia
         local diseaseData = EHR.Disease.GetDiseaseData(player)
         if diseaseData and diseaseData.active then
@@ -1056,17 +1092,21 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
         end
 
         -- Base chance increases with exposure time
-        local exposureRatio = exposure.coldExposure / config.coldExposureForCold
-        local baseChance = math.min(0.5, 0.15 * exposureRatio)  -- 15-50% based on exposure
+        local freezingRatio = freezingExposure / config.coldExposureForCold
+        local soakedRatio = soakedExposure / (config.soakedExposureForCold or 1.0)
+        local freezingChance = freezingReady and math.min(0.5, 0.15 * freezingRatio) or 0
+        local soakedChance = soakedReady and math.min(1.0, soakedRatio) or 0
+        local baseChance = math.max(freezingChance, soakedChance)
 
-        EHR.Log(string.format("Cold exposure check: %.2f hours, base chance %.0f%%",
-            exposure.coldExposure, baseChance * 100))
+        EHR.Log(string.format("Cold exposure check: freezing=%.2fh, soaked=%.2fh, base chance %.0f%%",
+            freezingExposure, soakedExposure, baseChance * 100))
 
         if EHR.Disease.TryContract(player, "common_cold", baseChance) then
             -- Record when cold was contracted for pneumonia progression
             exposure.coldContractedHour = getGameTime():getWorldAgeHours()
             -- Reset exposure after contracting
             exposure.coldExposure = 0
+            exposure.soakedColdExposure = 0
         end
     end
 
@@ -1123,8 +1163,136 @@ end
     Check if common cold should progress to pneumonia
     Called periodically for players with active cold
 ]]--
+local function EHR_EnvironmentalHasActiveDiseaseTreatment(player, diseaseId)
+    if not player or not diseaseId then return false end
+
+    local modData = player:getModData()
+    local medTracking = modData and modData.EHR_Medication
+    if not medTracking then return false end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+
+    local treatments = medTracking.activeTreatments
+    local treatment = treatments and treatments[diseaseId]
+    if type(treatment) == "table" and treatment.awaitingDoses ~= true then
+        local startTime = tonumber(treatment.startTime)
+        local cureTimeHours = tonumber(treatment.cureTimeHours)
+        if not startTime or not cureTimeHours or cureTimeHours <= 0 or (currentHour - startTime) < cureTimeHours then
+            return true
+        end
+    end
+
+    local activeDoses = medTracking.activeDoses
+    if type(activeDoses) ~= "table" then return false end
+
+    for medKey, doseData in pairs(activeDoses) do
+        if type(doseData) == "table" then
+            local moduleTargets = doseData.moduleTargets
+            local matchesDisease = doseData.treatingDisease == diseaseId
+                or (type(moduleTargets) == "table" and moduleTargets[diseaseId] == true)
+
+            if matchesDisease then
+                if EHR.Medication and EHR.Medication.GetDoseStatus then
+                    local ok, status = pcall(EHR.Medication.GetDoseStatus, player, medKey)
+                    if ok and status and status.isDoseActive then
+                        return true
+                    end
+                elseif doseData.lastDoseTime then
+                    local activeHours = tonumber(doseData.activeHours) or tonumber(doseData.intervalHours) or 0
+                    if activeHours > 0 and (currentHour - doseData.lastDoseTime) <= activeHours then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function EHR_EnvironmentalHasActiveDiseaseCureTreatment(player, diseaseId)
+    if not player or not diseaseId then return false end
+
+    local modData = player:getModData()
+    local medTracking = modData and modData.EHR_Medication
+    if not medTracking then return false end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+
+    local treatments = medTracking.activeTreatments
+    local treatment = treatments and treatments[diseaseId]
+    if type(treatment) == "table" and treatment.awaitingDoses ~= true then
+        local startTime = tonumber(treatment.startTime)
+        local cureTimeHours = tonumber(treatment.cureTimeHours)
+        if not startTime or not cureTimeHours or cureTimeHours <= 0 or (currentHour - startTime) < cureTimeHours then
+            return true
+        end
+    end
+
+    local activeDoses = medTracking.activeDoses
+    if type(activeDoses) ~= "table" then return false end
+
+    for medKey, doseData in pairs(activeDoses) do
+        if type(doseData) == "table" and doseData.requiresDoseCourse == true and doseData.symptomOnly ~= true then
+            local moduleTargets = doseData.moduleTargets
+            local matchesDisease = doseData.treatingDisease == diseaseId
+                or (type(moduleTargets) == "table" and moduleTargets[diseaseId] == true)
+
+            if matchesDisease then
+                if EHR.Medication and EHR.Medication.GetDoseStatus then
+                    local ok, status = pcall(EHR.Medication.GetDoseStatus, player, medKey)
+                    if ok and status and status.isDoseActive then
+                        return true
+                    end
+                elseif doseData.lastDoseTime then
+                    local activeHours = tonumber(doseData.activeHours) or tonumber(doseData.intervalHours) or 0
+                    if activeHours > 0 and (currentHour - doseData.lastDoseTime) <= activeHours then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function EHR_EnvironmentalSetVanillaCold(player, strength)
+    if not player or not player.getBodyDamage then return end
+
+    local okBody, bodyDamage = pcall(function()
+        return player:getBodyDamage()
+    end)
+    if not okBody or not bodyDamage then return end
+
+    strength = tonumber(strength) or 0
+
+    if bodyDamage.setCatchACold then
+        pcall(function()
+            bodyDamage:setCatchACold(0.0)
+        end)
+    end
+
+    if bodyDamage.setColdStrength then
+        pcall(function()
+            bodyDamage:setColdStrength(math.max(0, strength))
+        end)
+    end
+
+    if bodyDamage.setHasACold then
+        pcall(function()
+            bodyDamage:setHasACold(strength > 0)
+        end)
+    end
+end
+
+function EHR.Environmental.ClearVanillaCold(player)
+    EHR_EnvironmentalSetVanillaCold(player, 0)
+end
+
 function EHR.Environmental.CheckColdProgression(player, exposure)
-    local config = EHR.Environmental.Config
     local diseaseData = EHR.Disease.GetDiseaseData(player)
 
     if not diseaseData or not diseaseData.active then return end
@@ -1135,62 +1303,28 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
     local coldDef = EHR.Disease.Diseases["common_cold"]
     if not coldDef or not coldDef.canProgress then return end
 
-    local currentHour = getGameTime():getWorldAgeHours()
-
-    -- Check progression interval
-    if currentHour - (exposure.lastProgressionCheck or 0) < config.coldProgressionCheckInterval then
-        return
-    end
-    exposure.lastProgressionCheck = currentHour
-
-    -- Calculate how long player has had the cold
-    local coldDuration = currentHour - cold.startTime
-
-    -- Only check progression after minimum time
-    if coldDuration < (coldDef.progressAfterHours or 72) then
+    -- Pneumonia is a late untreated complication, not an early cold upgrade.
+    if (cold.stage or 1) ~= 4 then
         return
     end
 
-    -- Check if player has taken treatment (reduces progression chance)
-    local progressChance = coldDef.progressChance or 0.30
-    if cold.treated then
-        progressChance = progressChance * (1 - (coldDef.treatmentReducesProgress or 0.5))
+    if EHR_EnvironmentalHasActiveDiseaseTreatment(player, "common_cold") then
+        cold.pneumoniaRollDone = nil
+        if EHR.DEBUG then
+            EHR.Log("Cold progression skipped: common cold treatment is active")
+        end
+        return
     end
 
-    -- Environmental factors increase progression
-    local airTemp = EHR.Environmental.GetAirTemperature()
-    local bodyTemp = EHR.Environmental.GetBodyTemperature(player)
-    local wetness = EHR.Environmental.GetWetness(player)
-    local isIndoors = EHR.Environmental.IsIndoors(player)
-
-    -- BUG-017 FIX: Cold environment check should use body temperature for indoor players
-    -- Outdoor air temp is irrelevant if player is warm indoors
-    local isPlayerCold = false
-    if isIndoors then
-        -- Indoor: use body temperature (cold if below normal)
-        isPlayerCold = bodyTemp < 0.45
-    else
-        -- Outdoor: use air temperature as before
-        isPlayerCold = airTemp < config.coldTemp
+    if cold.pneumoniaRollDone then
+        return
     end
 
-    -- Cold environment increases progression risk
-    if isPlayerCold then
-        progressChance = progressChance * 1.3
-    end
-    if wetness > config.wetThreshold then
-        progressChance = progressChance * 1.2
-    end
-    if not isIndoors then
-        progressChance = progressChance * 1.1
-    end
+    local progressChance = coldDef.progressChance or 0.50
+    cold.pneumoniaRollDone = true
 
-    -- Immunity factors
-    local immunity = EHR.Disease.CalculateImmunity(player)
-    progressChance = progressChance / immunity
-
-    EHR.Log(string.format("Cold progression check: duration=%.1fh, chance=%.0f%% (treated=%s)",
-        coldDuration, progressChance * 100, tostring(cold.treated or false)))
+    EHR.Log(string.format("Cold stage 4 complication roll: chance=%.0f%%",
+        progressChance * 100))
 
     -- Roll for progression
     local roll = ZombRand(100) / 100
@@ -1198,8 +1332,9 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
         -- Progress to pneumonia!
         EHR.Log("Cold progressed to PNEUMONIA!")
 
-        -- Remove cold
+        -- Remove cold and clear the vanilla cold moodle before applying the complication.
         diseaseData.active["common_cold"] = nil
+        EHR_EnvironmentalSetVanillaCold(player, 0)
 
         -- Contract pneumonia (guaranteed)
         EHR.Disease.Contract(player, "pneumonia")
@@ -1207,6 +1342,18 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
         -- Player announcement
         if player.Say then
             player:Say("*coughs violently* This isn't just a cold anymore...")
+        end
+    else
+        EHR.Log("Cold resolved without pneumonia.")
+        EHR_EnvironmentalSetVanillaCold(player, 0)
+        if EHR.Disease and EHR.Disease.Cure then
+            EHR.Disease.Cure(player, "common_cold")
+        else
+            diseaseData.active["common_cold"] = nil
+        end
+
+        if player.Say then
+            player:Say("*sniff* I think I'm finally getting over this cold...")
         end
     end
 end
@@ -1264,18 +1411,9 @@ function EHR.Environmental.GetWaterContaminationRisk(waterItem, sourceType)
     if sourceType == "tainted" or sourceType == "contaminated" then
         return config.untreatedWaterRisk, "tainted"
     elseif sourceType == "tap" then
-        -- Tap water after power outage is risky
-        -- Check if power is on
-        local sandbox = SandboxVars
-        local daysBeforeApocalypse = (sandbox and sandbox.WaterShutModifier) or 14
-        local gameTime = getGameTime()
-        local daysSurvived = gameTime:getDay()
-
-        if daysSurvived > daysBeforeApocalypse then
-            return config.untreatedWaterRisk, "shutoff"
-        else
-            return 0, "safe" -- Municipal water still running
-        end
+        -- Sinks/faucets should remain a clean-water source for dysentery logic.
+        -- Unsafe world sources are passed explicitly as toilet/river/rainCollector/tainted.
+        return 0, "safe"
     end
 
     -- Default: assume untreated
@@ -1319,13 +1457,14 @@ end
 
 local EHR_EnvironmentalDiseaseFeverTargets = {
     common_cold = {
-        [3] = { temp = 37.8, step = 0.018 },
-        [4] = { temp = 37.2, step = 0.010 },
+        [2] = { temp = 37.5, step = 0.018 },
+        [3] = { temp = 38.0, step = 0.025 },
     },
     pneumonia = {
-        [2] = { temp = 38.1, step = 0.030 },
-        [3] = { temp = 39.0, step = 0.050 },
-        [4] = { temp = 37.6, step = 0.025 },
+        [1] = { temp = 38.0, step = 0.030 },
+        [2] = { temp = 40.0, step = 0.070 },
+        [3] = { temp = 40.0, step = 0.075 },
+        [4] = { temp = 40.0, step = 0.075 },
     },
     heat_stroke = {
         [1] = { temp = 40.5, step = 0.110 },
@@ -1374,6 +1513,16 @@ local function EHR_EnvironmentalGetCurrentHour()
     return gameTime and gameTime:getWorldAgeHours() or 0
 end
 
+local function EHR_EnvironmentalIsPlayerAsleep(player)
+    if not player or not player.isAsleep then return false end
+
+    local ok, asleep = pcall(function()
+        return player:isAsleep()
+    end)
+
+    return ok and asleep == true
+end
+
 local function EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, reductionKey)
     local multiplier = 1.0
 
@@ -1400,6 +1549,58 @@ local function EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, red
     local ok, reduction = pcall(EHR.Disease.GetActiveSymptomReduction, player, diseaseId, reductionKey)
     if not ok or type(reduction) ~= "number" then return 0 end
     return math.max(0, math.min(0.95, reduction))
+end
+
+local function EHR_EnvironmentalHasOtherSprintBlock(player, ignoredDiseaseId)
+    local modData = player and player:getModData() or nil
+    local active = modData and modData.EHR_Disease and modData.EHR_Disease.active or nil
+    if not active or not EHR.Disease or not EHR.Disease.Diseases then return false end
+
+    for diseaseId, disease in pairs(active) do
+        if diseaseId ~= ignoredDiseaseId then
+            local def = EHR.Disease.Diseases[diseaseId]
+            local effects = def and def.effects and def.effects[disease.stage or 1]
+            if effects and effects.canSprint == false then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function EHR_EnvironmentalHasOtherSpeedPenalty(player, ignoredDiseaseId)
+    local modData = player and player:getModData() or nil
+    local active = modData and modData.EHR_Disease and modData.EHR_Disease.active or nil
+    if not active or not EHR.Disease or not EHR.Disease.Diseases then return false end
+
+    for diseaseId, disease in pairs(active) do
+        if diseaseId ~= ignoredDiseaseId then
+            local def = EHR.Disease.Diseases[diseaseId]
+            local effects = def and def.effects and def.effects[disease.stage or 1]
+            if effects and tonumber(effects.movementPenalty) and tonumber(effects.movementPenalty) < 1.0 then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function EHR.Environmental.ClearHypothermiaMovementPenalty(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    if not modData or not modData.EHR_HypothermiaSpeedActive then return end
+
+    if player.setSpeedMod and not EHR_EnvironmentalHasOtherSpeedPenalty(player, "hypothermia") then
+        pcall(function() player:setSpeedMod(1.0) end)
+    end
+    if player.setCanSprint and not EHR_EnvironmentalHasOtherSprintBlock(player, "hypothermia") then
+        pcall(function() player:setCanSprint(true) end)
+    end
+
+    modData.EHR_HypothermiaSpeedActive = nil
 end
 
 local function EHR_EnvironmentalKillPlayer(player, cause)
@@ -1475,6 +1676,44 @@ local function EHR_EnvironmentalApplyBodyHealthDamage(player, amount, cause)
     return newHealth
 end
 
+local function EHR_EnvironmentalClampBodyHealth(player, maxHealth)
+    if not player or maxHealth == nil then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage or not bodyDamage.getOverallBodyHealth then return nil end
+
+    local okHealth, currentHealth = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+    if not okHealth or not currentHealth then return nil end
+
+    local healthCap = math.max(0, math.min(100, tonumber(maxHealth) or 100))
+    if currentHealth <= healthCap then return currentHealth end
+
+    local clamped = false
+    if bodyDamage.ReduceGeneralHealth then
+        clamped = pcall(function()
+            bodyDamage:ReduceGeneralHealth(currentHealth - healthCap)
+        end)
+    end
+
+    if clamped then
+        local okAfter, afterHealth = pcall(function()
+            return bodyDamage:getOverallBodyHealth()
+        end)
+        if okAfter and afterHealth and afterHealth <= healthCap + 0.05 then
+            return afterHealth
+        end
+    end
+
+    pcall(function()
+        bodyDamage:setOverallBodyHealth(healthCap)
+    end)
+
+    return healthCap
+end
+
 local function EHR_EnvironmentalApplyHeatStrokeHealthDrain(player, disease, effects)
     local drainPerHour = tonumber(effects and effects.healthDrainPerHour) or 0
     if drainPerHour <= 0 then
@@ -1501,6 +1740,148 @@ local function EHR_EnvironmentalApplyHeatStrokeHealthDrain(player, disease, effe
     if damage <= 0.05 then return end
 
     EHR_EnvironmentalApplyBodyHealthDamage(player, damage, "Heat Stroke - uncontrolled hyperthermia")
+end
+
+local function EHR_EnvironmentalGetBodyHealth(player)
+    if not player or not player.getBodyDamage then return nil end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage or not bodyDamage.getOverallBodyHealth then return nil end
+
+    local ok, health = pcall(function()
+        return bodyDamage:getOverallBodyHealth()
+    end)
+
+    return ok and tonumber(health) or nil
+end
+
+local function EHR_EnvironmentalApplyEnduranceCap(player, cap, diseaseId, reductionKey)
+    cap = tonumber(cap)
+    if not player or not cap or cap <= 0 or not CharacterStat or not CharacterStat.ENDURANCE then return end
+
+    local stats = player:getStats()
+    if not stats then return end
+
+    local relief = EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, reductionKey or "breathingDifficulty")
+    local effectiveCap = math.min(1.0, cap + ((1.0 - cap) * relief))
+
+    pcall(function()
+        local current = stats:get(CharacterStat.ENDURANCE) or 1
+        if current > effectiveCap then
+            stats:set(CharacterStat.ENDURANCE, effectiveCap)
+        end
+    end)
+end
+
+local function EHR_EnvironmentalApplyHypothermiaHealthDrain(player, disease, effects)
+    local drainPerHour = tonumber(effects and effects.healthDrainPerHour) or 0
+    if drainPerHour <= 0 then
+        if disease then disease.hypothermiaLastDamageHour = nil end
+        return
+    end
+
+    local now = EHR_EnvironmentalGetCurrentHour()
+    local last = tonumber(disease and disease.hypothermiaLastDamageHour) or now
+    local elapsed = now - last
+    if elapsed < 0 or elapsed > 0.5 then
+        elapsed = 0
+    end
+    if disease then disease.hypothermiaLastDamageHour = now end
+    if elapsed <= 0 then return end
+
+    local stage = tonumber(disease and disease.stage) or 1
+    local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, "hypothermia", disease, "weakness")
+    local damage = drainPerHour * elapsed * symptomMult
+    if damage <= 0.05 then return end
+
+    EHR_EnvironmentalApplyBodyHealthDamage(
+        player,
+        damage,
+        string.format("Hypothermia - core temperature collapse at stage %d", stage)
+    )
+end
+
+local function EHR_EnvironmentalApplyHypothermiaEffects(player, disease, effects)
+    if not player or not disease or not effects then return end
+
+    local modData = player:getModData()
+    if modData then
+        modData.EHR_HypothermiaSpeedActive = true
+    end
+
+    if effects.canSprint ~= false and player.setCanSprint and not EHR_EnvironmentalHasOtherSprintBlock(player, "hypothermia") then
+        pcall(function() player:setCanSprint(true) end)
+    end
+
+    if effects.enduranceCap then
+        EHR_EnvironmentalApplyEnduranceCap(player, effects.enduranceCap, "hypothermia", "weakness")
+    end
+
+    EHR_EnvironmentalApplyHypothermiaHealthDrain(player, disease, effects)
+end
+
+local function EHR_EnvironmentalApplyPneumoniaHealthDrain(player, disease, effects)
+    local drainPerHour = tonumber(effects and effects.healthDrainPerHour) or 0
+    if drainPerHour <= 0 then
+        if disease then
+            disease.pneumoniaLastDamageHour = nil
+            disease.pneumoniaPendingHealthDamage = nil
+            disease.pneumoniaHealthCap = nil
+        end
+        return
+    end
+
+    if EHR_EnvironmentalHasActiveDiseaseCureTreatment(player, "pneumonia") then
+        if disease then
+            disease.pneumoniaLastDamageHour = EHR_EnvironmentalGetCurrentHour()
+            disease.pneumoniaPendingHealthDamage = nil
+            disease.pneumoniaHealthCap = nil
+        end
+        return
+    end
+
+    if disease and disease.pneumoniaHealthCap then
+        EHR_EnvironmentalClampBodyHealth(player, disease.pneumoniaHealthCap)
+    end
+
+    local now = EHR_EnvironmentalGetCurrentHour()
+    local last = tonumber(disease and disease.pneumoniaLastDamageHour)
+        or math.max(0, now - 0.05)
+    local elapsed = now - last
+    if elapsed < 0 then elapsed = 0 end
+    elapsed = math.min(elapsed, 0.5)
+    if disease then disease.pneumoniaLastDamageHour = now end
+    if elapsed <= 0 then return end
+
+    local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, "pneumonia", disease, "healthDrain")
+    local damage = drainPerHour * elapsed * symptomMult
+    if disease then
+        damage = damage + (tonumber(disease.pneumoniaPendingHealthDamage) or 0)
+    end
+    if damage <= 0.05 then
+        if disease then disease.pneumoniaPendingHealthDamage = damage end
+        return
+    end
+
+    local cap = tonumber(effects.healthDamageCap)
+    if cap then
+        local currentHealth = EHR_EnvironmentalGetBodyHealth(player)
+        if not currentHealth or currentHealth <= cap then
+            if disease then disease.pneumoniaPendingHealthDamage = nil end
+            return
+        end
+        damage = math.min(damage, currentHealth - cap)
+    end
+
+    if disease then disease.pneumoniaPendingHealthDamage = nil end
+    local newHealth = EHR_EnvironmentalApplyBodyHealthDamage(player, damage, "Pneumonia - respiratory failure")
+    if disease and newHealth then
+        local healthFloor = tonumber(effects.healthDamageCap) or 0
+        local newCap = math.max(healthFloor, newHealth)
+        disease.pneumoniaHealthCap = math.min(tonumber(disease.pneumoniaHealthCap) or newCap, newCap)
+        EHR_EnvironmentalClampBodyHealth(player, disease.pneumoniaHealthCap)
+    end
 end
 
 local function EHR_EnvironmentalHasHydrationSupport(player)
@@ -1680,12 +2061,29 @@ local function EHR_EnvironmentalApplyTrackedAbdominalPain(player, targetPain)
         nextApplied = math.max(targetPain, applied - step)
     end
 
-    if math.abs(nextApplied - applied) < 0.01 then return end
+    local currentPain = nil
+    pcall(function()
+        currentPain = bodyPart:getAdditionalPain() or 0
+    end)
+
+    local shouldRefresh = targetPain > 0
+        and nextApplied > 0
+        and currentPain ~= nil
+        and currentPain < (nextApplied - 0.5)
+
+    if math.abs(nextApplied - applied) < 0.01 and not shouldRefresh then return end
 
     local delta = nextApplied - applied
     pcall(function()
-        local currentPain = bodyPart:getAdditionalPain() or 0
-        bodyPart:setAdditionalPain(math.max(0, currentPain + delta))
+        local livePain = currentPain
+        if livePain == nil then livePain = bodyPart:getAdditionalPain() or 0 end
+
+        local desiredPain = livePain + delta
+        if nextApplied > 0 and livePain < nextApplied then
+            desiredPain = math.max(desiredPain, nextApplied)
+        end
+
+        bodyPart:setAdditionalPain(math.max(0, desiredPain))
     end)
 
     if nextApplied <= 0.05 then
@@ -1750,6 +2148,197 @@ function EHR.Environmental.ClearDysenteryPain(player)
             bodyDamage:DamageUpdate()
         end)
     end
+end
+
+local function EHR_EnvironmentalFindChestPart(bodyDamage)
+    if not bodyDamage or not BodyPartType then return nil, nil end
+
+    local preferred = {"Torso_Upper", "UpperTorso", "Chest"}
+    for _, partName in ipairs(preferred) do
+        local partType = BodyPartType[partName]
+        if not partType and BodyPartType.FromString then
+            local ok, result = pcall(function()
+                return BodyPartType.FromString(partName)
+            end)
+            if ok then partType = result end
+        end
+
+        local part = nil
+        if partType then
+            pcall(function()
+                part = bodyDamage:getBodyPart(partType)
+            end)
+        end
+        if part then return part, partName end
+    end
+
+    if BodyPartType.ToIndex and BodyPartType.FromIndex and BodyPartType.MAX then
+        for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+            local partType = BodyPartType.FromIndex(i)
+            local part = partType and bodyDamage:getBodyPart(partType) or nil
+            local partName = EHR_EnvironmentalGetBodyPartName(partType, part)
+            local partKey = partName:lower()
+            if part and (partKey:find("torso_upper", 1, true)
+                    or partKey:find("upper_torso", 1, true)
+                    or partKey:find("upper torso", 1, true)
+                    or partKey:find("chest", 1, true)
+                    or (partKey:find("torso", 1, true) and partKey:find("upper", 1, true))) then
+                return part, partName
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function EHR_EnvironmentalApplyTrackedChestPain(player, targetPain)
+    if not player then return end
+
+    local bodyDamage = nil
+    pcall(function()
+        bodyDamage = player:getBodyDamage()
+    end)
+    if not bodyDamage then return end
+
+    local bodyPart, partName = EHR_EnvironmentalFindChestPart(bodyDamage)
+    if not bodyPart or not bodyPart.getAdditionalPain or not bodyPart.setAdditionalPain then return end
+
+    local modData = player:getModData()
+    modData.EHR_PneumoniaPain = modData.EHR_PneumoniaPain or {}
+    local painData = modData.EHR_PneumoniaPain
+    local painKey = tostring(partName or "chest")
+
+    local record = painData[painKey]
+    local applied = 0
+    if type(record) == "table" then
+        applied = tonumber(record.applied) or 0
+    else
+        applied = tonumber(record) or 0
+    end
+
+    local currentPain = 0
+    pcall(function()
+        currentPain = bodyPart:getAdditionalPain() or 0
+    end)
+
+    targetPain = math.max(0, math.min(70, tonumber(targetPain) or 0))
+    local basePain = math.max(0, currentPain - applied)
+
+    if targetPain <= 0 then
+        if applied <= 0.05 then return end
+        pcall(function()
+            bodyPart:setAdditionalPain(basePain)
+        end)
+        painData[painKey] = nil
+    else
+        local desiredPain = basePain + targetPain
+        if math.abs(currentPain - desiredPain) > 0.25 then
+            pcall(function()
+                bodyPart:setAdditionalPain(math.max(0, desiredPain))
+            end)
+        end
+        painData[painKey] = {
+            applied = targetPain,
+            base = basePain,
+        }
+    end
+
+    if bodyDamage.DamageUpdate then
+        pcall(function()
+            bodyDamage:DamageUpdate()
+        end)
+    end
+end
+
+function EHR.Environmental.ClearPneumoniaPain(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    local painData = modData and modData.EHR_PneumoniaPain
+    if type(painData) ~= "table" then return end
+
+    local bodyDamage = nil
+    pcall(function()
+        bodyDamage = player:getBodyDamage()
+    end)
+    if not bodyDamage then
+        modData.EHR_PneumoniaPain = nil
+        return
+    end
+
+    for painKey, applied in pairs(painData) do
+        local bodyPart = nil
+        local appliedAmount = 0
+        if type(applied) == "table" then
+            appliedAmount = tonumber(applied.applied) or 0
+        else
+            appliedAmount = tonumber(applied) or 0
+        end
+
+        if tostring(painKey) == "chest" then
+            bodyPart = EHR_EnvironmentalFindChestPart(bodyDamage)
+        else
+            local partType = BodyPartType and BodyPartType[tostring(painKey)] or nil
+            if not partType and BodyPartType and BodyPartType.FromString then
+                local ok, result = pcall(function()
+                    return BodyPartType.FromString(tostring(painKey))
+                end)
+                if ok then partType = result end
+            end
+            if partType then
+                pcall(function()
+                    bodyPart = bodyDamage:getBodyPart(partType)
+                end)
+            end
+        end
+
+        if bodyPart and bodyPart.getAdditionalPain and bodyPart.setAdditionalPain then
+            pcall(function()
+                local currentPain = bodyPart:getAdditionalPain() or 0
+                bodyPart:setAdditionalPain(math.max(0, currentPain - appliedAmount))
+            end)
+        end
+    end
+
+    modData.EHR_PneumoniaPain = nil
+    if bodyDamage.DamageUpdate then
+        pcall(function()
+            bodyDamage:DamageUpdate()
+        end)
+    end
+end
+
+local function EHR_EnvironmentalApplyPneumoniaEffects(player, disease, effects)
+    if not player or not disease or not effects then return false end
+
+    local currentHour = EHR_EnvironmentalGetCurrentHour()
+    if effects.coughIntervalHours and effects.coughIntervalHours > 0 then
+        if EHR_EnvironmentalIsPlayerAsleep(player) then
+            disease.lastCoughHour = currentHour
+        else
+            local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, "pneumonia", disease, "coughing")
+            local effectiveInterval = effects.coughIntervalHours / math.max(0.10, symptomMult)
+            local lastCough = tonumber(disease.lastCoughHour)
+                or tonumber(disease.stageStartTime)
+                or currentHour
+
+            if symptomMult > 0.05 and currentHour - lastCough >= effectiveInterval then
+                EHR.Environmental.TriggerCough(player, effects.severeCough == true)
+                disease.lastCoughHour = currentHour
+            end
+        end
+    end
+
+    local enduranceCap = tonumber(effects.enduranceCap)
+    if not enduranceCap and (tonumber(disease.stage) or 1) >= 3 then
+        enduranceCap = 0.70
+    end
+    EHR_EnvironmentalApplyEnduranceCap(player, enduranceCap, "pneumonia", "breathingDifficulty")
+    local painMult = EHR_EnvironmentalGetSymptomMultiplier(player, "pneumonia", disease, "pain")
+    EHR_EnvironmentalApplyTrackedChestPain(player, (effects.chestPain or 0) * painMult)
+    EHR_EnvironmentalApplyPneumoniaHealthDrain(player, disease, effects)
+
+    return true
 end
 
 local function EHR_EnvironmentalApplyDysenteryEffects(player, disease, effects)
@@ -1838,18 +2427,62 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
     if diseaseId == "heat_stroke" then
         EHR_EnvironmentalApplyHeatStrokeHealthDrain(player, disease, effects)
+    elseif diseaseId == "hypothermia" then
+        EHR_EnvironmentalApplyHypothermiaEffects(player, disease, effects)
     end
     local dysenteryHandled = false
+    local commonColdFatigueHandled = false
+    local pneumoniaHandled = false
 
-    -- COMMON COLD: Sneezing (zombie attraction)
-    if diseaseId == "common_cold" and effects.sneezingChance then
+    -- COMMON COLD: Vanilla cold moodle, capped fatigue, and sneezing.
+    if diseaseId == "common_cold" then
+        EHR_EnvironmentalSetVanillaCold(player, effects.coldStrength or 0)
+
+        if effects.sneezeIntervalHours and effects.sneezeIntervalHours > 0 then
+            local currentHour = EHR_EnvironmentalGetCurrentHour()
+            local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "coughing")
+            local effectiveInterval = effects.sneezeIntervalHours / math.max(0.10, symptomMult)
+            local lastSneeze = tonumber(disease.lastSneezeHour)
+                or tonumber(disease.stageStartTime)
+                or currentHour
+
+            if symptomMult > 0.05 and currentHour - lastSneeze >= effectiveInterval then
+                EHR.Environmental.TriggerSneeze(player)
+                disease.lastSneezeHour = currentHour
+            end
+        end
+
+        local fatigueCap = tonumber(effects.fatigueCap)
+        if fatigueCap and fatigueCap > 0 and effects.fatigueDrain and CharacterStat and CharacterStat.FATIGUE then
+            local current = stats:get(CharacterStat.FATIGUE) or 0
+            if current < fatigueCap then
+                local drain = effects.fatigueDrain
+                    * EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "fatigue")
+                pcall(function()
+                    stats:set(CharacterStat.FATIGUE, math.min(fatigueCap, current + drain))
+                end)
+            end
+            commonColdFatigueHandled = true
+        end
+
+        if (disease.stage or 1) == 4 and (effects.coldStrength or 0) <= 0 then
+            EHR_EnvironmentalSetVanillaCold(player, 0)
+        end
+    end
+
+    -- COMMON COLD: Sneezing (legacy definitions without coldStrength)
+    if diseaseId == "common_cold" and not effects.sneezeIntervalHours and effects.sneezingChance then
         if ZombRand(1000) / 1000 < effects.sneezingChance then
             EHR.Environmental.TriggerSneeze(player)
         end
     end
 
-    -- PNEUMONIA: Coughing fits (severe zombie attraction)
-    if diseaseId == "pneumonia" and effects.coughingChance then
+    if diseaseId == "pneumonia" then
+        pneumoniaHandled = EHR_EnvironmentalApplyPneumoniaEffects(player, disease, effects)
+    end
+
+    -- PNEUMONIA: Legacy coughing fits (old definitions without interval data)
+    if diseaseId == "pneumonia" and not pneumoniaHandled and effects.coughingChance then
         if ZombRand(1000) / 1000 < effects.coughingChance then
             EHR.Environmental.TriggerCough(player, true)
         end
@@ -1865,7 +2498,11 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
 
     -- Movement speed penalty
     if effects.movementPenalty and effects.movementPenalty < 1.0 then
-        if player.setSpeedMod then
+        local applySpeedPenalty = true
+        if diseaseId == "hypothermia" and EHR_EnvironmentalHasOtherSpeedPenalty(player, "hypothermia") then
+            applySpeedPenalty = false
+        end
+        if applySpeedPenalty and player.setSpeedMod then
             pcall(function() player:setSpeedMod(effects.movementPenalty) end)
         end
     end
@@ -1892,7 +2529,21 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     -- HYPOTHERMIA: Confusion effects
     if diseaseId == "hypothermia" and effects.confusionChance then
         if ZombRand(1000) / 1000 < effects.confusionChance then
-            EHR.Environmental.TriggerConfusion(player)
+            EHR.Environmental.TriggerConfusion(player, "hypothermia_confusion", (disease.stage or 1) >= 4 and 0.12 or 0.22)
+        end
+    end
+
+    -- HYPOTHERMIA: dizziness/blurred vision from severe cold
+    if diseaseId == "hypothermia" and effects.dizzinessChance then
+        if ZombRand(1000) / 1000 < effects.dizzinessChance then
+            EHR.Environmental.TriggerDizziness(player, "hypothermia_dizziness", 0.18)
+        end
+    end
+
+    -- HYPOTHERMIA: collapse and forced sleep in profound hypothermia
+    if diseaseId == "hypothermia" and effects.blackoutChance then
+        if ZombRand(1000) / 1000 < effects.blackoutChance then
+            EHR.Environmental.TriggerHypothermiaBlackout(player)
         end
     end
 
@@ -1956,7 +2607,7 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     end
 
     -- Stat drains
-    if effects.fatigueDrain and CharacterStat and CharacterStat.FATIGUE then
+    if effects.fatigueDrain and not commonColdFatigueHandled and CharacterStat and CharacterStat.FATIGUE then
         local current = stats:get(CharacterStat.FATIGUE) or 0
         pcall(function()
             stats:set(CharacterStat.FATIGUE, math.min(1, current + effects.fatigueDrain))
@@ -1990,42 +2641,6 @@ end
 -- SYMPTOM TRIGGERS
 -- ============================================
 
---[[
-    Trigger a sneeze (common cold)
-    Creates noise that can attract zombies
-]]--
-function EHR.Environmental.TriggerSneeze(player)
-    local cfg = EHR.Environmental.Config.sound
-
-    -- Say sneeze dialogue
-    if player.Say then
-        local sneezes = {"*ACHOO!*", "*sneezes*", "*achoo!*"}
-        player:Say(sneezes[ZombRand(#sneezes) + 1])
-    end
-
-    -- Create noise for zombie attraction
-    -- B42: addWorldSoundUnlessInvisible(radius, volume, stressSound)
-    -- stressSound = true makes the sound attract zombies
-    if player.addWorldSoundUnlessInvisible then
-        pcall(function()
-            player:addWorldSoundUnlessInvisible(cfg.sneezeRadius, cfg.sneezeVolume, true)
-        end)
-    elseif addSound then
-        -- Fallback sound method
-        pcall(function()
-            addSound(player, player:getX(), player:getY(), player:getZ(), cfg.sneezeRadius, cfg.sneezeVolume)
-        end)
-    end
-
-    EHR.Log("Player sneezed (zombie attraction radius: " .. cfg.sneezeRadius .. ")")
-end
-
---[[
-    Trigger a cough (pneumonia)
-    Creates LOUD noise that attracts zombies
-
-    @param severe - If true, it's a violent coughing fit
-]]--
 local function EHR_EnvironmentalIsFemale(player)
     if not player then return false end
 
@@ -2055,6 +2670,58 @@ local function EHR_EnvironmentalIsFemale(player)
     return false
 end
 
+local function EHR_EnvironmentalGetSneezeSfx(player, cfg)
+    local female = EHR_EnvironmentalIsFemale(player)
+    if female and cfg.sneezeFemaleSfx then
+        return cfg.sneezeFemaleSfx
+    end
+    return cfg.sneezeMaleSfx or cfg.sneezeSfx
+end
+
+--[[
+    Trigger a sneeze (common cold)
+    Creates noise that can attract zombies
+]]--
+function EHR.Environmental.TriggerSneeze(player)
+    local cfg = EHR.Environmental.Config.sound
+
+    -- Say sneeze dialogue
+    if player.Say then
+        local sneezes = {"*ACHOO!*", "*sneezes*", "*achoo!*"}
+        player:Say(sneezes[ZombRand(#sneezes) + 1])
+    end
+
+    -- Play the audible sneeze SFX at the same moment as the dialogue bark.
+    local sfx = EHR_EnvironmentalGetSneezeSfx(player, cfg)
+    if sfx and sfx ~= "" and player.playSound then
+        pcall(function()
+            player:playSound(sfx)
+        end)
+    end
+
+    -- Create noise for zombie attraction
+    -- B42: addWorldSoundUnlessInvisible(radius, volume, stressSound)
+    -- stressSound = true makes the sound attract zombies
+    if player.addWorldSoundUnlessInvisible then
+        pcall(function()
+            player:addWorldSoundUnlessInvisible(cfg.sneezeRadius, cfg.sneezeVolume, true)
+        end)
+    elseif addSound then
+        -- Fallback sound method
+        pcall(function()
+            addSound(player, player:getX(), player:getY(), player:getZ(), cfg.sneezeRadius, cfg.sneezeVolume)
+        end)
+    end
+
+    EHR.Log("Player sneezed (zombie attraction radius: " .. cfg.sneezeRadius .. ")")
+end
+
+--[[
+    Trigger a cough (pneumonia)
+    Creates LOUD noise that attracts zombies
+
+    @param severe - If true, it's a violent coughing fit
+]]--
 local function EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
     local female = EHR_EnvironmentalIsFemale(player)
 
@@ -2072,6 +2739,18 @@ local function EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
 end
 
 function EHR.Environmental.TriggerCough(player, severe)
+    if not player or EHR_EnvironmentalIsPlayerAsleep(player) then return false end
+
+    local modData = player:getModData()
+    local currentHour = EHR_EnvironmentalGetCurrentHour()
+    local lastSoundHour = tonumber(modData and modData.EHR_LastCoughSoundHour) or -999999
+    if currentHour - lastSoundHour < 0.02 then
+        return false
+    end
+    if modData then
+        modData.EHR_LastCoughSoundHour = currentHour
+    end
+
     local cfg = EHR.Environmental.Config.sound
 
     -- Say cough dialogue
@@ -2112,6 +2791,7 @@ function EHR.Environmental.TriggerCough(player, severe)
     end
 
     EHR.Log(string.format("Player coughed (severe=%s, radius=%d)", tostring(severe), radius))
+    return true
 end
 
 --[[
@@ -2401,6 +3081,51 @@ function EHR.Environmental.TriggerHeatStrokeBlackout(player)
     return true
 end
 
+function EHR.Environmental.TriggerHypothermiaBlackout(player)
+    if not player then return false end
+
+    local alive = true
+    if player.isAlive then
+        pcall(function()
+            alive = player:isAlive()
+        end)
+    end
+    if not alive then return false end
+
+    local asleep = false
+    if player.isAsleep then
+        pcall(function()
+            asleep = player:isAsleep()
+        end)
+    end
+    if asleep then return false end
+
+    local modData = player:getModData()
+    local now = EHR_EnvironmentalGetCurrentHour()
+    local cooldownHours = 0.75
+    local lastBlackout = tonumber(modData and modData.EHR_HypothermiaBlackoutHour) or nil
+    if lastBlackout and (now - lastBlackout) >= 0 and (now - lastBlackout) < cooldownHours then
+        return false
+    end
+
+    if modData then
+        modData.EHR_HypothermiaBlackoutHour = now
+    end
+
+    EHR_EnvironmentalSayLimited(player, "hypothermia_blackout", 0.30, {
+        "*slurred* Can't... stay awake...",
+        "*collapses* So cold...",
+        "*dazed* Everything is fading...",
+        "*mumbles* Need... warmth...",
+    })
+
+    EHR_EnvironmentalTriggerBackwardFall(player)
+    EHR_EnvironmentalForceSleep(player, 1)
+
+    EHR.Log("Hypothermia blackout triggered - backward fall and 1 hour forced sleep")
+    return true
+end
+
 --[[
     Trigger collapse (heat stroke)
     Causes player to fall down temporarily
@@ -2516,6 +3241,9 @@ function EHR.Environmental.CheckHypothermiaWarmth(player)
 
     local def = EHR.Disease.Diseases["hypothermia"]
     if not def or not def.requiresWarmthForRecovery then return end
+    if def.stageDrivenByBodyTemperature and EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled() then
+        return
+    end
 
     -- Check if player is warm (now includes body temperature)
     local isWarm = EHR.Environmental.IsWarmEnoughForRecovery(player)
@@ -2818,8 +3546,12 @@ local function processPlayerTick(player)
 
     -- Apply disease-specific effects for active diseases
     local diseaseData = EHR.Disease.GetDiseaseData(player)
+    local hasHypothermia = false
     if diseaseData and diseaseData.active then
         for diseaseId, disease in pairs(diseaseData.active) do
+            if diseaseId == "hypothermia" then
+                hasHypothermia = true
+            end
             local def = EHR.Disease.Diseases[diseaseId]
             if def then
                 -- Apply environmental disease effects
@@ -2831,6 +3563,9 @@ local function processPlayerTick(player)
                 end
             end
         end
+    end
+    if not hasHypothermia then
+        EHR.Environmental.ClearHypothermiaMovementPenalty(player)
     end
 end
 

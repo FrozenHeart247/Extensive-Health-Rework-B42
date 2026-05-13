@@ -273,8 +273,8 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.Antibiotics"},
             tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},
-            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics"},  -- Cures in 72h
-            tier3 = {"ExtensiveHealth.CorticosteroidInjection"},  -- Fast cure 24h
+            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.BroadSpectrumAntibiotics"},
+            tier3 = {"ExtensiveHealth.IVCiprofloxacin"},
         },
         stageEntryDialogue = {
             [1] = "This cold is getting worse...",
@@ -1077,69 +1077,78 @@ function EHR.Disease.UpdateProgression(player, data)
                 EHR.Log(string.format("WARNING: Disease %s missing severity - defaulted to %.2f", diseaseId, disease.severity))
             end
 
-            -- BUG FIX: Sanity check for stuck diseases
-            -- If disease has been running for more than double its max duration, force end it
-            local maxExpectedDuration = (def.incubationMax or 24) + (def.durationMax or 72)
-            local actualDuration = currentHour - (disease.startTime or 0)
-
-            if actualDuration > (maxExpectedDuration * 2) then
-                -- Disease is stuck - force recovery
-                EHR.Log(string.format("WARNING: Disease %s stuck (%.0fh / max %.0fh) - forcing recovery",
-                    diseaseId, actualDuration, maxExpectedDuration))
-                table.insert(toRemove, diseaseId)
-                EHR.Disease.OnRecovery(player, diseaseId)
+            if def.stageDrivenByBodyTemperature and EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled() then
+                -- Temperature-driven conditions are staged by EHR_BodyTemperature.lua,
+                -- so the normal incubation/duration timeline must not override them.
+                disease.temperatureDriven = true
+                disease.endTime = math.max(tonumber(disease.endTime) or currentHour + 9999, currentHour + 24)
+                disease.incubationEnd = disease.startTime or currentHour
+                disease.peakTime = currentHour
             else
-                -- Update stage based on time
-                local oldStage = disease.stage
+                -- BUG FIX: Sanity check for stuck diseases
+                -- If disease has been running for more than double its max duration, force end it
+                local maxExpectedDuration = (def.incubationMax or 24) + (def.durationMax or 72)
+                local actualDuration = currentHour - (disease.startTime or 0)
 
-                -- BUG FIX: Use >= comparison to handle floating point precision issues
-                if currentHour >= disease.endTime then
-                    -- Disease has run its course
+                if actualDuration > (maxExpectedDuration * 2) then
+                    -- Disease is stuck - force recovery
+                    EHR.Log(string.format("WARNING: Disease %s stuck (%.0fh / max %.0fh) - forcing recovery",
+                        diseaseId, actualDuration, maxExpectedDuration))
                     table.insert(toRemove, diseaseId)
                     EHR.Disease.OnRecovery(player, diseaseId)
-                elseif currentHour < disease.incubationEnd then
-                    disease.stage = 1  -- Incubation
-                elseif currentHour < disease.peakTime then
-                    disease.stage = 2  -- Early symptoms
-                elseif currentHour < disease.endTime - ((disease.endTime - disease.peakTime) * 0.5) then
-                    disease.stage = 3  -- Peak symptoms
                 else
-                    -- BUG-016 FIX: Check for warmth-blocked diseases (hypothermia)
-                    -- If warmthBlocked is set, player must get warm before recovery
-                    if disease.warmthBlocked then
-                        disease.stage = 3  -- Stay at peak until warm
-                        if EHR.DEBUG then
-                            EHR.Log(string.format("%s: Recovery blocked - warmthBlocked=true", diseaseId))
-                        end
+                    -- Update stage based on time
+                    local oldStage = disease.stage
+
+                    -- BUG FIX: Use >= comparison to handle floating point precision issues
+                    if currentHour >= disease.endTime then
+                        -- Disease has run its course
+                        table.insert(toRemove, diseaseId)
+                        EHR.Disease.OnRecovery(player, diseaseId)
+                    elseif currentHour < disease.incubationEnd then
+                        disease.stage = 1  -- Incubation
+                    elseif currentHour < disease.peakTime then
+                        disease.stage = 2  -- Early symptoms
+                    elseif currentHour < disease.endTime - ((disease.endTime - disease.peakTime) * 0.5) then
+                        disease.stage = 3  -- Peak symptoms
                     else
-                        disease.stage = 4  -- Recovery
+                        -- BUG-016 FIX: Check for warmth-blocked diseases (hypothermia)
+                        -- If warmthBlocked is set, player must get warm before recovery
+                        if disease.warmthBlocked then
+                            disease.stage = 3  -- Stay at peak until warm
+                            if EHR.DEBUG then
+                                EHR.Log(string.format("%s: Recovery blocked - warmthBlocked=true", diseaseId))
+                            end
+                        else
+                            disease.stage = 4  -- Recovery
+                        end
+                    end
+
+                    -- Handle stage changes
+                    if oldStage ~= disease.stage then
+                        if EHR.DEBUG then
+                            EHR.Log(string.format("%s progressed to stage %d", def.name, disease.stage))
+                        end
+
+                        -- Say dialogue when entering a new stage (stage changes always say unless dialogue off)
+                        if def.stageEntryDialogue and def.stageEntryDialogue[disease.stage] then
+                            EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[disease.stage])
+                        end
                     end
                 end
+            end
 
-                -- Handle stage changes
-                if oldStage ~= disease.stage then
-                    if EHR.DEBUG then
-                        EHR.Log(string.format("%s progressed to stage %d", def.name, disease.stage))
-                    end
-
-                    -- Say dialogue when entering a new stage (stage changes always say unless dialogue off)
-                    if def.stageEntryDialogue and def.stageEntryDialogue[disease.stage] then
-                        EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[disease.stage])
-                    end
+            -- Apply effects based on stage
+            if disease.stage > 1 or def.stageDrivenByBodyTemperature then
+                local effectScale = EHR_DiseaseGetRuntimeTimeScale()
+                local previousEffectScale = EHR_DiseaseEffectTimeScale
+                EHR_DiseaseEffectTimeScale = effectScale
+                local okEffects, effectErr = pcall(EHR.Disease.ApplyEffects, player, diseaseId, disease, def)
+                EHR_DiseaseEffectTimeScale = previousEffectScale
+                if not okEffects then
+                    error(effectErr)
                 end
-
-                -- Apply effects based on stage
-                if disease.stage > 1 then  -- Not in incubation
-                    local effectScale = EHR_DiseaseGetRuntimeTimeScale()
-                    local previousEffectScale = EHR_DiseaseEffectTimeScale
-                    EHR_DiseaseEffectTimeScale = effectScale
-                    local okEffects, effectErr = pcall(EHR.Disease.ApplyEffects, player, diseaseId, disease, def)
-                    EHR_DiseaseEffectTimeScale = previousEffectScale
-                    if not okEffects then
-                        error(effectErr)
-                    end
-                end
-            end  -- End of stuck-check else block
+            end
         end
     end
 
@@ -3874,6 +3883,14 @@ function EHR.Disease.Cure(player, diseaseId)
             EHR.Environmental.ClearDysenteryPain(player)
         end
 
+        if diseaseId == "pneumonia" and EHR.Environmental and EHR.Environmental.ClearPneumoniaPain then
+            EHR.Environmental.ClearPneumoniaPain(player)
+        end
+
+        if diseaseId == "common_cold" and EHR.Environmental and EHR.Environmental.ClearVanillaCold then
+            EHR.Environmental.ClearVanillaCold(player)
+        end
+
         if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
             EHR.CorpseSickness.ResetAfterCure(player)
@@ -3920,6 +3937,8 @@ function EHR.Disease.CureAll(player)
     local curedToxinPoisoning = false
     local curedTetanus = false
     local curedDysentery = false
+    local curedCommonCold = false
+    local curedPneumonia = false
 
     for diseaseId, _ in pairs(data.active) do
 
@@ -3935,6 +3954,14 @@ function EHR.Disease.CureAll(player)
 
         if diseaseId == "dysentery" then
             curedDysentery = true
+        end
+
+        if diseaseId == "common_cold" then
+            curedCommonCold = true
+        end
+
+        if diseaseId == "pneumonia" then
+            curedPneumonia = true
         end
 
         if diseaseId == "corpse_sickness" then
@@ -3983,6 +4010,14 @@ function EHR.Disease.CureAll(player)
 
     if curedDysentery and EHR.Environmental and EHR.Environmental.ClearDysenteryPain then
         EHR.Environmental.ClearDysenteryPain(player)
+    end
+
+    if curedCommonCold and EHR.Environmental and EHR.Environmental.ClearVanillaCold then
+        EHR.Environmental.ClearVanillaCold(player)
+    end
+
+    if curedPneumonia and EHR.Environmental and EHR.Environmental.ClearPneumoniaPain then
+        EHR.Environmental.ClearPneumoniaPain(player)
     end
 
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
@@ -4054,11 +4089,23 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
             disease.tetanusSevereHealthCap = nil
         end
 
+        if diseaseId == "common_cold" then
+            disease.pneumoniaRollDone = nil
+            disease.lastSneezeHour = nil
+        end
+
+        if diseaseId == "pneumonia" then
+            disease.lastCoughHour = nil
+            disease.pneumoniaLastDamageHour = nil
+            disease.pneumoniaPendingHealthDamage = nil
+            disease.pneumoniaHealthCap = nil
+        end
+
         if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
             EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
         end
 
-        if diseaseId == "dysentery" and EHR.Environmental and EHR.Environmental.ApplyDiseaseEffects then
+        if (diseaseId == "dysentery" or diseaseId == "common_cold" or diseaseId == "pneumonia") and EHR.Environmental and EHR.Environmental.ApplyDiseaseEffects then
             EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
         end
 

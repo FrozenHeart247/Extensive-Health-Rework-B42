@@ -1513,6 +1513,32 @@ local function EHR_EnvironmentalGetCurrentHour()
     return gameTime and gameTime:getWorldAgeHours() or 0
 end
 
+function EHR.Environmental.IsHeatStrokeColdBathActive(player)
+    local modData = player and player:getModData() or nil
+    if not modData or modData.EHR_HeatStrokeColdBathActive ~= true then return false end
+
+    local untilHour = tonumber(modData.EHR_HeatStrokeColdBathUntil) or 0
+    if untilHour <= EHR_EnvironmentalGetCurrentHour() then
+        modData.EHR_HeatStrokeColdBathActive = nil
+        modData.EHR_HeatStrokeColdBathUntil = nil
+        return false
+    end
+
+    return true
+end
+
+function EHR.Environmental.ApplyHeatStrokeColdBathStabilization(player, disease)
+    if disease then
+        disease.heatStrokeLastDamageHour = EHR_EnvironmentalGetCurrentHour()
+    end
+
+    if EHR.BodyTemp and EHR.BodyTemp.MoveDiseaseFeverToward then
+        EHR.BodyTemp.MoveDiseaseFeverToward(player, 37.2, 0.22)
+    elseif EHR.BodyTemp and EHR.BodyTemp.WriteDiseaseBodyTemperature then
+        EHR.BodyTemp.WriteDiseaseBodyTemperature(player, 37.2)
+    end
+end
+
 local function EHR_EnvironmentalIsPlayerAsleep(player)
     if not player or not player.isAsleep then return false end
 
@@ -2424,6 +2450,11 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     local stats = player:getStats()
     if not stats then return end
 
+    if diseaseId == "heat_stroke" and EHR.Environmental.IsHeatStrokeColdBathActive(player) then
+        EHR.Environmental.ApplyHeatStrokeColdBathStabilization(player, disease)
+        return
+    end
+
     EHR_EnvironmentalApplyBodyFever(player, diseaseId, disease)
     if diseaseId == "heat_stroke" then
         EHR_EnvironmentalApplyHeatStrokeHealthDrain(player, disease, effects)
@@ -3032,6 +3063,10 @@ end
 
 function EHR.Environmental.TriggerHeatStrokeBlackout(player)
     if not player then return false end
+    if EHR.Environmental.IsHeatStrokeColdBathActive and EHR.Environmental.IsHeatStrokeColdBathActive(player) then
+        return false
+    end
+
     local alive = true
     if player.isAlive then
         pcall(function()

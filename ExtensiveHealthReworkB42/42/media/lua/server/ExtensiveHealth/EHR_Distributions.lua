@@ -252,7 +252,6 @@ local function EHR_InitDistributions()
 
     local flyerRarity = {
         ["ExtensiveHealth.DiseaseFlyer_CommonCold"] = 4,
-        ["ExtensiveHealth.DiseaseFlyer_Flu"] = 3,
         ["ExtensiveHealth.DiseaseFlyer_FoodPoisoning"] = 3,
         ["ExtensiveHealth.DiseaseFlyer_Hypothermia"] = 2,
         ["ExtensiveHealth.DiseaseFlyer_HeatExhaustion"] = 2,

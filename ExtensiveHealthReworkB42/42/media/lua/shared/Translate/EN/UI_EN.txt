@@ -145,6 +145,9 @@ UI_EN = {
     UI_EHR_Context_OpenMonitor = "Open Medical Monitor",
     UI_EHR_Context_TooFar = "Too Far Away",
     UI_EHR_Context_TooFarDesc = "You need to be within %d tiles to examine this player.",
+    UI_EHR_Context_TakeColdBath = "Take Cold Bath",
+    UI_EHR_Context_TakeColdBathDesc = "Spend 3 hours cooling down in a bathtub. Cures Heat Stroke if completed.",
+    UI_EHR_Context_TakeColdBathNoWater = "The bathtub needs water.",
 
     -- MP Examination
     UI_EHR_Examining = "Examining: %s",
@@ -289,6 +292,10 @@ UI_EN = {
     UI_EHR_Food_Warming = "*That warmed me up a bit*",
     UI_EHR_Food_Frozen = "*Brr, brain freeze!*",
     UI_EHR_Food_Cooling = "*That cooled me down*",
+
+    -- Heat Stroke Bath Treatment
+    UI_EHR_ColdBath_Start = "Cold... but I need this.",
+    UI_EHR_ColdBath_Complete = "The fever finally broke...",
 
     -- EHR Acquired Traits
     UI_trait_EHR_PatientZero = "Patient Zero",

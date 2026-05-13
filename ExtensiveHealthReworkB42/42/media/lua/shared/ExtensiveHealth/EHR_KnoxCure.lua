@@ -23,6 +23,9 @@
 EHR = EHR or {}
 EHR.KnoxCure = {}
 
+EHR.KnoxCure.ImmunityTrait = "ExtensiveHealth:patientzero"
+EHR.KnoxCure.ImmunityTraitRegistryKey = "patientzero"
+
 -- ============================================
 -- CONFIGURATION
 -- ============================================
@@ -151,20 +154,52 @@ function EHR.KnoxCure.IsInfected(player)
         end
     end
 
-    -- Method 3: Check for any bitten body parts (can lead to infection)
-    for i = 0, BodyPartType.MAX:index() - 1 do
-        local bodyPart = bodyDamage:getBodyPart(BodyPartType.FromIndex(i))
-        if bodyPart then
-            local bittenSuccess, isBitten = pcall(function()
-                return bodyPart:bitten()
-            end)
-            if bittenSuccess and isBitten then
-                return true
-            end
-        end
+    return false
+end
+
+--[[
+    Add the visible Patient Zero trait to survivors of successful Gene Therapy.
+    The actual immunity remains the geneTherapyImmune flag below; this trait is
+    a UI-visible permanent marker for the character sheet.
+]]--
+function EHR.KnoxCure.GrantImmunityTrait(player, data)
+    if not player then return false end
+
+    data = data or EHR.KnoxCure.GetData(player)
+
+    local traitToken = nil
+    if EHRCharacterTraits then
+        traitToken = EHRCharacterTraits[EHR.KnoxCure.ImmunityTraitRegistryKey]
     end
 
-    return false
+    if type(traitToken) == "string" or not traitToken then
+        return false
+    end
+
+    local traits = nil
+    if player.getCharacterTraits then
+        local ok, result = pcall(function() return player:getCharacterTraits() end)
+        if ok then traits = result end
+    end
+    if not traits then return false end
+
+    local hasTrait = false
+    if player.hasTrait then
+        hasTrait = player:hasTrait(traitToken) == true
+    end
+    if not hasTrait and traits.contains then
+        hasTrait = traits:contains(traitToken) == true
+    end
+
+    if hasTrait then
+        if data then data.immunityTraitGranted = true end
+        return true
+    end
+
+    traits:add(traitToken)
+    if data then data.immunityTraitGranted = true end
+    EHR.Log("KnoxCure: Granted Patient Zero trait")
+    return true
 end
 
 --[[
@@ -383,6 +418,9 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
         -- Mark as Gene Therapy survivor
         data.geneTherapySurvivor = true
         data.geneTherapyImmune = true
+
+        -- Visible permanent marker on the character sheet
+        EHR.KnoxCure.GrantImmunityTrait(player, data)
 
         -- Apply permanent side effects (reduced max health)
         EHR.KnoxCure.ApplyGeneTherapySideEffects(player)
@@ -901,6 +939,10 @@ local function processPlayerTick(player)
     -- This must run before throttle to catch all infection attempts
     -- =====================================
     SuppressVanillaInfection(player, data)
+
+    if data.geneTherapyImmune and not data.immunityTraitGranted then
+        EHR.KnoxCure.GrantImmunityTrait(player, data)
+    end
 
     -- Throttle for non-critical updates
     local state = getTickState(player)

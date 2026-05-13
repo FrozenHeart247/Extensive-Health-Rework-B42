@@ -88,12 +88,8 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     -- Check if infected
     local isInfected = EHR.KnoxCure.IsInfected(player)
 
-    -- Get compatibility info
-    local rating, color = EHR.KnoxCure.GetCompatibilityRating(player)
-    local chance = EHR.KnoxCure.GetGeneTherapyChance(player)
-
     -- Create option
-    local optionText = string.format("Use Gene Therapy (%d%% survival)", chance)
+    local optionText = "Use Gene Therapy Injector"
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseGeneTherapy, item)
 
     -- Add tooltip
@@ -101,9 +97,8 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     option.toolTip:setName("Gene Therapy Injector")
 
     local desc = "Experimental gene therapy that can cure Knox Virus infection.\n\n"
-    desc = desc .. "Compatibility: " .. rating .. "\n"
-    desc = desc .. "Survival Chance: " .. chance .. "%\n"
-    desc = desc .. "Death Chance: " .. (100 - chance) .. "%\n\n"
+    desc = desc .. "Success depends on blood type compatibility.\n"
+    desc = desc .. "Use an Antibody Test first to check your odds.\n\n"
 
     if isInfected then
         desc = desc .. "<RGB:1,0.5,0.5> WARNING: You are infected. This is a gamble between cure and death."
@@ -112,24 +107,18 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
         option.notAvailable = true
     end
 
-    if chance < 50 then
-        desc = desc .. "\n\n<RGB:1,0.3,0.3> CRITICAL: Your blood type has poor compatibility!"
-    end
-
-    desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity + 10% max health reduction"
+    desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity"
 
     option.toolTip.description = desc
 end
 
 function EHR.KnoxCureMenu.OnUseGeneTherapy(player, item)
     -- Confirmation dialog for such a risky action
-    local chance = EHR.KnoxCure.GetGeneTherapyChance(player)
-
     local modal = ISModalDialog:new(
         getCore():getScreenWidth() / 2 - 150,
         getCore():getScreenHeight() / 2 - 50,
         300, 100,
-        string.format("Use Gene Therapy?\n%d%% survival, %d%% death", chance, 100 - chance),
+        "Use Gene Therapy?\nSuccess depends on blood type compatibility.\nFailure is fatal.",
         true, nil,
         EHR.KnoxCureMenu.OnGeneTherapyConfirm,
         player:getPlayerNum(),

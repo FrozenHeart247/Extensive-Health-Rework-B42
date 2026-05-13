@@ -287,4 +287,8 @@ UI_EN = {
     UI_EHR_Food_Warming = "*That warmed me up a bit*",
     UI_EHR_Food_Frozen = "*Brr, brain freeze!*",
     UI_EHR_Food_Cooling = "*That cooled me down*",
+
+    -- EHR Acquired Traits
+    UI_trait_EHR_PatientZero = "Patient Zero",
+    UI_trait_EHR_PatientZeroDesc = "Survived experimental gene therapy and became immune to the Knox infection.",
 }

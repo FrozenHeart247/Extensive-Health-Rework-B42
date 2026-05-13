@@ -69,6 +69,7 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     heat_exhaustion = "media/textures/EHR_Disease_HeatExhaustion.png",
     heat_stroke = "media/textures/EHR_Disease_HeatStroke.png",
     hypothermia = "media/textures/EHR_Disease_Hypotermia.png",
+    knox_infection = "media/textures/EHR_Disease_KnoxInfection.png",
     pneumonia = "media/textures/EHR_Disease_Pneumonia.png",
     sepsis = "media/textures/EHR_Disease_Sepsis.png",
     tetanus = "media/textures/EHR_Disease_Tetanus.png",
@@ -1305,6 +1306,27 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
     local definition = self:getDiseaseDefinition(diseaseId, disease)
     local realName = (definition and definition.name) or tostring(diseaseId or "Unknown Disease")
 
+    if type(disease) == "table" and disease.isKnox then
+        local displayName = disease.displayName or realName
+        return {
+            displayName = displayName,
+            realName = displayName,
+            sortName = displayName,
+            normalizedId = "knox_infection",
+            iconKey = "knox_infection",
+            canIdentify = true,
+            showStageSeverity = false,
+            showProgress = false,
+            showTreatmentStatus = true,
+            statusText = "NO CURE",
+            detailText = "This is how you die",
+            progressText = "",
+            hideProgressBar = true,
+            skillTier = skillTier,
+            skillLevel = skillLevel,
+        }
+    end
+
     if type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         return {
             displayName = disease.displayName or realName,
@@ -1592,21 +1614,14 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
             return EHR.KnoxCure.IsInfected(self.player)
         end)
         if ok and isInfected then
-            local infectionProgress = 0
-            if EHR.KnoxCure.GetInfectionProgress then
-                local progressOk, progress = pcall(function()
-                    return EHR.KnoxCure.GetInfectionProgress(self.player)
-                end)
-                if progressOk then
-                    infectionProgress = tonumber(progress) or 0
-                end
-            end
-
-            activeDiseases["Knox_Infection"] = {
-                severity = math.max(1, math.ceil(infectionProgress * 5)),
-                progress = clamp(infectionProgress, 0, 1),
-                stage = math.max(1, math.ceil(infectionProgress * 4)),
+            activeDiseases["knox_infection"] = {
+                displayName = safeText("UI_EHR_KnoxInfection", "Knox Virus Infection"),
+                severity = 0,
+                progress = 0,
+                stage = 0,
                 isKnox = true,
+                iconKey = "knox_infection",
+                noCure = true,
             }
         end
     end
@@ -2654,23 +2669,23 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local severity = type(disease) == "table" and (tonumber(disease.severity) or 0.5) or 0.5
     local progress = self:getDiseaseProgress(disease)
     local treated = self:isDiseaseTreated(diseaseId)
-    local status = treated and "TREATING" or "UNTREATED"
-    local statusColor = treated and c.green or c.orange
+    local status = displayInfo.statusText or (treated and "TREATING" or "UNTREATED")
+    local statusColor = displayInfo.statusText and c.red or (treated and c.green or c.orange)
     local accent, iconLabel
     if displayInfo.canIdentify then
         accent, iconLabel = self:getDiseaseAccent(diseaseId, displayInfo.realName)
     else
         accent, iconLabel = c.borderDim, "?"
     end
-    local rowH = 108
+    local rowH = displayInfo.hideProgressBar and 88 or 108
 
     self:drawRect(x, y, w, rowH, 0.48, c.panelSoft.r, c.panelSoft.g, c.panelSoft.b)
     self:drawWornFrame(x, y, w, rowH, accent, 7)
     self:drawCornerBolts(x, y, w, rowH, accent)
     self:drawRect(x, y, w, 1, 0.72, c.border.r, c.border.g, c.border.b)
     self:drawHazardStripes(x + w - 78, y + 10, 5, accent)
-    local iconSize = 80
-    local iconX = x + 12
+    local iconSize = tonumber(displayInfo.iconSize) or 80
+    local iconX = x + 12 + math.floor((80 - iconSize) / 2)
     local iconY = y + math.floor((rowH - iconSize) / 2)
     self:drawDiseaseIcon(iconX, iconY, iconSize, accent, iconLabel, self:getDiseaseIconTexture(diseaseId, displayInfo))
 
@@ -2679,7 +2694,10 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local textW = displayInfo.showTreatmentStatus and (w - textOffset - 127) or (w - textOffset - 18)
     local detailsText = "Severity: ???"
     local detailsColor = c.textDim
-    if type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
+    if displayInfo.detailText then
+        detailsText = displayInfo.detailText
+        detailsColor = c.red
+    elseif type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         local exposureLevel = tostring(disease.exposureLevel or "Low")
         detailsText = "Exposure: " .. exposureLevel
         if type(disease.exposureColor) == "table" then
@@ -2696,24 +2714,31 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
         detailsText = string.format("Stage %d   Severity %.1f/5", stage, severity)
         detailsColor = c.green
     end
-    local progressText = displayInfo.showProgress and string.format("%d%%", math.floor(progress + 0.5)) or "??%"
+    local progressText = displayInfo.progressText
+    if progressText == nil then
+        progressText = displayInfo.showProgress and string.format("%d%%", math.floor(progress + 0.5)) or "??%"
+    end
 
     self:drawText(self:truncateText(name, textW, UIFont.Medium), textX, y + 16, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
     self:drawText(detailsText, textX, y + 43, detailsColor.r, detailsColor.g, detailsColor.b, detailsColor.a, UIFont.Small)
-    self:drawText(progressText, textX, y + 66, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    if progressText ~= "" then
+        self:drawText(progressText, textX, y + 66, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
+    end
     if displayInfo.showTreatmentStatus then
         self:drawTextRight(status, x + w - 14, y + 40, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Medium)
     end
 
-    local barX = textX
-    local barY = y + 99
-    local barW = w - textOffset - 14
-    local filled = displayInfo.showProgress and math.floor(barW * clamp(progress / 100, 0, 1)) or 0
-    self:drawRect(barX, barY, barW, 6, 1, 0.05, 0.05, 0.05)
-    if filled > 0 then
-        self:drawRect(barX, barY, filled, 6, c.green.a, c.green.r, c.green.g, c.green.b)
+    if not displayInfo.hideProgressBar then
+        local barX = textX
+        local barY = y + 99
+        local barW = w - textOffset - 14
+        local filled = displayInfo.showProgress and math.floor(barW * clamp(progress / 100, 0, 1)) or 0
+        self:drawRect(barX, barY, barW, 6, 1, 0.05, 0.05, 0.05)
+        if filled > 0 then
+            self:drawRect(barX, barY, filled, 6, c.green.a, c.green.r, c.green.g, c.green.b)
+        end
+        self:drawRectBorder(barX, barY, barW, 6, c.border.a, c.border.r, c.border.g, c.border.b)
     end
-    self:drawRectBorder(barX, barY, barW, 6, c.border.a, c.border.r, c.border.g, c.border.b)
 
     return rowH + 10
 end

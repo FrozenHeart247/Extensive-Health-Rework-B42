@@ -970,19 +970,14 @@ function EHR_MedicalMonitorUI:updateCachedData()
         local isInfected = EHR.KnoxCure.IsInfected(self.player)
 
         if isInfected then
-            -- Get infection progress (0-1 scale)
-            local infectionProgress = 0
-            if EHR.KnoxCure.GetInfectionProgress then
-                infectionProgress = EHR.KnoxCure.GetInfectionProgress(self.player) or 0
-            end
-
             -- Add Knox to diseases display
-            self.cachedData.diseases["Knox_Infection"] = {
-                severity = math.max(1, math.ceil(infectionProgress * 5)),
-                progress = infectionProgress,
-                stage = math.max(1, math.ceil(infectionProgress * 4)),
+            self.cachedData.diseases["knox_infection"] = {
+                severity = 0,
+                progress = 0,
+                stage = 0,
                 isKnox = true,
                 diagnosed = true,
+                noCure = true,
             }
         end
     end
@@ -1105,25 +1100,15 @@ function EHR_MedicalMonitorUI:updateCachedData()
         end
     end
 
-    -- Get N6C Narcotics data (if mod is loaded)
-    if EHR.Narcotics then
-        if EHR.Narcotics.GetActiveSubstances then
-            self.cachedData.narcotics = EHR.Narcotics.GetActiveSubstances(self.player)
-        end
-        if EHR.Narcotics.GetWithdrawalStatus then
-            self.cachedData.withdrawal = EHR.Narcotics.GetWithdrawalStatus(self.player)
-        end
-    end
+    self.cachedData.narcotics = {}
+    self.cachedData.withdrawal = nil
 
     -- Universal Substance Scanner - detects substances from other mods (v2.8.0)
     self.cachedData.otherSubstances = {}
     if EHR.SubstanceScanner then
         local scannedSubstances = EHR.SubstanceScanner.Scan(self.player)
-        -- Filter out NnC substances (already handled by N6C compat)
         for _, substance in ipairs(scannedSubstances) do
-            if substance.prefix ~= "NnC" then
-                table.insert(self.cachedData.otherSubstances, substance)
-            end
+            table.insert(self.cachedData.otherSubstances, substance)
         end
     end
 end
@@ -1356,9 +1341,6 @@ function EHR_MedicalMonitorUI:render()
 
         -- Dose Alerts Section (urgent retakes shown first)
         y = self:renderDoseAlertsSection(y)
-
-        -- N6C Narcotics Section (if any substances active)
-        y = self:renderNarcoticsSection(y)
 
         -- Other Detected Substances Section (from universal scanner)
         y = self:renderOtherSubstancesSection(y)
@@ -1919,13 +1901,18 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
         displayName = (unknownInfo and unknownInfo.displayName) or (getText("UI_EHR_DiseaseUnknown") or "Unknown Illness")
     else
         displayName = diseaseDef and diseaseDef.name or diseaseId
-        if skillTier >= 2 then
+        if diseaseData.isKnox then
+            showSeverity = false
+            showSymptoms = true
+            showProgress = false
+            showTreatmentStatus = false
+        elseif skillTier >= 2 then
             showSeverity = true
         end
-        if skillTier >= 2 then
+        if not diseaseData.isKnox and skillTier >= 2 then
             showSymptoms = true
         end
-        if skillTier >= 3 then
+        if not diseaseData.isKnox and skillTier >= 3 then
             showProgress = true
             showTreatmentStatus = true
         end
@@ -1938,7 +1925,10 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
     self:drawText(self:truncateText(displayName, self.width - padding * 2, UIFont.Small), padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
     y = y + self.LINE_HEIGHT
 
-    if showSeverity then
+    if diseaseData.isKnox then
+        self:drawText("There is no cure", padding + 5, y,
+            c.danger.r, c.danger.g, c.danger.b, c.danger.a, UIFont.Small)
+    elseif showSeverity then
         self:drawText(getText("UI_EHR_Severity") .. severityBar .. " " .. severity .. "/5", padding + 5, y,
             severityColor.r, severityColor.g, severityColor.b, severityColor.a, UIFont.Small)
     else

@@ -353,50 +353,6 @@ option ExtensiveHealthRework.HouseholdPrescriptionLoot
     translation = EHR_HouseholdPrescriptionLoot,
 }
 
-option ExtensiveHealthRework.NnCCompatEnabled
-{
-    type = boolean,
-    default = true,
-    page = EHR_Comp,
-    translation = EHR_NnCCompatEnabled,
-}
-
-option ExtensiveHealthRework.NnCStimulantBloodLoss
-{
-    type = double,
-    min = 1.0,
-    max = 3.0,
-    default = 1.5,
-    page = EHR_Comp,
-    translation = EHR_NnCStimulantBloodLoss,
-}
-
-option ExtensiveHealthRework.NnCOpioidInfectionReduction
-{
-    type = double,
-    min = 0.1,
-    max = 1.0,
-    default = 0.5,
-    page = EHR_Comp,
-    translation = EHR_NnCOpioidInfectionReduction,
-}
-
-option ExtensiveHealthRework.NnCWithdrawalBlocksHealing
-{
-    type = boolean,
-    default = true,
-    page = EHR_Comp,
-    translation = EHR_NnCWithdrawalBlocksHealing,
-}
-
-option ExtensiveHealthRework.NnCOverdoseTriggersDisease
-{
-    type = boolean,
-    default = true,
-    page = EHR_Comp,
-    translation = EHR_NnCOverdoseTriggersDisease,
-}
-
 option ExtensiveHealthRework.HealingRequiresFed
 {
     type = boolean,

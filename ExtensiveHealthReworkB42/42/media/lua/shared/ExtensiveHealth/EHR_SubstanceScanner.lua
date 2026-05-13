@@ -5,7 +5,6 @@
     Uses known prefixes to minimize false positives.
 
     Supported mod prefixes:
-    - NnC (N6C Narcotics)
     - HC_ (Hydrocraft)
     - Drug_ (Generic drug mods)
     - Med_ (Medical mods)
@@ -26,7 +25,6 @@ EHR.SubstanceScanner = {}
 EHR.SubstanceScanner.Config = {
     -- Known mod prefixes to scan for
     KNOWN_PREFIXES = {
-        "NnC",       -- N6C Narcotics (e.g., NnCCokeEffect)
         "HC_",       -- Hydrocraft
         "Drug_",     -- Generic drug mods
         "Med_",      -- Medical mods
@@ -43,36 +41,14 @@ EHR.SubstanceScanner.Config = {
 
     -- Keys to explicitly ignore (false positives)
     IGNORE_KEYS = {
-        "NnCTenMinutes",     -- Timer keys, not effects
-        "NnCHalf",           -- Half-life tracking
     },
 
     -- Pre-mapped display names for known substances
     DISPLAY_NAMES = {
-        -- N6C Narcotics
-        ["NnCCokeEffect"] = "Cocaine",
-        ["NnCMethEffect"] = "Methamphetamine",
-        ["NnCOpioidEffect"] = "Opioids",
-        ["NnCBenzoEffect"] = "Benzodiazepines",
-        ["NnCWeedEffect"] = "Cannabis",
-        ["NnCMDMAEffect"] = "MDMA",
-        ["NnCLSDEffect"] = "LSD",
-        ["NnCPCPEffect"] = "PCP",
-        ["NnCCokeAmount"] = "Cocaine (Accumulated)",
-        ["NnCMethAmount"] = "Meth (Accumulated)",
-        ["NnCOpioidAmount"] = "Opioid (Accumulated)",
     },
 
     -- Categories for known substances
     CATEGORIES = {
-        ["NnCCokeEffect"] = "stimulant",
-        ["NnCMethEffect"] = "stimulant",
-        ["NnCMDMAEffect"] = "stimulant",
-        ["NnCOpioidEffect"] = "opioid",
-        ["NnCBenzoEffect"] = "depressant",
-        ["NnCWeedEffect"] = "cannabis",
-        ["NnCLSDEffect"] = "hallucinogen",
-        ["NnCPCPEffect"] = "hallucinogen",
     },
 
     -- Cache settings

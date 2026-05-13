@@ -245,5 +245,7 @@
     "UI_EHR_Disease_cadaveric_aspergillosis":  "Cadaveric Aspergillosis",
     "UI_EHR_Disease_tuberculosis":  "Tuberculosis",
     "UI_EHR_Disease_tetanus":  "Tetanus",
-    "UI_EHR_Disease_Knox_Infection":  "Knox Virus Infection"
+    "UI_EHR_Disease_Knox_Infection":  "Knox Virus Infection",
+    "UI_trait_EHR_PatientZero":  "Patient Zero",
+    "UI_trait_EHR_PatientZeroDesc":  "Survived experimental gene therapy and became immune to the Knox infection."
 }

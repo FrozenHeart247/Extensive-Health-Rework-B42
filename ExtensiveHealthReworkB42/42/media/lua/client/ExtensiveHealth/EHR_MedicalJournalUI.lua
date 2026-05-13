@@ -51,6 +51,7 @@ local DiseaseIcons = {
     heat_exhaustion = "media/textures/EHR_Disease_HeatExhaustion.png",
     heat_stroke = "media/textures/EHR_Disease_HeatStroke.png",
     hypothermia = "media/textures/EHR_Disease_Hypotermia.png",
+    knox_infection = "media/textures/EHR_Disease_KnoxInfection.png",
     pneumonia = "media/textures/EHR_Disease_Pneumonia.png",
     sepsis = "media/textures/EHR_Disease_Sepsis.png",
     tetanus = "media/textures/EHR_Disease_Tetanus.png",

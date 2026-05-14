@@ -182,15 +182,27 @@ local function debugNormalizeDiseaseTiming(diseaseId, disease, stage)
     if type(disease) ~= "table" then return end
 
     local currentHour = debugWorldAgeHours()
-    local normalizedStage = math.max(1, math.min(4, tonumber(stage or disease.stage) or 1))
+    local def = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] or nil
+    local maxStage = tonumber(def and def.stageCount) or tonumber(disease.stageCount) or 4
+    local normalizedStage = math.max(1, math.min(maxStage, tonumber(stage or disease.stage) or 1))
     local totalDuration = debugGetDiseaseTotalDuration(diseaseId, disease)
     local progress = debugDiseaseStageProgress(normalizedStage)
+    if def and def.reverseProgression then
+        progress = math.max(0.02, math.min(0.95, ((maxStage - normalizedStage) / maxStage) + 0.04))
+    end
 
     disease.stage = normalizedStage
     disease.startTime = currentHour - (totalDuration * progress)
     disease.endTime = disease.startTime + totalDuration
-    disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
-    disease.peakTime = disease.startTime + (totalDuration * 0.40)
+    if def and def.reverseProgression then
+        disease.incubationEnd = disease.startTime
+        disease.peakTime = disease.startTime
+        disease.stageCount = maxStage
+        disease.reverseProgression = true
+    else
+        disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
+        disease.peakTime = disease.startTime + (totalDuration * 0.40)
+    end
     disease.progress = progress
     disease.stageProgress = 0
     disease.stageStartTime = currentHour
@@ -949,6 +961,7 @@ EHR.DebugV2.DiseaseList = {
     "gastroenteritis",
     "cadaveric_aspergillosis",
     "tetanus",
+    "concussion",
     "tuberculosis",
 }
 
@@ -1265,14 +1278,15 @@ function EHR_DebugMenuV2:onInflictDisease(button)
 
     -- Get disease definition for proper duration, or use defaults
     local duration = 72
-    if EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] then
-        local def = EHR.Disease.Diseases[diseaseId]
+    local def = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] or nil
+    if def then
         duration = def.durationMin + ZombRand(def.durationMax - def.durationMin + 1)
     end
+    local startStage = (def and def.reverseProgression and (tonumber(def.stageCount) or 3)) or 2
 
     -- Create disease entry directly
     local disease = {
-        stage = 2,  -- Start at Early stage (skip incubation for debug)
+        stage = startStage,  -- Start at Early stage, or peak for reverse-progressing trauma
         severity = 0.5,
         startTime = currentHour,
         endTime = currentHour + duration,
@@ -1280,10 +1294,10 @@ function EHR_DebugMenuV2:onInflictDisease(button)
         peakTime = currentHour + (duration * 0.4),
         diagnosed = false,
     }
-    debugNormalizeDiseaseTiming(diseaseId, disease, 2)
+    debugNormalizeDiseaseTiming(diseaseId, disease, startStage)
     data.EHR_Disease.active[diseaseId] = disease
     if EHR.Disease and EHR.Disease.SetStage then
-        EHR.Disease.SetStage(self.player, diseaseId, 2)
+        EHR.Disease.SetStage(self.player, diseaseId, startStage)
     end
     print("[EHR Debug] v2.7.1-MP Created disease locally: " .. diseaseId .. " with " .. duration .. "h duration")
 

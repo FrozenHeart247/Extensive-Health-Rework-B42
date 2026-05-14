@@ -116,7 +116,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         -- Treatment tiers - which medications work at which effectiveness
         treatments = {
-            tier0 = {"Base.PillsVitamins"},  -- 15% symptom relief
+            tier0 = {},
             tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.ElectrolytePowder"},  -- 40% relief
             tier2 = {"ExtensiveHealth.ActivatedCharcoal"},  -- Cures in 6h
             tier3 = {},  -- No clinical treatment needed
@@ -146,7 +146,7 @@ EHR.Disease.Diseases = {
         canKill = false,
         stageCount = 4,
         treatments = {
-            tier0 = {"Base.PillsVitamins"},
+            tier0 = {},
             tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.ElectrolytePowder"},
             tier2 = {"ExtensiveHealth.AntiviralCapsules"},  -- Cures in 48h
             tier3 = {"ExtensiveHealth.IVCiprofloxacin"},  -- Severe bacterial GI infection
@@ -628,6 +628,39 @@ EHR.Disease.Diseases = {
             [4] = {"Finally able to eat again...", "The antitoxin is working..."},
         },
     },
+
+    ["concussion"] = {
+        name = "Concussion",
+        category = "wound",
+        incubationMin = 0,
+        incubationMax = 0,
+        durationMin = 48,
+        durationMax = 48,
+        baseSeverity = 0.65,
+        canKill = false,
+        stageCount = 3,
+        reverseProgression = true,
+        noStandardTreatment = true,
+        noCure = true,
+        applyEffectsInStage1 = true,
+        symptoms = {"headache", "dizziness", "blurred_vision", "nausea"},
+        treatments = {
+            tier0 = {},
+            tier1 = {},
+            tier2 = {},
+            tier3 = {},
+        },
+        stageEntryDialogue = {
+            [3] = "My head is ringing... I need to sit still.",
+            [2] = "The worst of it is fading, but my head still hurts.",
+            [1] = "The fog is lifting. Still need to take it easy.",
+        },
+        dialogue = {
+            [3] = {"My head is pounding...", "Everything keeps spinning...", "I feel like I'm going to throw up...", "Can't focus. Need to rest."},
+            [2] = {"Still dizzy...", "My head hurts, but not as bad.", "Need to move carefully."},
+            [1] = {"Just a little headache now...", "Almost steady again.", "The nausea is mostly gone."},
+        },
+    },
 }
 
 -- ============================================
@@ -997,12 +1030,24 @@ function EHR.Disease.Contract(player, diseaseId)
         peakTime = currentHour + incubation + (duration * 0.4),  -- Peak at 40% through
     }
 
+    if def.reverseProgression then
+        local stageCount = tonumber(def.stageCount) or 3
+        data.active[diseaseId].stage = stageCount
+        data.active[diseaseId].stageCount = stageCount
+        data.active[diseaseId].incubationEnd = currentHour
+        data.active[diseaseId].peakTime = currentHour
+        data.active[diseaseId].endTime = currentHour + duration
+        data.active[diseaseId].progress = 0
+        data.active[diseaseId].reverseProgression = true
+    end
+
     EHR.Log(string.format("Contracted %s! Incubation: %dh, Duration: %dh, Severity: %.2f",
         def.name, incubation, duration, data.active[diseaseId].severity))
 
-    -- Say stage 1 entry dialogue (stage changes always say unless dialogue off)
-    if def.stageEntryDialogue and def.stageEntryDialogue[1] then
-        EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[1])
+    -- Say entry dialogue (reverse diseases begin at their highest stage)
+    local entryStage = data.active[diseaseId].stage or 1
+    if def.stageEntryDialogue and def.stageEntryDialogue[entryStage] then
+        EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[entryStage])
     end
 
     -- Record food exposure in history
@@ -1110,7 +1155,35 @@ function EHR.Disease.UpdateProgression(player, data)
                 EHR.Log(string.format("WARNING: Disease %s missing severity - defaulted to %.2f", diseaseId, disease.severity))
             end
 
-            if def.stageDrivenByBodyTemperature and EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled() then
+            if def.reverseProgression then
+                local oldStage = disease.stage
+                local stageCount = tonumber(def.stageCount) or tonumber(disease.stageCount) or 3
+                local totalDuration = math.max(1, (tonumber(disease.endTime) or currentHour + 1) - (tonumber(disease.startTime) or currentHour))
+
+                disease.stageCount = stageCount
+                disease.incubationEnd = disease.startTime or currentHour
+                disease.peakTime = disease.startTime or currentHour
+
+                if currentHour >= disease.endTime then
+                    disease._ehrSkipEffects = true
+                    table.insert(toRemove, diseaseId)
+                    EHR.Disease.OnRecovery(player, diseaseId)
+                else
+                    local progress = math.max(0, math.min(0.999, (currentHour - (disease.startTime or currentHour)) / totalDuration))
+                    disease.progress = progress
+                    disease.stage = math.max(1, stageCount - math.floor(progress * stageCount))
+
+                    if oldStage ~= disease.stage then
+                        if EHR.DEBUG then
+                            EHR.Log(string.format("%s recovered down to stage %d", def.name, disease.stage))
+                        end
+
+                        if def.stageEntryDialogue and def.stageEntryDialogue[disease.stage] then
+                            EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[disease.stage])
+                        end
+                    end
+                end
+            elseif def.stageDrivenByBodyTemperature and EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled() then
                 -- Temperature-driven conditions are staged by EHR_BodyTemperature.lua,
                 -- so the normal incubation/duration timeline must not override them.
                 disease.temperatureDriven = true
@@ -1127,6 +1200,7 @@ function EHR.Disease.UpdateProgression(player, data)
                     -- Disease is stuck - force recovery
                     EHR.Log(string.format("WARNING: Disease %s stuck (%.0fh / max %.0fh) - forcing recovery",
                         diseaseId, actualDuration, maxExpectedDuration))
+                    disease._ehrSkipEffects = true
                     table.insert(toRemove, diseaseId)
                     EHR.Disease.OnRecovery(player, diseaseId)
                 else
@@ -1136,6 +1210,7 @@ function EHR.Disease.UpdateProgression(player, data)
                     -- BUG FIX: Use >= comparison to handle floating point precision issues
                     if currentHour >= disease.endTime then
                         -- Disease has run its course
+                        disease._ehrSkipEffects = true
                         table.insert(toRemove, diseaseId)
                         EHR.Disease.OnRecovery(player, diseaseId)
                     elseif currentHour < disease.incubationEnd then
@@ -1172,7 +1247,7 @@ function EHR.Disease.UpdateProgression(player, data)
             end
 
             -- Apply effects based on stage
-            if disease.stage > 1 or def.stageDrivenByBodyTemperature or def.applyEffectsInStage1 then
+            if not disease._ehrSkipEffects and (disease.stage > 1 or def.stageDrivenByBodyTemperature or def.applyEffectsInStage1) then
                 local effectScale = EHR_DiseaseGetRuntimeTimeScale()
                 local previousEffectScale = EHR_DiseaseEffectTimeScale
                 EHR_DiseaseEffectTimeScale = effectScale
@@ -1210,7 +1285,7 @@ function EHR.Disease.OnRecovery(player, diseaseId)
     -- Food poisoning should stay fully risk-based on each bad meal.
     if diseaseId == "food_poisoning" then
         data.immunity[diseaseId] = 0
-    elseif diseaseId == "toxin_poisoning" or diseaseId == "ahtr" then
+    elseif diseaseId == "toxin_poisoning" or diseaseId == "ahtr" or diseaseId == "concussion" then
         data.immunity[diseaseId] = 0
     else
         data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
@@ -1247,6 +1322,12 @@ function EHR.Disease.OnRecovery(player, diseaseId)
             active.ahtrSevereHealthCap = nil
             active.ahtrSicknessTarget = nil
             active.ahtrSicknessTargetUntil = nil
+        end
+    elseif diseaseId == "concussion" and EHR.Concussion then
+        if EHR.Concussion.ClearAfterCure then
+            EHR.Concussion.ClearAfterCure(player)
+        elseif EHR.Concussion.ClearHeadPain then
+            EHR.Concussion.ClearHeadPain(player)
         end
     end
 
@@ -2026,6 +2107,10 @@ local function EHR_DiseaseIsNeckPart(partType, part)
     return EHR_DiseaseGetBodyPartName(partType, part):find("neck", 1, true) ~= nil
 end
 
+local function EHR_DiseaseIsHeadPart(partType, part)
+    return EHR_DiseaseGetBodyPartName(partType, part):find("head", 1, true) ~= nil
+end
+
 local function EHR_DiseaseIsLowerBackPart(partType, part)
     local partName = EHR_DiseaseGetBodyPartName(partType, part)
     return partName:find("back", 1, true) ~= nil
@@ -2171,6 +2256,43 @@ local function EHR_DiseaseReduceTargetedPainToward(player, targetPain, step, inc
                 local currentPain = part:getAdditionalPain() or 0
                 if currentPain > targetPain then
                     part:setAdditionalPain(math.max(targetPain, currentPain - step))
+                    changed = true
+                end
+            end)
+        end
+    end
+
+    if changed and bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
+    end
+end
+
+local function EHR_DiseaseMoveTargetedPainToward(player, targetPain, raiseStep, lowerStep, includePart)
+    if not player or targetPain == nil or not includePart then return end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage then return end
+
+    targetPain = math.min(100, math.max(0, targetPain))
+    local effectScale = EHR_DiseaseEffectTimeScale or 1
+    raiseStep = math.min(8, math.max(0.05, raiseStep or 0.5)) * effectScale
+    lowerStep = math.min(10, math.max(0.05, lowerStep or raiseStep)) * effectScale
+    local changed = false
+
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+
+        if part and includePart(partType, part) and part.getAdditionalPain and part.setAdditionalPain then
+            pcall(function()
+                local currentPain = part:getAdditionalPain() or 0
+                if currentPain < targetPain then
+                    part:setAdditionalPain(math.min(targetPain, currentPain + raiseStep))
+                    changed = true
+                elseif currentPain > targetPain and currentPain <= 60 then
+                    part:setAdditionalPain(math.max(targetPain, currentPain - lowerStep))
                     changed = true
                 end
             end)
@@ -3085,6 +3207,103 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             disease.ahtrSevereHealthCap = nil
         end
 
+    elseif diseaseId == "concussion" then
+        -- Head trauma recovers over time, starting at the worst stage and stepping down.
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "concussion", disease)
+        local nauseaRelief = math.max(
+            EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "nausea"),
+            EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "sickness")
+        )
+        local painRelief = math.max(
+            EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "pain"),
+            EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "inflammation") * 0.65
+        )
+        local dizzinessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "dizziness")
+
+        local sicknessTarget = 0.12
+        local headPainTarget = 14
+        local generalPainTarget = 0.08
+        local dizzinessChance = 0.0012
+        local dizzinessCooldown = 1.15
+        local dialogueChance = 0.0010
+        local dialogueCooldown = 1.60
+        local healthFloor = 90
+        local healthDamage = 0.18 + (0.20 * severity)
+        local healthCooldown = 0.42
+
+        if stage == 2 then
+            sicknessTarget = 0.38
+            headPainTarget = 32
+            generalPainTarget = 0.22
+            dizzinessChance = 0.0050
+            dizzinessCooldown = 0.55
+            dialogueChance = 0.0026
+            dialogueCooldown = 0.95
+            healthFloor = 75
+            healthDamage = 0.30 + (0.35 * severity)
+            healthCooldown = 0.25
+        elseif stage == 3 then
+            sicknessTarget = 0.68
+            headPainTarget = 54
+            generalPainTarget = 0.40
+            dizzinessChance = 0.0110
+            dizzinessCooldown = 0.28
+            dialogueChance = 0.0045
+            dialogueCooldown = 0.65
+            healthFloor = 50
+            healthDamage = 0.55 + (0.70 * severity)
+            healthCooldown = 0.15
+        end
+
+        local nauseaMult = math.max(0.32, symptomMult * (1 - (nauseaRelief * 0.90)))
+        local painMult = math.max(0.30, symptomMult * (1 - (painRelief * 1.10)))
+        local dizzinessMult = math.max(0.22, symptomMult * (1 - (dizzinessRelief * 1.25)))
+
+        sicknessTarget = sicknessTarget * nauseaMult * math.max(0.70, severity)
+        headPainTarget = headPainTarget * painMult * math.max(0.70, severity)
+        generalPainTarget = generalPainTarget * painMult * math.max(0.70, severity)
+        healthDamage = healthDamage * math.max(0.65, symptomMult)
+
+        disease.concussionSicknessTarget = math.max(0, math.min((EHR.Disease.VANILLA_SICKNESS_CAP or 65) / 100, sicknessTarget))
+        disease.concussionSicknessTargetUntil = (getGameTime and getGameTime():getWorldAgeHours() or 0) + 0.10
+
+        EHR_DiseaseMovePainToward(stats, generalPainTarget, 0.0026 * severity, 0.010 + (0.030 * painRelief))
+        EHR_DiseaseMoveTargetedPainToward(player, headPainTarget, 1.2 * severity, 1.6 + (painRelief * 5.0), EHR_DiseaseIsHeadPart)
+
+        local currentHealth = EHR_DiseaseGetBodyHealth(player)
+        if currentHealth and healthFloor then
+            disease.concussionHealthCap = tonumber(disease.concussionHealthCap) or currentHealth
+            if disease.concussionHealthCap < healthFloor then
+                disease.concussionHealthCap = healthFloor
+            end
+            EHR_DiseaseClampBodyHealth(player, disease.concussionHealthCap)
+
+            if currentHealth > healthFloor and EHR_DiseaseCanTriggerSymptom(disease, "concussion_health_damage", healthCooldown) then
+                local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                    player,
+                    healthDamage,
+                    "Concussion - traumatic brain injury caused systemic weakness"
+                )
+                if newHealth then
+                    disease.concussionHealthCap = math.max(healthFloor, math.min(disease.concussionHealthCap or 100, newHealth))
+                    EHR_DiseaseClampBodyHealth(player, disease.concussionHealthCap)
+                end
+            end
+        end
+
+        trySymptom("concussion_dizzy", dizzinessChance * severity * dizzinessMult, dizzinessCooldown, function()
+            EHR_DiseaseTriggerDizziness(player)
+        end)
+
+        trySymptom("concussion_dialogue", dialogueChance * severity * math.max(0.25, symptomMult), dialogueCooldown, function()
+            local lines = stage == 3
+                and {"My head is pounding...", "Everything is spinning...", "I feel sick...", "Can't think straight..."}
+                or stage == 2
+                    and {"Still dizzy...", "My head still hurts...", "Need to move carefully..."}
+                    or {"A little headache left...", "Almost steady again...", "The fog is lifting..."}
+            EHR_DiseaseSay(player, lines)
+        end)
+
     elseif diseaseId == "tuberculosis" then
         local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
         local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
@@ -3224,6 +3443,20 @@ local function EHR_DiseaseEnforceHealthCaps(player, modData)
             if ahtr.stage ~= 3 and ahtr.stage ~= 4 then
                 ahtr.ahtrSevereHealthCap = nil
             end
+        end
+    end
+
+    local concussion = modData.EHR_Disease.active.concussion
+    if concussion then
+        local stage = tonumber(concussion.stage) or 1
+        local floor = stage == 3 and 50 or stage == 2 and 75 or stage == 1 and 90 or nil
+        if floor and concussion.concussionHealthCap then
+            if concussion.concussionHealthCap < floor then
+                concussion.concussionHealthCap = floor
+            end
+            EHR_DiseaseClampBodyHealth(player, concussion.concussionHealthCap)
+        else
+            concussion.concussionHealthCap = nil
         end
     end
 end
@@ -4112,6 +4345,14 @@ function EHR.Disease.Cure(player, diseaseId)
             EHR.Environmental.ClearVanillaCold(player)
         end
 
+        if diseaseId == "concussion" and EHR.Concussion then
+            if EHR.Concussion.ClearAfterCure then
+                EHR.Concussion.ClearAfterCure(player)
+            elseif EHR.Concussion.ClearHeadPain then
+                EHR.Concussion.ClearHeadPain(player)
+            end
+        end
+
         if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
             EHR.CorpseSickness.ResetAfterCure(player)
@@ -4160,6 +4401,7 @@ function EHR.Disease.CureAll(player)
     local curedDysentery = false
     local curedCommonCold = false
     local curedPneumonia = false
+    local curedConcussion = false
 
     for diseaseId, _ in pairs(data.active) do
 
@@ -4183,6 +4425,10 @@ function EHR.Disease.CureAll(player)
 
         if diseaseId == "pneumonia" then
             curedPneumonia = true
+        end
+
+        if diseaseId == "concussion" then
+            curedConcussion = true
         end
 
         if diseaseId == "corpse_sickness" then
@@ -4241,6 +4487,14 @@ function EHR.Disease.CureAll(player)
         EHR.Environmental.ClearPneumoniaPain(player)
     end
 
+    if curedConcussion and EHR.Concussion then
+        if EHR.Concussion.ClearAfterCure then
+            EHR.Concussion.ClearAfterCure(player)
+        elseif EHR.Concussion.ClearHeadPain then
+            EHR.Concussion.ClearHeadPain(player)
+        end
+    end
+
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
     end
@@ -4268,11 +4522,12 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
     if not data or not data.active then return false end
 
     if data.active[diseaseId] then
-        stage = math.max(1, math.min(4, tonumber(stage) or 1))
-
         local disease = data.active[diseaseId]
         local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
         local def = EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] or nil
+        local maxStage = tonumber(def and def.stageCount) or tonumber(disease.stageCount) or 4
+        stage = math.max(1, math.min(maxStage, tonumber(stage) or 1))
+
         local totalDuration = tonumber(disease.endTime) and tonumber(disease.startTime)
             and (tonumber(disease.endTime) - tonumber(disease.startTime))
             or nil
@@ -4288,12 +4543,22 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
             [4] = 0.80,
         }
         local progress = progressByStage[stage] or 0.20
+        if def and def.reverseProgression then
+            progress = math.max(0.02, math.min(0.95, ((maxStage - stage) / maxStage) + 0.04))
+        end
         local oldStage = disease.stage
 
         disease.startTime = currentHour - (totalDuration * progress)
         disease.endTime = disease.startTime + totalDuration
-        disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
-        disease.peakTime = disease.startTime + (totalDuration * 0.40)
+        if def and def.reverseProgression then
+            disease.incubationEnd = disease.startTime
+            disease.peakTime = disease.startTime
+            disease.reverseProgression = true
+            disease.stageCount = maxStage
+        else
+            disease.incubationEnd = disease.startTime + (totalDuration * 0.10)
+            disease.peakTime = disease.startTime + (totalDuration * 0.40)
+        end
         disease.stage = stage
         disease.progress = progress
         disease.stageProgress = 0
@@ -4518,6 +4783,31 @@ local function EHR_DiseaseGetSystemicSicknessTarget(player, ignoreDiseaseId)
                 [4] = 0.52,
             }
             target = math.max(target, (stageTargets[stage] or 0.10) * math.max(0.35, math.min(1.0, severity)))
+        end
+    end
+
+    local concussion = data.active.concussion
+    if concussion and ignoreDiseaseId ~= "concussion" then
+        local activeTarget = tonumber(concussion.concussionSicknessTarget)
+        local activeUntil = tonumber(concussion.concussionSicknessTargetUntil)
+        if activeTarget and activeUntil and activeUntil > currentHour then
+            target = math.max(target, activeTarget)
+        else
+            local stage = tonumber(concussion.stage) or 1
+            local severity = tonumber(concussion.severity) or 0.65
+            local stageTargets = {
+                [1] = 0.08,
+                [2] = 0.28,
+                [3] = 0.60,
+            }
+            local nauseaRelief = math.max(
+                EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "nausea"),
+                EHR_DiseaseGetActiveSymptomReduction(player, "concussion", "sickness")
+            )
+            local target01 = (stageTargets[stage] or 0.08)
+                * math.max(0.45, math.min(1.0, severity))
+                * math.max(0.30, 1 - (nauseaRelief * 0.90))
+            target = math.max(target, target01)
         end
     end
 
@@ -5121,6 +5411,13 @@ if Events then
     end
 
     EHR.Log("Disease module events registered")
+end
+
+if not (EHR.Concussion and EHR.Concussion.UpdateTracking) then
+    local okConcussion, concussionErr = pcall(require, "ExtensiveHealth/EHR_Concussion")
+    if not okConcussion then
+        EHR.Log("Disease module: failed to load concussion detector: " .. tostring(concussionErr))
+    end
 end
 
 EHR.Log("Disease module loaded v1.0.1")

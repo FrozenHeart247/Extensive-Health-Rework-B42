@@ -45,6 +45,7 @@ local DiseaseIcons = {
     cadaveric_aspergillosis = "media/textures/EHR_Disease_CadavericAspergillosis.png",
     cellulitis = "media/textures/EHR_Disease_Wound_Infection.png",
     common_cold = "media/textures/EHR_Disease_CommonCold.png",
+    concussion = "media/textures/EHR_Disease_Concussion.png",
     corpse_sickness = "media/textures/EHR_Disease_CorpseSickness.png",
     dysentery = "media/textures/EHR_Disease_Dysentery.png",
     food_poisoning = "media/textures/EHR_Disease_FoodPoisoning.png",
@@ -98,6 +99,7 @@ local CatalogOrder = {
     "cellulitis",
     "sepsis",
     "tetanus",
+    "concussion",
     "ahtr",
     "knox_infection",
 }
@@ -225,6 +227,13 @@ local CodexInfo = {
         symptoms = "Jaw stiffness, muscle spasms, pain, fever, and dangerous neuromuscular failure.",
         prevention = "Clean deep wounds quickly and use tetanus prophylaxis when possible.",
         treatment = "Muscle relaxants for symptoms; tetanus antitoxin or tetanus immunoglobulin with a syringe to cure.",
+    },
+    concussion = {
+        category = "wound",
+        cause = "A hard head impact from a height fall or serious vehicle crash.",
+        symptoms = "Headache, dizziness, blurred vision, nausea, and disorientation that gradually improves over time.",
+        prevention = "Avoid high falls and severe crashes. Treat head impacts as dangerous even if you can still walk.",
+        treatment = "No direct cure. Rest and time are the main treatment; symptom medicine can make recovery easier.",
     },
     ahtr = {
         category = "blood",

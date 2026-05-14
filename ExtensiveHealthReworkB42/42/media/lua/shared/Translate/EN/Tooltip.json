@@ -23,6 +23,8 @@
     "Tooltip_AntiInflammatory":  "Non-steroidal anti-inflammatory pills. \u003cLINE\u003e Reduces swelling, pain, and mild illness-related fever. \u003cLINE\u003e Strong symptom relief. Does NOT cure.",
     "Tooltip_AntiDiarrheal":  "Anti-diarrheal tablets. \u003cLINE\u003e Strongly relieves dysentery diarrhea and urgency. \u003cLINE\u003e Temporarily suppresses hunger/thirst caps. Does NOT cure.",
     "Tooltip_MuscleRelaxants":  "Over-the-counter muscle relaxants. \u003cLINE\u003e Eases muscle spasms from tetanus or parasites. \u003cLINE\u003e 40% spasm reduction. Does NOT cure.",
+    "Tooltip_NitricOxideBooster":  "Performance booster tablets. \u003cLINE\u003e Locks endurance at 100% for 3 hours. \u003cLINE\u003e \u003cRGB:1,0.5,0\u003e SIDE EFFECT AFTER USE: Whole-body muscle pain for 6 hours.",
+    "Tooltip_CaffeinePills":  "Strong caffeine pills. \u003cLINE\u003e Removes fatigue and prevents fatigue gain for 12 hours. \u003cLINE\u003e Prevents sleep while active. \u003cLINE\u003e \u003cRGB:1,0.5,0\u003e CRASH: maximum fatigue when it wears off.",
     "Tooltip_CoughSuppressant":  "Cough suppressant tablets. \u003cLINE\u003e Reduces urge to cough - avoid attracting zombies! \u003cLINE\u003e 45% cough reduction. Does NOT cure.",
     "Tooltip_AntisepticCream":  "Prescription antiseptic cream. \u003cLINE\u003e Apply to active wounds to prevent infection. \u003cLINE\u003e 100% wound infection prevention while active. Does NOT cure established infections.",
     "Tooltip_AntiviralCapsules":  "Prescription antiviral medication. \u003cLINE\u003e CURES viral infections (cold, gastroenteritis). \u003cLINE\u003e Treatment time: 48 hours.",

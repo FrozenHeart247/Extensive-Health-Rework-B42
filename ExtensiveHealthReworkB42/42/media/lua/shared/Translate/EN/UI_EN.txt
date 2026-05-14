@@ -68,6 +68,8 @@ UI_EN = {
     UI_SideEffect_AbdominalPain = "Abdominal Pain",
     UI_SideEffect_Fever = "Drug-Induced Fever",
     UI_SideEffect_SevereFatigue = "Severe Fatigue",
+    UI_SideEffect_CaffeineCrash = "Caffeine Crash",
+    UI_SideEffect_WholeBodyMusclePain = "Whole-Body Muscle Pain",
     UI_SideEffect_TendonWeakness = "Tendon Weakness",
     UI_SideEffect_RedManSyndrome = "Red Man Syndrome",
     UI_SideEffect_Immunosuppression = "Immunosuppression",
@@ -148,6 +150,7 @@ UI_EN = {
     UI_EHR_Context_TakeColdBath = "Take Cold Bath",
     UI_EHR_Context_TakeColdBathDesc = "Spend 3 hours cooling down in a bathtub. Cures Heat Stroke if completed.",
     UI_EHR_Context_TakeColdBathNoWater = "The bathtub needs water.",
+    UI_EHR_Caffeine_NoSleep = "The caffeine is still burning through me. I can't sleep.",
 
     -- MP Examination
     UI_EHR_Examining = "Examining: %s",
@@ -244,11 +247,12 @@ UI_EN = {
     UI_EHR_Disease_Unknown = "Unknown Condition",
     UI_EHR_Disease_Healthy = "Healthy",
     UI_EHR_Disease_None = "No Disease",
+    UI_EHR_Disease_concussion = "Concussion",
 
     -- Medication Names (for translation)
     UI_EHR_Med_Antibiotics = "Antibiotics",
     UI_EHR_Med_Painkillers = "Painkillers",
-    UI_EHR_Med_Vitamins = "Vitamins",
+    UI_EHR_Med_CaffeinePills = "Caffeine Pills",
     UI_EHR_Med_BetaBlockers = "Beta Blockers",
     UI_EHR_Med_ColdFluTablets = "Cold & Flu Tablets",
     UI_EHR_Med_AntipyreticTablets = "Antipyretic Tablets",
@@ -259,6 +263,7 @@ UI_EN = {
     UI_EHR_Med_AntiInflammatoryPills = "Anti-Inflammatory Pills",
     UI_EHR_Med_AntiDiarrhealTablets = "Anti-Diarrheal Tablets",
     UI_EHR_Med_MuscleRelaxants = "Muscle Relaxants",
+    UI_EHR_Med_NitricOxideBoosters = "Nitric Oxide Boosters",
     UI_EHR_Med_CoughSuppressant = "Cough Suppressant",
     UI_EHR_Med_AntisepticCream = "Antiseptic Cream",
     UI_EHR_Med_AntiviralCapsules = "Antiviral Capsules",

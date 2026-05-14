@@ -91,6 +91,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.AntiInflammatory"] = true,
     ["ExtensiveHealth.AntiDiarrheal"] = true,
     ["ExtensiveHealth.MuscleRelaxants"] = true,
+    ["ExtensiveHealth.NitricOxideBooster"] = true,
     ["ExtensiveHealth.CoughSuppressant"] = true,
     ["ExtensiveHealth.AntisepticCream"] = true,
 

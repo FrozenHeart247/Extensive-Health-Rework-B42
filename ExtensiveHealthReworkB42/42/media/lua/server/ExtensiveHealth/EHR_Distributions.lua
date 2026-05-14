@@ -220,6 +220,7 @@ local function EHR_InitDistributions()
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.AlchoholicBandage", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.InstantIcePack", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Furosemide", 1)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.NitricOxideBooster", 2)
 
     -- Military medical
     if ProceduralDistributions.list["ArmyStorageMedical"] then
@@ -307,6 +308,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiDiarrheal", 3)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntisepticCream", 4)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiInflammatory", 3)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.NitricOxideBooster", 1)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.SterilizedBandages", 2)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.InstantIcePack", 1)
@@ -320,6 +322,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiNauseaTablets", 6)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiInflammatory", 7)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.MuscleRelaxants", 5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.NitricOxideBooster", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Syringe", 10)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SterilizedBandages", 8)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AlchoholicBandage", 5)
@@ -408,6 +411,7 @@ local function EHR_InitDistributions()
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntipyreticTablets", 4)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.NitricOxideBooster", 1)
     tryAddMed("FirstAidKit", "ExtensiveHealth.Syringe", 3)
     tryAddMed("FirstAidKit", "ExtensiveHealth.SterilizedBandages", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AlchoholicBandage", 3)
@@ -442,6 +446,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.AntiInflammatory"] = 0.3,
         ["ExtensiveHealth.AntisepticCream"] = 0.2,
         ["ExtensiveHealth.MuscleRelaxants"] = 0.1,
+        ["ExtensiveHealth.NitricOxideBooster"] = 0.1,
     }
 
     -- Tier 2 Prescription - Even lower (leftover prescriptions)

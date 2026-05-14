@@ -71,10 +71,11 @@ module Base
     {
         DisplayCategory = FirstAid,
         ItemType = base:drainable,
+        DisplayName = Caffeine Pills,
         Weight = 0.2,
         Icon = PillsCaffeine,
         Medical = true,
-        Tooltip = Tooltip_PillsVitamins,
+        Tooltip = Tooltip_CaffeinePills,
         UseDelta = 0.0417,
         UseWhileEquipped = false,
         StaticModel = CaffeinePills,

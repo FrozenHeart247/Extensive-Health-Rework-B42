@@ -62,6 +62,7 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     cadaveric_aspergillosis = "media/textures/EHR_Disease_CadavericAspergillosis.png",
     cellulitis = "media/textures/EHR_Disease_Wound_Infection.png",
     common_cold = "media/textures/EHR_Disease_CommonCold.png",
+    concussion = "media/textures/EHR_Disease_Concussion.png",
     corpse_exposure = "media/textures/EHR_Disease_CorpseSickness.png",
     corpse_sickness = "media/textures/EHR_Disease_CorpseSickness.png",
     dysentery = "media/textures/EHR_Disease_Dysentery.png",
@@ -1353,6 +1354,16 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
         or self:isSelfEvidentDisease(normalized)
     local unknownInfo = self:getUnknownDiseaseInfo(normalized)
     local displayName = canIdentify and realName or (unknownInfo.displayName or safeText("UI_EHR_DiseaseUnknown", "Unknown Illness"))
+    local detailText = nil
+    local statusText = nil
+    local statusColor = nil
+
+    if normalized == "concussion" and canIdentify then
+        local stage = type(disease) == "table" and (tonumber(disease.stage) or 1) or 1
+        detailText = string.format("Stage %d   Time and rest", stage)
+        statusText = "RECOVERING"
+        statusColor = EHR_HealthPanelUI.Colors.green
+    end
 
     return {
         displayName = displayName,
@@ -1363,6 +1374,10 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
         showStageSeverity = canIdentify and skillTier >= 2,
         showProgress = canIdentify and skillTier >= 3,
         showTreatmentStatus = canIdentify and skillTier >= 3,
+        detailText = detailText,
+        detailColor = detailText and EHR_HealthPanelUI.Colors.green or nil,
+        statusText = statusText,
+        statusColor = statusColor,
         skillTier = skillTier,
         skillLevel = skillLevel,
     }
@@ -2671,7 +2686,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local progress = self:getDiseaseProgress(disease)
     local treated = self:isDiseaseTreated(diseaseId)
     local status = displayInfo.statusText or (treated and "TREATING" or "UNTREATED")
-    local statusColor = displayInfo.statusText and c.red or (treated and c.green or c.orange)
+    local statusColor = displayInfo.statusColor or (displayInfo.statusText and c.red or (treated and c.green or c.orange))
     local accent, iconLabel
     if displayInfo.canIdentify then
         accent, iconLabel = self:getDiseaseAccent(diseaseId, displayInfo.realName)
@@ -2697,7 +2712,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local detailsColor = c.textDim
     if displayInfo.detailText then
         detailsText = displayInfo.detailText
-        detailsColor = c.red
+        detailsColor = displayInfo.detailColor or c.red
     elseif type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         local exposureLevel = tostring(disease.exposureLevel or "Low")
         detailsText = "Exposure: " .. exposureLevel

@@ -1220,6 +1220,68 @@ EHR.Disease.Diseases["tuberculosis"] = {
 }
 
 -- ============================================
+-- CONCUSSION (Trauma)
+-- ============================================
+--[[
+    Trigger: Real height fall with injury, or severe vehicle crash.
+    Duration: 48 hours, reverse progression from Stage 3 down to Stage 1.
+    Effects: Headache, nausea, dizziness/blurred vision.
+    Treatment: Rest and time. No direct cure.
+]]--
+EHR.Disease.Diseases["concussion"] = {
+    name = "Concussion",
+    category = "wound",
+
+    incubationMin = 0,
+    incubationMax = 0,
+    durationMin = 48,
+    durationMax = 48,
+
+    stageCount = 3,
+    reverseProgression = true,
+    noStandardTreatment = true,
+    noCure = true,
+    applyEffectsInStage1 = true,
+
+    baseSeverity = 0.65,
+    canKill = false,
+
+    symptoms = {"headache", "dizziness", "blurred_vision", "nausea"},
+
+    stageEntryDialogue = {
+        [3] = "My head is ringing... I need to sit still.",
+        [2] = "The worst of it is fading, but my head still hurts.",
+        [1] = "The fog is lifting. Still need to take it easy.",
+    },
+
+    dialogueChanceBase = {
+        [3] = 10,
+        [2] = 16,
+        [1] = 28,
+    },
+    dialogueCooldownHours = 2,
+
+    dialogue = {
+        [3] = {
+            "My head is pounding...",
+            "Everything keeps spinning...",
+            "I feel like I'm going to throw up...",
+            "Can't focus. Need to rest.",
+        },
+        [2] = {
+            "Still dizzy...",
+            "My head hurts, but not as bad.",
+            "Need to move carefully.",
+        },
+        [1] = {
+            "Just a little headache now...",
+            "Almost steady again.",
+            "The nausea is mostly gone.",
+        },
+    },
+}
+
+-- ============================================
 -- KNOX VIRUS INFECTION (Zombie Infection)
 -- ============================================
 --[[
@@ -1334,4 +1396,5 @@ EHR.Log("  - trichinosis: Raw meat -> SEVERE muscle pain + potential death")
 EHR.Log("  - gastroenteritis: Dirty hands + eating -> vomiting, dehydration")
 EHR.Log("  - tetanus: Rusty wounds -> LETHAL lockjaw, spasms")
 EHR.Log("  - tuberculosis: Long-term corpse exposure -> LETHAL chronic illness")
+EHR.Log("  - concussion: Falls/crashes -> head trauma, nausea, dizziness")
 EHR.Log("  - Knox_Infection: Zombie bite -> LETHAL without Knox cure items")

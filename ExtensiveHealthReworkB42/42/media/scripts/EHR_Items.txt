@@ -365,6 +365,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item NitricOxideBooster
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Nitric Oxide Boosters,
+        Icon = NitricOxideBooster,
+        Weight = 0.1,
+        Tooltip = Tooltip_NitricOxideBooster,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item CoughSuppressant
     {
         DisplayCategory = FirstAid,

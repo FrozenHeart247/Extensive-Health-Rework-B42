@@ -40,6 +40,7 @@ EHR.DiseaseFlyers.Config = {
         ahtr = true,
         blood_types = true,
         common_cold = true,
+        concussion = true,
         flu = true,
         pneumonia = true,
         food_poisoning = true,
@@ -64,6 +65,7 @@ EHR.DiseaseFlyers.Config = {
         hypothermia = true,
         heat_exhaustion = true,
         heat_stroke = true,
+        concussion = true,
     },
 }
 
@@ -77,6 +79,7 @@ local diseaseAliases = {
     Blood_Types = "blood_types",
     CommonCold = "common_cold",
     Cold = "common_cold",
+    Concussion = "concussion",
     Flu = "flu",
     Influenza = "flu",
     Pneumonia = "pneumonia",
@@ -113,6 +116,7 @@ local compactDiseaseAliases = {
     bloodtypes = "blood_types",
     commoncold = "common_cold",
     cold = "common_cold",
+    concussion = "concussion",
     flu = "flu",
     influenza = "flu",
     pneumonia = "pneumonia",
@@ -200,6 +204,7 @@ function EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
         ahtr = "AHTR",
         blood_types = "Blood Types",
         common_cold = "Common Cold",
+        concussion = "Concussion",
         flu = "Influenza",
         pneumonia = "Pneumonia",
         food_poisoning = "Food Poisoning",
@@ -314,6 +319,7 @@ function EHR.DiseaseFlyers.GetUnknownDiseaseDisplay(diseaseId)
     local categories = {
         ahtr = { displayName = "Unknown Transfusion Reaction", description = "Your lower back aches after the transfusion and your body feels dangerously wrong." },
         common_cold = { displayName = "Unknown Respiratory Illness", description = "You feel unwell with respiratory symptoms." },
+        concussion = { displayName = "Head Trauma", description = "Your head pounds after the impact and your vision will not stay steady." },
         flu = { displayName = "Unknown Respiratory Illness", description = "You feel very unwell with fever and body aches." },
         pneumonia = { displayName = "Severe Respiratory Illness", description = "Your lungs feel inflamed. This seems serious." },
         gastroenteritis = { displayName = "Unknown Gastrointestinal Illness", description = "Your stomach and gut feel badly disturbed." },

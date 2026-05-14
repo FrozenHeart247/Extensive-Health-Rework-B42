@@ -132,12 +132,22 @@ EHR.Medication.Database = {
         usageMessage = "You take painkillers. The pain eases slightly.",
     },
 
-    -- Base.PillsVitamins
+    -- Base.PillsVitamins (B42 caffeine pills)
     ["Base.PillsVitamins"] = {
         tier = 0,
-        treats = {"common_cold", "food_poisoning", "gastroenteritis"},
-        displayName = "Vitamins",
-        usageMessage = "You take vitamins. You feel slightly better.",
+        treats = {},
+        displayName = "Caffeine Pills",
+        icon = "PillsCaffeine",
+        usageMessage = "You take caffeine pills. Exhaustion vanishes, but this will crash hard later.",
+        appliesWithoutDisease = true,
+        effectDurationHours = 12,
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The caffeine is still active. More would be a very bad idea.",
+        fatigueBlock = {
+            durationHours = 12,
+            crashSideEffect = "caffeine_crash",
+        },
+        sideEffects = {"caffeine_crash"},
     },
 
     -- Base.PillsBeta
@@ -289,6 +299,24 @@ EHR.Medication.Database = {
             muscleSpasms = 0.40,
             pain = 0.30,
         },
+    },
+
+    ["ExtensiveHealth.NitricOxideBooster"] = {
+        tier = 1,
+        treats = {},
+        displayName = "Nitric Oxide Boosters",
+        icon = "NitricOxideBooster",
+        usageMessage = "You take a nitric oxide booster. Your muscles feel flooded with energy.",
+        appliesWithoutDisease = true,
+        effectDurationHours = 3,
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The nitric oxide booster is still active.",
+        staminaLock = {
+            durationHours = 3,
+            targetEndurance = 1.0,
+            delayedSideEffect = "whole_body_muscle_pain",
+        },
+        sideEffects = {"whole_body_muscle_pain"},
     },
 
     ["ExtensiveHealth.CoughSuppressant"] = {
@@ -973,6 +1001,132 @@ local function EHRMedicationClearKidneyBackPain(player)
     modData.EHR_KidneyStressBodyPain = nil
 end
 
+local function EHRMedicationIsWholeBodyMusclePart(partName)
+    local name = tostring(partName or ""):lower()
+    return name:find("arm", 1, true)
+        or name:find("hand", 1, true)
+        or name:find("leg", 1, true)
+        or name:find("foot", 1, true)
+        or name:find("torso", 1, true)
+        or name:find("groin", 1, true)
+end
+
+local function EHRMedicationApplyWholeBodyMusclePain(player, effectData)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if not modData then return false end
+
+    modData.EHR_WholeBodyMusclePain = modData.EHR_WholeBodyMusclePain or {}
+    local tracked = modData.EHR_WholeBodyMusclePain
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        if not EHRMedicationIsWholeBodyMusclePart(partName) then return false end
+
+        local targetStiffness = 34
+        local targetPain = 18
+        local currentStiffness = 0
+        local currentPain = 0
+
+        pcall(function()
+            if part.getStiffness then currentStiffness = part:getStiffness() or 0 end
+        end)
+        pcall(function()
+            if part.getAdditionalPain then currentPain = part:getAdditionalPain() or 0 end
+        end)
+
+        if not tracked[partName] then
+            tracked[partName] = {
+                stiffness = currentStiffness,
+                pain = currentPain,
+                targetStiffness = targetStiffness,
+                targetPain = targetPain,
+            }
+        end
+
+        local partChanged = false
+        if part.setStiffness and currentStiffness < targetStiffness then
+            local okSet = pcall(function()
+                part:setStiffness(targetStiffness)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        if part.setAdditionalPain and currentPain < targetPain then
+            local okSet = pcall(function()
+                part:setAdditionalPain(targetPain)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        return partChanged
+    end)
+
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+
+    if effectData then
+        effectData.musclePainApplied = changed or effectData.musclePainApplied
+    end
+
+    return changed or (effectData and effectData.musclePainApplied == true)
+end
+
+local function EHRMedicationClearWholeBodyMusclePain(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    local tracked = modData and modData.EHR_WholeBodyMusclePain or nil
+    if not tracked then return end
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        local record = tracked[partName]
+        if not record then return false end
+
+        local partChanged = false
+        local currentStiffness = nil
+        local currentPain = nil
+
+        pcall(function()
+            if part.getStiffness then currentStiffness = part:getStiffness() end
+        end)
+        pcall(function()
+            if part.getAdditionalPain then currentPain = part:getAdditionalPain() end
+        end)
+
+        if part.setStiffness and currentStiffness and currentStiffness <= (record.targetStiffness or 0) + 2 then
+            local restore = math.max(0, tonumber(record.stiffness) or 0)
+            local okSet = pcall(function()
+                part:setStiffness(restore)
+            end)
+            partChanged = okSet or partChanged
+
+            if okSet and restore <= 0.1 and player.getFitness and BodyPartType and BodyPartType.ToString then
+                pcall(function()
+                    player:getFitness():removeStiffnessValue(BodyPartType.ToString(partType))
+                end)
+            end
+        end
+
+        if part.setAdditionalPain and currentPain and currentPain <= (record.targetPain or 0) + 2 then
+            local restore = math.max(0, tonumber(record.pain) or 0)
+            local okSet = pcall(function()
+                part:setAdditionalPain(restore)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        return partChanged
+    end)
+
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+
+    modData.EHR_WholeBodyMusclePain = nil
+end
+
 local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     if not player then return end
 
@@ -985,6 +1139,9 @@ local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     if not activeSideEffects or (not activeSideEffects.kidney_stress and not activeSideEffects.lower_back_pain) then
         modData.EHR_KidneyStress = nil
         EHRMedicationClearKidneyBackPain(player)
+    end
+    if not activeSideEffects or not activeSideEffects.whole_body_muscle_pain then
+        EHRMedicationClearWholeBodyMusclePain(player)
     end
 end
 
@@ -1168,6 +1325,35 @@ EHR.Medication.SideEffects = {
                 EHRMedicationRaiseStat(stats, CharacterStat.SICKNESS, 0.22)
                 EHRMedicationCapStat(stats, CharacterStat.ENDURANCE, 0.50)
             end
+        end,
+    },
+
+    ["caffeine_crash"] = {
+        displayName = "Caffeine Crash",
+        duration = 2,
+        severity = 2,
+        effects = function(player)
+            local stats = EHRMedicationGetStats(player)
+            if stats and CharacterStat then
+                EHRMedicationCapStat(stats, CharacterStat.ENDURANCE, 0.55)
+            end
+        end,
+    },
+
+    ["whole_body_muscle_pain"] = {
+        displayName = "Whole-Body Muscle Pain",
+        duration = 6,
+        severity = 2,
+        effects = function(player, effectData)
+            EHRMedicationApplyWholeBodyMusclePain(player, effectData)
+            local stats = EHRMedicationGetStats(player)
+            if stats and CharacterStat then
+                EHRMedicationRaiseStat(stats, CharacterStat.PAIN, 0.32)
+                EHRMedicationRaiseStat(stats, CharacterStat.DISCOMFORT, 0.22)
+            end
+        end,
+        onEnd = function(player)
+            EHRMedicationClearWholeBodyMusclePain(player)
         end,
     },
 
@@ -1360,7 +1546,7 @@ EHR.Medication.DosingSchedules = {
     -- Tier 0 - Basic (every 4 hours)
     ["Base.Antibiotics"] = { doseInterval = 4, dosesRequired = 6 },
     ["Base.Pills"] = { doseInterval = 4, dosesRequired = 3 },
-    ["Base.PillsVitamins"] = { doseInterval = 24, dosesRequired = 1 },
+    ["Base.PillsVitamins"] = { doseInterval = 12, dosesRequired = 1 },
     ["Base.PillsBeta"] = { doseInterval = 8, dosesRequired = 3 },
 
     -- Tier 1 - OTC (every 4-6 hours)
@@ -1373,6 +1559,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.AntiInflammatory"] = { doseInterval = 6, dosesRequired = 4 },
     ["ExtensiveHealth.AntiDiarrheal"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.MuscleRelaxants"] = { doseInterval = 8, dosesRequired = 3 },
+    ["ExtensiveHealth.NitricOxideBooster"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CoughSuppressant"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.AntisepticCream"] = { doseInterval = 8, dosesRequired = 3 },
 
@@ -1792,7 +1979,7 @@ EHR.Medication.DrugCategories = {
     -- Tier 0 - Vanilla
     ["Antibiotics"] = "antibiotic",
     ["Painkillers"] = "painkiller",
-    ["Vitamins"] = "vitamin",
+    ["Caffeine Pills"] = "stimulant",
     ["Beta Blockers"] = "beta blocker",
 
     -- Tier 1 - OTC
@@ -1804,6 +1991,7 @@ EHR.Medication.DrugCategories = {
     ["Anti-Inflammatory Pills"] = "anti-inflammatory",
     ["Anti-Diarrheal Tablets"] = "anti-diarrheal",
     ["Muscle Relaxants"] = "muscle relaxant",
+    ["Nitric Oxide Boosters"] = "stimulant",
     ["Cough Suppressant"] = "cough suppressant",
     ["Antiseptic Cream"] = "antiseptic",
 
@@ -2020,6 +2208,22 @@ function EHR.Medication.HasActiveWound(player)
     return false
 end
 
+local function EHR_MedicationHasActiveGeneralEffect(player, effectKey)
+    if not player or not effectKey then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    local effect = medTracking
+        and medTracking.activeGeneralEffects
+        and medTracking.activeGeneralEffects[effectKey]
+    if type(effect) ~= "table" then return false end
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local endTime = tonumber(effect.endTime) or currentHour
+
+    return currentHour < endTime
+end
+
 function EHR.Medication.CanUseMedication(player, item)
     if not player or not item then return false, "Invalid parameters" end
 
@@ -2032,6 +2236,14 @@ function EHR.Medication.CanUseMedication(player, item)
 
     if medData.requiresActiveWound and not EHR.Medication.HasActiveWound(player) then
         return false, "Requires an active wound"
+    end
+
+    if medData.staminaLock and EHR_MedicationHasActiveGeneralEffect(player, "staminaLock") then
+        return false, medData.activeDoseMessage or "The current dose is still active"
+    end
+
+    if medData.fatigueBlock and EHR_MedicationHasActiveGeneralEffect(player, "fatigueBlock") then
+        return false, medData.activeDoseMessage or "The current dose is still active"
     end
 
     if medData.blockWhileDoseActive and EHR.Medication.GetDoseStatus then
@@ -2255,6 +2467,12 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
     if medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
         EHR.Medication.StartHydrationSupport(player, medData)
+    end
+    if medData.staminaLock and EHR.Medication.StartStaminaLock then
+        EHR.Medication.StartStaminaLock(player, medData)
+    end
+    if medData.fatigueBlock and EHR.Medication.StartFatigueBlock then
+        EHR.Medication.StartFatigueBlock(player, medData)
     end
 
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
@@ -2586,6 +2804,73 @@ function EHR.Medication.StartHydrationSupport(player, medData)
     return true
 end
 
+function EHR.Medication.StartStaminaLock(player, medData)
+    local support = medData and medData.staminaLock
+    if not player or not support then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local duration = support.durationHours or medData.effectDurationHours or 3
+    local targetEndurance = math.max(0, math.min(1, support.targetEndurance or 1.0))
+
+    medTracking.activeGeneralEffects.staminaLock = {
+        startTime = currentHour,
+        endTime = currentHour + math.max(0.05, duration),
+        targetEndurance = targetEndurance,
+        delayedSideEffect = support.delayedSideEffect,
+        medicationName = medData.displayName or "Nitric Oxide Boosters",
+    }
+
+    EHR_MedicationSetStat(player, CharacterStat and CharacterStat.ENDURANCE, targetEndurance)
+    return true
+end
+
+function EHR.Medication.StartFatigueBlock(player, medData)
+    local support = medData and medData.fatigueBlock
+    if not player or not support then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local duration = support.durationHours or medData.effectDurationHours or 12
+
+    medTracking.activeGeneralEffects.fatigueBlock = {
+        startTime = currentHour,
+        endTime = currentHour + math.max(0.05, duration),
+        crashSideEffect = support.crashSideEffect,
+        medicationName = medData.displayName or "Caffeine Pills",
+    }
+
+    local modData = player:getModData()
+    if modData then
+        modData.EHR_CaffeineAwake = true
+    end
+
+    EHR_MedicationSetStat(player, CharacterStat and CharacterStat.FATIGUE, 0)
+    return true
+end
+
+function EHR.Medication.IsCaffeineAwake(player)
+    if not player then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    local effect = medTracking and medTracking.activeGeneralEffects and medTracking.activeGeneralEffects.fatigueBlock
+    if type(effect) ~= "table" then return false end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    return currentHour < (tonumber(effect.endTime) or 0)
+end
+
 function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
     if not player or not medTracking or not medTracking.activeGeneralEffects then return end
 
@@ -2635,6 +2920,53 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
                 end
             end
         end
+    end
+
+    local stamina = medTracking.activeGeneralEffects.staminaLock
+    if type(stamina) == "table" then
+        local endTime = tonumber(stamina.endTime) or currentHour
+        if currentHour >= endTime then
+            local delayedSideEffect = stamina.delayedSideEffect
+            medTracking.activeGeneralEffects.staminaLock = nil
+            if delayedSideEffect and EHR.Medication.ApplySideEffect then
+                EHR.Medication.ApplySideEffect(player, delayedSideEffect)
+            end
+        else
+            local targetEndurance = math.max(0, math.min(1, tonumber(stamina.targetEndurance) or 1.0))
+            EHR_MedicationSetStat(player, CharacterStat and CharacterStat.ENDURANCE, targetEndurance)
+        end
+    end
+
+    local fatigueBlock = medTracking.activeGeneralEffects.fatigueBlock
+    local modData = player:getModData()
+    if type(fatigueBlock) == "table" then
+        local endTime = tonumber(fatigueBlock.endTime) or currentHour
+        if currentHour >= endTime then
+            local crashSideEffect = fatigueBlock.crashSideEffect
+            medTracking.activeGeneralEffects.fatigueBlock = nil
+            if modData then
+                modData.EHR_CaffeineAwake = nil
+            end
+            EHR_MedicationSetStat(player, CharacterStat and CharacterStat.FATIGUE, 1.0)
+            if crashSideEffect and EHR.Medication.ApplySideEffect then
+                EHR.Medication.ApplySideEffect(player, crashSideEffect)
+            end
+        else
+            if modData then
+                modData.EHR_CaffeineAwake = true
+            end
+            EHR_MedicationSetStat(player, CharacterStat and CharacterStat.FATIGUE, 0)
+            if player.isAsleep then
+                local asleep = false
+                pcall(function() asleep = player:isAsleep() end)
+                if asleep then
+                    if player.setAsleep then pcall(function() player:setAsleep(false) end) end
+                    if player.setForceWakeUpTime then pcall(function() player:setForceWakeUpTime(-1) end) end
+                end
+            end
+        end
+    elseif modData then
+        modData.EHR_CaffeineAwake = nil
     end
 end
 

@@ -183,6 +183,20 @@ EHR.Tooltips.Data = {
             "Multi-dose bottle",
         },
     },
+    ["Base.PillsVitamins"] = {
+        category = "Stimulant",
+        tier = 0,
+        description = "Strong caffeine pills.",
+        relieves = {"Fatigue"},
+        effects = {
+            "Removes fatigue immediately",
+            "Prevents fatigue gain for 12 hours",
+            "Prevents sleep while active",
+            "Multi-dose bottle",
+        },
+        sideEffects = {"Caffeine Crash"},
+        warning = "When the effect ends, fatigue immediately crashes to maximum.",
+    },
     ["ExtensiveHealth.ColdFluTablets"] = {
         category = "OTC Medication",
         tier = 1,
@@ -271,6 +285,18 @@ EHR.Tooltips.Data = {
         relieves = {"Muscle spasms", "Muscle pain"},
         effects = {"40% spasm reduction"},
         warning = "Does NOT cure tetanus/parasites",
+    },
+    ["ExtensiveHealth.NitricOxideBooster"] = {
+        category = "OTC Medication",
+        tier = 1,
+        description = "Performance booster tablets.",
+        relieves = {"Endurance loss"},
+        effects = {
+            "Locks endurance at 100% for 3 hours",
+            "Multi-dose bottle",
+        },
+        sideEffects = {"Whole-Body Muscle Pain"},
+        warning = "Muscle pain begins after the booster wears off and lasts 6 hours.",
     },
     ["ExtensiveHealth.CoughSuppressant"] = {
         category = "OTC Medication",
@@ -647,6 +673,7 @@ function EHR.Tooltips.GetCategoryColor(category)
         ["IV Supply"] = {r=0.2, g=0.7, b=0.9},
         ["Medical Supply"] = {r=0.6, g=0.6, b=0.6},
         ["Emergency"] = {r=1.0, g=0.3, b=0.1},
+        ["Stimulant"] = {r=1.0, g=0.65, b=0.2},
         ["OTC Medication"] = {r=0.3, g=0.8, b=0.3},
         ["Prescription"] = {r=0.3, g=0.6, b=1.0},
         ["Clinical"] = {r=0.8, g=0.3, b=0.8},

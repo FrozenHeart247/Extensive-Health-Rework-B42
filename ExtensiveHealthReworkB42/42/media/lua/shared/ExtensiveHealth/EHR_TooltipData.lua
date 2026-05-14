@@ -428,6 +428,14 @@ EHR.Tooltips.Data = {
         effects = {"CURES acute hemolytic transfusion reaction", "Reduces hemolysis-related health loss and fever"},
         sideEffects = {"Dehydration", "Lower Back Pain", "Diuretic Effect"},
     },
+    ["ExtensiveHealth.Antipsychotics"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Prescription antipsychotic medication.",
+        cures = {"Delirium"},
+        treatmentTime = "96 hours (8-dose course)",
+        effects = {"CURES stress-induced delirium"},
+    },
 
     -- =========================================
     -- TIER 3 - CLINICAL GRADE MEDICATION

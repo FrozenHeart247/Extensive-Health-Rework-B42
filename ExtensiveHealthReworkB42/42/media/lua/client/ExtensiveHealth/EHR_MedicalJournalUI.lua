@@ -47,6 +47,7 @@ local DiseaseIcons = {
     common_cold = "media/textures/EHR_Disease_CommonCold.png",
     concussion = "media/textures/EHR_Disease_Concussion.png",
     corpse_sickness = "media/textures/EHR_Disease_CorpseSickness.png",
+    delirium = "media/textures/EHR_Disease_Delirium.png",
     dysentery = "media/textures/EHR_Disease_Dysentery.png",
     food_poisoning = "media/textures/EHR_Disease_FoodPoisoning.png",
     gastroenteritis = "media/textures/EHR_Disease_Gastroenteritis.png",
@@ -70,6 +71,7 @@ local CategoryNames = {
     corpse = "Corpse exposure",
     infection = "Infection",
     blood = "Blood / transfusion",
+    mental = "Mental",
 }
 
 local CategoryUnknownNames = {
@@ -79,6 +81,7 @@ local CategoryUnknownNames = {
     corpse = "Unknown Corpse-related Illness",
     infection = "Unknown Infection",
     blood = "Unknown Blood Reaction",
+    mental = "Unknown Mental Condition",
 }
 
 local CatalogOrder = {
@@ -100,6 +103,7 @@ local CatalogOrder = {
     "sepsis",
     "tetanus",
     "concussion",
+    "delirium",
     "ahtr",
     "knox_infection",
 }
@@ -234,6 +238,13 @@ local CodexInfo = {
         symptoms = "Headache, dizziness, blurred vision, nausea, and disorientation that gradually improves over time.",
         prevention = "Avoid high falls and severe crashes. Treat head impacts as dangerous even if you can still walk.",
         treatment = "No direct cure. Rest and time are the main treatment; symptom medicine can make recovery easier.",
+    },
+    delirium = {
+        category = "mental",
+        cause = "Extreme stress held at its breaking point for many hours.",
+        symptoms = "Hallucinated sounds, irrational speech, visual distortion, and unsafe impulsive behavior.",
+        prevention = "Reduce stress before it reaches a prolonged maximum state.",
+        treatment = "Antipsychotics. Requires an 8-dose course over 4 days.",
     },
     ahtr = {
         category = "blood",

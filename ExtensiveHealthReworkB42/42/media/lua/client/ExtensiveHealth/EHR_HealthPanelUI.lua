@@ -65,6 +65,7 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     concussion = "media/textures/EHR_Disease_Concussion.png",
     corpse_exposure = "media/textures/EHR_Disease_CorpseSickness.png",
     corpse_sickness = "media/textures/EHR_Disease_CorpseSickness.png",
+    delirium = "media/textures/EHR_Disease_Delirium.png",
     dysentery = "media/textures/EHR_Disease_Dysentery.png",
     food_poisoning = "media/textures/EHR_Disease_FoodPoisoning.png",
     gastroenteritis = "media/textures/EHR_Disease_Gastroenteritis.png",
@@ -1355,14 +1356,33 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
     local unknownInfo = self:getUnknownDiseaseInfo(normalized)
     local displayName = canIdentify and realName or (unknownInfo.displayName or safeText("UI_EHR_DiseaseUnknown", "Unknown Illness"))
     local detailText = nil
+    local detailColor = nil
     local statusText = nil
     local statusColor = nil
+    local hideProgressBar = nil
+    local showStageSeverity = canIdentify and skillTier >= 2
+    local showProgress = canIdentify and skillTier >= 3
+    local showTreatmentStatus = canIdentify and skillTier >= 3
+    local progressText = nil
 
     if normalized == "concussion" and canIdentify then
         local stage = type(disease) == "table" and (tonumber(disease.stage) or 1) or 1
         detailText = string.format("Stage %d   Time and rest", stage)
+        detailColor = EHR_HealthPanelUI.Colors.green
         statusText = "RECOVERING"
         statusColor = EHR_HealthPanelUI.Colors.green
+    end
+
+    if normalized == "delirium" and canIdentify then
+        detailText = "Antipsychotic course required"
+        detailColor = EHR_HealthPanelUI.Colors.yellow
+        statusText = nil
+        statusColor = nil
+        showStageSeverity = false
+        showProgress = false
+        showTreatmentStatus = true
+        hideProgressBar = true
+        progressText = ""
     end
 
     return {
@@ -1371,13 +1391,15 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
         sortName = displayName,
         normalizedId = normalized,
         canIdentify = canIdentify,
-        showStageSeverity = canIdentify and skillTier >= 2,
-        showProgress = canIdentify and skillTier >= 3,
-        showTreatmentStatus = canIdentify and skillTier >= 3,
+        showStageSeverity = showStageSeverity,
+        showProgress = showProgress,
+        showTreatmentStatus = showTreatmentStatus,
         detailText = detailText,
-        detailColor = detailText and EHR_HealthPanelUI.Colors.green or nil,
+        detailColor = detailColor,
         statusText = statusText,
         statusColor = statusColor,
+        progressText = progressText,
+        hideProgressBar = hideProgressBar,
         skillTier = skillTier,
         skillLevel = skillLevel,
     }

@@ -962,6 +962,7 @@ EHR.DebugV2.DiseaseList = {
     "cadaveric_aspergillosis",
     "tetanus",
     "concussion",
+    "delirium",
     "tuberculosis",
 }
 

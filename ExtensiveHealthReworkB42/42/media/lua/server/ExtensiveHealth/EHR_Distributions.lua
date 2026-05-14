@@ -220,6 +220,7 @@ local function EHR_InitDistributions()
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.AlchoholicBandage", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.InstantIcePack", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Furosemide", 1)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.NitricOxideBooster", 2)
 
     -- Military medical
@@ -299,6 +300,7 @@ local function EHR_InitDistributions()
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ElectrolytePowder", 6)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.BronchodilatorInhaler", 3)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.InstantIcePack", 4)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.Antipsychotics", 3)
 
     -- Medicine Cabinets (bathroom)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
@@ -312,6 +314,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicineCabinet", "ExtensiveHealth.SterilizedBandages", 2)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.InstantIcePack", 1)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.Antipsychotics", 1)
 
     -- Medical Storage / Clinic (OTC items)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
@@ -340,6 +343,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.OralRehydrationKit", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.InstantIcePack", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Furosemide", 3)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Antipsychotics", 4)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
@@ -353,6 +357,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ActivatedCharcoal", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiparasiticPills", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Furosemide", 4)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Antipsychotics", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TetanusAntitoxin", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntibioticOintment", 5)
@@ -381,6 +386,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RifampicinComboPack", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Furosemide", 3)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Epinephrine", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
@@ -457,6 +463,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.AntiviralCapsules"] = 0.05,
         ["ExtensiveHealth.ActivatedCharcoal"] = 0.1,
         ["ExtensiveHealth.InstantIcePack"] = 0.1,
+        ["ExtensiveHealth.Antipsychotics"] = 0.05,
     }
 
     for _, container in ipairs(householdContainers) do

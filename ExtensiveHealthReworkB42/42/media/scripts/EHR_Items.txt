@@ -513,6 +513,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item Antipsychotics
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Antipsychotics,
+        Icon = Antipsychotics,
+        Weight = 0.1,
+        Tooltip = Tooltip_Antipsychotics,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item TetanusAntitoxin
     {
         DisplayCategory = FirstAid,

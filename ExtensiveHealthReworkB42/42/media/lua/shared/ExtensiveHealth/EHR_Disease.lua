@@ -661,6 +661,30 @@ EHR.Disease.Diseases = {
             [1] = {"Just a little headache now...", "Almost steady again.", "The nausea is mostly gone."},
         },
     },
+
+    ["delirium"] = {
+        name = "Delirium",
+        category = "mental",
+        incubationMin = 0,
+        incubationMax = 0,
+        durationMin = 999999,
+        durationMax = 999999,
+        baseSeverity = 0.85,
+        canKill = false,
+        stageCount = 1,
+        permanent = true,
+        applyEffectsInStage1 = true,
+        symptoms = {"hallucinations", "erratic_behavior", "visual_distortion"},
+        treatments = {
+            tier0 = {},
+            tier1 = {},
+            tier2 = {"ExtensiveHealth.Antipsychotics"},
+            tier3 = {},
+        },
+        stageEntryDialogue = {
+            [1] = "The noise won't stop. Something is talking behind my eyes...",
+        },
+    },
 }
 
 -- ============================================
@@ -1155,7 +1179,14 @@ function EHR.Disease.UpdateProgression(player, data)
                 EHR.Log(string.format("WARNING: Disease %s missing severity - defaulted to %.2f", diseaseId, disease.severity))
             end
 
-            if def.reverseProgression then
+            if def.permanent then
+                disease.stage = 1
+                disease.stageCount = 1
+                disease.progress = 0
+                disease.incubationEnd = disease.startTime or currentHour
+                disease.peakTime = currentHour
+                disease.endTime = math.max(tonumber(disease.endTime) or 0, currentHour + 999999)
+            elseif def.reverseProgression then
                 local oldStage = disease.stage
                 local stageCount = tonumber(def.stageCount) or tonumber(disease.stageCount) or 3
                 local totalDuration = math.max(1, (tonumber(disease.endTime) or currentHour + 1) - (tonumber(disease.startTime) or currentHour))

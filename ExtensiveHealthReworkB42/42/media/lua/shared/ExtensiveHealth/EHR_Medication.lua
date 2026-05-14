@@ -459,6 +459,16 @@ EHR.Medication.Database = {
         sideEffects = {"dehydration", "lower_back_pain", "diuretic_urination"},
     },
 
+    ["ExtensiveHealth.Antipsychotics"] = {
+        tier = 2,
+        treats = {"delirium"},
+        displayName = "Antipsychotics",
+        icon = "Antipsychotics",
+        usageMessage = "You take antipsychotics. The noise should start losing its grip.",
+        cureTimeHours = 96,
+        treatmentTimeText = "96 hours (8-dose course)",
+    },
+
     ["ExtensiveHealth.TetanusAntitoxin"] = {
         tier = 2,
         treats = {"tetanus"},
@@ -1572,6 +1582,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
     ["ExtensiveHealth.InstantIcePack"] = { doseInterval = 1, dosesRequired = 4 },  -- Emergency cooling course
     ["ExtensiveHealth.Furosemide"] = { doseInterval = 8, dosesRequired = 6 },  -- Transfusion reaction support course
+    ["ExtensiveHealth.Antipsychotics"] = { doseInterval = 12, dosesRequired = 8 },  -- 4-day mental health course
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
@@ -2002,6 +2013,7 @@ EHR.Medication.DrugCategories = {
     ["Activated Charcoal"] = "charcoal",
     ["Antiparasitic Pills"] = "antiparasitic",
     ["Oral Rehydration Kit"] = "rehydration",
+    ["Antipsychotics"] = "antipsychotic",
     ["Tetanus Antitoxin"] = "antitoxin",
     ["TB Antibiotics (Isoniazid)"] = "tb antibiotics",
     ["Antibiotic Ointment"] = "antibiotic",

@@ -1282,6 +1282,45 @@ EHR.Disease.Diseases["concussion"] = {
 }
 
 -- ============================================
+-- DELIRIUM (Mental stress collapse)
+-- ============================================
+--[[
+    Trigger: About 12 hours at maximum stress.
+    Duration: Permanent until treated.
+    Effects: Hallucination sounds, irrational speech, subtle color distortion,
+             and occasional unsafe impulses handled by EHR_Delirium.lua.
+]]--
+EHR.Disease.Diseases["delirium"] = {
+    name = "Delirium",
+    category = "mental",
+
+    incubationMin = 0,
+    incubationMax = 0,
+    durationMin = 999999,
+    durationMax = 999999,
+
+    stageCount = 1,
+    permanent = true,
+    applyEffectsInStage1 = true,
+
+    baseSeverity = 0.85,
+    canKill = false,
+
+    symptoms = {"hallucinations", "erratic_behavior", "visual_distortion"},
+
+    treatments = {
+        tier0 = {},
+        tier1 = {},
+        tier2 = {"ExtensiveHealth.Antipsychotics"},
+        tier3 = {},
+    },
+
+    stageEntryDialogue = {
+        [1] = "The noise won't stop. Something is talking behind my eyes...",
+    },
+}
+
+-- ============================================
 -- KNOX VIRUS INFECTION (Zombie Infection)
 -- ============================================
 --[[

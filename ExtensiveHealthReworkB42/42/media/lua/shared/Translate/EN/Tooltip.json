@@ -35,6 +35,7 @@
     "Tooltip_OralRehydrationKit":  "Medical rehydration solution kit. \u003cLINE\u003e CURES dehydration-based conditions (dysentery, heat exhaustion). \u003cLINE\u003e Treatment time: 48 hours, 8-dose course.",
     "Tooltip_InstantIcePack":  "Emergency instant cooling pack box. \u003cLINE\u003e CURES heat stroke with a 4-dose cooling course. \u003cLINE\u003e Reduces fever, confusion, collapse risk, dehydration and health loss.",
     "Tooltip_Furosemide":  "Loop diuretic for severe transfusion reactions. \u003cLINE\u003e CURES acute hemolytic transfusion reaction over a 6-dose course. \u003cLINE\u003e Treatment time: 48 hours. \u003cLINE\u003e \u003cRGB:1,0.5,0\u003e SIDE EFFECTS: Dehydration, Lower Back Pain, Diuretic Effect",
+    "Tooltip_Antipsychotics":  "Prescription antipsychotic medication. \u003cLINE\u003e CURES delirium over an 8-dose course. \u003cLINE\u003e Treatment time: 96 hours.",
     "Tooltip_TetanusAntitoxin":  "Tetanus antitoxin injection. \u003cLINE\u003e Neutralizes tetanus toxin - CURES tetanus. \u003cLINE\u003e Requires syringe. Treatment time: 5 days.",
     "Tooltip_TBAntibiotics":  "Isoniazid - first-line TB treatment. \u003cLINE\u003e CURES tuberculosis with prolonged treatment. \u003cLINE\u003e Treatment time: 21 days (TB is chronic).",
     "Tooltip_AntibioticOintment":  "Prescription antibiotic ointment. \u003cLINE\u003e CURES skin infections (wounds, cellulitis). \u003cLINE\u003e Topical application. Treatment time: 72 hours.",

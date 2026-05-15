@@ -448,6 +448,14 @@ option ExtensiveHealthRework.FirstAidXPMultiplier
     translation = EHR_FirstAidXPMultiplier,
 }
 
+option ExtensiveHealthRework.TheLastPrescriptionEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_TheLastPrescriptionEnabled,
+}
+
 option ExtensiveHealthRework.DebugMode
 {
     type = boolean,

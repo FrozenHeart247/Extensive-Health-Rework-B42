@@ -14,8 +14,8 @@ EHR.Radio = EHR.Radio or {}
 
 local RADIO = {
     NAME = "The Last Prescription",
-    UUID = "EHR-LAST-PRESCRIPTION-1470",
-    FREQUENCY = 147000,
+    UUID = "EHR-LAST-PRESCRIPTION-470",
+    FREQUENCY = 47000,
     CATEGORY = "Emergency",
     HOURS = {
         MORNING = 9,
@@ -212,7 +212,7 @@ function EHR.Radio.Initialize()
         Events.EveryHours.Add(onEveryHour)
     end
 
-    log(RADIO.NAME .. " initialized at 147.0")
+    log(RADIO.NAME .. " initialized at 47.0")
 end
 
 if Events and Events.OnGameStart then

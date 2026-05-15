@@ -599,7 +599,7 @@ end
 function EHR_RadioMessages.BuildMorningTip(day)
     local tip = pick(morningTips, day, 1) or morningTips[1]
     local broadcast = {
-        line("<bzzt> The Last Prescription, 147.0. Amelie Crowe speaking.", Colors.STATIC),
+        line("<bzzt> The Last Prescription, 47.0. Amelie Crowe speaking.", Colors.STATIC),
     }
     appendLines(broadcast, tip, Colors.TIP, "EHX+4")
     return broadcast

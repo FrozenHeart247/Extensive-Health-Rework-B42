@@ -165,7 +165,7 @@ Sandbox_EN = {
     Sandbox_EHR_FirstAidXPMultiplier = "First Aid XP Multiplier",
     Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Multiplier for First Aid XP gained from EHR medical actions. <LINE> <LINE> EXAMPLES: <LINE> - 0.0 = No XP (disabled) <LINE> - 0.5 = Half XP <LINE> - 1.0 = Normal XP (default) <LINE> - 2.0 = Double XP <LINE> - 5.0 = 5x XP (fast learning) <LINE> <LINE> BASE XP VALUES: <LINE> - Take medication: 5 XP <LINE> - Correct treatment: 3 XP <LINE> - Cure disease: 20 XP <LINE> - Blood transfusion: 10 XP <LINE> - Self-examination: 1-5 XP",
     Sandbox_EHR_TheLastPrescriptionEnabled = "Enable The Last Prescription Radio",
-    Sandbox_EHR_TheLastPrescriptionEnabled_tooltip = "Adds The Last Prescription on 147.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
+    Sandbox_EHR_TheLastPrescriptionEnabled_tooltip = "Adds The Last Prescription on 47.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
     Sandbox_EHR_MedicalWatchRequired = "Medical Watch Required",
     Sandbox_EHR_MedicalWatchRequired_tooltip = "When enabled, the EHR blood volume bar requires a Medical Monitor Watch. Disable to always show blood data.",
 

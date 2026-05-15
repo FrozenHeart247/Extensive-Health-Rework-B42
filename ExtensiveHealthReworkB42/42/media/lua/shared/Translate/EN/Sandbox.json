@@ -118,7 +118,7 @@
     "Sandbox_EHR_FirstAidXPMultiplier":  "First Aid XP Multiplier",
     "Sandbox_EHR_FirstAidXPMultiplier_tooltip":  "Multiplier for First Aid XP gained from EHR medical actions. \u003cLINE\u003e \u003cLINE\u003e EXAMPLES: \u003cLINE\u003e - 0.0 = No XP (disabled) \u003cLINE\u003e - 0.5 = Half XP \u003cLINE\u003e - 1.0 = Normal XP (default) \u003cLINE\u003e - 2.0 = Double XP \u003cLINE\u003e - 5.0 = 5x XP (fast learning) \u003cLINE\u003e \u003cLINE\u003e BASE XP VALUES: \u003cLINE\u003e - Take medication: 5 XP \u003cLINE\u003e - Correct treatment: 3 XP \u003cLINE\u003e - Cure disease: 20 XP \u003cLINE\u003e - Blood transfusion: 10 XP \u003cLINE\u003e - Self-examination: 1-5 XP",
     "Sandbox_EHR_TheLastPrescriptionEnabled":  "Enable The Last Prescription Radio",
-    "Sandbox_EHR_TheLastPrescriptionEnabled_tooltip":  "Adds The Last Prescription on 147.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
+    "Sandbox_EHR_TheLastPrescriptionEnabled_tooltip":  "Adds The Last Prescription on 47.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
     "Sandbox_EHR_MedicalWatchRequired":  "Medical Watch Required",
     "Sandbox_EHR_MedicalWatchRequired_tooltip":  "When enabled, the EHR blood volume bar requires a Medical Monitor Watch. Disable to always show blood data.",
     "Sandbox_EHR_KnoxCureItemsEnabled":  "Enable Knox Cure Items",

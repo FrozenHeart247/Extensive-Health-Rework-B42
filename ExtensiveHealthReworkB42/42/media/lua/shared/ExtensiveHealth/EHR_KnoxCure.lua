@@ -138,6 +138,164 @@ function EHR.KnoxCure.GetData(player)
     return EHR.KnoxCure.NormalizeData(modData.EHR_KnoxCure)
 end
 
+local function EHRKnoxCallBool(target, methodNames)
+    if not target then return false end
+    for _, methodName in ipairs(methodNames) do
+        local method = target[methodName]
+        if type(method) == "function" then
+            local ok, result = pcall(function()
+                return method(target)
+            end)
+            if ok and result == true then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function EHRKnoxCallNumber(target, methodName, default)
+    if not target then return default end
+    local method = target[methodName]
+    if type(method) ~= "function" then return default end
+
+    local ok, result = pcall(function()
+        return method(target)
+    end)
+    if ok and result ~= nil then
+        return tonumber(result) or default
+    end
+    return default
+end
+
+local function EHRKnoxCallVoid(target, methodName, value)
+    if not target then return false end
+    local method = target[methodName]
+    if type(method) ~= "function" then return false end
+
+    local ok = false
+    if value == nil then
+        ok = pcall(function()
+            method(target)
+        end)
+    else
+        ok = pcall(function()
+            method(target, value)
+        end)
+    end
+
+    return ok == true
+end
+
+local function EHRKnoxGetZombieStat(player, stat)
+    if not player or not stat then return 0 end
+    local stats = player:getStats()
+    if not stats then return 0 end
+
+    local ok, result = pcall(function()
+        return stats:get(stat)
+    end)
+    if ok and result then
+        return tonumber(result) or 0
+    end
+    return 0
+end
+
+local function EHRKnoxSetZombieStat(player, stat, value)
+    if not player or not stat then return false end
+    local stats = player:getStats()
+    if not stats then return false end
+
+    local ok = pcall(function()
+        stats:set(stat, value)
+    end)
+    return ok == true
+end
+
+local function EHRKnoxHasBodyPartPayload(bodyDamage)
+    if not bodyDamage then return false end
+
+    local parts = nil
+    local ok = pcall(function()
+        parts = bodyDamage:getBodyParts()
+    end)
+    if not ok or not parts then return false end
+
+    local size = 0
+    local sizeOk = pcall(function()
+        size = parts:size()
+    end)
+    if not sizeOk or not size or size <= 0 then return false end
+
+    for i = 0, size - 1 do
+        local part = nil
+        pcall(function()
+            part = parts:get(i)
+        end)
+        if part and EHRKnoxCallBool(part, { "IsInfected", "isInfected" }) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function EHRKnoxTimerLooksActive(bodyDamage)
+    if not bodyDamage then return false end
+
+    local infectionTime = EHRKnoxCallNumber(bodyDamage, "getInfectionTime", -1)
+    local mortalityDuration = EHRKnoxCallNumber(bodyDamage, "getInfectionMortalityDuration", -1)
+
+    return infectionTime >= 0 and mortalityDuration > 0
+end
+
+function EHR.KnoxCure.ClearStaleExternalInfection(player)
+    if not player then return false end
+
+    local changed = false
+    local bodyDamage = player:getBodyDamage()
+
+    if bodyDamage then
+        pcall(function() bodyDamage:setInfected(false) end)
+        pcall(function() bodyDamage:setInfectionTime(-1.0) end)
+        pcall(function() bodyDamage:setInfectionMortalityDuration(-1.0) end)
+    end
+
+    if CharacterStat then
+        if CharacterStat.ZOMBIE_INFECTION and EHRKnoxGetZombieStat(player, CharacterStat.ZOMBIE_INFECTION) > 0 then
+            changed = EHRKnoxSetZombieStat(player, CharacterStat.ZOMBIE_INFECTION, 0) or changed
+        end
+        if CharacterStat.ZOMBIE_FEVER and EHRKnoxGetZombieStat(player, CharacterStat.ZOMBIE_FEVER) > 0 then
+            changed = EHRKnoxSetZombieStat(player, CharacterStat.ZOMBIE_FEVER, 0) or changed
+        end
+    end
+
+    local modData = player:getModData()
+    local diseaseData = modData and modData.EHR_Disease
+    local active = diseaseData and diseaseData.active
+    if type(active) == "table" then
+        if active["Knox_Infection"] ~= nil then
+            active["Knox_Infection"] = nil
+            changed = true
+        end
+        if active["knox_infection"] ~= nil then
+            active["knox_infection"] = nil
+            changed = true
+        end
+    end
+
+    if changed then
+        if player.transmitModData then
+            pcall(function() player:transmitModData() end)
+        end
+        if EHR.Log then
+            EHR.Log("KnoxCure: cleared stale Knox state after external cure")
+        end
+    end
+
+    return changed
+end
+
 -- ============================================
 -- KNOX INFECTION DETECTION (B42 Compatible)
 -- ============================================
@@ -157,21 +315,53 @@ function EHR.KnoxCure.IsInfected(player)
     local bodyDamage = player:getBodyDamage()
     if not bodyDamage then return false end
 
-    -- Method 1: Check boolean infection flag (primary B42 method)
-    local success, isInfected = pcall(function()
-        return bodyDamage:IsInfected()
-    end)
-    if success and isInfected then
+    -- Method 1: Check boolean infection flag (primary B42 method).
+    -- Some mods/versions use lowercase isInfected(), so support both.
+    if EHRKnoxCallBool(bodyDamage, { "IsInfected", "isInfected" }) then
         return true
     end
 
-    -- Method 2: Check CharacterStat.ZOMBIE_INFECTION stat (B42 stat-based)
-    local stats = player:getStats()
-    if stats and CharacterStat and CharacterStat.ZOMBIE_INFECTION then
-        local statSuccess, level = pcall(function()
-            return stats:get(CharacterStat.ZOMBIE_INFECTION)
-        end)
-        if statSuccess and level and level > 0 then
+    if EHRKnoxHasBodyPartPayload(bodyDamage) then
+        return true
+    end
+
+    local timerActive = EHRKnoxTimerLooksActive(bodyDamage)
+
+    -- Method 2: Check CharacterStat.ZOMBIE_INFECTION stat (B42 stat-based).
+    -- Compatibility note: LGD Antibodies cures Knox by clearing BodyDamage and
+    -- infection timers, but it may leave the B42 stat non-zero. Treat that as
+    -- stale if every vanilla infection source is already gone.
+    if CharacterStat and CharacterStat.ZOMBIE_INFECTION then
+        local level = EHRKnoxGetZombieStat(player, CharacterStat.ZOMBIE_INFECTION)
+        if level > 0 then
+            if timerActive then
+                return true
+            end
+            EHR.KnoxCure.ClearStaleExternalInfection(player)
+            return false
+        end
+    end
+
+    return false
+end
+
+function EHR.KnoxCure.IsVanillaInfectionPresent(player)
+    if not player then return false end
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return false end
+
+    if EHRKnoxCallBool(bodyDamage, { "IsInfected", "isInfected" }) then
+        return true
+    end
+    if EHRKnoxHasBodyPartPayload(bodyDamage) then
+        return true
+    end
+    if EHRKnoxTimerLooksActive(bodyDamage) then
+        return true
+    end
+    if CharacterStat and CharacterStat.ZOMBIE_INFECTION then
+        local level = EHRKnoxGetZombieStat(player, CharacterStat.ZOMBIE_INFECTION)
+        if level > 0 then
             return true
         end
     end
@@ -347,6 +537,8 @@ function EHR.KnoxCure.CureInfection(player)
     -- Step 1: Clear the boolean infection flag
     -- =====================================
     pcall(function() bodyDamage:setInfected(false) end)
+    pcall(function() bodyDamage:setInfectionTime(-1.0) end)
+    pcall(function() bodyDamage:setInfectionMortalityDuration(-1.0) end)
 
     -- =====================================
     -- Step 2: Clear CharacterStat.ZOMBIE_INFECTION (B42)
@@ -983,6 +1175,8 @@ local function SuppressVanillaInfection(player, data)
     if success and infected then
         wasInfected = true
         pcall(function() bodyDamage:setInfected(false) end)
+        pcall(function() bodyDamage:setInfectionTime(-1.0) end)
+        pcall(function() bodyDamage:setInfectionMortalityDuration(-1.0) end)
     end
 
     -- Clear ZOMBIE_INFECTION stat
@@ -993,6 +1187,8 @@ local function SuppressVanillaInfection(player, data)
         if statSuccess and level and level > 0 then
             wasInfected = true
             pcall(function() stats:set(CharacterStat.ZOMBIE_INFECTION, 0) end)
+            pcall(function() bodyDamage:setInfectionTime(-1.0) end)
+            pcall(function() bodyDamage:setInfectionMortalityDuration(-1.0) end)
         end
     end
 
@@ -1059,6 +1255,10 @@ local function processPlayerTick(player)
     state.tick = state.tick + 1
     if state.tick < KNOX_TICK_INTERVAL then return end
     state.tick = 0
+
+    -- Keeps EHR in sync with external Knox cure mods that clear vanilla infection
+    -- state without touching EHR's cached disease/monitor data.
+    EHR.KnoxCure.IsInfected(player)
 
     local currentHour = getGameTime():getWorldAgeHours()
     local stats = player:getStats()

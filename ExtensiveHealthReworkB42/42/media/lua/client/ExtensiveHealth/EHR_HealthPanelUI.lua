@@ -1481,7 +1481,19 @@ function EHR_HealthPanelUI:buildActiveDiseaseTable(diseaseData)
     local activeDiseases = {}
     if type(diseaseData) == "table" and type(diseaseData.active) == "table" then
         for diseaseId, disease in pairs(diseaseData.active) do
-            activeDiseases[diseaseId] = disease
+            local normalized = self:getNormalizedDiseaseId(diseaseId)
+            if normalized == "knox_infection" then
+                -- Knox is displayed from the live vanilla/EHR Knox state below.
+                -- Skip legacy EHR disease entries so external cures, like LGD
+                -- Antibodies, cannot leave a ghost card in the monitor.
+                if EHR.KnoxCure and EHR.KnoxCure.IsInfected and self.player then
+                    pcall(function()
+                        EHR.KnoxCure.IsInfected(self.player)
+                    end)
+                end
+            else
+                activeDiseases[diseaseId] = disease
+            end
         end
     end
     return activeDiseases

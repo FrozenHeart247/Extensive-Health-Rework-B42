@@ -128,14 +128,11 @@ local function isEnabled()
         return options.CorpseSicknessEnabled
     end
 
-    if options.AspergilliosisEnabled ~= nil or options.PutrefactionSicknessEnabled ~= nil then
-        local asp = options.AspergilliosisEnabled
-        local put = options.PutrefactionSicknessEnabled
-        if asp == nil and put == nil then return true end
-        return (asp ~= false) or (put ~= false)
-    end
+    local putrefaction = options.PutrefactionSicknessEnabled
+    local cadaveric = options.CadavericAspergillosisEnabled
+    if cadaveric == nil then cadaveric = options.AspergilliosisEnabled end
 
-    return true
+    return (putrefaction ~= false) or (cadaveric ~= false)
 end
 
 local function getSpeedMultiplier()
@@ -148,12 +145,13 @@ local function isAspergillosisEnabled()
     local options = SandboxVars and SandboxVars.ExtensiveHealthRework
     if not options then return true end
 
-    if options.AspergilliosisEnabled ~= nil then
-        return options.AspergilliosisEnabled
-    end
-
     if options.CadavericAspergillosisEnabled ~= nil then
         return options.CadavericAspergillosisEnabled
+    end
+
+    -- Legacy fallback for saves/servers that still have the old misspelled option.
+    if options.AspergilliosisEnabled ~= nil then
+        return options.AspergilliosisEnabled
     end
 
     return true

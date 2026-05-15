@@ -360,6 +360,9 @@ end
 
 function EHR.Concussion.Start(player, source, force)
     if not isValidPlayer(player) then return false end
+    if EHR.Disease and EHR.Disease.IsDiseaseEnabled and not EHR.Disease.IsDiseaseEnabled("concussion") then
+        return false
+    end
     if EHR.Concussion.IsActive(player) then return false end
 
     local now = worldHour()
@@ -410,6 +413,9 @@ end
 
 function EHR.Concussion.TryStart(player, source, chance)
     if not isValidPlayer(player) then return false end
+    if EHR.Disease and EHR.Disease.IsDiseaseEnabled and not EHR.Disease.IsDiseaseEnabled("concussion") then
+        return false
+    end
     if EHR.Concussion.IsActive(player) then return false end
 
     local now = worldHour()

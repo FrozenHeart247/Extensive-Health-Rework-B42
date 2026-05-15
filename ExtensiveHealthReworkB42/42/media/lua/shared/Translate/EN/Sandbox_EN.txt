@@ -88,6 +88,10 @@ Sandbox_EN = {
     Sandbox_EHR_GastroenteritisEnabled_tooltip = "Stomach bug from eating with dirty/bloody hands. Causes vomiting and dehydration. Wash your hands!",
     Sandbox_EHR_TrichinosisEnabled = "Enable Trichinosis",
     Sandbox_EHR_TrichinosisEnabled_tooltip = "Parasitic worm infection from raw/undercooked wild game (rats, boar, bear). SEVERE muscle pain, can be lethal. Cook your meat!",
+    Sandbox_EHR_ToxinPoisoningEnabled = "Enable Toxin Poisoning",
+    Sandbox_EHR_ToxinPoisoningEnabled_tooltip = "Dangerous poisoning from toxic mushrooms and berries. Can be lethal without fast treatment.",
+    Sandbox_EHR_HyperkeratoticScabiesEnabled = "Enable Hyperkeratotic Scabies",
+    Sandbox_EHR_HyperkeratoticScabiesEnabled_tooltip = "Severe parasitic skin infestation from prolonged contact with dirt or grass. Causes itching, fever, wounds, and can become lethal.",
     Sandbox_EHR_DysenteryEnabled = "Enable Dysentery",
     Sandbox_EHR_DysenteryEnabled_tooltip = "Drinking contaminated water can cause dysentery. LETHAL through dehydration.",
 
@@ -102,6 +106,14 @@ Sandbox_EN = {
     Sandbox_EHR_HypothermiaEnabled_tooltip = "Extreme cold + wet exposure causes hypothermia. LETHAL - cardiac arrest risk.",
     Sandbox_EHR_HeatExhaustionEnabled = "Enable Heat Exhaustion",
     Sandbox_EHR_HeatExhaustionEnabled_tooltip = "Hot weather + exertion + dehydration causes heat exhaustion. Can progress to LETHAL heat stroke. Get shade and water!",
+    Sandbox_EHR_HeatStrokeEnabled = "Enable Heat Stroke",
+    Sandbox_EHR_HeatStrokeEnabled_tooltip = "Lethal heat illness caused by untreated heat exposure. Disables heat stroke contraction while keeping heat exhaustion available.",
+    Sandbox_EHR_ConcussionEnabled = "Enable Concussion",
+    Sandbox_EHR_ConcussionEnabled_tooltip = "Head trauma from serious falls and vehicle crashes. Causes headache, nausea, dizziness, and temporary impairment.",
+    Sandbox_EHR_DeliriumEnabled = "Enable Delirium",
+    Sandbox_EHR_DeliriumEnabled_tooltip = "Mental breakdown from prolonged maximum stress. Causes hallucinations, intrusive actions, and disturbing audio events until treated.",
+    Sandbox_EHR_AHTREnabled = "Enable AHTR",
+    Sandbox_EHR_AHTREnabled_tooltip = "Acute hemolytic transfusion reaction from incompatible blood transfusions. Dangerous and potentially lethal.",
     Sandbox_EHR_EnvironmentalDiseaseSpeed = "Environmental Disease Speed",
     Sandbox_EHR_EnvironmentalDiseaseSpeed_tooltip = "How fast environmental diseases (cold, hypothermia, dysentery) progress. 1.0 = normal.",
 
@@ -110,6 +122,8 @@ Sandbox_EN = {
     -- ============================================
     Sandbox_EHR_AspergilliosisEnabled = "Enable Cadaveric Aspergillosis",
     Sandbox_EHR_AspergilliosisEnabled_tooltip = "Fungal lung infection from prolonged exposure to decaying corpses in damp environments. Progressive respiratory failure.",
+    Sandbox_EHR_CadavericAspergillosisEnabled = "Enable Cadaveric Aspergillosis",
+    Sandbox_EHR_CadavericAspergillosisEnabled_tooltip = "Correctly named alias for the cadaveric aspergillosis toggle. If either old or new toggle is disabled, the disease is disabled.",
     Sandbox_EHR_PutrefactionSicknessEnabled = "Enable Putrefaction Sickness",
     Sandbox_EHR_PutrefactionSicknessEnabled_tooltip = "H2S gas poisoning from corpses in enclosed spaces. Causes olfactory fatigue (stop smelling = DANGER). Can knock you unconscious!",
     Sandbox_EHR_TuberculosisEnabled = "Enable Tuberculosis",
@@ -152,6 +166,8 @@ Sandbox_EN = {
     Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Multiplier for First Aid XP gained from EHR medical actions. <LINE> <LINE> EXAMPLES: <LINE> - 0.0 = No XP (disabled) <LINE> - 0.5 = Half XP <LINE> - 1.0 = Normal XP (default) <LINE> - 2.0 = Double XP <LINE> - 5.0 = 5x XP (fast learning) <LINE> <LINE> BASE XP VALUES: <LINE> - Take medication: 5 XP <LINE> - Correct treatment: 3 XP <LINE> - Cure disease: 20 XP <LINE> - Blood transfusion: 10 XP <LINE> - Self-examination: 1-5 XP",
     Sandbox_EHR_TheLastPrescriptionEnabled = "Enable The Last Prescription Radio",
     Sandbox_EHR_TheLastPrescriptionEnabled_tooltip = "Adds The Last Prescription on 147.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
+    Sandbox_EHR_MedicalWatchRequired = "Medical Watch Required",
+    Sandbox_EHR_MedicalWatchRequired_tooltip = "When enabled, the EHR blood volume bar requires a Medical Monitor Watch. Disable to always show blood data.",
 
     -- ============================================
     -- KNOX VIRUS CURE

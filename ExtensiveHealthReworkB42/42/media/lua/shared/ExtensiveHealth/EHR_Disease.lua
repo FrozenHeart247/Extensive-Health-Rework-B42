@@ -93,6 +93,28 @@ local function toCamelCase(str)
     return str:gsub("_(%l)", function(c) return c:upper() end):gsub("^%l", string.upper)
 end
 
+local SANDBOX_DISEASE_KEYS = {
+    ahtr = "AHTREnabled",
+    cadaveric_aspergillosis = "CadavericAspergillosisEnabled",
+}
+
+function EHR.Disease.GetSandboxKeyForDisease(diseaseId)
+    if not diseaseId then return nil end
+    return SANDBOX_DISEASE_KEYS[diseaseId] or (toCamelCase(diseaseId) .. "Enabled")
+end
+
+function EHR.Disease.IsDiseaseEnabled(diseaseId)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end
+
+    local sandboxKey = EHR.Disease.GetSandboxKeyForDisease(diseaseId)
+    if sandboxKey and options[sandboxKey] == false then
+        return false
+    end
+
+    return true
+end
+
 -- ============================================
 -- DISEASE DEFINITIONS
 -- Each disease has treatment tier mappings for medication system
@@ -988,10 +1010,9 @@ function EHR.Disease.TryContract(player, diseaseId, baseChance)
     end
 
     -- Check sandbox setting for this specific disease
-    local sandboxKey = toCamelCase(diseaseId) .. "Enabled"
-    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
-    if options and options[sandboxKey] == false then
-        EHR.Log("TryContract: " .. diseaseId .. " disabled by sandbox option " .. sandboxKey)
+    local sandboxKey = EHR.Disease.GetSandboxKeyForDisease(diseaseId)
+    if not EHR.Disease.IsDiseaseEnabled(diseaseId) then
+        EHR.Log("TryContract: " .. diseaseId .. " disabled by sandbox option " .. tostring(sandboxKey))
         return false
     end
 
@@ -1049,11 +1070,10 @@ function EHR.Disease.Contract(player, diseaseId)
     if not def then return end
 
     -- Check sandbox setting for this specific disease
-    local sandboxKey = toCamelCase(diseaseId) .. "Enabled"
-    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
-    if options and options[sandboxKey] == false then
+    local sandboxKey = EHR.Disease.GetSandboxKeyForDisease(diseaseId)
+    if not EHR.Disease.IsDiseaseEnabled(diseaseId) then
         if EHR.DEBUG then
-            EHR.Log("Contract: " .. diseaseId .. " disabled by sandbox option " .. sandboxKey)
+            EHR.Log("Contract: " .. diseaseId .. " disabled by sandbox option " .. tostring(sandboxKey))
         end
         return
     end

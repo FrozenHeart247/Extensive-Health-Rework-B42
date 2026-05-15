@@ -200,6 +200,22 @@ option ExtensiveHealthRework.TrichinosisEnabled
     translation = EHR_TrichinosisEnabled,
 }
 
+option ExtensiveHealthRework.ToxinPoisoningEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_ToxinPoisoningEnabled,
+}
+
+option ExtensiveHealthRework.HyperkeratoticScabiesEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_HyperkeratoticScabiesEnabled,
+}
+
 option ExtensiveHealthRework.DysenteryEnabled
 {
     type = boolean,
@@ -240,6 +256,38 @@ option ExtensiveHealthRework.HeatExhaustionEnabled
     translation = EHR_HeatExhaustionEnabled,
 }
 
+option ExtensiveHealthRework.HeatStrokeEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_HeatStrokeEnabled,
+}
+
+option ExtensiveHealthRework.ConcussionEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_ConcussionEnabled,
+}
+
+option ExtensiveHealthRework.DeliriumEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_DeliriumEnabled,
+}
+
+option ExtensiveHealthRework.AHTREnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_AHTREnabled,
+}
+
 option ExtensiveHealthRework.EnvironmentalDiseaseSpeed
 {
     type = double,
@@ -250,12 +298,12 @@ option ExtensiveHealthRework.EnvironmentalDiseaseSpeed
     translation = EHR_EnvironmentalDiseaseSpeed,
 }
 
-option ExtensiveHealthRework.AspergilliosisEnabled
+option ExtensiveHealthRework.CadavericAspergillosisEnabled
 {
     type = boolean,
     default = true,
     page = EHR_Disease,
-    translation = EHR_AspergilliosisEnabled,
+    translation = EHR_CadavericAspergillosisEnabled,
 }
 
 option ExtensiveHealthRework.PutrefactionSicknessEnabled
@@ -454,6 +502,14 @@ option ExtensiveHealthRework.TheLastPrescriptionEnabled
     default = true,
     page = EHR_Other,
     translation = EHR_TheLastPrescriptionEnabled,
+}
+
+option ExtensiveHealthRework.MedicalWatchRequired
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_MedicalWatchRequired,
 }
 
 option ExtensiveHealthRework.DebugMode

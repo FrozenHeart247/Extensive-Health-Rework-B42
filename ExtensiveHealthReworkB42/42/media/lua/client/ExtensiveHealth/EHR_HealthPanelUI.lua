@@ -1832,6 +1832,14 @@ function EHR_HealthPanelUI:hasMedicalMonitorWatch()
     return false
 end
 
+function EHR_HealthPanelUI:isMedicalWatchRequired()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if options and options.MedicalWatchRequired ~= nil then
+        return options.MedicalWatchRequired
+    end
+    return true
+end
+
 function EHR_HealthPanelUI:getBloodBagTexture(summary)
     if not getTexture then return nil end
     self.bloodBagTextures = self.bloodBagTextures or {}
@@ -1955,7 +1963,10 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     local h = self.BLOOD_PANEL_HEIGHT
     local diseaseCount = countTable(self.cachedData.diseases)
     local medicationCount = #(self.cachedData.activeMedications or {})
+    local watchRequired = self:isMedicalWatchRequired()
     self:drawPanelFrame(x, y, w, h, "BLOOD COMPOSITION", nil)
+
+    hasWatch = (not watchRequired) or hasWatch
 
     local iconW = hasWatch and 54 or 64
     local iconH = 70

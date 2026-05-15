@@ -474,6 +474,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item TopicalPermethrin
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Topical Permethrin,
+        Icon = TopicalPermethrin,
+        Weight = 0.1,
+        Tooltip = Tooltip_TopicalPermethrin,
+        UseDelta = 0.1667,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item OralRehydrationKit
     {
         DisplayCategory = FirstAid,
@@ -571,6 +584,19 @@ module ExtensiveHealth
         Icon = BroadSpectrumAntibiotics,
         Weight = 0.1,
         Tooltip = Tooltip_BroadSpectrumAntibiotics,
+        UseDelta = 0.1667,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
+    item PlantBasedAntibiotics
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Plant-Based Antibiotics,
+        Icon = PlantBasedAntibiotics,
+        Weight = 0.1,
+        Tooltip = Tooltip_PlantBasedAntibiotics,
         UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,

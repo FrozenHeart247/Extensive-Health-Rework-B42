@@ -110,6 +110,17 @@ EHR.Tooltips.Data = {
         warning = "PERISHABLE: Freeze for storage. Spoils after 2h outside frozen storage!",
         perishable = true,
     },
+    ["ExtensiveHealth.EmptyBloodBag"] = {
+        category = "Blood Product",
+        description = "Sterile empty blood collection bag.",
+        effects = {
+            "Used to draw and store your own blood",
+            "Creates a filled bag matching your blood type",
+            "Filled bags are perishable",
+        },
+        requirements = {"80%+ blood volume"},
+        warning = "Drawing blood consumes the empty bag and temporarily lowers blood volume.",
+    },
 
     -- =========================================
     -- IV SUPPLIES
@@ -196,6 +207,17 @@ EHR.Tooltips.Data = {
         },
         sideEffects = {"Caffeine Crash"},
         warning = "When the effect ends, fatigue immediately crashes to maximum.",
+    },
+    ["Base.PillsSleepingTablets"] = {
+        category = "Vanilla Medication",
+        tier = 0,
+        description = "Sleeping tablet bottle.",
+        relieves = {"Insomnia"},
+        effects = {
+            "Uses vanilla sleeping pill behavior",
+            "Tracked by EHR medication monitoring",
+            "Multi-dose bottle",
+        },
     },
     ["ExtensiveHealth.ColdFluTablets"] = {
         category = "OTC Medication",
@@ -362,9 +384,17 @@ EHR.Tooltips.Data = {
         category = "Prescription",
         tier = 2,
         description = "Antiparasitic medication.",
-        cures = {"Trichinosis"},
+        cures = {"Trichinosis", "Hyperkeratotic Scabies"},
         treatmentTime = "7 days",
         effects = {"CURES parasitic infections"},
+    },
+    ["ExtensiveHealth.TopicalPermethrin"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Topical permethrin cream.",
+        cures = {"Hyperkeratotic Scabies"},
+        treatmentTime = "72 hours (6-dose course)",
+        effects = {"Topical application", "CURES scabies infestation", "Reduces itching, fever and skin-trauma health loss"},
     },
     ["ExtensiveHealth.OralRehydrationKit"] = {
         category = "Prescription",
@@ -418,6 +448,14 @@ EHR.Tooltips.Data = {
         cures = {"Multiple bacterial infections", "Pneumonia", "Sepsis"},
         treatmentTime = "72 hours",
         effects = {"CURES multiple bacterial infections"},
+    },
+    ["ExtensiveHealth.PlantBasedAntibiotics"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Plant-based broad spectrum antibiotic preparation.",
+        cures = {"Multiple bacterial infections", "Pneumonia", "Sepsis"},
+        treatmentTime = "72 hours",
+        effects = {"CURES multiple bacterial infections", "Crafted from fresh medicinal herbs"},
     },
     ["ExtensiveHealth.Furosemide"] = {
         category = "Prescription",

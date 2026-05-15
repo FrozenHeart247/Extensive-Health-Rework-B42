@@ -471,6 +471,11 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [3] = 38.9,
         [4] = 37.4,
     },
+    hyperkeratotic_scabies = {
+        [2] = 38.0,
+        [3] = 40.0,
+        [4] = 40.0,
+    },
     pneumonia = {
         [1] = 38.0,
         [2] = 40.0,
@@ -522,6 +527,22 @@ local function EHR_BodyTempGetStageTarget(targets, stage)
     return bestStage and targets[bestStage] or nil
 end
 
+local function EHR_BodyTempApplyMedicationFeverRelief(player, diseaseId, target)
+    if not player or not diseaseId or not target then return target end
+    if not EHR or not EHR.Disease or not EHR.Disease.GetActiveSymptomReduction then return target end
+
+    local ok, relief = pcall(function()
+        return EHR.Disease.GetActiveSymptomReduction(player, diseaseId, "fever")
+    end)
+    relief = ok and tonumber(relief) or 0
+    if relief <= 0 then return target end
+
+    local strongFeverReducer = relief >= 0.60
+    local feverFloor = strongFeverReducer and 37.0 or 37.4
+    local feverDrop = strongFeverReducer and 4.0 or math.min(1.2, relief * 1.8)
+    return math.max(feverFloor, target - feverDrop)
+end
+
 function EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
     if not player then return nil end
 
@@ -538,6 +559,7 @@ function EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
                 local stage = disease and (tonumber(disease.stage) or 1) or nil
                 local target = EHR_BodyTempGetStageTarget(targets, stage)
                 if target then
+                    target = EHR_BodyTempApplyMedicationFeverRelief(player, diseaseId, target)
                     bestTarget = math.max(bestTarget or target, target)
                 end
             end
@@ -549,6 +571,7 @@ function EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
     if sepsisStage > 0 then
         local target = EHR_BodyTempGetStageTarget(EHR.BodyTemp.DiseaseFeverTargets.sepsis, sepsisStage)
         if target then
+            target = EHR_BodyTempApplyMedicationFeverRelief(player, "sepsis", target)
             bestTarget = math.max(bestTarget or target, target)
         end
     end
@@ -558,6 +581,7 @@ function EHR.BodyTemp.GetActiveDiseaseFeverTarget(player)
     if woundStage > 0 then
         local target = EHR_BodyTempGetStageTarget(EHR.BodyTemp.DiseaseFeverTargets.wound_infection, woundStage)
         if target then
+            target = EHR_BodyTempApplyMedicationFeverRelief(player, "wound_infection", target)
             bestTarget = math.max(bestTarget or target, target)
         end
     end

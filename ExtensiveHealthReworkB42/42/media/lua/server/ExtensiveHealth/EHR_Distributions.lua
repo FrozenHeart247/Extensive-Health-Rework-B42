@@ -155,6 +155,42 @@ local function EHR_InitDistributions()
         tryAdd(listName, itemName, chance * medicationLootMultiplier)
     end
 
+    local function itemListContains(items, itemName)
+        if not items or not itemName then return false end
+        for i = 1, #items, 2 do
+            if items[i] == itemName then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function copyMedicalWatchDistribution()
+        local sourceToTarget = {
+            WristWatch_Left_DigitalRed = "ExtensiveHealth.EHRMedicalWatch_Left",
+            ["Base.WristWatch_Left_DigitalRed"] = "ExtensiveHealth.EHRMedicalWatch_Left",
+            WristWatch_Right_DigitalRed = "ExtensiveHealth.EHRMedicalWatch_Right",
+            ["Base.WristWatch_Right_DigitalRed"] = "ExtensiveHealth.EHRMedicalWatch_Right",
+        }
+
+        for _, dist in pairs(ProceduralDistributions.list) do
+            local items = dist and dist.items
+            if items then
+                for i = 1, #items - 1, 2 do
+                    local target = sourceToTarget[items[i]]
+                    local chance = tonumber(items[i + 1])
+                    if target and chance and chance > 0 and not itemListContains(items, target) then
+                        table.insert(items, target)
+                        table.insert(items, chance)
+                        added = added + 1
+                    end
+                end
+            end
+        end
+    end
+
+    copyMedicalWatchDistribution()
+
     -- =========================================
     -- BLOOD BAGS (based on real-world blood type distribution)
     -- O+ is most common, AB- is rarest
@@ -222,6 +258,7 @@ local function EHR_InitDistributions()
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Furosemide", 1)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.NitricOxideBooster", 2)
+    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.TopicalPermethrin", 2)
 
     -- Military medical
     if ProceduralDistributions.list["ArmyStorageMedical"] then
@@ -264,6 +301,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.DiseaseFlyer_Gastroenteritis"] = 2,
         ["ExtensiveHealth.DiseaseFlyer_Dysentery"] = 1.2,
         ["ExtensiveHealth.DiseaseFlyer_Trichinosis"] = 1.2,
+        ["ExtensiveHealth.DiseaseFlyer_HyperkeratoticScabies"] = 0.8,
         ["ExtensiveHealth.DiseaseFlyer_ToxinPoisoning"] = 1,
         ["ExtensiveHealth.DiseaseFlyer_HeatStroke"] = 1,
         ["ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis"] = 0.8,
@@ -281,6 +319,13 @@ local function EHR_InitDistributions()
         tryAdd("PharmacyShelfMeds", item, chance * 0.3)
         tryAdd("DrugStoreMagazines", item, chance * 0.3)
     end
+
+    -- Medicine recipes
+    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.8)
+    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.6)
+    tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
+    tryAdd("PharmacyShelfMeds", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
+    tryAdd("DrugStoreMagazines", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.8)
 
     -- =========================================
     -- TIER 1 - OTC (OVER THE COUNTER)
@@ -301,6 +346,7 @@ local function EHR_InitDistributions()
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.BronchodilatorInhaler", 3)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.InstantIcePack", 4)
     tryAddMed("DrugStoreMagazines", "ExtensiveHealth.Antipsychotics", 3)
+    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.TopicalPermethrin", 3)
 
     -- Medicine Cabinets (bathroom)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
@@ -315,6 +361,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.InstantIcePack", 1)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.Antipsychotics", 1)
+    tryAddMed("MedicineCabinet", "ExtensiveHealth.TopicalPermethrin", 1)
 
     -- Medical Storage / Clinic (OTC items)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
@@ -350,6 +397,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SterilizedBandages", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AlchoholicBandage", 4)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.TopicalPermethrin", 4)
 
     -- Medical Storage Drugs (Tier 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 6)
@@ -365,6 +413,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVKit", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVFluids", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SalineBag", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TopicalPermethrin", 3)
 
     -- =========================================
     -- TIER 3 - CLINICAL GRADE
@@ -422,6 +471,7 @@ local function EHR_InitDistributions()
     tryAddMed("FirstAidKit", "ExtensiveHealth.SterilizedBandages", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AlchoholicBandage", 3)
     tryAddMed("FirstAidKit", "ExtensiveHealth.InstantIcePack", 3)
+    tryAddMed("FirstAidKit", "ExtensiveHealth.TopicalPermethrin", 1)
 
     -- =========================================
     -- HOUSEHOLD SPAWNS (Very Rare)
@@ -464,6 +514,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.ActivatedCharcoal"] = 0.1,
         ["ExtensiveHealth.InstantIcePack"] = 0.1,
         ["ExtensiveHealth.Antipsychotics"] = 0.05,
+        ["ExtensiveHealth.TopicalPermethrin"] = 0.08,
     }
 
     for _, container in ipairs(householdContainers) do

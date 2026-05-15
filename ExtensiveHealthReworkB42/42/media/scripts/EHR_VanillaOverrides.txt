@@ -97,4 +97,61 @@ module Base
         WorldStaticModel = Antibiotics,
         Tags = base:consumable,
     }
+
+    /** =========================================
+        VANILLA WEAPON OVERRIDES
+        Let scalpels train Maintenance like other melee weapons.
+    ========================================= **/
+
+    item Scalpel
+    {
+        DisplayCategory = FirstAidWeapon,
+        ItemType = base:weapon,
+        Weight = 0.3,
+        Icon = Scalpel,
+        AimingMod = 0.8,
+        AttachmentType = Screwdriver,
+        BreakSound = ScalpelBreak,
+        Categories = base:smallblade,
+        CloseKillMove = Jaw_Stab,
+        ConditionLowerChanceOneIn = 1,
+        ConditionMax = 5,
+        CritDmgMultiplier = 10.0,
+        CriticalChance = 10.0,
+        DamageCategory = Slash,
+        DamageMakeHole = true,
+        DoorDamage = 1,
+        DoorHitSound = ScalpelHit,
+        DropSound = ScalpelDrop,
+        HitFloorSound = ScalpelHit,
+        HitSound = ScalpelHit,
+        IdleAnim = Idle_Weapon2,
+        ImpactSound = ScalpelHit,
+        IsAimedHandWeapon = true,
+        KnockBackOnNoDeath = false,
+        KnockdownMod = 0.0,
+        MaxDamage = 0.4,
+        MaxHitcount = 1,
+        MaxRange = 0.8,
+        MetalValue = 8.0,
+        MinAngle = 0.65,
+        MinDamage = 0.1,
+        MinRange = 0.61,
+        MinimumSwingtime = 2.0,
+        PushBackMod = 0.01,
+        RunAnim = Run_Weapon2,
+        SplatBloodOnNoDeath = false,
+        SplatNumber = 2,
+        SubCategory = Stab,
+        SwingAmountBeforeImpact = 0.02,
+        SwingAnim = Stab,
+        SwingSound = ScalpelSwing,
+        Swingtime = 2.0,
+        TreeDamage = 0,
+        WeaponLength = 0.17,
+        WeaponSprite = Scalpel,
+        Tags = base:sharpenable;base:smeltableironsmall;base:hasmetal,
+        Sharpness = 1.0,
+        Researchablerecipes = Forge_Crude_Blade;Forge_Small_Knife,
+    }
 }

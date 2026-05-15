@@ -71,6 +71,7 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     gastroenteritis = "media/textures/EHR_Disease_Gastroenteritis.png",
     heat_exhaustion = "media/textures/EHR_Disease_HeatExhaustion.png",
     heat_stroke = "media/textures/EHR_Disease_HeatStroke.png",
+    hyperkeratotic_scabies = "media/textures/EHR_Disease_hyperkeratoticScabies.png",
     hypothermia = "media/textures/EHR_Disease_Hypotermia.png",
     knox_infection = "media/textures/EHR_Disease_KnoxInfection.png",
     pneumonia = "media/textures/EHR_Disease_Pneumonia.png",
@@ -85,6 +86,13 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
 EHR_HealthPanelUI.PanelIconPaths = {
     overview = "media/textures/EHR_Overview.png",
     body_status = "media/textures/EHR_BodyStatus.png",
+}
+
+local MEDICAL_MONITOR_WATCH_ITEMS = {
+    ["ExtensiveHealth.EHRMedicalWatch_Left"] = true,
+    ["ExtensiveHealth.EHRMedicalWatch_Right"] = true,
+    EHRMedicalWatch_Left = true,
+    EHRMedicalWatch_Right = true,
 }
 
 local suppressVanillaTicks = 0
@@ -1752,13 +1760,16 @@ function EHR_HealthPanelUI:updateCachedData()
     local activeDiseases = self:buildActiveDiseaseTable(diseaseData)
     self:addSpecialConditionEntries(activeDiseases, data)
 
+    local activeMedications = self:buildActiveMedicationList(activeTreatments, doseStatuses)
+    self:addKnoxCureMedicationEntries(activeMedications, activeSideEffects)
+
     self.cachedData = {
         blood = data.EHR_Blood or {},
         diseases = activeDiseases,
         medication = medicationData,
         activeTreatments = activeTreatments,
         doseStatuses = doseStatuses,
-        activeMedications = self:buildActiveMedicationList(activeTreatments, doseStatuses),
+        activeMedications = activeMedications,
         activeSideEffects = activeSideEffects,
     }
 end
@@ -1784,6 +1795,29 @@ function EHR_HealthPanelUI:getBloodSummary()
         canHeal = blood.canHeal,
         healBlockReason = blood.healBlockReason,
     }
+end
+
+function EHR_HealthPanelUI:hasMedicalMonitorWatch()
+    local player = self.player or (getSpecificPlayer and getSpecificPlayer(self.playerNum or 0)) or (getPlayer and getPlayer())
+    if not player or not player.getWornItems then return false end
+
+    local wornItems = player:getWornItems()
+    if not wornItems then return false end
+
+    for i = 0, wornItems:size() - 1 do
+        local item = wornItems:getItemByIndex(i)
+        if item and item.getFullType then
+            local fullType = item:getFullType()
+            if MEDICAL_MONITOR_WATCH_ITEMS[fullType] then
+                return true
+            end
+            if item.getType and MEDICAL_MONITOR_WATCH_ITEMS[item:getType()] then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 function EHR_HealthPanelUI:getBloodBagTexture(summary)
@@ -1843,17 +1877,6 @@ function EHR_HealthPanelUI:drawBloodBagIcon(x, y, w, h, summary)
             self:drawRect(x + 2, y + 2, w - 4, h - 4, 0.30, 0.54, 0.66, 0.66)
         end
         self:drawTextureScaled(texture, x, y, w, h, 1.0, 1.0, 1.0, 1.0)
-
-        local gaugeX = x + math.floor(w * 0.27)
-        local gaugeY = y + math.floor(h * 0.68)
-        local gaugeW = math.max(6, math.floor(w * 0.48))
-        local gaugeH = math.max(2, math.floor(h * 0.08))
-        local fillW = math.floor(gaugeW * clamp(bloodPct / 100, 0, 1))
-        self:drawRect(gaugeX, gaugeY, gaugeW, gaugeH, 0.82, 0.05, 0.05, 0.05)
-        if fillW > 0 then
-            self:drawRect(gaugeX, gaugeY, fillW, gaugeH, c.red.a, c.red.r, c.red.g, c.red.b)
-        end
-        self:drawRectBorder(gaugeX, gaugeY, gaugeW, gaugeH, 0.85, c.border.r, c.border.g, c.border.b)
         return
     end
 
@@ -1885,9 +1908,35 @@ function EHR_HealthPanelUI:drawBloodBar(x, y, w, h, summary, hideIcon)
     self:drawRectBorder(x, y, w, h, c.border.a, c.border.r, c.border.g, c.border.b)
 end
 
+function EHR_HealthPanelUI:drawLockedBloodSensor(x, y, w, h)
+    local c = EHR_HealthPanelUI.Colors
+    self:drawRect(x - 4, y - 4, w + 8, h + 8, 0.78, 0.015, 0.015, 0.018)
+    self:drawRectBorder(x - 4, y - 4, w + 8, h + 8, 0.65, c.borderDim.r, c.borderDim.g, c.borderDim.b)
+    self:drawRect(x, y, w, h, 1, 0.035, 0.035, 0.04)
+    self:drawRect(x, y, w, math.max(2, math.floor(h * 0.22)), 0.14, 0.8, 0.8, 0.72)
+    self:drawTextCentre("Medical watch required", x + math.floor(w / 2), y + 1, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    self:drawRectBorder(x, y, w, h, c.borderDim.a, c.borderDim.r, c.borderDim.g, c.borderDim.b)
+end
+
+function EHR_HealthPanelUI:drawMedicalWatchIcon(x, y, w, h)
+    local c = EHR_HealthPanelUI.Colors
+    if getTexture then
+        self.medicalWatchTexture = self.medicalWatchTexture or getTexture("media/textures/Item_EhrWatch.png") or false
+    end
+    self:drawRect(x + 5, y + 4, w - 10, h - 8, 0.34, 0.02, 0.02, 0.025)
+    self:drawRectBorder(x + 5, y + 4, w - 10, h - 8, 0.55, c.borderDim.r, c.borderDim.g, c.borderDim.b)
+    if self.medicalWatchTexture then
+        local iconSize = math.min(w - 8, h - 8)
+        self:drawTextureScaled(self.medicalWatchTexture, x + math.floor((w - iconSize) / 2), y + math.floor((h - iconSize) / 2), iconSize, iconSize, 0.42, 0.65, 0.65, 0.65)
+    else
+        self:drawTextCentre("MW", x + math.floor(w / 2), y + math.floor(h / 2) - 8, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
+    end
+end
+
 function EHR_HealthPanelUI:drawBloodCompositionPanel()
     local c = EHR_HealthPanelUI.Colors
     local summary = self:getBloodSummary()
+    local hasWatch = self:hasMedicalMonitorWatch()
     local x = 12
     local y = self:getContentTop()
     local w = self.width - 24
@@ -1896,21 +1945,28 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     local medicationCount = #(self.cachedData.activeMedications or {})
     self:drawPanelFrame(x, y, w, h, "BLOOD COMPOSITION", nil)
 
-    local iconW = 54
+    local iconW = hasWatch and 54 or 64
     local iconH = 70
-    local iconX = x + 18
-    local iconY = y + 38
-    self:drawBloodBagIcon(iconX, iconY, iconW, iconH, summary)
+    local iconX = hasWatch and (x + 18) or (x + 13)
+    local iconY = hasWatch and (y + 44) or (y + 38)
+    if hasWatch then
+        self:drawBloodBagIcon(iconX, iconY, iconW, iconH, summary)
+    else
+        self:drawMedicalWatchIcon(iconX, iconY, iconW, iconH)
+    end
 
     local percentW = 112
     local barX = iconX + iconW + 22
     local barY = y + 52
     local barW = math.max(120, w - (barX - x) - percentW - 24)
-    self:drawBloodBar(barX, barY, barW, 30, summary, true)
-
-    self:drawDockedTextRight(string.format("%d%%", math.floor(summary.bloodPct + 0.5)), x + w - 18, y + 46, 36, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Large)
-    if self.rightExpanded then
-        self:drawTextRight(string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)), x + w - 18, y + 88, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    if hasWatch then
+        self:drawBloodBar(barX, barY, barW, 30, summary, true)
+        self:drawDockedTextRight(string.format("%d%%", math.floor(summary.bloodPct + 0.5)), x + w - 18, y + 46, 36, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Large)
+        if self.rightExpanded then
+            self:drawTextRight(string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)), x + w - 18, y + 88, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        end
+    else
+        self:drawLockedBloodSensor(barX, barY, barW, 30)
     end
 
     local stripY = y + h - 38
@@ -1918,8 +1974,11 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     local stripFont = self:getCompactFont()
 
     if not self.rightExpanded then
-        local bloodText = string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5))
-        self:drawText(self:truncateText(bloodText, math.max(80, barW - 4), stripFont), stripX, stripY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, stripFont)
+        if not hasWatch then
+            return
+        end
+        local compactText = hasWatch and string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)) or "Medical watch required"
+        self:drawText(self:truncateText(compactText, math.max(80, barW - 4), stripFont), stripX, stripY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, stripFont)
         return
     end
 
@@ -1927,11 +1986,12 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     if stripRight < stripX + 220 then
         stripRight = barX + barW
     end
-    local cells = {
-        { text = string.format("Saline: %dmL (%d%%)", math.floor(summary.saline + 0.5), math.floor(summary.salinePct + 0.5)), color = c.blue },
-        { text = "Conditions: " .. tostring(diseaseCount), color = c.textDim },
-        { text = "Medications: " .. tostring(medicationCount), color = c.textDim },
-    }
+    local cells = {}
+    if hasWatch then
+        table.insert(cells, { text = string.format("Saline: %dmL (%d%%)", math.floor(summary.saline + 0.5), math.floor(summary.salinePct + 0.5)), color = c.blue })
+    end
+    table.insert(cells, { text = "Conditions: " .. tostring(diseaseCount), color = c.textDim })
+    table.insert(cells, { text = "Medications: " .. tostring(medicationCount), color = c.textDim })
 
         local cursorX = stripX
     for i, cell in ipairs(cells) do
@@ -2257,9 +2317,9 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     if bandaged then
         hasLocalizedDamage = true
         if bandageLife <= 0 then
-            add("dirty_bandage", "Dirty bandage", c.yellow, 0.40, 73)
+            add("dirty_bandage", "Dirty bandage", c.yellow, 0.40, 89)
         else
-            add("bandaged", "Bandaged", c.green, 0.20, 73)
+            add("bandaged", "Bandaged", c.green, 0.20, 89)
         end
     end
     if callBodyPartMethod(bodyPart, "stitched", false) == true then
@@ -2699,6 +2759,45 @@ function EHR_HealthPanelUI:buildActiveMedicationList(treatments, doseStatuses)
     return displayed
 end
 
+function EHR_HealthPanelUI:addKnoxCureMedicationEntries(activeMedications, activeSideEffects)
+    if not self.player or not EHR.KnoxCure or not EHR.KnoxCure.IsImmunoboosterActive then return end
+    if not EHR.KnoxCure.IsImmunoboosterActive(self.player) then return end
+
+    local remaining = 0
+    if EHR.KnoxCure.GetImmunoboosterRemaining then
+        remaining = tonumber(EHR.KnoxCure.GetImmunoboosterRemaining(self.player)) or 0
+    end
+    if remaining <= 0 then return end
+
+    local duration = 24
+    if EHR.KnoxCure.Config and tonumber(EHR.KnoxCure.Config.immunoboosterDuration) then
+        duration = tonumber(EHR.KnoxCure.Config.immunoboosterDuration)
+    end
+
+    table.insert(activeMedications, {
+        medicationName = "Immunobooster Shot",
+        medKey = "ImmunoboosterShot",
+        icon = "ImmunoboosterShot",
+        isTreatingDisease = false,
+        effectLabel = "Protection:",
+        hoursActiveRemaining = remaining,
+        progress = clamp(remaining / math.max(1, duration), 0, 1),
+    })
+
+    table.insert(activeSideEffects, {
+        effectId = "immunobooster_nausea",
+        displayName = "Mild nausea",
+        severity = 1,
+        hoursRemaining = remaining,
+    })
+    table.insert(activeSideEffects, {
+        effectId = "immunobooster_stamina",
+        displayName = "Reduced stamina regen",
+        severity = 1,
+        hoursRemaining = remaining,
+    })
+end
+
 function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local c = EHR_HealthPanelUI.Colors
     local displayInfo = self:getDiseaseDisplayInfo(diseaseId, disease)
@@ -2820,6 +2919,8 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
         end
     end
 
+    local activeRemaining = type(treatment) == "table" and tonumber(treatment.hoursActiveRemaining) or nil
+    local activeValue = activeRemaining and activeRemaining > 0 and formatShortHours(activeRemaining) or ""
     local rowH = doseText ~= "" and 78 or 58
     self:drawRect(x, y, w, rowH, 0.32, c.panelSoft.r, c.panelSoft.g, c.panelSoft.b)
     self:drawWornFrame(x, y, w, rowH, c.borderDim, 4)
@@ -2835,6 +2936,11 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
         local valueW = self:getTextWidth(cureRemaining, UIFont.Small)
         self:drawTextRight(cureRemaining, x + w - 10, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
         self:drawTextRight(self:truncateText("Time to cure:", math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+    elseif activeValue ~= "" then
+        local valueW = self:getTextWidth(activeValue, UIFont.Small)
+        local label = tostring(treatment.effectLabel or "Active:")
+        self:drawTextRight(activeValue, x + w - 10, y + 7, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Small)
+        self:drawTextRight(self:truncateText(label, math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Small)
     else
         self:drawTextRight("General effect", x + w - 10, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     end
@@ -2904,8 +3010,15 @@ function EHR_HealthPanelUI:drawRightPanel()
     if #treatments == 0 then
         self:drawRect(x + 14, contentY, w - 28, 54, 0.34, c.panelSoft.r, c.panelSoft.g, c.panelSoft.b)
         self:drawWornFrame(x + 14, contentY, w - 28, 54, c.borderDim, 4)
-        self:drawDockedText("No active medications", x + 54, contentY, w - 78, 54, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
-        self:drawRoundIcon(x + 22, contentY + 14, 26, c.panel, c.borderDim, "+", c.textDim)
+        if getTexture then
+            self.noMedsTexture = self.noMedsTexture or getTexture("media/textures/EHR_NoMeds.png") or false
+        end
+        if self.noMedsTexture and self.drawTextureScaled then
+            self:drawTextureScaled(self.noMedsTexture, x + 22, contentY + 10, 34, 34, 0.82, 1.0, 1.0, 1.0)
+        else
+            self:drawRoundIcon(x + 22, contentY + 14, 26, c.panel, c.borderDim, "", c.textDim)
+        end
+        self:drawDockedText("No active medications", x + 64, contentY, w - 92, 54, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
         contentY = contentY + 66
     else
         for _, treatment in ipairs(treatments) do

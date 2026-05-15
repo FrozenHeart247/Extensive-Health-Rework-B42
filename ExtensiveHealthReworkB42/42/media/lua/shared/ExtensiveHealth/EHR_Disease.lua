@@ -195,6 +195,38 @@ EHR.Disease.Diseases = {
         },
     },
 
+    ["hyperkeratotic_scabies"] = {
+        name = "Hyperkeratotic Scabies",
+        category = "infection",
+        incubationMin = 0,
+        incubationMax = 2,
+        durationMin = 96,
+        durationMax = 168,
+        baseSeverity = 0.75,
+        canKill = true,
+        stageCount = 4,
+        treatments = {
+            tier0 = {},
+            tier1 = {},
+            tier2 = {"ExtensiveHealth.AntiparasiticPills", "ExtensiveHealth.TopicalPermethrin"},
+            tier3 = {},
+        },
+        stageEntryDialogue = {
+            [1] = "Something bit me... it itches already.",
+            [2] = "This itching is spreading. My skin feels hot.",
+            [3] = "I can't stop scratching. My skin is burning!",
+            [4] = "This is tearing me apart... I need treatment.",
+        },
+        dialogue = {
+            [1] = {"It itches...", "Something is crawling on my skin...", "I need to stop scratching..."},
+            [2] = {"This rash is getting worse...", "My skin is on fire...", "I scratched myself open again..."},
+            [3] = {"I can't stop scratching!", "It feels like bugs under my skin!", "My whole body is burning and itching..."},
+            [4] = {"This won't stop...", "I'm scratching myself raw...", "My skin feels ruined..."},
+        },
+        symptoms = {"itching", "skin pain", "scratches", "fever", "health loss"},
+        dialogueCooldownHours = 0.85,
+    },
+
     ["toxin_poisoning"] = {
         name = "Toxin Poisoning",
         category = "food",
@@ -273,7 +305,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.Antibiotics"},
             tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},
-            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.BroadSpectrumAntibiotics"},
+            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
             tier3 = {"ExtensiveHealth.IVCiprofloxacin"},
         },
         stageEntryDialogue = {
@@ -303,7 +335,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {},
             tier1 = {"ExtensiveHealth.ElectrolytePowder", "ExtensiveHealth.AntiDiarrheal", "ExtensiveHealth.AntiNauseaTablets"},
-            tier2 = {"ExtensiveHealth.OralRehydrationKit", "ExtensiveHealth.BroadSpectrumAntibiotics"},  -- Cures in 48-72h
+            tier2 = {"ExtensiveHealth.OralRehydrationKit", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},  -- Cures in 48-72h
             tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVMetronidazole", "ExtensiveHealth.IVCiprofloxacin"},  -- Fast cure 24-36h
         },
         stageEntryDialogue = {
@@ -399,7 +431,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.Antibiotics"},
             tier1 = {"ExtensiveHealth.AntisepticCream", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
-            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics"},
+            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
             tier3 = {"ExtensiveHealth.IVAntibiotics"},  -- Fast cure 36h
         },
         stageEntryDialogue = {
@@ -429,7 +461,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.Antibiotics"},  -- Minimal help
             tier1 = {"ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief only
-            tier2 = {"ExtensiveHealth.BroadSpectrumAntibiotics"},  -- Cures in 72h
+            tier2 = {"ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},  -- Cures in 72h
             tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVVancomycin", "ExtensiveHealth.EmergencySepsisKit"},  -- Fast cure 24-48h
         },
         stageEntryDialogue = {
@@ -460,7 +492,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.Antibiotics"},
             tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
-            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics"},
+            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
             tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVVancomycin"},
         },
         stageEntryDialogue = {
@@ -1316,7 +1348,7 @@ function EHR.Disease.OnRecovery(player, diseaseId)
     -- Food poisoning should stay fully risk-based on each bad meal.
     if diseaseId == "food_poisoning" then
         data.immunity[diseaseId] = 0
-    elseif diseaseId == "toxin_poisoning" or diseaseId == "ahtr" or diseaseId == "concussion" then
+    elseif diseaseId == "toxin_poisoning" or diseaseId == "ahtr" or diseaseId == "concussion" or diseaseId == "hyperkeratotic_scabies" then
         data.immunity[diseaseId] = 0
     else
         data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
@@ -1360,6 +1392,8 @@ function EHR.Disease.OnRecovery(player, diseaseId)
         elseif EHR.Concussion.ClearHeadPain then
             EHR.Concussion.ClearHeadPain(player)
         end
+    elseif diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
+        EHR.HyperkeratoticScabies.ClearAfterCure(player)
     end
 
     if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
@@ -1515,6 +1549,11 @@ local EHR_DiseaseBodyFeverTargets = {
         [2] = { temp = 38.0, step = 0.028 },
         [3] = { temp = 38.9, step = 0.045 },
         [4] = { temp = 37.4, step = 0.020 },
+    },
+    hyperkeratotic_scabies = {
+        [2] = { temp = 38.0, step = 0.035 },
+        [3] = { temp = 40.0, step = 0.060 },
+        [4] = { temp = 40.0, step = 0.060 },
     },
     tuberculosis = {
         [2] = { temp = 37.7, step = 0.016 },
@@ -2465,6 +2504,106 @@ local function EHR_DiseaseReduceMuscleStrainToward(player, targetStiffness, step
     end
 end
 
+local function EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, stats, trySymptom)
+    -- Kept out of ApplyEffects to avoid Kahlua's 200-local compiler limit.
+    local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "hyperkeratotic_scabies")
+    local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "hyperkeratotic_scabies", disease)
+    local painRelief = math.max(
+        EHR_DiseaseGetActiveSymptomReduction(player, "hyperkeratotic_scabies", "pain"),
+        EHR_DiseaseGetActiveSymptomReduction(player, "hyperkeratotic_scabies", "inflammation") * 0.65
+    )
+    local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, "hyperkeratotic_scabies", "fever")
+    local healthDrainRelief = EHR_DiseaseGetActiveSymptomReduction(player, "hyperkeratotic_scabies", "healthDrain")
+    local treatmentSymptomMult = curativeTreatment and 0.35 or 1.0
+    local painMult = math.max(curativeTreatment and 0.12 or 0.35, symptomMult * treatmentSymptomMult * (1 - (painRelief * 1.5)))
+    local healthMult = curativeTreatment and 0.10 or math.max(0.18, symptomMult * (1 - (healthDrainRelief * 1.4)))
+
+    if EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.EnsureBitePart then
+        pcall(function() EHR.HyperkeratoticScabies.EnsureBitePart(player, disease) end)
+    end
+
+    local targetPain = 8
+    if stage == 2 then
+        targetPain = 18
+    elseif stage == 3 then
+        targetPain = 30
+    elseif stage == 4 then
+        targetPain = 24
+    end
+    targetPain = math.max(curativeTreatment and 2 or 5, targetPain * painMult)
+
+    local biteIndex = tonumber(disease.scabiesBitePartIndex)
+    if biteIndex and BodyPartType and BodyPartType.ToIndex then
+        EHR_DiseaseMoveTargetedPainToward(player, targetPain, 0.85 * severity, 1.2, function(partType)
+            local okIndex, index = pcall(function() return BodyPartType.ToIndex(partType) end)
+            return okIndex and tonumber(index) == biteIndex
+        end)
+    else
+        EHR_DiseaseRaisePainToward(stats, math.min(0.45, targetPain / 100), 0.006 * severity)
+    end
+
+    if stage >= 2 then
+        local feverMult = math.max(curativeTreatment and 0.18 or 0.30, symptomMult * (1 - (feverRelief * 1.5)))
+        EHR_DiseaseApplyBodyFever(player, "hyperkeratotic_scabies", disease, severity, feverMult, curativeTreatment)
+    end
+
+    if not curativeTreatment and (stage == 2 or stage == 3) then
+        local scratchCooldown = stage == 2 and 3.0 or 1.0
+        if EHR_DiseaseCanTriggerSymptom(disease, "scabies_scratch", scratchCooldown) then
+            if EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ApplyScratch then
+                pcall(function() EHR.HyperkeratoticScabies.ApplyScratch(player, "scabies_progression", disease) end)
+            end
+            EHR_DiseaseSay(player, {"I scratched myself open again...", "I can't stop scratching...", "The itching is spreading..."})
+        end
+    end
+
+    local dialogueCooldown = stage == 1 and 1.25 or stage == 2 and 0.85 or 0.60
+    trySymptom("scabies_itch_dialogue", 0.006 * severity * math.max(0.25, symptomMult), dialogueCooldown, function()
+        EHR_DiseaseSay(player, {"It itches so much...", "My skin is crawling...", "I need to stop scratching...", "This rash is getting worse..."})
+    end)
+
+    if curativeTreatment then
+        disease.scabiesHealthCap = nil
+    elseif stage == 2 or stage == 3 then
+        local healthFloor = stage == 2 and 60 or 30
+        disease.scabiesHealthCap = tonumber(disease.scabiesHealthCap) or EHR_DiseaseGetBodyHealth(player) or 100
+        if disease.scabiesHealthCap < healthFloor then
+            disease.scabiesHealthCap = healthFloor
+        end
+        EHR_DiseaseClampBodyHealth(player, disease.scabiesHealthCap)
+
+        local damageCooldown = stage == 2 and 0.55 or 0.35
+        if EHR_DiseaseCanTriggerSymptom(disease, "scabies_health_damage", damageCooldown) then
+            local currentHealth = EHR_DiseaseGetBodyHealth(player)
+            if currentHealth and currentHealth > healthFloor then
+                local baseDamage = stage == 2 and 0.75 or 1.15
+                local severityDamage = stage == 2 and 1.25 or 2.0
+                local damage = math.min(currentHealth - healthFloor, baseDamage + (severityDamage * severity * healthMult))
+                local newHealth = EHR_DiseaseApplyBodyHealthDamage(
+                    player,
+                    damage,
+                    "Hyperkeratotic scabies - untreated infestation caused systemic stress and open skin trauma"
+                )
+                if newHealth then
+                    disease.scabiesHealthCap = math.max(healthFloor, math.min(disease.scabiesHealthCap or 100, newHealth))
+                    EHR_DiseaseClampBodyHealth(player, disease.scabiesHealthCap)
+                end
+            end
+        end
+    elseif stage == 4 then
+        disease.scabiesHealthCap = nil
+        if not curativeTreatment and EHR_DiseaseCanTriggerSymptom(disease, "scabies_lethal_health_damage", 0.28) then
+            EHR_DiseaseApplyBodyHealthDamage(
+                player,
+                (1.35 + (2.65 * severity)) * math.max(0.15, healthMult),
+                "Hyperkeratotic scabies - severe untreated infestation became life-threatening"
+            )
+        end
+    else
+        disease.scabiesHealthCap = nil
+    end
+end
+
 function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
     local stats = player:getStats()
     if not stats then return end
@@ -2756,6 +2895,9 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
                 )
             end
         end
+
+    elseif diseaseId == "hyperkeratotic_scabies" then
+        EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, stats, trySymptom)
 
     elseif diseaseId == "tetanus" then
         -- Lockjaw and spasms from contaminated deep wounds. Stage 1 is incubation and has no active effects.
@@ -3488,6 +3630,22 @@ local function EHR_DiseaseEnforceHealthCaps(player, modData)
             EHR_DiseaseClampBodyHealth(player, concussion.concussionHealthCap)
         else
             concussion.concussionHealthCap = nil
+        end
+    end
+
+    local scabies = modData.EHR_Disease.active.hyperkeratotic_scabies
+    if scabies then
+        local stage = tonumber(scabies.stage) or 1
+        if EHR_DiseaseGetActiveCurativeTreatment(player, "hyperkeratotic_scabies") then
+            scabies.scabiesHealthCap = nil
+        elseif (stage == 2 or stage == 3) and scabies.scabiesHealthCap then
+            local floor = stage == 2 and 60 or 30
+            if scabies.scabiesHealthCap < floor then
+                scabies.scabiesHealthCap = floor
+            end
+            EHR_DiseaseClampBodyHealth(player, scabies.scabiesHealthCap)
+        elseif stage ~= 2 and stage ~= 3 then
+            scabies.scabiesHealthCap = nil
         end
     end
 end
@@ -4384,6 +4542,10 @@ function EHR.Disease.Cure(player, diseaseId)
             end
         end
 
+        if diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
+            EHR.HyperkeratoticScabies.ClearAfterCure(player)
+        end
+
         if diseaseId == "corpse_sickness" and EHR.CorpseSickness and EHR.CorpseSickness.ResetAfterCure then
 
             EHR.CorpseSickness.ResetAfterCure(player)
@@ -4433,6 +4595,7 @@ function EHR.Disease.CureAll(player)
     local curedCommonCold = false
     local curedPneumonia = false
     local curedConcussion = false
+    local curedScabies = false
 
     for diseaseId, _ in pairs(data.active) do
 
@@ -4460,6 +4623,10 @@ function EHR.Disease.CureAll(player)
 
         if diseaseId == "concussion" then
             curedConcussion = true
+        end
+
+        if diseaseId == "hyperkeratotic_scabies" then
+            curedScabies = true
         end
 
         if diseaseId == "corpse_sickness" then
@@ -4524,6 +4691,10 @@ function EHR.Disease.CureAll(player)
         elseif EHR.Concussion.ClearHeadPain then
             EHR.Concussion.ClearHeadPain(player)
         end
+    end
+
+    if curedScabies and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
+        EHR.HyperkeratoticScabies.ClearAfterCure(player)
     end
 
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
@@ -4905,7 +5076,14 @@ function EHR.Disease.GetTargetVanillaSickness(player, ignoreDiseaseId)
     end
 
     -- Get base level for this stage
-    local baseLevel = EHR.Disease.VanillaSicknessLevels[worstStage] or 0
+    local sicknessLevels = EHR.Disease.VanillaSicknessLevels or {
+        [0] = 0,
+        [1] = 10,
+        [2] = 35,
+        [3] = 60,
+        [4] = 20,
+    }
+    local baseLevel = sicknessLevels[worstStage] or 0
 
     -- Adjust by severity (0.5 severity = base, 1.0 = +50%, 0.0 = -50%)
     local adjustedLevel = baseLevel * (0.5 + worstSeverity)
@@ -5448,6 +5626,13 @@ if not (EHR.Concussion and EHR.Concussion.UpdateTracking) then
     local okConcussion, concussionErr = pcall(require, "ExtensiveHealth/EHR_Concussion")
     if not okConcussion then
         EHR.Log("Disease module: failed to load concussion detector: " .. tostring(concussionErr))
+    end
+end
+
+if not (EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.UpdatePlayer) then
+    local okScabies, scabiesErr = pcall(require, "ExtensiveHealth/EHR_HyperkeratoticScabies")
+    if not okScabies then
+        EHR.Log("Disease module: failed to load scabies detector: " .. tostring(scabiesErr))
     end
 end
 

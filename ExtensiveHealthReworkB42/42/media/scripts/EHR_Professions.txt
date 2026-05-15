@@ -1,0 +1,23 @@
+module ExtensiveHealth
+{
+    character_profession_definition ExtensiveHealth:ehrdoctor
+    {
+        CharacterProfession = ExtensiveHealth:ehrdoctor,
+        Cost = 0,
+        UIName = UI_prof_EHRDoctor,
+        UIDescription = UI_profdesc_EHRDoctor,
+        IconPathName = profession_doctor2,
+        XPBoosts = Doctor=6;SmallBlade=1,
+    }
+
+    character_profession_definition ExtensiveHealth:ehrsurgeon
+    {
+        CharacterProfession = ExtensiveHealth:ehrsurgeon,
+        Cost = -8,
+        UIName = UI_prof_EHRSurgeon,
+        UIDescription = UI_profdesc_EHRSurgeon,
+        IconPathName = profession_doctor2,
+        GrantedTraits = ExtensiveHealth:scalpelmaster,
+        XPBoosts = Doctor=10;SmallBlade=3,
+    }
+}

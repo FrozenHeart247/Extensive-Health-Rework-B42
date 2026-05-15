@@ -958,6 +958,7 @@ EHR.DebugV2.DiseaseList = {
     "heat_exhaustion",
     "heat_stroke",
     "trichinosis",
+    "hyperkeratotic_scabies",
     "gastroenteritis",
     "cadaveric_aspergillosis",
     "tetanus",

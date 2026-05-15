@@ -14,7 +14,7 @@
     - Uses bodyDamage:IsInfected() / setInfected() for boolean infection flag
     - Uses CharacterStat.ZOMBIE_INFECTION for infection progress (0-1 scale)
     - Uses CharacterStat.ZOMBIE_FEVER for zombie fever stat
-    - Uses bodyPart:bitten() / setBitten() for bite detection/clearing
+    - Uses bodyPart:bitten() for bite detection while preserving visible bite wounds
     - Tick-based infection suppression for immune players
 
     v1.1.0 - B42 API fixes
@@ -91,7 +91,8 @@ function EHR.KnoxCure.InitializePlayer(player)
 
         -- Immunobooster tracking
         immunoboosterActiveUntil = 0,   -- World hour when immunity ends
-        immunoboosterLastUsed = 0,      -- World hour when last used (for cooldown)
+        immunoboosterLastUsed = nil,    -- World hour when last used (for cooldown)
+        immunoboosterHasBeenUsed = false,
 
         -- Gene Therapy tracking
         geneTherapySurvivor = false,    -- True if survived Gene Therapy
@@ -104,6 +105,27 @@ function EHR.KnoxCure.InitializePlayer(player)
     EHR.Log("KnoxCure: Initialized tracking for player")
 end
 
+function EHR.KnoxCure.NormalizeData(data)
+    if not data then return nil end
+
+    if data.immunoboosterActiveUntil == nil then
+        data.immunoboosterActiveUntil = 0
+    end
+
+    local lastUsed = tonumber(data.immunoboosterLastUsed)
+    if data.immunoboosterHasBeenUsed == nil then
+        data.immunoboosterHasBeenUsed = lastUsed ~= nil and lastUsed > 0
+    end
+
+    -- Older saves initialized last-used to 0, which made brand new characters
+    -- wait through the full cooldown before ever using the shot.
+    if data.immunoboosterHasBeenUsed ~= true and lastUsed == 0 then
+        data.immunoboosterLastUsed = nil
+    end
+
+    return data
+end
+
 --[[
     Get Knox cure data for a player
 ]]--
@@ -113,7 +135,7 @@ function EHR.KnoxCure.GetData(player)
     if not modData.EHR_KnoxCure then
         EHR.KnoxCure.InitializePlayer(player)
     end
-    return modData.EHR_KnoxCure
+    return EHR.KnoxCure.NormalizeData(modData.EHR_KnoxCure)
 end
 
 -- ============================================
@@ -256,6 +278,59 @@ function EHR.KnoxCure.SetInfectionProgress(player, progress)
     end
 end
 
+local function EHRKnoxForEachBodyPart(bodyDamage, callback)
+    if not bodyDamage or not BodyPartType or not BodyPartType.FromIndex then return false end
+
+    local maxIndex = nil
+    if BodyPartType.MAX and BodyPartType.MAX.index then
+        local ok, value = pcall(function() return BodyPartType.MAX:index() - 1 end)
+        if ok then maxIndex = value end
+    end
+    if (not maxIndex or maxIndex < 0) and BodyPartType.ToIndex and BodyPartType.MAX then
+        local ok, value = pcall(function() return BodyPartType.ToIndex(BodyPartType.MAX) - 1 end)
+        if ok then maxIndex = value end
+    end
+    if not maxIndex or maxIndex < 0 then return false end
+
+    local anyChanged = false
+    for i = 0, maxIndex do
+        local partType = BodyPartType.FromIndex(i)
+        local bodyPart = partType and bodyDamage:getBodyPart(partType) or nil
+        if bodyPart and callback(bodyPart, i) then
+            anyChanged = true
+        end
+    end
+
+    return anyChanged
+end
+
+local function EHRKnoxClearBiteSource(bodyPart)
+    if not bodyPart then return false end
+
+    local isBitten = false
+    local okBitten, bitten = pcall(function() return bodyPart:bitten() end)
+    if okBitten and bitten then
+        isBitten = true
+    end
+    if not isBitten then return false end
+
+    -- Keep the bite wound visible, but remove the Knox infection payload attached to it.
+    -- Do not call SetBitten(false): immunity prevents Knox, it does not heal the wound.
+    pcall(function() bodyPart:SetInfected(false) end)
+    pcall(function() bodyPart:SetFakeInfected(false) end)
+
+    return true
+end
+
+local function EHRKnoxClearBodyPartInfectionMarkers(bodyPart)
+    if not bodyPart then return false end
+
+    pcall(function() bodyPart:SetInfected(false) end)
+    pcall(function() bodyPart:SetFakeInfected(false) end)
+
+    return false
+end
+
 --[[
     Cure Knox infection completely
     Clears all vanilla zombie infection flags and stats
@@ -287,30 +362,14 @@ function EHR.KnoxCure.CureInfection(player)
         end
     end
 
-    -- =====================================
-    -- Step 3: Clear bite status on all body parts
-    -- =====================================
-    for i = 0, BodyPartType.MAX:index() - 1 do
-        local bodyPart = bodyDamage:getBodyPart(BodyPartType.FromIndex(i))
-        if bodyPart then
-            -- Clear bitten status (zombie bite) - try different B42 method signatures
-            if bodyPart:bitten() then
-                -- Try single argument version first (B42)
-                local success = pcall(function() bodyPart:setBitten(false) end)
-                if not success then
-                    -- Try two argument version as fallback
-                    pcall(function() bodyPart:SetBitten(false) end)
-                end
-            end
+    -- Step 3: Clear body-part Knox source flags without erasing visible bite wounds.
+    EHRKnoxForEachBodyPart(bodyDamage, function(bodyPart)
+        EHRKnoxClearBodyPartInfectionMarkers(bodyPart)
+        return EHRKnoxClearBiteSource(bodyPart)
+    end)
 
-            -- Clear bite time
-            if bodyPart.setBiteTime then
-                pcall(function() bodyPart:setBiteTime(0) end)
-            end
-
-            -- Note: setInfectedWound is for bacterial wound infections, NOT Knox virus
-            -- We intentionally do NOT clear wound infections here since they're separate
-        end
+    if bodyDamage.DamageUpdate then
+        pcall(function() bodyDamage:DamageUpdate() end)
     end
 
     EHR.Log("KnoxCure: Knox virus infection cured!")
@@ -326,19 +385,18 @@ function EHR.KnoxCure.HasBites(player)
     local bodyDamage = player:getBodyDamage()
     if not bodyDamage then return false end
 
-    for i = 0, BodyPartType.MAX:index() - 1 do
-        local bodyPart = bodyDamage:getBodyPart(BodyPartType.FromIndex(i))
-        if bodyPart then
-            local success, isBitten = pcall(function()
-                return bodyPart:bitten()
-            end)
-            if success and isBitten then
-                return true
-            end
+    local foundBite = false
+    EHRKnoxForEachBodyPart(bodyDamage, function(bodyPart)
+        local success, isBitten = pcall(function()
+            return bodyPart:bitten()
+        end)
+        if success and isBitten then
+            foundBite = true
         end
-    end
+        return false
+    end)
 
-    return false
+    return foundBite
 end
 
 -- ============================================
@@ -676,7 +734,8 @@ function EHR.KnoxCure.IsImmunoboosterActive(player)
     if not data then return false end
 
     local currentHour = getGameTime():getWorldAgeHours()
-    return data.immunoboosterActiveUntil > currentHour
+    local activeUntil = tonumber(data.immunoboosterActiveUntil) or 0
+    return activeUntil > currentHour
 end
 
 --[[
@@ -687,7 +746,8 @@ function EHR.KnoxCure.GetImmunoboosterRemaining(player)
     if not data then return 0 end
 
     local currentHour = getGameTime():getWorldAgeHours()
-    return math.max(0, data.immunoboosterActiveUntil - currentHour)
+    local activeUntil = tonumber(data.immunoboosterActiveUntil) or 0
+    return math.max(0, activeUntil - currentHour)
 end
 
 --[[
@@ -699,7 +759,28 @@ function EHR.KnoxCure.IsImmunoboosterOnCooldown(player)
 
     local currentHour = getGameTime():getWorldAgeHours()
     local config = EHR.KnoxCure.Config
-    return (currentHour - data.immunoboosterLastUsed) < config.immunoboosterCooldown
+    local lastUsed = tonumber(data.immunoboosterLastUsed)
+    if data.immunoboosterHasBeenUsed ~= true and not (lastUsed and lastUsed > 0) then
+        return false
+    end
+    if not lastUsed then return false end
+
+    return (currentHour - lastUsed) < config.immunoboosterCooldown
+end
+
+function EHR.KnoxCure.GetImmunoboosterCooldownRemaining(player)
+    local data = EHR.KnoxCure.GetData(player)
+    if not data then return 0 end
+
+    local lastUsed = tonumber(data.immunoboosterLastUsed)
+    if data.immunoboosterHasBeenUsed ~= true and not (lastUsed and lastUsed > 0) then
+        return 0
+    end
+    if not lastUsed then return 0 end
+
+    local currentHour = getGameTime():getWorldAgeHours()
+    local config = EHR.KnoxCure.Config
+    return math.max(0, config.immunoboosterCooldown - (currentHour - lastUsed))
 end
 
 --[[
@@ -735,6 +816,10 @@ function EHR.KnoxCure.UseImmunobooster(player, item)
         EHR.Dialogue.SayStageChange(player, "Too late... I'm already infected. This won't help now.")
         return "already_infected"
     end
+    if EHR.KnoxCure.HasBites and EHR.KnoxCure.HasBites(player) then
+        EHR.Dialogue.SayStageChange(player, "Too late... I needed this before the bite.")
+        return "already_bitten"
+    end
 
     -- Consume item
     if item then
@@ -747,6 +832,7 @@ function EHR.KnoxCure.UseImmunobooster(player, item)
     -- Activate immunity
     data.immunoboosterActiveUntil = currentHour + config.immunoboosterDuration
     data.immunoboosterLastUsed = currentHour
+    data.immunoboosterHasBeenUsed = true
 
     -- Apply side effects
     EHR.KnoxCure.ApplyImmunoboosterSideEffects(player)
@@ -883,6 +969,7 @@ local function SuppressVanillaInfection(player, data)
     local isImmune = data.geneTherapyImmune or EHR.KnoxCure.IsImmunoboosterActive(player)
     if not isImmune then
         suppressionLoggedThisSession = false  -- Reset when no longer immune
+        data.knoxImmuneBlockedExposure = nil
         return
     end
 
@@ -916,6 +1003,29 @@ local function SuppressVanillaInfection(player, data)
         end)
         if statSuccess and level and level > 0 then
             pcall(function() stats:set(CharacterStat.ZOMBIE_FEVER, 0) end)
+        end
+    end
+
+    if wasInfected then
+        EHRKnoxForEachBodyPart(bodyDamage, function(bodyPart)
+            EHRKnoxClearBodyPartInfectionMarkers(bodyPart)
+            return false
+        end)
+    end
+
+    -- Immunobooster must remove the Knox payload attached to bites, not the visible
+    -- bite wound itself. Otherwise vanilla can restart Knox after the booster expires.
+    local clearedBiteSource = EHRKnoxForEachBodyPart(bodyDamage, function(bodyPart)
+        return EHRKnoxClearBiteSource(bodyPart)
+    end)
+    if clearedBiteSource then
+        local firstBlockedExposure = data.knoxImmuneBlockedExposure ~= true
+        data.knoxImmuneBlockedExposure = true
+        if firstBlockedExposure then
+            wasInfected = true
+        end
+        if firstBlockedExposure and bodyDamage.DamageUpdate then
+            pcall(function() bodyDamage:DamageUpdate() end)
         end
     end
 

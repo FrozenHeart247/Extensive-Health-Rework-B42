@@ -1,0 +1,26 @@
+module ExtensiveHealth
+{
+    craftRecipe MakePlantBasedAntibiotics
+    {
+        timedAction = MixingMortarPestle,
+        time = 180,
+        NeedToBeLearn = true,
+        Tags = AnySurfaceCraft;Health,
+        category = EHRMedicine,
+        AutoLearnAny = Doctor:8,
+        OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
+        inputs
+        {
+            item 1 tags[base:mortarpestle] mode:keep,
+            item 1 [Base.Garlic],
+            item 1 [Base.Oregano],
+            item 1 [Base.Thyme],
+            item 1 [Base.Lavender],
+            item 1 [Base.GingerRoot],
+        }
+        outputs
+        {
+            item 1 ExtensiveHealth.PlantBasedAntibiotics,
+        }
+    }
+}

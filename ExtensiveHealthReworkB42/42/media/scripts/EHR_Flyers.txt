@@ -175,6 +175,20 @@ module ExtensiveHealth
         UnhappyChange = -5,
     }
 
+    item DiseaseFlyer_HyperkeratoticScabies
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Hyperkeratotic Scabies,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_HyperkeratoticScabies,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 14,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
     item DiseaseFlyer_ToxinPoisoning
     {
         DisplayCategory = Literature,
@@ -280,6 +294,26 @@ module ExtensiveHealth
         DisplayName = Medical Information: Blood Types,
         Weight = 0.1,
         Icon = DiseaseFlyer_BloodType,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 12,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
+
+    /** =========================================
+        EHR MEDICINE RECIPES
+    ========================================= **/
+
+    item EhrRecipePlantBasedAntibiotics
+    {
+        DisplayCategory = RecipeResource,
+        ItemType = base:literature,
+        DisplayName = Recipe: Plant-Based Antibiotics,
+        Weight = 0.1,
+        Icon = EhrRecipePlantBasedAntibiotics,
+        Tooltip = Tooltip_EhrRecipePlantBasedAntibiotics,
+        LearnedRecipes = MakePlantBasedAntibiotics,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 12,
         BoredomChange = -10,

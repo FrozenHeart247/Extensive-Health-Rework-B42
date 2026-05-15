@@ -101,6 +101,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.AntifungalTablets"] = true,
     ["ExtensiveHealth.ActivatedCharcoal"] = true,
     ["ExtensiveHealth.AntiparasiticPills"] = true,
+    ["ExtensiveHealth.TopicalPermethrin"] = true,
     ["ExtensiveHealth.OralRehydrationKit"] = true,
     ["ExtensiveHealth.InstantIcePack"] = true,
     ["ExtensiveHealth.Furosemide"] = true,
@@ -108,6 +109,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.TBAntibiotics"] = true,
     ["ExtensiveHealth.AntibioticOintment"] = true,
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,
+    ["ExtensiveHealth.PlantBasedAntibiotics"] = true,
 
     -- EHR Tier 3 - Clinical (drainable ones)
     ["ExtensiveHealth.RifampicinComboPack"] = true,

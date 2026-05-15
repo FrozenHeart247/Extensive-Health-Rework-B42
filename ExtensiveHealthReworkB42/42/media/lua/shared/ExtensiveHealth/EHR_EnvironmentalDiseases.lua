@@ -366,6 +366,13 @@ function EHR.Environmental.SuppressVanillaCold(player)
     if hasAnyModRespiratory then
         -- Mod HAS a respiratory disease - sync SICKNESS to mod's disease stage
         local targetSickness = 0
+        local vanillaSicknessLevels = (EHR.Disease and EHR.Disease.VanillaSicknessLevels) or {
+            [0] = 0,
+            [1] = 10,
+            [2] = 35,
+            [3] = 60,
+            [4] = 20,
+        }
         local respiratoryDiseases = {"common_cold", "pneumonia", "corpse_sickness", "cadaveric_aspergillosis", "tuberculosis"}
         local corpseReliefCapped = false
         local gameTime = getGameTime and getGameTime() or nil
@@ -374,7 +381,7 @@ function EHR.Environmental.SuppressVanillaCold(player)
         for _, diseaseId in ipairs(respiratoryDiseases) do
             local disease = active[diseaseId]
             if disease and disease.stage then
-                local stageValue = EHR.Disease.VanillaSicknessLevels[disease.stage] or 0
+                local stageValue = vanillaSicknessLevels[disease.stage] or 0
                 if diseaseId == "common_cold" then
                     -- Common cold now drives the vanilla cold moodle directly.
                     -- Do not turn it into the nausea/sickness moodle.

@@ -255,16 +255,22 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     local isActive = EHR.KnoxCure.IsImmunoboosterActive(player)
     local isOnCooldown = EHR.KnoxCure.IsImmunoboosterOnCooldown(player)
     local isInfected = EHR.KnoxCure.IsInfected(player)
+    local hasBites = EHR.KnoxCure.HasBites and EHR.KnoxCure.HasBites(player) or false
     local remaining = EHR.KnoxCure.GetImmunoboosterRemaining(player)
+    local cooldownRemaining = EHR.KnoxCure.GetImmunoboosterCooldownRemaining
+        and EHR.KnoxCure.GetImmunoboosterCooldownRemaining(player)
+        or 0
 
     -- Create option
     local optionText
     if isActive then
         optionText = string.format("Immunobooster (Active - %.0fh left)", remaining)
     elseif isOnCooldown then
-        optionText = "Use Immunobooster (On Cooldown)"
+        optionText = string.format("Use Immunobooster (Cooldown %.0fh)", cooldownRemaining)
     elseif isInfected then
         optionText = "Use Immunobooster (Already Infected)"
+    elseif hasBites then
+        optionText = "Use Immunobooster (Already Bitten)"
     else
         optionText = "Use Immunobooster (24h Protection)"
     end
@@ -272,7 +278,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseImmunobooster, item)
 
     -- Disable if not usable
-    if isActive or isOnCooldown or isInfected then
+    if isActive or isOnCooldown or isInfected or hasBites then
         option.notAvailable = true
     end
 
@@ -286,9 +292,11 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     if isActive then
         desc = desc .. "<RGB:0.2,0.8,0.2> Currently Active: " .. string.format("%.1f hours remaining", remaining) .. "\n"
     elseif isOnCooldown then
-        desc = desc .. "<RGB:1,0.5,0.5> On Cooldown: Body needs 7 days to recover\n"
+        desc = desc .. "<RGB:1,0.5,0.5> On Cooldown: " .. string.format("%.1f hours remaining", cooldownRemaining) .. "\n"
     elseif isInfected then
         desc = desc .. "<RGB:1,0.5,0.5> Already Infected: Too late for prevention\n"
+    elseif hasBites then
+        desc = desc .. "<RGB:1,0.5,0.5> Already Bitten: this must be used before exposure\n"
     else
         desc = desc .. "<RGB:0.5,1,0.5> Ready to use\n"
     end

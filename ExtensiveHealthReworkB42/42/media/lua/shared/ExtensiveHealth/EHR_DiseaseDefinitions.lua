@@ -932,6 +932,92 @@ EHR.Disease.Diseases["trichinosis"] = EHR.Disease.Diseases["trichinosis"] or {
 }
 
 -- ============================================
+-- HYPERKERATOTIC SCABIES (Phase 3 - Parasitic Skin Infestation)
+-- ============================================
+--[[
+    Transmission: Prolonged contact with natural ground/grass/dirt.
+    Duration: 4-7 days.
+    Effects: Bite-site pain, itching, repeated scratches, fever, systemic decline.
+    Treatment: Topical permethrin, antiparasitic medication.
+    Key: Reinflicts scratches as the infestation worsens.
+]]--
+EHR.Disease.Diseases["hyperkeratotic_scabies"] = EHR.Disease.Diseases["hyperkeratotic_scabies"] or {
+    name = "Hyperkeratotic Scabies",
+    category = "infection",
+    incubationMin = 0,
+    incubationMax = 2,
+    durationMin = 96,
+    durationMax = 168,
+    stageDurations = {
+        [1] = 0.22,
+        [2] = 0.28,
+        [3] = 0.30,
+        [4] = 0.20,
+    },
+    baseSeverity = 0.75,
+    canKill = true,
+    deathChancePerHour = 0.004,
+    deathStage = 4,
+    treatmentItem = "TopicalPermethrin",
+    treatmentCured = true,
+    treatmentReducesDeath = 0.95,
+    stageCount = 4,
+    effects = {
+        [1] = {
+            painLevel = 1,
+        },
+        [2] = {
+            painLevel = 2,
+            feverTemp = 38.0,
+            healthCap = 60,
+        },
+        [3] = {
+            painLevel = 3,
+            feverTemp = 40.0,
+            healthCap = 30,
+        },
+        [4] = {
+            painLevel = 4,
+            feverTemp = 40.0,
+        },
+    },
+    treatments = {
+        tier2 = {"ExtensiveHealth.TopicalPermethrin", "ExtensiveHealth.AntiparasiticPills"},
+    },
+    stageEntryDialogue = {
+        [1] = "Something bit me... and it will not stop itching.",
+        [2] = "The itching is spreading. My skin feels hot.",
+        [3] = "I keep scratching myself open. This is getting bad.",
+        [4] = "My whole body feels like it is burning and crawling.",
+    },
+    dialogue = {
+        [1] = {
+            "It itches so much...",
+            "My skin is crawling...",
+        },
+        [2] = {
+            "I need to stop scratching...",
+            "This rash is getting worse...",
+        },
+        [3] = {
+            "I scratched myself open again...",
+            "The itching is everywhere...",
+        },
+        [4] = {
+            "I can't take this itching anymore...",
+            "My skin feels like fire...",
+        },
+    },
+    dialogueChanceBase = {
+        [1] = 70,
+        [2] = 90,
+        [3] = 120,
+        [4] = 130,
+    },
+    dialogueCooldownHours = 0.65,
+}
+
+-- ============================================
 -- GASTROENTERITIS (Phase 3 - Hand Hygiene)
 -- ============================================
 --[[

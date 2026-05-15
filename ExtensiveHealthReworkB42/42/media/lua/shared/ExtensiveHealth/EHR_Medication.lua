@@ -150,6 +150,19 @@ EHR.Medication.Database = {
         sideEffects = {"caffeine_crash"},
     },
 
+    -- Base.PillsSleepingTablets (vanilla sleeping pills)
+    ["Base.PillsSleepingTablets"] = {
+        tier = 0,
+        treats = {},
+        displayName = "Sleeping Pills",
+        icon = "PillsSleeping",
+        useVanillaActionOnly = true,
+        skipDrugInteractions = true,
+        appliesWithoutDisease = true,
+        effectDurationHours = 8,
+        usageMessage = "You take sleeping pills. Drowsiness settles in.",
+    },
+
     -- Base.PillsBeta
     ["Base.PillsBeta"] = {
         tier = 0,
@@ -194,6 +207,7 @@ EHR.Medication.Database = {
             "sepsis",
             "tuberculosis",
             "ahtr",
+            "hyperkeratotic_scabies",
         },
         displayName = "Antipyretic Tablets",
         usageMessage = "You take antipyretic tablets. The fever begins to ease.",
@@ -393,10 +407,35 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiparasiticPills"] = {
         tier = 2,
-        treats = {"trichinosis"},
+        treats = {"trichinosis", "hyperkeratotic_scabies"},
         displayName = "Antiparasitic Pills",
         usageMessage = "You take antiparasitic medication. The parasites will die.",
         cureTimeHours = 168, -- 7 days to cure
+        diseaseCureTimeHours = {
+            trichinosis = 168,
+            hyperkeratotic_scabies = 168,
+        },
+        symptomReduction = {
+            pain = 0.30,
+            fever = 0.25,
+            healthDrain = 0.45,
+        },
+    },
+
+    ["ExtensiveHealth.TopicalPermethrin"] = {
+        tier = 2,
+        treats = {"hyperkeratotic_scabies"},
+        displayName = "Topical Permethrin",
+        icon = "TopicalPermethrin",
+        usageMessage = "You apply topical permethrin. The mites should start dying off.",
+        isTopical = true,
+        cureTimeHours = 72,
+        treatmentTimeText = "72 hours (6-dose course)",
+        symptomReduction = {
+            pain = 0.45,
+            fever = 0.30,
+            healthDrain = 0.65,
+        },
     },
 
     ["ExtensiveHealth.OralRehydrationKit"] = {
@@ -506,6 +545,15 @@ EHR.Medication.Database = {
         treats = {"wound_infection", "sepsis", "pneumonia", "cellulitis", "dysentery"},
         displayName = "Broad Spectrum Antibiotics",
         usageMessage = "You take broad spectrum antibiotics. They fight multiple infections.",
+        cureTimeHours = 72,
+    },
+
+    ["ExtensiveHealth.PlantBasedAntibiotics"] = {
+        tier = 2,
+        treats = {"wound_infection", "sepsis", "pneumonia", "cellulitis", "dysentery"},
+        displayName = "Plant-Based Antibiotics",
+        icon = "PlantBasedAntibiotics",
+        usageMessage = "You take plant-based antibiotics. They should help fight the infection.",
         cureTimeHours = 72,
     },
 
@@ -1557,6 +1605,7 @@ EHR.Medication.DosingSchedules = {
     ["Base.Antibiotics"] = { doseInterval = 4, dosesRequired = 6 },
     ["Base.Pills"] = { doseInterval = 4, dosesRequired = 3 },
     ["Base.PillsVitamins"] = { doseInterval = 12, dosesRequired = 1 },
+    ["Base.PillsSleepingTablets"] = { doseInterval = 8, dosesRequired = 1 },
     ["Base.PillsBeta"] = { doseInterval = 8, dosesRequired = 3 },
 
     -- Tier 1 - OTC (every 4-6 hours)
@@ -1579,6 +1628,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.AntifungalTablets"] = { doseInterval = 12, dosesRequired = 10 },
     ["ExtensiveHealth.ActivatedCharcoal"] = { doseInterval = 0, dosesRequired = 1 },  -- Single dose absorbs toxins
     ["ExtensiveHealth.AntiparasiticPills"] = { doseInterval = 12, dosesRequired = 14 },
+    ["ExtensiveHealth.TopicalPermethrin"] = { doseInterval = 12, dosesRequired = 6 },
     ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
     ["ExtensiveHealth.InstantIcePack"] = { doseInterval = 1, dosesRequired = 4 },  -- Emergency cooling course
     ["ExtensiveHealth.Furosemide"] = { doseInterval = 8, dosesRequired = 6 },  -- Transfusion reaction support course
@@ -1587,6 +1637,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
+    ["ExtensiveHealth.PlantBasedAntibiotics"] = { doseInterval = 8, dosesRequired = 6 },
 
     -- Tier 3 - Clinical (mostly single dose for emergency/IV treatments)
     ["ExtensiveHealth.CorticosteroidInjection"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
@@ -2012,6 +2063,7 @@ EHR.Medication.DrugCategories = {
     ["Antifungal Tablets"] = "antifungal",
     ["Activated Charcoal"] = "charcoal",
     ["Antiparasitic Pills"] = "antiparasitic",
+    ["Topical Permethrin"] = "antiparasitic",
     ["Oral Rehydration Kit"] = "rehydration",
     ["Antipsychotics"] = "antipsychotic",
     ["Tetanus Antitoxin"] = "antitoxin",

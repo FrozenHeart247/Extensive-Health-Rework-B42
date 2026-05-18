@@ -2170,6 +2170,13 @@ end
 ]]--
 function EHR.Medication.ConsumeOneDose(player, item, inventory)
     if not item or not inventory then return false, "invalid" end
+    local itemContainer = inventory
+    if item.getContainer then
+        local ok, container = pcall(function() return item:getContainer() end)
+        if ok and container then
+            itemContainer = container
+        end
+    end
 
     local itemID = nil
     if item.getID then
@@ -2215,7 +2222,7 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
     if isClient() and itemID then
         sendClientCommand(player, "EHR", "RemoveItem", {itemID = itemID})
     end
-    inventory:Remove(item)
+    itemContainer:Remove(item)
 
     return true, "removed", useDelta, 1.0
 end

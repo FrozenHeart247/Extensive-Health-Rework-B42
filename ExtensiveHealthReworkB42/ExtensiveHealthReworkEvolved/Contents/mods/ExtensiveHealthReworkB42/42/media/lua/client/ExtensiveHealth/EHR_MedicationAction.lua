@@ -9,6 +9,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Medication"
 require "TimedActions/ISBaseTimedAction"
+require "TimedActions/ISInventoryTransferAction"
 
 EHR = EHR or {}
 EHR.MedicationAction = {}
@@ -65,6 +66,30 @@ function EHR.MedicationAction.GetAdminType(medData)
     return "default"
 end
 
+local function EHRMedicationActionHasItem(character, item)
+    if not character or not item then return false end
+    local inventory = character:getInventory()
+    if not inventory then return false end
+
+    if inventory:contains(item) then return true end
+    if inventory.containsRecursive and inventory:containsRecursive(item) then return true end
+
+    return false
+end
+
+function EHR.MedicationAction.QueueUseMedication(playerObj, item, medData)
+    if not playerObj or not item then return end
+
+    local inventory = playerObj:getInventory()
+    local container = item:getContainer()
+
+    if inventory and container and container ~= inventory then
+        ISTimedActionQueue.add(ISInventoryTransferAction:new(playerObj, item, container, inventory))
+    end
+
+    ISTimedActionQueue.add(EHRMedicationAction:new(playerObj, item, medData))
+end
+
 -- ============================================
 -- TIMED ACTION CLASS
 -- ============================================
@@ -74,7 +99,7 @@ EHRMedicationAction = ISBaseTimedAction:derive("EHRMedicationAction")
 function EHRMedicationAction:isValid()
     -- Check player is alive and has the item
     if not self.character:isAlive() then return false end
-    if not self.character:getInventory():contains(self.item) then return false end
+    if not EHRMedicationActionHasItem(self.character, self.item) then return false end
 
     -- Re-check if medication can still be used
     local canUse, _ = EHR.Medication.CanUseMedication(self.character, self.item)
@@ -162,7 +187,7 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
 
                 -- Use timed action instead of direct call
                 local option = context:addOption(optionName, playerObj, function(plr)
-                    ISTimedActionQueue.add(EHRMedicationAction:new(plr, item, medData))
+                    EHR.MedicationAction.QueueUseMedication(plr, item, medData)
                 end)
 
                 -- Always add tooltip with medication info

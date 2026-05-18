@@ -21,6 +21,7 @@ EHR.CorpseSickness.Config = {
     EXPOSURE_THRESHOLD_LOW = 30,
     EXPOSURE_THRESHOLD_MEDIUM = 60,
     EXPOSURE_THRESHOLD_HIGH = 100,
+    EXPOSURE_DISPLAY_MIN = 1,
 
     -- Corpse count thresholds (for debug/UI)
     CORPSE_COUNT_SAFE = 2,
@@ -1707,11 +1708,12 @@ function EHR.CorpseSickness.GetExposureDisplay(player)
 
     local config = EHR.CorpseSickness.Config
     local exposure = math.max(data.currentExposure or 0, data.vanillaCorpseExposure or 0)
+    local displayMin = tonumber(config.EXPOSURE_DISPLAY_MIN) or 1
     if exposure >= config.EXPOSURE_THRESHOLD_HIGH then
         return "High"
     elseif exposure >= config.EXPOSURE_THRESHOLD_MEDIUM then
         return "Medium"
-    elseif exposure >= config.EXPOSURE_THRESHOLD_LOW then
+    elseif exposure >= math.min(config.EXPOSURE_THRESHOLD_LOW or 30, displayMin) then
         return "Low"
     end
     return "None"

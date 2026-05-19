@@ -110,11 +110,7 @@ local function EHR_PrintDeathSnapshot(player)
 
     if bodyDamage then
         print("[EHR] BodyDamage: overallHealth=" ..
-            EHR_DeathSnapshotNum(EHR_DeathSnapshotTry(function() return bodyDamage:getOverallBodyHealth() end, nil), 2) ..
-            " infectionLevel=" ..
-            EHR_DeathSnapshotNum(EHR_DeathSnapshotTry(function() return bodyDamage:getInfectionLevel() end, nil), 2) ..
-            " foodSickness=" ..
-            EHR_DeathSnapshotNum(EHR_DeathSnapshotTry(function() return bodyDamage:getFoodSicknessLevel() end, nil), 2))
+            EHR_DeathSnapshotNum(EHR_DeathSnapshotTry(function() return bodyDamage:getOverallBodyHealth() end, nil), 2))
     end
 
     if stats and CharacterStat then

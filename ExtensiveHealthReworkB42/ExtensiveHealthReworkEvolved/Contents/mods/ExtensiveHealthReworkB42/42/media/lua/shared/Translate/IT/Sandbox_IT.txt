@@ -1,12 +1,5 @@
-﻿Sandbox_IT = {
-    -- ============================================
-    -- MAIN MOD PAGE (required for sandbox visibility)
-    -- ============================================
+Sandbox_IT = {
     Sandbox_ExtensiveHealthRework = "Rework Salute Esteso",
-
-    -- ============================================
-    -- PAGE NAMES
-    -- ============================================
     Sandbox_EHR_Blood = "EHR: Sistema sangue",
     Sandbox_EHR_Disease = "EHR: Malattie",
     Sandbox_EHR_Loot = "EHR: Bottino",
@@ -14,10 +7,6 @@
     Sandbox_EHR_Comp = "EHR: Compatibilita",
     Sandbox_EHR_Other = "EHR: Altro",
     Sandbox_EHR_Debug = "EHR: Debug",
-
-    -- ============================================
-    -- BLOOD SYSTEM
-    -- ============================================
     Sandbox_EHR_BloodLossMultiplier = "Moltiplicatore perdita sangue",
     Sandbox_EHR_BloodLossMultiplier_tooltip = "Velocita perdita sangue. 1.0 = normale, 2.0 = doppio.",
     Sandbox_EHR_BloodThresholdHealthy = "Soglia sangue sano (%)",
@@ -40,10 +29,6 @@
     Sandbox_EHR_BlackoutCooldownHours_tooltip = "Ore tra possibili svenimenti.",
     Sandbox_EHR_BlackoutChance = "Probabilita svenimento (1 su X)",
     Sandbox_EHR_BlackoutChance_tooltip = "Probabilita per tick. Più basso = più frequente. 50 = 1 su 50.",
-
-    -- ============================================
-    -- HEALING REQUIREMENTS
-    -- ============================================
     Sandbox_EHR_HealingRequiresFed = "Guarigione richiede sazieta",
     Sandbox_EHR_HealingRequiresFed_tooltip = "Le ferite guariscono solo se non hai fame.",
     Sandbox_EHR_HealingRequiresHydrated = "Guarigione richiede idratazione",
@@ -54,10 +39,6 @@
     Sandbox_EHR_HealingRequiresCalm_tooltip = "Le ferite guariscono solo se non sei stressato.",
     Sandbox_EHR_HealingRequiresNoPain = "Guarigione richiede poco dolore",
     Sandbox_EHR_HealingRequiresNoPain_tooltip = "Le ferite guariscono solo se il dolore e basso.",
-
-    -- ============================================
-    -- WOUNDS & INFECTION
-    -- ============================================
     Sandbox_EHR_WoundInfectionEnabled = "Abilita infezioni delle ferite",
     Sandbox_EHR_WoundInfectionEnabled_tooltip = "Le ferite non trattate possono infettarsi.",
     Sandbox_EHR_WoundInfectionSpeed = "Velocita infezione",
@@ -68,32 +49,24 @@
     Sandbox_EHR_SepsisSpeed_tooltip = "Velocita di progressione. 1.0 = normale, 2.0 = doppio.",
     Sandbox_EHR_TetanusEnabled = "Abilita tetano",
     Sandbox_EHR_TetanusEnabled_tooltip = "Tetano letale da ferite profonde. Incubazione 3-7 giorni, poi spasmi, impossibilita a mangiare, morte. Antitossina rara.",
-
-    -- ============================================
-    -- DISEASES - GENERAL
-    -- ============================================
     Sandbox_EHR_DiseaseEnabled = "Abilita malattie",
     Sandbox_EHR_DiseaseEnabled_tooltip = "Abilita intossicazione alimentare e altre malattie.",
     Sandbox_EHR_DiseaseSpeed = "Velocita malattie",
     Sandbox_EHR_DiseaseSpeed_tooltip = "Velocita di progressione. 1.0 = normale, 2.0 = doppio.",
     Sandbox_EHR_MisdiagnosisConsequences = "Conseguenze diagnosi errata",
     Sandbox_EHR_MisdiagnosisConsequences_tooltip = "Diagnosi errata porta a trattamenti inefficaci. Più primo soccorso = più precisione.",
-
-    -- ============================================
-    -- DISEASES - FOOD & WATER
-    -- ============================================
     Sandbox_EHR_FoodPoisoningEnabled = "Abilita intossicazione alimentare",
     Sandbox_EHR_FoodPoisoningEnabled_tooltip = "Cibo marcio/crudo/bruciato causa intossicazione. Nausea, vomito, disidratazione. Si sopravvive idratandosi.",
     Sandbox_EHR_GastroenteritisEnabled = "Abilita gastroenterite",
     Sandbox_EHR_GastroenteritisEnabled_tooltip = "Virus gastro da mani sporche. Vomito e disidratazione. Lavati le mani!",
     Sandbox_EHR_TrichinosisEnabled = "Abilita trichinosi",
     Sandbox_EHR_TrichinosisEnabled_tooltip = "Parassita da carne selvatica cruda (ratti, cinghiale, orso). Dolore muscolare grave, puo essere letale.",
+    Sandbox_EHR_ToxinPoisoningEnabled = "Enable Toxin Poisoning",
+    Sandbox_EHR_ToxinPoisoningEnabled_tooltip = "Dangerous poisoning from toxic mushrooms and berries. Can be lethal without fast treatment.",
+    Sandbox_EHR_HyperkeratoticScabiesEnabled = "Enable Hyperkeratotic Scabies",
+    Sandbox_EHR_HyperkeratoticScabiesEnabled_tooltip = "Severe parasitic skin infestation from prolonged contact with dirt or grass. Causes itching, fever, wounds, and can become lethal.",
     Sandbox_EHR_DysenteryEnabled = "Abilita dissenteria",
     Sandbox_EHR_DysenteryEnabled_tooltip = "Acqua contaminata causa dissenteria. MORTALE per disidratazione.",
-
-    -- ============================================
-    -- DISEASES - ENVIRONMENTAL
-    -- ============================================
     Sandbox_EHR_CommonColdEnabled = "Abilita raffreddore",
     Sandbox_EHR_CommonColdEnabled_tooltip = "Freddo + umido causa raffreddore. Può evolvere in polmonite.",
     Sandbox_EHR_PneumoniaEnabled = "Abilita polmonite",
@@ -102,34 +75,30 @@
     Sandbox_EHR_HypothermiaEnabled_tooltip = "Freddo estremo + umidità causa ipotermia. MORTALE - rischio arresto cardiaco.",
     Sandbox_EHR_HeatExhaustionEnabled = "Abilita esaurimento da calore",
     Sandbox_EHR_HeatExhaustionEnabled_tooltip = "Calore + sforzo + disidratazione causa esaurimento. Può diventare colpo di calore letale. Ombra e acqua!",
+    Sandbox_EHR_HeatStrokeEnabled = "Enable Heat Stroke",
+    Sandbox_EHR_HeatStrokeEnabled_tooltip = "Lethal heat illness caused by untreated heat exposure. Disables heat stroke contraction while keeping heat exhaustion available.",
+    Sandbox_EHR_ConcussionEnabled = "Enable Concussion",
+    Sandbox_EHR_ConcussionEnabled_tooltip = "Head trauma from serious falls and vehicle crashes. Causes headache, nausea, dizziness, and temporary impairment.",
+    Sandbox_EHR_DeliriumEnabled = "Enable Delirium",
+    Sandbox_EHR_DeliriumEnabled_tooltip = "Mental breakdown from prolonged maximum stress. Causes hallucinations, intrusive actions, and disturbing audio events until treated.",
+    Sandbox_EHR_AHTREnabled = "Enable AHTR",
+    Sandbox_EHR_AHTREnabled_tooltip = "Acute hemolytic transfusion reaction from incompatible blood transfusions. Dangerous and potentially lethal.",
     Sandbox_EHR_EnvironmentalDiseaseSpeed = "Velocita malattie ambientali",
     Sandbox_EHR_EnvironmentalDiseaseSpeed_tooltip = "Velocita malattie ambientali (raffreddore, ipotermia, dissenteria). 1.0 = normale.",
-
-    -- ============================================
-    -- DISEASES - CORPSE EXPOSURE
-    -- ============================================
-    Sandbox_EHR_AspergilliosisEnabled = "Abilita aspergillosi cadaverica",
-    Sandbox_EHR_AspergilliosisEnabled_tooltip = "Infezione fungina polmonare da esposizione a cadaveri in ambienti umidi. Insufficienza respiratoria progressiva.",
+    Sandbox_EHR_CadavericAspergillosisEnabled = "Abilita aspergillosi cadaverica",
+    Sandbox_EHR_CadavericAspergillosisEnabled_tooltip = "Infezione fungina polmonare da cadaveri in condizioni umide, piovose, bagnate o fredde.",
     Sandbox_EHR_PutrefactionSicknessEnabled = "Abilita malattia da putrefazione",
     Sandbox_EHR_PutrefactionSicknessEnabled_tooltip = "Avvelenamento da H2S da cadaveri in spazi chiusi. Causa affaticamento olfattivo (non sentire = PERICOLO). Può rendere incoscienti!",
     Sandbox_EHR_TuberculosisEnabled = "Abilita tubercolosi",
     Sandbox_EHR_TuberculosisEnabled_tooltip = "Malattia CRONICA da esposizione prolungata ai cadaveri. Settimane/mesi per contrarla. MORTALE senza antibiotici prolungati (21+ giorni).",
     Sandbox_EHR_CorpseDiseaseSpeed = "Velocita malattie da cadaveri",
     Sandbox_EHR_CorpseDiseaseSpeed_tooltip = "Velocita delle malattie da cadaveri (aspergillosi, putrefazione). 1.0 = normale.",
-
-    -- ============================================
-    -- BODY TEMPERATURE
-    -- ============================================
     Sandbox_EHR_BodyTemperatureEnabled = "Sistema temperatura corporea",
     Sandbox_EHR_BodyTemperatureEnabled_tooltip = "Abilita il tracciamento con effetti graduali. <LINE> <LINE> FUNZIONI: <LINE> - Temperatura in Celsius (37C normale) <LINE> - Raffreddamento/riscaldamento graduale <LINE> - Effetti pre-malattia (brividi, sudore) <LINE> - Transizione verso ipotermia/esaurimento <LINE> <LINE> Se disattivato: <LINE> - Torna al trigger per esposizione <LINE> - Il sistema vanilla NON è soppresso <LINE> - Permette altri mod di temperatura",
     Sandbox_EHR_TemperatureChangeSpeed = "Velocita cambio temperatura",
     Sandbox_EHR_TemperatureChangeSpeed_tooltip = "Quanto velocemente cambia. <LINE> <LINE> ESEMPI: <LINE> - 0.25 = Molto lento (4x) <LINE> - 1.0 = Normale (default) <LINE> - 2.0 = Veloce (2x) <LINE> - 4.0 = Molto veloce (arcade)",
     Sandbox_EHR_PreDiseaseEffectsEnabled = "Effetti pre-malattia",
     Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip = "Abilita effetti di avviso. <LINE> <LINE> EFFETTI: <LINE> - Brividi/dialogo col freddo <LINE> - Sudore/dialogo col caldo <LINE> - Penalita movimento agli estremi <LINE> - Maggiore fatica/sete <LINE> <LINE> Avvisa prima di ipotermia/esaurimento.",
-
-    -- ============================================
-    -- PAIN & DIALOGUE
-    -- ============================================
     Sandbox_EHR_PainSoundsEnabled = "Abilita suoni di dolore",
     Sandbox_EHR_PainSoundsEnabled_tooltip = "Il personaggio vocalizza il dolore. Attira zombie!",
     Sandbox_EHR_PainSoundCooldown = "Ricarica dolore (secondi)",
@@ -142,38 +111,28 @@
     Sandbox_EHR_DialogueFrequency_option2 = "Raro",
     Sandbox_EHR_DialogueFrequency_option3 = "Normale",
     Sandbox_EHR_DialogueFrequency_option4 = "Frequente",
-
-    -- ============================================
-    -- FIRST AID XP
-    -- ============================================
     Sandbox_EHR_FirstAidXPEnabled = "Abilita XP primo soccorso",
     Sandbox_EHR_FirstAidXPEnabled_tooltip = "Assegna XP per azioni mediche EHR.",
     Sandbox_EHR_FirstAidXPMultiplier = "Moltiplicatore XP primo soccorso",
     Sandbox_EHR_FirstAidXPMultiplier_tooltip = "Moltiplicatore XP. <LINE> <LINE> ESEMPI: <LINE> - 0.0 = Nessun XP <LINE> - 0.5 = Metà XP <LINE> - 1.0 = Normale (default) <LINE> - 2.0 = Doppio <LINE> - 5.0 = 5x (veloce) <LINE> <LINE> VALORI BASE: <LINE> - Assunzione farmaci: 5 XP <LINE> - Trattamento corretto: 3 XP <LINE> - Cura malattia: 20 XP <LINE> - Trasfusione: 10 XP <LINE> - Auto-esame: 1-5 XP",
-
-    -- ============================================
-    -- KNOX VIRUS CURE
-    -- ============================================
+    Sandbox_EHR_TheLastPrescriptionEnabled = "Enable The Last Prescription Radio",
+    Sandbox_EHR_TheLastPrescriptionEnabled_tooltip = "Adds The Last Prescription on 47.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
+    Sandbox_EHR_MedicalWatchRequired = "Medical Watch Required",
+    Sandbox_EHR_MedicalWatchRequired_tooltip = "When enabled, the EHR blood volume bar requires a Medical Monitor Watch. Disable to always show blood data.",
     Sandbox_EHR_KnoxCureItemsEnabled = "Abilita oggetti cura Knox",
     Sandbox_EHR_KnoxCureItemsEnabled_tooltip = "Permette la comparsa degli oggetti cura. <LINE> <LINE> OGGETTI: <LINE> - Pillole Phalanx (rallenta) <LINE> - Kit test anticorpi (diagnosi) <LINE> - Immunobooster (resistenza) <LINE> - Kit terapia genica (cura) <LINE> <LINE> Oggetti rarissimi nel laboratorio militare vicino Rosewood. <LINE> <LINE> Disattiva per esperienza vanilla senza cura.",
-
-    -- ============================================
-    -- MOD COMPATIBILITY
-    -- ============================================
-    Sandbox_EHR_NnCCompatEnabled = "Compatibilita N&C Narcotics",
-    Sandbox_EHR_NnCCompatEnabled_tooltip = "Abilita integrazione con N&C (mod richiesto).",
-    Sandbox_EHR_NnCStimulantBloodLoss = "Moltiplicatore perdita sangue (stimolanti)",
-    Sandbox_EHR_NnCStimulantBloodLoss_tooltip = "Moltiplicatore con stimolanti. 1.5 = +50%.",
-    Sandbox_EHR_NnCOpioidInfectionReduction = "Riduzione infezione (oppioidi)",
-    Sandbox_EHR_NnCOpioidInfectionReduction_tooltip = "Moltiplicatore infezione con oppioidi. 0.5 = 50% piu lento.",
-    Sandbox_EHR_NnCWithdrawalBlocksHealing = "Astinenza blocca guarigione",
-    Sandbox_EHR_NnCWithdrawalBlocksHealing_tooltip = "L'astinenza impedisce la guarigione.",
-    Sandbox_EHR_NnCOverdoseTriggersDisease = "Overdose attiva malattia",
-    Sandbox_EHR_NnCOverdoseTriggersDisease_tooltip = "L'overdose attiva il sistema malattie EHR.",
-
-    -- ============================================
-    -- DEBUG
-    -- ============================================
+    Sandbox_EHR_MedicationLootMultiplier = "Medication Loot Multiplier",
+    Sandbox_EHR_MedicationLootMultiplier_tooltip = "Scales EHR medication and medical supply spawn chances. <LINE> <LINE> 0.0 = disabled, 0.5 = half, 1.0 = default, 2.0 = double.",
+    Sandbox_EHR_MedicationPackageFill = "Medication Package Fill",
+    Sandbox_EHR_MedicationPackageFill_tooltip = "Controls how many doses remain inside spawned multi-dose medication packages.",
+    Sandbox_EHR_MedicationPackageFill_option1 = "Scarce",
+    Sandbox_EHR_MedicationPackageFill_option2 = "Low",
+    Sandbox_EHR_MedicationPackageFill_option3 = "Normal",
+    Sandbox_EHR_MedicationPackageFill_option4 = "Generous",
+    Sandbox_EHR_AllowFullPharmacyPackages = "Allow Full Pharmacy Packages",
+    Sandbox_EHR_AllowFullPharmacyPackages_tooltip = "Allows pharmacies and drugstores to occasionally spawn full medication packages. Other locations are still capped below full.",
+    Sandbox_EHR_HouseholdPrescriptionLoot = "Household Prescription Loot",
+    Sandbox_EHR_HouseholdPrescriptionLoot_tooltip = "Allows rare prescription medication leftovers to spawn in houses, bedrooms, desks, and similar non-medical locations.",
     Sandbox_EHR_DebugMode = "Modalita debug",
     Sandbox_EHR_DebugMode_tooltip = "Abilita menu debug EHR (tasto G). Attiva anche i log. In multiplayer serve admin.",
 }

@@ -1,12 +1,5 @@
 Sandbox_EN = {
-    -- ============================================
-    -- MAIN MOD PAGE (required for sandbox visibility)
-    -- ============================================
     Sandbox_ExtensiveHealthRework = "Extensive Health Rework",
-
-    -- ============================================
-    -- PAGE NAMES
-    -- ============================================
     Sandbox_EHR_Blood = "EHR: Blood System",
     Sandbox_EHR_Disease = "EHR: Disease",
     Sandbox_EHR_Loot = "EHR: Loot",
@@ -14,10 +7,6 @@ Sandbox_EN = {
     Sandbox_EHR_Comp = "EHR: Compatibility",
     Sandbox_EHR_Other = "EHR: Other",
     Sandbox_EHR_Debug = "EHR: Debug",
-
-    -- ============================================
-    -- BLOOD SYSTEM
-    -- ============================================
     Sandbox_EHR_BloodLossMultiplier = "Blood Loss Multiplier",
     Sandbox_EHR_BloodLossMultiplier_tooltip = "How fast blood drains from wounds. 1.0 = normal, 2.0 = twice as fast.",
     Sandbox_EHR_BloodThresholdHealthy = "Healthy Blood Threshold (%)",
@@ -40,10 +29,6 @@ Sandbox_EN = {
     Sandbox_EHR_BlackoutCooldownHours_tooltip = "In-game hours between possible blackouts.",
     Sandbox_EHR_BlackoutChance = "Blackout Chance (1 in X)",
     Sandbox_EHR_BlackoutChance_tooltip = "Random chance per tick. Lower = more frequent. 50 = 1 in 50 chance.",
-
-    -- ============================================
-    -- HEALING REQUIREMENTS
-    -- ============================================
     Sandbox_EHR_HealingRequiresFed = "Healing Requires Fed",
     Sandbox_EHR_HealingRequiresFed_tooltip = "Body parts only heal when not hungry.",
     Sandbox_EHR_HealingRequiresHydrated = "Healing Requires Hydrated",
@@ -54,10 +39,6 @@ Sandbox_EN = {
     Sandbox_EHR_HealingRequiresCalm_tooltip = "Body parts only heal when not stressed.",
     Sandbox_EHR_HealingRequiresNoPain = "Healing Requires No Pain",
     Sandbox_EHR_HealingRequiresNoPain_tooltip = "Body parts only heal when not in significant pain.",
-
-    -- ============================================
-    -- WOUNDS & INFECTION
-    -- ============================================
     Sandbox_EHR_WoundInfectionEnabled = "Enable Wound Infections",
     Sandbox_EHR_WoundInfectionEnabled_tooltip = "Untreated wounds can become infected.",
     Sandbox_EHR_WoundInfectionSpeed = "Wound Infection Speed",
@@ -68,20 +49,12 @@ Sandbox_EN = {
     Sandbox_EHR_SepsisSpeed_tooltip = "How fast sepsis progresses. 1.0 = normal, 2.0 = twice as fast.",
     Sandbox_EHR_TetanusEnabled = "Enable Tetanus",
     Sandbox_EHR_TetanusEnabled_tooltip = "LETHAL lockjaw from rusty/dirty deep wounds. Long incubation (3-7 days), then spasms, can't eat, death. Rare antitoxin required to survive.",
-
-    -- ============================================
-    -- DISEASES - GENERAL
-    -- ============================================
     Sandbox_EHR_DiseaseEnabled = "Enable Diseases",
     Sandbox_EHR_DiseaseEnabled_tooltip = "Enable food poisoning and other diseases.",
     Sandbox_EHR_DiseaseSpeed = "Disease Speed",
     Sandbox_EHR_DiseaseSpeed_tooltip = "How fast diseases progress. 1.0 = normal, 2.0 = twice as fast.",
     Sandbox_EHR_MisdiagnosisConsequences = "Misdiagnosis Consequences",
     Sandbox_EHR_MisdiagnosisConsequences_tooltip = "Wrong self-diagnosis can lead to ineffective treatment. Higher First Aid skill = better accuracy.",
-
-    -- ============================================
-    -- DISEASES - FOOD & WATER
-    -- ============================================
     Sandbox_EHR_FoodPoisoningEnabled = "Enable Food Poisoning",
     Sandbox_EHR_FoodPoisoningEnabled_tooltip = "Rotten, raw, or burned food causes food poisoning. Nausea, vomiting, dehydration. Survivable with proper hydration.",
     Sandbox_EHR_GastroenteritisEnabled = "Enable Gastroenteritis",
@@ -94,10 +67,6 @@ Sandbox_EN = {
     Sandbox_EHR_HyperkeratoticScabiesEnabled_tooltip = "Severe parasitic skin infestation from prolonged contact with dirt or grass. Causes itching, fever, wounds, and can become lethal.",
     Sandbox_EHR_DysenteryEnabled = "Enable Dysentery",
     Sandbox_EHR_DysenteryEnabled_tooltip = "Drinking contaminated water can cause dysentery. LETHAL through dehydration.",
-
-    -- ============================================
-    -- DISEASES - ENVIRONMENTAL
-    -- ============================================
     Sandbox_EHR_CommonColdEnabled = "Enable Common Cold",
     Sandbox_EHR_CommonColdEnabled_tooltip = "Cold weather + wet exposure can cause common cold. Can progress to pneumonia.",
     Sandbox_EHR_PneumoniaEnabled = "Enable Pneumonia",
@@ -116,34 +85,20 @@ Sandbox_EN = {
     Sandbox_EHR_AHTREnabled_tooltip = "Acute hemolytic transfusion reaction from incompatible blood transfusions. Dangerous and potentially lethal.",
     Sandbox_EHR_EnvironmentalDiseaseSpeed = "Environmental Disease Speed",
     Sandbox_EHR_EnvironmentalDiseaseSpeed_tooltip = "How fast environmental diseases (cold, hypothermia, dysentery) progress. 1.0 = normal.",
-
-    -- ============================================
-    -- DISEASES - CORPSE EXPOSURE
-    -- ============================================
-    Sandbox_EHR_AspergilliosisEnabled = "Enable Cadaveric Aspergillosis",
-    Sandbox_EHR_AspergilliosisEnabled_tooltip = "Fungal lung infection from prolonged exposure to decaying corpses in damp environments. Progressive respiratory failure.",
     Sandbox_EHR_CadavericAspergillosisEnabled = "Enable Cadaveric Aspergillosis",
-    Sandbox_EHR_CadavericAspergillosisEnabled_tooltip = "Correctly named alias for the cadaveric aspergillosis toggle. If either old or new toggle is disabled, the disease is disabled.",
+    Sandbox_EHR_CadavericAspergillosisEnabled_tooltip = "Fungal lung infection from decaying corpses in damp, rainy, wet or cold conditions. Progressive respiratory failure.",
     Sandbox_EHR_PutrefactionSicknessEnabled = "Enable Putrefaction Sickness",
     Sandbox_EHR_PutrefactionSicknessEnabled_tooltip = "H2S gas poisoning from corpses in enclosed spaces. Causes olfactory fatigue (stop smelling = DANGER). Can knock you unconscious!",
     Sandbox_EHR_TuberculosisEnabled = "Enable Tuberculosis",
     Sandbox_EHR_TuberculosisEnabled_tooltip = "CHRONIC disease from long-term corpse exposure. Takes weeks/months to contract. LETHAL without sustained antibiotic treatment (21+ days). Bloody cough, weight loss.",
     Sandbox_EHR_CorpseDiseaseSpeed = "Corpse Disease Speed",
     Sandbox_EHR_CorpseDiseaseSpeed_tooltip = "How fast corpse sickness progresses. 1.0 = normal.",
-
-    -- ============================================
-    -- BODY TEMPERATURE
-    -- ============================================
     Sandbox_EHR_BodyTemperatureEnabled = "Body Temperature System",
     Sandbox_EHR_BodyTemperatureEnabled_tooltip = "Enables custom body temperature tracking with gradual effects. <LINE> <LINE> FEATURES: <LINE> - Tracks body temperature in Celsius (37C = normal) <LINE> - Gradual cooling/warming based on environment <LINE> - Pre-disease effects (shivering, sweating) <LINE> - Smooth transition to hypothermia/heat exhaustion <LINE> <LINE> When disabled: <LINE> - Falls back to exposure-time-based disease triggering <LINE> - Vanilla temperature system is NOT suppressed <LINE> - Allows other temperature mods to work (e.g. Realistic Temps)",
     Sandbox_EHR_TemperatureChangeSpeed = "Temperature Change Speed",
     Sandbox_EHR_TemperatureChangeSpeed_tooltip = "How quickly body temperature changes. <LINE> <LINE> EXAMPLES: <LINE> - 0.25 = Very slow (4x longer to change) <LINE> - 1.0 = Normal speed (default) <LINE> - 2.0 = Fast (2x quicker changes) <LINE> - 4.0 = Very fast (arcade mode)",
     Sandbox_EHR_PreDiseaseEffectsEnabled = "Pre-Disease Effects",
     Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip = "Enable warning effects before diseases contract. <LINE> <LINE> EFFECTS: <LINE> - Shivering and dialogue when cold <LINE> - Sweating and dialogue when hot <LINE> - Movement penalties at extreme temps <LINE> - Increased fatigue/thirst drain <LINE> <LINE> Provides warning before hypothermia/heat exhaustion.",
-
-    -- ============================================
-    -- PAIN & DIALOGUE
-    -- ============================================
     Sandbox_EHR_PainSoundsEnabled = "Enable Pain Sounds",
     Sandbox_EHR_PainSoundsEnabled_tooltip = "Character vocalizes pain when injured. Pain sounds attract zombies!",
     Sandbox_EHR_PainSoundCooldown = "Pain Sound Cooldown (seconds)",
@@ -156,10 +111,6 @@ Sandbox_EN = {
     Sandbox_EHR_DialogueFrequency_option2 = "Rare",
     Sandbox_EHR_DialogueFrequency_option3 = "Normal",
     Sandbox_EHR_DialogueFrequency_option4 = "Frequent",
-
-    -- ============================================
-    -- FIRST AID XP
-    -- ============================================
     Sandbox_EHR_FirstAidXPEnabled = "Enable First Aid XP Rewards",
     Sandbox_EHR_FirstAidXPEnabled_tooltip = "Award First Aid skill XP for medical actions like taking medication, treating diseases, blood transfusions, and self-examination.",
     Sandbox_EHR_FirstAidXPMultiplier = "First Aid XP Multiplier",
@@ -168,10 +119,6 @@ Sandbox_EN = {
     Sandbox_EHR_TheLastPrescriptionEnabled_tooltip = "Adds The Last Prescription on 47.0 MHz. Morning broadcasts grant small First Aid XP; evening broadcasts can unlock disease knowledge if heard.",
     Sandbox_EHR_MedicalWatchRequired = "Medical Watch Required",
     Sandbox_EHR_MedicalWatchRequired_tooltip = "When enabled, the EHR blood volume bar requires a Medical Monitor Watch. Disable to always show blood data.",
-
-    -- ============================================
-    -- KNOX VIRUS CURE
-    -- ============================================
     Sandbox_EHR_KnoxCureItemsEnabled = "Enable Knox Cure Items",
     Sandbox_EHR_KnoxCureItemsEnabled_tooltip = "Allow Knox Virus Cure items to spawn in the world. <LINE> <LINE> ITEMS AFFECTED: <LINE> - Phalanx Pills (slows infection) <LINE> - Antibody Test Kit (detects infection stage) <LINE> - Immunobooster Shot (boosts resistance) <LINE> - Gene Therapy Kit (cures Knox Virus) <LINE> <LINE> These ultra-rare items only spawn in the Military Research Facility basement near Rosewood. <LINE> <LINE> Disable this if you want a more vanilla zombie experience with NO cure possibility.",
     Sandbox_EHR_MedicationLootMultiplier = "Medication Loot Multiplier",
@@ -186,24 +133,6 @@ Sandbox_EN = {
     Sandbox_EHR_AllowFullPharmacyPackages_tooltip = "Allows pharmacies and drugstores to occasionally spawn full medication packages. Other locations are still capped below full.",
     Sandbox_EHR_HouseholdPrescriptionLoot = "Household Prescription Loot",
     Sandbox_EHR_HouseholdPrescriptionLoot_tooltip = "Allows rare prescription medication leftovers to spawn in houses, bedrooms, desks, and similar non-medical locations.",
-
-    -- ============================================
-    -- MOD COMPATIBILITY
-    -- ============================================
-    Sandbox_EHR_NnCCompatEnabled = "N&C Narcotics Compatibility",
-    Sandbox_EHR_NnCCompatEnabled_tooltip = "Enable integration with N&C's Narcotics mod (requires mod to be loaded).",
-    Sandbox_EHR_NnCStimulantBloodLoss = "Stimulant Blood Loss Multiplier",
-    Sandbox_EHR_NnCStimulantBloodLoss_tooltip = "Blood loss multiplier when on stimulants (cocaine, meth). 1.5 = 50% more blood loss.",
-    Sandbox_EHR_NnCOpioidInfectionReduction = "Opioid Infection Reduction",
-    Sandbox_EHR_NnCOpioidInfectionReduction_tooltip = "Infection progression multiplier when on opioids. 0.5 = 50% slower infection.",
-    Sandbox_EHR_NnCWithdrawalBlocksHealing = "Withdrawal Blocks Healing",
-    Sandbox_EHR_NnCWithdrawalBlocksHealing_tooltip = "Drug withdrawal prevents wound healing.",
-    Sandbox_EHR_NnCOverdoseTriggersDisease = "Overdose Triggers Disease",
-    Sandbox_EHR_NnCOverdoseTriggersDisease_tooltip = "Drug overdose triggers EHR disease system.",
-
-    -- ============================================
-    -- DEBUG
-    -- ============================================
     Sandbox_EHR_DebugMode = "Debug Mode",
     Sandbox_EHR_DebugMode_tooltip = "Enable EHR Debug Menu access (press G). Also enables console logging. Does NOT require Steam -debug flag. In multiplayer, admin privileges are also required.",
 }

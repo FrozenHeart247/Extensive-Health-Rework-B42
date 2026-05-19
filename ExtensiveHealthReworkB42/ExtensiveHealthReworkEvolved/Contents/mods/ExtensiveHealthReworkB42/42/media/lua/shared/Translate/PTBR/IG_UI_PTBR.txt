@@ -1,0 +1,3 @@
+IG_UI_PTBR = {
+    IGUI_CraftCategory_EHRMedicine = "Medicina EHR",
+}

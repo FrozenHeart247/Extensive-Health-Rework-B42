@@ -1,0 +1,3 @@
+Recipes_CH = {
+    MakePlantBasedAntibiotics = "製備植物性抗生素",
+}

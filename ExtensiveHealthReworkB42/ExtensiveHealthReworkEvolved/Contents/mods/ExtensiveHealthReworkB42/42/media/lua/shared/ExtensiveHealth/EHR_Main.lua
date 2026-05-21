@@ -6,6 +6,7 @@
 ]]--
 
 EHR = EHR or {}
+require "ExtensiveHealth/EHR_Localization"
 EHR.VERSION = "2.8.1"  -- Temperature rework, blood spoilage, MP fixes, Lifestyle compat improvements
 
 -- Debug flag - default value (overridden by sandbox setting)

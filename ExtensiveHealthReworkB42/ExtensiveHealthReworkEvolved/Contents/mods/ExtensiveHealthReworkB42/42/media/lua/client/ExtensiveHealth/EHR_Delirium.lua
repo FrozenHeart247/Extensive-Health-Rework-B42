@@ -12,6 +12,7 @@ require "ExtensiveHealth/EHR_Disease"
 require "ISUI/ISPanel"
 require "TimedActions/ISSmashWindow"
 require "TimedActions/ISWalkToTimedAction"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Delirium = EHR.Delirium or {}
@@ -454,7 +455,7 @@ local function sayRandomLine(player, runtime)
         end)
     end
     if not usedHaloNote then
-        pcall(function() player:Say(line) end)
+        pcall(function() EHR.Locale.Say(player, line) end)
     end
 end
 

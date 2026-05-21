@@ -20,6 +20,7 @@
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_DiseaseDefinitions"
 require "ExtensiveHealth/EHR_BodyTemperature"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Environmental = {}
@@ -1030,7 +1031,7 @@ function EHR.Environmental.CheckHeatProgression(player, exposure)
         EHR.Disease.Contract(player, "heat_stroke")
 
         if player.Say then
-            player:Say("*collapses* Can't... everything's burning...")
+            EHR.Locale.Say(player, "*collapses* Can't... everything's burning...")
         end
     end
 end
@@ -1060,7 +1061,7 @@ function EHR.Environmental.CheckHeatCooling(player)
                     EHR.Log(diseaseId .. ": Regressed from recovery to peak (not cool enough)")
 
                     if player.Say then
-                        player:Say("*pants* Still too hot... can't recover...")
+                        EHR.Locale.Say(player, "*pants* Still too hot... can't recover...")
                     end
                 end
 
@@ -1359,7 +1360,7 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
 
         -- Player announcement
         if player.Say then
-            player:Say("*coughs violently* This isn't just a cold anymore...")
+            EHR.Locale.Say(player, "*coughs violently* This isn't just a cold anymore...")
         end
     else
         EHR.Log("Cold resolved without pneumonia.")
@@ -1371,7 +1372,7 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
         end
 
         if player.Say then
-            player:Say("*sniff* I think I'm finally getting over this cold...")
+            EHR.Locale.Say(player, "*sniff* I think I'm finally getting over this cold...")
         end
     end
 end
@@ -2737,7 +2738,7 @@ function EHR.Environmental.TriggerSneeze(player)
     -- Say sneeze dialogue
     if player.Say then
         local sneezes = {"*ACHOO!*", "*sneezes*", "*achoo!*"}
-        player:Say(sneezes[ZombRand(#sneezes) + 1])
+        EHR.Locale.Say(player, sneezes[ZombRand(#sneezes) + 1])
     end
 
     -- Play the audible sneeze SFX at the same moment as the dialogue bark.
@@ -2810,10 +2811,10 @@ function EHR.Environmental.TriggerCough(player, severe)
                 "*coughs uncontrollably*",
                 "*COUGHING* Can't... stop...",
             }
-            player:Say(coughs[ZombRand(#coughs) + 1])
+            EHR.Locale.Say(player, coughs[ZombRand(#coughs) + 1])
         else
             local coughs = {"*cough*", "*coughs*", "*cough cough*"}
-            player:Say(coughs[ZombRand(#coughs) + 1])
+            EHR.Locale.Say(player, coughs[ZombRand(#coughs) + 1])
         end
     end
 
@@ -2854,7 +2855,7 @@ function EHR.Environmental.TriggerVomit(player, options)
     -- Say vomit dialogue
     if player.Say then
         local vomits = {"*vomits*", "*retches violently*", "*throws up*"}
-        player:Say(vomits[ZombRand(#vomits) + 1])
+        EHR.Locale.Say(player, vomits[ZombRand(#vomits) + 1])
     end
 
     -- Increase hunger (lost food)
@@ -2914,7 +2915,7 @@ local function EHR_EnvironmentalSayLimited(player, cooldownKey, cooldownHours, l
         end
     end
 
-    player:Say(lines[ZombRand(#lines) + 1])
+    EHR.Locale.Say(player, lines[ZombRand(#lines) + 1])
     return true
 end
 
@@ -2953,7 +2954,7 @@ function EHR.Environmental.TriggerCramp(player)
             "*muscles seize up*",
             "*winces* Cramp!",
         }
-        player:Say(cramps[ZombRand(#cramps) + 1])
+        EHR.Locale.Say(player, cramps[ZombRand(#cramps) + 1])
     end
 
     -- Apply pain
@@ -3185,7 +3186,7 @@ end
 ]]--
 function EHR.Environmental.TriggerCollapse(player)
     if player.Say then
-        player:Say("*collapses*")
+        EHR.Locale.Say(player, "*collapses*")
     end
 
     -- Apply massive fatigue
@@ -3309,7 +3310,7 @@ function EHR.Environmental.CheckHypothermiaWarmth(player)
         EHR.Log("Hypothermia: Regressed from recovery to peak (not warm enough)")
 
         if player.Say then
-            player:Say("*shivers* I'm getting cold again... can't stay warm...")
+            EHR.Locale.Say(player, "*shivers* I'm getting cold again... can't stay warm...")
         end
     end
 
@@ -3412,11 +3413,11 @@ function EHR.Environmental.CheckDiseaseLethal(player, diseaseId, disease, def)
         -- Death message
         if player.Say then
             if diseaseId == "pneumonia" then
-                player:Say("*gasps* Can't... breathe...")
+                EHR.Locale.Say(player, "*gasps* Can't... breathe...")
             elseif diseaseId == "cadaveric_aspergillosis" then
-                player:Say("*wheezes* Can't... breathe...")
+                EHR.Locale.Say(player, "*wheezes* Can't... breathe...")
             elseif diseaseId == "hypothermia" then
-                player:Say("So... cold... tired...")
+                EHR.Locale.Say(player, "So... cold... tired...")
             end
         end
     end
@@ -3465,7 +3466,7 @@ function EHR.Environmental.CheckTreatment(player, item)
                     disease.stage = 4
 
                     if player.Say then
-                        player:Say("This medicine should help...")
+                        EHR.Locale.Say(player, "This medicine should help...")
                     end
                 end
             end

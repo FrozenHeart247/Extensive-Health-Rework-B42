@@ -16,6 +16,7 @@ require "XpSystem/ISUI/ISCharacterProtection"
 require "XpSystem/ISUI/ISClothingInsPanel"
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.UI = EHR.UI or {}
@@ -212,14 +213,25 @@ local function getWoundInfectionProgress(woundData)
 end
 
 local function safeText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text(key, fallback)
+    end
     local text = nil
     if getText then
         text = getText(key)
     end
-    if not text or text == key then
+    if not text or text == key or text == "?" then
         return fallback
     end
     return text
+end
+
+local function safeFormat(key, fallback, ...)
+    if EHR and EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format(key, fallback, ...)
+    end
+    local ok, value = pcall(string.format, fallback, ...)
+    return ok and value or fallback
 end
 
 local function callBodyPartMethod(bodyPart, methodName, fallback)
@@ -340,6 +352,11 @@ function EHR_HealthPanelUI:new(x, y, player)
     o.embeddedTabs = {}
     o.cachedData = {}
     o.vanillaHealthAdapter = nil
+    o.isRemoteHealthPanel = false
+    o.remoteDoctor = nil
+    o.remotePatient = nil
+    o.remotePatientOnlineID = nil
+    o.remoteExamData = nil
     o.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
     o.borderColor = { r = 0, g = 0, b = 0, a = 0 }
     o.moveWithMouse = false
@@ -353,6 +370,39 @@ end
 
 function EHR_HealthPanelUI:initialise()
     ISPanel.initialise(self)
+end
+
+function EHR_HealthPanelUI:getPatientBodyDamage()
+    if not self.player or not self.player.getBodyDamage then return nil end
+
+    if self.isRemoteHealthPanel and isClient and isClient() and self.player.isLocalPlayer and not self.player:isLocalPlayer() and self.player.getBodyDamageRemote then
+        local ok, remoteBodyDamage = pcall(function()
+            return self.player:getBodyDamageRemote()
+        end)
+        if ok and remoteBodyDamage then
+            return remoteBodyDamage
+        end
+    end
+
+    return self.player:getBodyDamage()
+end
+
+function EHR_HealthPanelUI:syncBodyPartPanelBodyParts()
+    if not self.bodyPartPanel or not self.bodyPartPanel.bps then return end
+
+    local bodyDamage = self:getPatientBodyDamage()
+    if not bodyDamage or not bodyDamage.getBodyPart then return end
+
+    for _, bp in ipairs(self.bodyPartPanel.bps) do
+        if bp and bp.bodyPartType then
+            local ok, bodyPart = pcall(function()
+                return bodyDamage:getBodyPart(bp.bodyPartType)
+            end)
+            if ok and bodyPart then
+                bp.bodyPart = bodyPart
+            end
+        end
+    end
 end
 
 function EHR_HealthPanelUI:createChildren()
@@ -402,6 +452,7 @@ function EHR_HealthPanelUI:ensureBodyPartPanel()
         { val = 1.00, color = Color.new(0.86, 0.05, 0.045, 1) },
     })
     self.bodyPartPanel:enableNodes("media/ui/BodyParts/bps_node_diamond", "media/ui/BodyParts/bps_node_diamond_outline")
+    self:syncBodyPartPanelBodyParts()
     self:addChild(self.bodyPartPanel)
 
     return self.bodyPartPanel
@@ -443,6 +494,12 @@ end
 function EHR_HealthPanelUI:bindPlayer(player, force)
     if not player then return false end
 
+    self.isRemoteHealthPanel = false
+    self.remoteDoctor = nil
+    self.remotePatient = nil
+    self.remotePatientOnlineID = nil
+    self.remoteExamData = nil
+
     local playerNum = player.getPlayerNum and player:getPlayerNum() or 0
     if not force and self.player == player and self.playerNum == playerNum then
         return false
@@ -462,22 +519,59 @@ function EHR_HealthPanelUI:bindPlayer(player, force)
     return true
 end
 
+function EHR_HealthPanelUI:bindRemotePatient(doctor, patient, force)
+    if not doctor or not patient then return false end
+
+    local playerNum = doctor.getPlayerNum and doctor:getPlayerNum() or 0
+    if not force and self.isRemoteHealthPanel and self.remoteDoctor == doctor and self.player == patient and self.playerNum == playerNum then
+        return false
+    end
+
+    self.isRemoteHealthPanel = true
+    self.remoteDoctor = doctor
+    self.remotePatient = patient
+    self.remotePatientOnlineID = nil
+    pcall(function()
+        if patient.getOnlineID then
+            self.remotePatientOnlineID = patient:getOnlineID()
+        end
+    end)
+    self.player = patient
+    self.playerNum = playerNum
+    self:destroyPlayerBoundViews()
+    self:ensureBodyPartPanel()
+    self:createEmbeddedVanillaTabs()
+    self:syncTabVisibility()
+
+    if EHR.DEBUG then
+        EHR.Log("HealthPanelUI: rebound to remote patient for doctor " .. tostring(playerNum))
+    end
+
+    return true
+end
+
 function EHR_HealthPanelUI:getTabDefinitions()
     local vanillaText = xpSystemText or {}
+    if self.isRemoteHealthPanel then
+        return {
+            { id = "ehr", label = safeText("UI_EHR_Tab_EHR_Compact", "EHR") },
+            { id = "health", label = vanillaText.health or safeText("UI_EHR_Tab_Health", "Health") },
+        }
+    end
     if self.width < 560 then
         return {
-            { id = "ehr", label = "EHR" },
+            { id = "ehr", label = safeText("UI_EHR_Tab_EHR_Compact", "EHR") },
         }
     end
 
     local compact = self.width < 760
     return {
-        { id = "ehr", label = compact and "EHR" or "EHR Monitor" },
-        { id = "info", label = vanillaText.info or "Info" },
-        { id = "skills", label = vanillaText.skills or "Skills" },
-        { id = "health", label = vanillaText.health or "Health" },
-        { id = "protection", label = compact and "Protect" or (vanillaText.protection or "Protection") },
-        { id = "temperature", label = compact and "Temp" or "Temperature" },
+        { id = "ehr", label = compact and safeText("UI_EHR_Tab_EHR_Compact", "EHR") or safeText("UI_EHR_Tab_EHR", "EHR Monitor") },
+        { id = "info", label = vanillaText.info or safeText("UI_EHR_Tab_Info", "Info") },
+        { id = "skills", label = vanillaText.skills or safeText("UI_EHR_Tab_Skills", "Skills") },
+        { id = "health", label = vanillaText.health or safeText("UI_EHR_Tab_Health", "Health") },
+        { id = "protection", label = compact and safeText("UI_EHR_Tab_Protection_Compact", "Protect") or (vanillaText.protection or safeText("UI_EHR_Tab_Protection", "Protection")) },
+        { id = "temperature", label = compact and safeText("UI_EHR_Tab_Temperature_Compact", "Temp") or safeText("UI_EHR_Tab_Temperature", "Temperature") },
     }
 end
 
@@ -723,7 +817,18 @@ function EHR_HealthPanelUI:createEmbeddedVanillaTabs()
     if not self.player then return end
 
     local bounds = self:getTabContentBounds()
-    local specs = {
+    local specs = nil
+    if self.isRemoteHealthPanel then
+        specs = {
+            {
+                id = "health",
+                factory = function()
+                    return ISHealthPanel:new(self.player, 0, 0, bounds.w, bounds.h)
+                end,
+            },
+        }
+    else
+        specs = {
         {
             id = "info",
             factory = function()
@@ -754,7 +859,8 @@ function EHR_HealthPanelUI:createEmbeddedVanillaTabs()
                 return ISClothingInsPanel:new(self.player, 0, 0, bounds.w, bounds.h)
             end,
         },
-    }
+        }
+    end
 
     for _, spec in ipairs(specs) do
         local oldHealthInstance = ISHealthPanel and ISHealthPanel.instance or nil
@@ -778,6 +884,11 @@ function EHR_HealthPanelUI:createEmbeddedVanillaTabs()
                 self:prepareInfoLiteratureButton(view)
             elseif spec.id == "temperature" then
                 self:prepareTemperatureView(view)
+            elseif spec.id == "health" and self.isRemoteHealthPanel and self.remoteDoctor then
+                view.doctorLevel = self.remoteDoctor:getPerkLevel(Perks.Doctor)
+                if view.setOtherPlayer then
+                    pcall(function() view:setOtherPlayer(self.remoteDoctor) end)
+                end
             end
             view:setVisible(false)
             view.ehrVisible = false
@@ -1240,7 +1351,7 @@ function EHR_HealthPanelUI:getDiseaseDefinition(diseaseId, disease)
         if disease.isCorpseExposure then
             return {
                 name = disease.displayName or safeText("UI_EHR_CorpseExposure", "Corpse Exposure"),
-                symptoms = { "Nausea", "Dizziness", "Eye irritation" },
+                symptoms = { safeText("UI_EHR_Symptom_Nausea", "Nausea"), safeText("UI_EHR_Symptom_Dizziness", "Dizziness"), safeText("UI_EHR_Symptom_EyeIrritation", "Eye irritation") },
             }
         end
         if disease.isWoundInfection then
@@ -1248,19 +1359,19 @@ function EHR_HealthPanelUI:getDiseaseDefinition(diseaseId, disease)
             local partText = partCount > 1 and (" (" .. partCount .. " wounds)") or ""
             return {
                 name = safeText("UI_EHR_WoundInfection", "Wound Infection") .. partText,
-                symptoms = { "Pain", "Swelling", "Redness", "Fever" },
+                symptoms = { safeText("UI_EHR_Symptom_Pain", "Pain"), safeText("UI_EHR_Symptom_Swelling", "Swelling"), safeText("UI_EHR_Symptom_Redness", "Redness"), safeText("UI_EHR_Symptom_Fever", "Fever") },
             }
         end
         if disease.isSepsis then
             return {
                 name = safeText("UI_EHR_Sepsis", "Sepsis"),
-                symptoms = { "Fever", "Rapid heartbeat", "Confusion", "Extreme pain" },
+                symptoms = { safeText("UI_EHR_Symptom_Fever", "Fever"), safeText("UI_EHR_Symptom_RapidHeartbeat", "Rapid heartbeat"), safeText("UI_EHR_Symptom_Confusion", "Confusion"), safeText("UI_EHR_Symptom_ExtremePain", "Extreme pain") },
             }
         end
         if disease.isKnox then
             return {
                 name = safeText("UI_EHR_KnoxInfection", "Knox Virus Infection"),
-                symptoms = { "Fever", "Nausea", "Weakness", "Pale skin" },
+                symptoms = { safeText("UI_EHR_Symptom_Fever", "Fever"), safeText("UI_EHR_Symptom_Nausea", "Nausea"), safeText("UI_EHR_Symptom_Weakness", "Weakness"), safeText("UI_EHR_Symptom_PaleSkin", "Pale skin") },
             }
         end
     end
@@ -1307,7 +1418,7 @@ function EHR_HealthPanelUI:getUnknownDiseaseInfo(diseaseId)
     end
     return {
         displayName = safeText("UI_EHR_DiseaseUnknown", "Unknown Illness"),
-        description = "You feel unwell.",
+        description = safeText("UI_EHR_DiseaseUnknownDesc", "You feel unwell."),
     }
 end
 
@@ -1329,8 +1440,8 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
             showStageSeverity = false,
             showProgress = false,
             showTreatmentStatus = true,
-            statusText = "NO CURE",
-            detailText = "This is how you die",
+            statusText = safeText("UI_EHR_Status_NoCure", "NO CURE"),
+            detailText = safeText("UI_EHR_KnoxNoCureDetail", "This is how you die"),
             progressText = "",
             hideProgressBar = true,
             skillTier = skillTier,
@@ -1375,14 +1486,14 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
 
     if normalized == "concussion" and canIdentify then
         local stage = type(disease) == "table" and (tonumber(disease.stage) or 1) or 1
-        detailText = string.format("Stage %d   Time and rest", stage)
+        detailText = safeFormat("UI_EHR_DiseaseDetail_StageTimeRest", "Stage %d   Time and rest", stage)
         detailColor = EHR_HealthPanelUI.Colors.green
-        statusText = "RECOVERING"
+        statusText = safeText("UI_EHR_Status_Recovering", "RECOVERING")
         statusColor = EHR_HealthPanelUI.Colors.green
     end
 
     if normalized == "delirium" and canIdentify then
-        detailText = "Antipsychotic course required"
+        detailText = safeText("UI_EHR_DeliriumCourseRequired", "Antipsychotic course required")
         detailColor = EHR_HealthPanelUI.Colors.yellow
         statusText = nil
         statusColor = nil
@@ -1685,7 +1796,7 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
     end
 
     local woundData = data.EHR_WoundInfection
-    if EHR.WoundInfection and EHR.WoundInfection.GetData and self.player then
+    if not self.isRemoteHealthPanel and EHR.WoundInfection and EHR.WoundInfection.GetData and self.player then
         local ok, result = pcall(function()
             return EHR.WoundInfection.GetData(self.player)
         end)
@@ -1723,17 +1834,35 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
 end
 
 function EHR_HealthPanelUI:updateCachedData()
-    local player = getSpecificPlayer and getSpecificPlayer(self.playerNum or 0)
-    if player then
-        if player ~= self.player then
-            self:bindPlayer(player, true)
+    if self.isRemoteHealthPanel then
+        local patient = self.remotePatient or self.player
+        if patient and self.remotePatientOnlineID and getPlayerByOnlineID then
+            local ok, refreshed = pcall(function()
+                return getPlayerByOnlineID(self.remotePatientOnlineID)
+            end)
+            if ok and refreshed and refreshed ~= patient then
+                self:bindRemotePatient(self.remoteDoctor, refreshed, true)
+                patient = refreshed
+            end
+        end
+        self.player = patient
+    else
+        local player = getSpecificPlayer and getSpecificPlayer(self.playerNum or 0)
+        if player then
+            if player ~= self.player then
+                self:bindPlayer(player, true)
+            else
+                self.player = player
+            end
         else
             self.player = player
         end
     end
 
     local data = nil
-    if EHR.GetPlayerData and self.player then
+    if self.isRemoteHealthPanel and type(self.remoteExamData) == "table" then
+        data = self.remoteExamData
+    elseif EHR.GetPlayerData and self.player then
         data = EHR.GetPlayerData(self.player)
     end
     if not data and self.player and self.player.getModData then
@@ -1742,30 +1871,40 @@ function EHR_HealthPanelUI:updateCachedData()
     data = data or {}
 
     local diseaseData = nil
-    if EHR.Disease and EHR.Disease.GetDiseaseData and self.player then
+    if self.isRemoteHealthPanel and data.EHR_Disease then
+        diseaseData = data.EHR_Disease
+    elseif EHR.Disease and EHR.Disease.GetDiseaseData and self.player then
         diseaseData = EHR.Disease.GetDiseaseData(self.player)
     end
     diseaseData = diseaseData or data.EHR_Disease or {}
 
     local medicationData = {}
-    if EHR.Medication and EHR.Medication.GetMedicationData and self.player then
+    if self.isRemoteHealthPanel and data.EHR_Medication then
+        medicationData = data.EHR_Medication or {}
+    elseif EHR.Medication and EHR.Medication.GetMedicationData and self.player then
         medicationData = EHR.Medication.GetMedicationData(self.player) or {}
     else
         medicationData = data.EHR_Medication or {}
     end
 
     local activeTreatments = {}
-    if EHR.Medication and EHR.Medication.GetActiveTreatments and self.player then
+    if self.isRemoteHealthPanel and medicationData.activeTreatments then
+        activeTreatments = medicationData.activeTreatments or {}
+    elseif EHR.Medication and EHR.Medication.GetActiveTreatments and self.player then
         activeTreatments = EHR.Medication.GetActiveTreatments(self.player) or {}
     end
 
     local doseStatuses = {}
-    if EHR.Medication and EHR.Medication.GetAllDoseStatuses and self.player then
+    if self.isRemoteHealthPanel and medicationData.activeDoses then
+        doseStatuses = medicationData.activeDoses or {}
+    elseif EHR.Medication and EHR.Medication.GetAllDoseStatuses and self.player then
         doseStatuses = EHR.Medication.GetAllDoseStatuses(self.player) or {}
     end
 
     local activeSideEffects = {}
-    if EHR.Medication and EHR.Medication.GetActiveSideEffects and self.player then
+    if self.isRemoteHealthPanel and medicationData.activeSideEffects then
+        activeSideEffects = medicationData.activeSideEffects or {}
+    elseif EHR.Medication and EHR.Medication.GetActiveSideEffects and self.player then
         activeSideEffects = EHR.Medication.GetActiveSideEffects(self.player) or {}
     end
 
@@ -2211,6 +2350,7 @@ function EHR_HealthPanelUI:getVanillaHealthAdapter()
         self.vanillaHealthAdapter.getPatient = ISHealthPanel.getPatient
         self.vanillaHealthAdapter.checkItems = ISHealthPanel.checkItems
         self.vanillaHealthAdapter.checkContainerItems = ISHealthPanel.checkContainerItems
+        self.vanillaHealthAdapter.setBodyPartAction = ISHealthPanel.setBodyPartAction
         self.vanillaHealthAdapter.doBodyPartContextMenu = ISHealthPanel.doBodyPartContextMenu
         self.vanillaHealthAdapter.dropItemsOnBodyPart = ISHealthPanel.dropItemsOnBodyPart
         self.vanillaHealthAdapter.toPlayerInventory = ISHealthPanel.toPlayerInventory
@@ -2218,8 +2358,11 @@ function EHR_HealthPanelUI:getVanillaHealthAdapter()
 
     self.vanillaHealthAdapter.owner = self
     self.vanillaHealthAdapter.character = self.player
-    self.vanillaHealthAdapter.playerNum = self.player and self.player:getPlayerNum() or 0
-    self.vanillaHealthAdapter.otherPlayer = nil
+    self.vanillaHealthAdapter.playerNum = self.playerNum or (self.player and self.player:getPlayerNum() or 0)
+    self.vanillaHealthAdapter.otherPlayer = self.isRemoteHealthPanel and self.remoteDoctor or nil
+    if self.isRemoteHealthPanel and self.remoteDoctor then
+        self.vanillaHealthAdapter.doctorLevel = self.remoteDoctor:getPerkLevel(Perks.Doctor)
+    end
     self.vanillaHealthAdapter.blockingMessage = nil
     self.vanillaHealthAdapter.actions = self.vanillaHealthAdapter.actions or {}
 
@@ -2278,12 +2421,12 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
 
     if callBodyPartMethod(bodyPart, "bleeding", false) == true then
         hasLocalizedDamage = true
-        add("bleeding", "Bleeding", c.red, 1.00, 110)
+        add("bleeding", safeText("UI_EHR_BodyLegend_Bleeding", "Bleeding"), c.red, 1.00, 110)
     end
 
     if infected or infectionLevel > 0 or (type(ehrWoundPartData) == "table" and (tonumber(ehrWoundPartData.stage) or 0) > 0) then
         hasLocalizedDamage = true
-        add("infected", "Infected", c.purple, 0.80, 100)
+        add("infected", safeText("UI_EHR_BodyLegend_Infected", "Infected"), c.purple, 0.80, 100)
     end
 
     if (tonumber(callBodyPartMethod(bodyPart, "getFractureTime", 0)) or 0) > 0 then
@@ -2324,7 +2467,7 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     if additionalPain > 50 then
         add("pain", "Heavy pain", c.orange, 0.60, 72)
     elseif additionalPain > 10 then
-        add("pain", "Pain", c.orange, 0.60, 68)
+        add("pain", safeText("UI_EHR_Symptom_Pain", "Pain"), c.orange, 0.60, 68)
     elseif additionalPain >= 1 then
         add("pain", "Minor pain", c.orange, 0.60, 42)
     end
@@ -2340,9 +2483,9 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     if bandaged then
         hasLocalizedDamage = true
         if bandageLife <= 0 then
-            add("dirty_bandage", "Dirty bandage", c.yellow, 0.40, 89)
+            add("dirty_bandage", safeText("UI_EHR_BodyLegend_DirtyBandage", "Dirty bandage"), c.yellow, 0.40, 89)
         else
-            add("bandaged", "Bandaged", c.green, 0.20, 89)
+            add("bandaged", safeText("UI_EHR_BodyLegend_Bandaged", "Bandaged"), c.green, 0.20, 89)
         end
     end
     if callBodyPartMethod(bodyPart, "stitched", false) == true then
@@ -2394,7 +2537,9 @@ end
 function EHR_HealthPanelUI:updateVanillaBodyPartPanel()
     if not self.bodyPartPanel or not self.player then return end
 
-    local bodyDamage = self.player:getBodyDamage()
+    self:syncBodyPartPanelBodyParts()
+
+    local bodyDamage = self:getPatientBodyDamage()
     if not bodyDamage or not bodyDamage.getBodyParts then return end
 
     local bodyParts = bodyDamage:getBodyParts()
@@ -2440,7 +2585,7 @@ function EHR_HealthPanelUI:getOverallHealthPercent()
         return 100
     end
 
-    local bodyDamage = self.player:getBodyDamage()
+    local bodyDamage = self:getPatientBodyDamage()
     if not bodyDamage then return 100 end
 
     local directMethods = {
@@ -2518,11 +2663,11 @@ end
 function EHR_HealthPanelUI:drawBodyLegend(x, y, w)
     local c = EHR_HealthPanelUI.Colors
     local items = {
-        { label = "Bandaged", color = c.green },
-        { label = "Dirty bandage", color = c.yellow },
-        { label = "Pain / wound", color = c.orange },
-        { label = "Infected", color = c.purple },
-        { label = "Bleeding", color = c.red },
+        { label = safeText("UI_EHR_BodyLegend_Bandaged", "Bandaged"), color = c.green },
+        { label = safeText("UI_EHR_BodyLegend_DirtyBandage", "Dirty bandage"), color = c.yellow },
+        { label = safeText("UI_EHR_BodyLegend_PainWound", "Pain / wound"), color = c.orange },
+        { label = safeText("UI_EHR_BodyLegend_Infected", "Infected"), color = c.purple },
+        { label = safeText("UI_EHR_BodyLegend_Bleeding", "Bleeding"), color = c.red },
     }
 
     local rowH = 20
@@ -2802,7 +2947,7 @@ function EHR_HealthPanelUI:addKnoxCureMedicationEntries(activeMedications, activ
         medKey = "ImmunoboosterShot",
         icon = "ImmunoboosterShot",
         isTreatingDisease = false,
-        effectLabel = "Protection:",
+        effectLabel = safeText("UI_EHR_ProtectionLabel", "Protection:"),
         hoursActiveRemaining = remaining,
         progress = clamp(remaining / math.max(1, duration), 0, 1),
     })
@@ -2829,7 +2974,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local severity = type(disease) == "table" and (tonumber(disease.severity) or 0.5) or 0.5
     local progress = self:getDiseaseProgress(disease)
     local treated = self:isDiseaseTreated(diseaseId)
-    local status = displayInfo.statusText or (treated and "TREATING" or "UNTREATED")
+    local status = displayInfo.statusText or (treated and safeText("UI_EHR_Status_Treating", "TREATING") or safeText("UI_EHR_Status_Untreated", "UNTREATED"))
     local statusColor = displayInfo.statusColor or (displayInfo.statusText and c.red or (treated and c.green or c.orange))
     local accent, iconLabel
     if displayInfo.canIdentify then
@@ -2852,14 +2997,14 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local textX = iconX + iconSize + 16
     local textOffset = textX - x
     local textW = displayInfo.showTreatmentStatus and (w - textOffset - 127) or (w - textOffset - 18)
-    local detailsText = "Severity: ???"
+    local detailsText = safeText("UI_EHR_SeverityUnknown", "Severity: ???")
     local detailsColor = c.textDim
     if displayInfo.detailText then
         detailsText = displayInfo.detailText
         detailsColor = displayInfo.detailColor or c.red
     elseif type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         local exposureLevel = tostring(disease.exposureLevel or "Low")
-        detailsText = "Exposure: " .. exposureLevel
+        detailsText = safeText("UI_EHR_ExposurePrefix", "Exposure: ") .. exposureLevel
         if type(disease.exposureColor) == "table" then
             detailsColor = {
                 r = tonumber(disease.exposureColor[1]) or accent.r,
@@ -2871,7 +3016,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
             detailsColor = accent
         end
     elseif displayInfo.showStageSeverity then
-        detailsText = string.format("Stage %d   Severity %.1f/5", stage, severity)
+        detailsText = safeFormat("UI_EHR_StageSeverity", "Stage %d   Severity %.1f/5", stage, severity)
         detailsColor = c.green
     end
     local progressText = displayInfo.progressText
@@ -2919,24 +3064,24 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
         totalDoses = tonumber(treatment.totalDosesNeeded) or 0
         progress = clamp(tonumber(treatment.progress) or 0, 0, 1)
         if totalDoses > 0 then
-            doseText = string.format("Dose %d/%d", tonumber(treatment.doseCount) or 0, totalDoses)
+            doseText = safeFormat("UI_EHR_DoseCount", "Dose %d/%d", tonumber(treatment.doseCount) or 0, totalDoses)
             if not isTreatingDisease and treatment.isDoseActive then
-                scheduleText = "Active"
+                scheduleText = safeText("UI_EHR_MedicationActive", "Active")
                 scheduleValue = formatShortHours(treatment.hoursActiveRemaining or 0)
                 scheduleColor = c.green
             elseif treatment.isOverdue and not treatment.courseComplete then
-                scheduleText = "OVERDUE"
+                scheduleText = safeText("UI_EHR_MedicationOverdue", "OVERDUE")
                 scheduleValue = formatShortHours(treatment.hoursOverdue or 0)
                 scheduleColor = c.red
             elseif treatment.courseComplete then
-                scheduleText = "Course complete"
+                scheduleText = safeText("UI_EHR_CourseComplete", "Course complete")
                 scheduleColor = c.green
             elseif (tonumber(treatment.hoursUntilNextDose) or 0) <= 0.5 then
-                scheduleText = "Next dose in"
+                scheduleText = safeText("UI_EHR_NextDoseIn", "Next dose in")
                 scheduleValue = formatShortHours(treatment.hoursUntilNextDose or 0)
                 scheduleColor = c.yellow
             else
-                scheduleText = "Next dose in"
+                scheduleText = safeText("UI_EHR_NextDoseIn", "Next dose in")
                 scheduleValue = formatShortHours(treatment.hoursUntilNextDose or 0)
             end
         end
@@ -2958,14 +3103,14 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
     if isTreatingDisease then
         local valueW = self:getTextWidth(cureRemaining, UIFont.Small)
         self:drawTextRight(cureRemaining, x + w - 10, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
-        self:drawTextRight(self:truncateText("Time to cure:", math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawTextRight(self:truncateText(safeText("UI_EHR_TimeToCure", "Time to cure:"), math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     elseif activeValue ~= "" then
         local valueW = self:getTextWidth(activeValue, UIFont.Small)
         local label = tostring(treatment.effectLabel or "Active:")
         self:drawTextRight(activeValue, x + w - 10, y + 7, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Small)
         self:drawTextRight(self:truncateText(label, math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Small)
     else
-        self:drawTextRight("General effect", x + w - 10, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawTextRight(safeText("UI_EHR_GeneralEffect", "General effect"), x + w - 10, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     end
 
     if doseText ~= "" then
@@ -3003,7 +3148,7 @@ function EHR_HealthPanelUI:drawRightPanel()
     local clipH = h - 56
 
     self:drawPanelFrame(x, y, w, h, nil, nil)
-    self:drawSectionTitle("DETAILS", x, y, w)
+    self:drawSectionTitle(safeText("UI_EHR_Details", "DETAILS"), x, y, w)
 
     self:setStencilRect(x, clipY, w, clipH)
 
@@ -3014,11 +3159,11 @@ function EHR_HealthPanelUI:drawRightPanel()
         return displayInfo.sortName or displayInfo.displayName
     end)
 
-    self:drawSectionTitle("ACTIVE CONDITIONS", x + 8, contentY, w - 16)
+    self:drawSectionTitle(safeText("UI_EHR_ActiveConditions", "ACTIVE CONDITIONS"), x + 8, contentY, w - 16)
     contentY = contentY + 36
 
     if #diseases == 0 then
-        self:drawText("No active conditions", x + 18, contentY, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Medium)
+        self:drawText(safeText("UI_EHR_NoConditions", "No active conditions"), x + 18, contentY, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Medium)
         contentY = contentY + 42
     else
         for _, item in ipairs(diseases) do
@@ -3027,7 +3172,7 @@ function EHR_HealthPanelUI:drawRightPanel()
     end
 
     local treatments = self.cachedData.activeMedications or self.cachedData.activeTreatments or {}
-    self:drawSectionTitle("ACTIVE MEDICATIONS", x + 8, contentY + 8, w - 16)
+    self:drawSectionTitle(safeText("UI_EHR_ActiveMedications", "ACTIVE MEDICATIONS"), x + 8, contentY + 8, w - 16)
     contentY = contentY + 46
 
     if #treatments == 0 then
@@ -3041,7 +3186,7 @@ function EHR_HealthPanelUI:drawRightPanel()
         else
             self:drawRoundIcon(x + 22, contentY + 14, 26, c.panel, c.borderDim, "", c.textDim)
         end
-        self:drawDockedText("No active medications", x + 64, contentY, w - 92, 54, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
+        self:drawDockedText(safeText("UI_EHR_NoMedications", "No active medications"), x + 64, contentY, w - 92, 54, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
         contentY = contentY + 66
     else
         for _, treatment in ipairs(treatments) do
@@ -3050,11 +3195,11 @@ function EHR_HealthPanelUI:drawRightPanel()
     end
 
     local sideEffects = self.cachedData.activeSideEffects or {}
-    self:drawSectionTitle("SIDE EFFECTS", x + 8, contentY + 8, w - 16)
+    self:drawSectionTitle(safeText("UI_EHR_SideEffects", "SIDE EFFECTS"), x + 8, contentY + 8, w - 16)
     contentY = contentY + 46
 
     if #sideEffects == 0 then
-        self:drawText("No active side effects", x + 18, contentY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
+        self:drawText(safeText("UI_EHR_NoSideEffects", "No active side effects"), x + 18, contentY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
         contentY = contentY + 34
     else
         for _, effect in ipairs(sideEffects) do
@@ -3249,6 +3394,15 @@ function EHR_HealthPanelUI:onMouseUpOutside(x, y)
 end
 
 function EHR_HealthPanelUI:onClose()
+    if self.isRemoteHealthPanel then
+        if EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
+            EHR.UI.DestroyRemoteHealthPanel(self.remotePatient or self.player or self.ehrRemoteKey)
+            return
+        end
+        self:setVisible(false)
+        return
+    end
+
     if EHR.UI and EHR.UI.HideHealthPanel then
         EHR.UI.HideHealthPanel()
         return
@@ -3337,12 +3491,245 @@ function EHR.UI.ToggleHealthPanel(player)
     end
 end
 
+function EHR.UI.GetRemoteHealthPanelKey(playerOrUsername)
+    if not playerOrUsername then return nil end
+
+    if type(playerOrUsername) == "string" then
+        if string.sub(playerOrUsername, 1, 5) == "user_" or string.sub(playerOrUsername, 1, 7) == "online_" or string.sub(playerOrUsername, 1, 7) == "player_" then
+            return playerOrUsername
+        end
+        return "user_" .. playerOrUsername
+    end
+
+    local username = nil
+    pcall(function()
+        if playerOrUsername.getUsername then
+            username = playerOrUsername:getUsername()
+        end
+    end)
+    if username and username ~= "" then
+        return "user_" .. tostring(username)
+    end
+
+    local onlineID = nil
+    pcall(function()
+        if playerOrUsername.getOnlineID then
+            onlineID = playerOrUsername:getOnlineID()
+        end
+    end)
+    if onlineID ~= nil then
+        return "online_" .. tostring(onlineID)
+    end
+
+    local playerNum = nil
+    pcall(function()
+        if playerOrUsername.getPlayerNum then
+            playerNum = playerOrUsername:getPlayerNum()
+        end
+    end)
+    if playerNum ~= nil then
+        return "player_" .. tostring(playerNum)
+    end
+
+    return tostring(playerOrUsername)
+end
+
+function EHR.UI.GetRemoteHealthPanelForPatient(patient)
+    local instances = EHR.UI.RemoteHealthPanelInstances
+    if not instances then return nil end
+
+    local key = EHR.UI.GetRemoteHealthPanelKey(patient)
+    if key and instances[key] then
+        return instances[key]
+    end
+
+    if type(patient) == "string" then
+        for _, panel in pairs(instances) do
+            local name = nil
+            pcall(function()
+                if panel.remotePatient and panel.remotePatient.getUsername then
+                    name = panel.remotePatient:getUsername()
+                end
+            end)
+            if name == patient or ("user_" .. tostring(name)) == patient then
+                return panel
+            end
+        end
+    end
+
+    return nil
+end
+
+function EHR.UI.ShowRemoteHealthPanel(doctor, patient, examData)
+    if not doctor or not patient then return nil end
+
+    EHR.UI.RemoteHealthPanelInstances = EHR.UI.RemoteHealthPanelInstances or {}
+    local key = EHR.UI.GetRemoteHealthPanelKey(patient)
+    if not key then return nil end
+
+    suppressLegacyHealthUI(8)
+
+    local panel = EHR.UI.RemoteHealthPanelInstances[key]
+    local created = false
+    if not panel then
+        local core = getCore and getCore()
+        local screenW = core and core:getScreenWidth() or 1280
+        local screenH = core and core:getScreenHeight() or 720
+        local count = 0
+        for _ in pairs(EHR.UI.RemoteHealthPanelInstances) do
+            count = count + 1
+        end
+
+        local x = math.floor((screenW - EHR_HealthPanelUI.EXPANDED_WIDTH) / 2) + (count % 3) * 24
+        local y = math.floor((screenH - EHR_HealthPanelUI.HEIGHT) / 2) + (count % 3) * 32
+
+        panel = EHR_HealthPanelUI:new(math.max(0, x), math.max(0, y), patient)
+        panel.isRemoteHealthPanel = true
+        panel.remoteDoctor = doctor
+        panel.remotePatient = patient
+        panel.playerNum = doctor.getPlayerNum and doctor:getPlayerNum() or 0
+        panel.ehrRemoteKey = key
+        panel.remoteExamData = examData
+        panel:initialise()
+        panel:instantiate()
+        panel:addToUIManager()
+        EHR.UI.RemoteHealthPanelInstances[key] = panel
+        created = true
+    end
+
+    panel.ehrRemoteKey = key
+    panel.remoteExamData = examData or panel.remoteExamData
+    panel:bindRemotePatient(doctor, patient, created or panel.remotePatient ~= patient)
+    if doctor.startReceivingBodyDamageUpdates then
+        pcall(function() doctor:startReceivingBodyDamageUpdates(patient) end)
+    end
+    panel.rightExpanded = true
+    panel.activeTab = "ehr"
+    panel.contentScrollY = 0
+    if panel.width < EHR_HealthPanelUI.EXPANDED_WIDTH then
+        panel:setWidth(EHR_HealthPanelUI.EXPANDED_WIDTH)
+    end
+    panel:repositionControls()
+    panel:syncTabVisibility()
+    panel:setVisible(true)
+    panel:bringToTop()
+    panel:keepOnScreen()
+
+    return panel
+end
+
+function EHR.UI.UpdateRemoteHealthPanelData(targetUsername, examData)
+    if not targetUsername or type(examData) ~= "table" then return false end
+
+    local panel = EHR.UI.GetRemoteHealthPanelForPatient(targetUsername)
+    if not panel then
+        return false
+    end
+
+    panel.remoteExamData = examData
+    panel.cachedData = {}
+    return true
+end
+
+function EHR.UI.HideRemoteHealthPanel(patientOrKey)
+    local panel = EHR.UI.GetRemoteHealthPanelForPatient(patientOrKey)
+    if not panel then return end
+    panel:setVisible(false)
+end
+
+function EHR.UI.DestroyRemoteHealthPanel(patientOrKey)
+    local instances = EHR.UI.RemoteHealthPanelInstances
+    if not instances then return end
+
+    local key = EHR.UI.GetRemoteHealthPanelKey(patientOrKey)
+    local panel = key and instances[key] or EHR.UI.GetRemoteHealthPanelForPatient(patientOrKey)
+    if not panel then return end
+    key = panel.ehrRemoteKey or key
+
+    if panel.remoteDoctor and panel.remotePatient and panel.remoteDoctor.stopReceivingBodyDamageUpdates then
+        pcall(function()
+            panel.remoteDoctor:stopReceivingBodyDamageUpdates(panel.remotePatient)
+        end)
+    end
+    pcall(function()
+        panel:destroyPlayerBoundViews()
+    end)
+    pcall(function()
+        panel:setVisible(false)
+    end)
+    pcall(function()
+        if panel.removeFromUIManager then
+            panel:removeFromUIManager()
+        end
+    end)
+
+    if key then
+        instances[key] = nil
+    else
+        for storedKey, storedPanel in pairs(instances) do
+            if storedPanel == panel then
+                instances[storedKey] = nil
+                break
+            end
+        end
+    end
+end
+
+function EHR.UI.DestroyAllRemoteHealthPanels()
+    local instances = EHR.UI.RemoteHealthPanelInstances
+    if not instances then return end
+
+    local keys = {}
+    for key in pairs(instances) do
+        table.insert(keys, key)
+    end
+    for _, key in ipairs(keys) do
+        EHR.UI.DestroyRemoteHealthPanel(key)
+    end
+end
+
+local function patchRemoteBodyPartActionProgress()
+    if not ISHealthPanel or ISHealthPanel.ehrRemotePanelActionPatch then return end
+    if not ISHealthPanel.setBodyPartActionForPlayer then return end
+
+    local originalSetBodyPartActionForPlayer = ISHealthPanel.setBodyPartActionForPlayer
+    ISHealthPanel.ehrRemotePanelActionPatch = true
+    ISHealthPanel.setBodyPartActionForPlayer = function(playerObj, bodyPart, action, jobType, args)
+        local result = originalSetBodyPartActionForPlayer(playerObj, bodyPart, action, jobType, args)
+
+        if EHR.UI and EHR.UI.GetRemoteHealthPanelForPatient then
+            local panel = EHR.UI.GetRemoteHealthPanelForPatient(playerObj)
+            if panel then
+                local adapter = panel:getVanillaHealthAdapter()
+                if adapter and adapter.setBodyPartAction then
+                    if args then
+                        args.jobType = jobType
+                        if action and action.getJobDelta then
+                            pcall(function()
+                                args.delta = action:getJobDelta()
+                            end)
+                        end
+                    end
+                    adapter:setBodyPartAction(bodyPart, args)
+                end
+            end
+        end
+
+        return result
+    end
+end
+
+patchRemoteBodyPartActionProgress()
+
 if Events then
     Events.OnTick.Add(onTickHideVanilla)
     if Events.OnPlayerDeath then
         Events.OnPlayerDeath.Add(function(player)
-            if EHR.UI and EHR.UI.DestroyHealthPanel then
+            if EHR.UI and EHR.UI.HealthPanelInstance and EHR.UI.HealthPanelInstance.player == player and EHR.UI.DestroyHealthPanel then
                 EHR.UI.DestroyHealthPanel()
+            end
+            if EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
+                EHR.UI.DestroyRemoteHealthPanel(player)
             end
         end)
     end

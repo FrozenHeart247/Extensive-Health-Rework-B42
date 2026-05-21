@@ -3,6 +3,7 @@
 require "ExtensiveHealth/EHR_Medication"
 require "ISUI/ISWorldObjectContextMenu"
 require "ISUI/ISSleepDialog"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Stimulants = EHR.Stimulants or {}
@@ -31,7 +32,7 @@ local function EHR_StimulantSleepBlocked(player)
     if HaloTextHelper and HaloTextHelper.addBadText then
         pcall(function() HaloTextHelper.addBadText(player, text) end)
     elseif player.Say then
-        pcall(function() player:Say(text) end)
+        pcall(function() EHR.Locale.Say(player, text) end)
     end
 
     return true

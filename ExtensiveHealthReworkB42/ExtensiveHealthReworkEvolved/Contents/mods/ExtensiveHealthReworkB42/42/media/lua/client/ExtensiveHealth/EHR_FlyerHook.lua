@@ -8,6 +8,7 @@
 
 require "TimedActions/ISReadABook"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.DiseaseFlyers = EHR.DiseaseFlyers or {}
@@ -108,9 +109,9 @@ local function hookISReadABook()
                                 tuberculosis = "Tuberculosis",
                             }
                             local name = names[diseaseId] or diseaseId
-                            player:Say("Disease knowledge acquired: " .. name)
+                            EHR.Locale.Say(player, "Disease knowledge acquired: " .. name)
                         else
-                            player:Say("You already know about this disease.")
+                            EHR.Locale.Say(player, "You already know about this disease.")
                         end
 
                         -- MP sync: send to server

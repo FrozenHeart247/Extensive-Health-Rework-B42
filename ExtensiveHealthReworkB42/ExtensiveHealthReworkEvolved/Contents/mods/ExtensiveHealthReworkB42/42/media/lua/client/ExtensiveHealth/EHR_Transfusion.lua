@@ -10,9 +10,33 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Blood"
 require "TimedActions/ISBaseTimedAction"
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Transfusion = {}
+
+local function transfusionText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_Transfusion_" .. tostring(key), fallback)
+    end
+    local fullKey = "UI_EHR_Transfusion_" .. tostring(key)
+    local ok, value = pcall(getText, fullKey)
+    if ok and value and value ~= fullKey then return value end
+    return fallback
+end
+
+local function transfusionFormat(key, fallback, ...)
+    if EHR and EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format("UI_EHR_Transfusion_" .. tostring(key), fallback, ...)
+    end
+    local text = transfusionText(key, fallback)
+    local args = {...}
+    for i, value in ipairs(args) do
+        text = tostring(text):gsub("%%" .. tostring(i), tostring(value))
+    end
+    return text
+end
+
 
 -- Amount restored by each item type
 EHR.Transfusion.BloodBagAmount = 500   -- mL
@@ -313,7 +337,7 @@ function EHR.Transfusion.ApplySpoiledBloodReaction(player, data, spoilageState)
         data.EHR_Blood.currentVolume = math.max(0, (data.EHR_Blood.currentVolume or 5000) - 150 * severityMult)
     end
 
-    player:Say(spoilageState == "rotten" and "Oh god... that blood was rotten!" or "That blood tasted off...")
+    EHR.Locale.Say(player, spoilageState == "rotten" and "Oh god... that blood was rotten!" or "That blood tasted off...")
     EHR.Log("SpoiledBloodReaction: Applied severe sepsis-like reaction (severity: " .. severityMult .. ")")
 end
 
@@ -344,12 +368,12 @@ function EHR.Transfusion.ApplyBloodTransfusion(player, item)
     if EHR.Blood.IsCompatible(bagType, playerType) then
         -- Compatible - restore blood
         EHR.Transfusion.RestoreBlood(player, data, EHR.Transfusion.BloodBagAmount)
-        player:Say("That should help...")
+        EHR.Locale.Say(player, "That should help...")
         EHR.Log("Transfusion: Compatible! Restored " .. EHR.Transfusion.BloodBagAmount .. " mL")
     else
         -- Incompatible - bad reaction!
         EHR.Transfusion.ApplyBadReaction(player, data)
-        player:Say("Something's wrong... I feel terrible!")
+        EHR.Locale.Say(player, "Something's wrong... I feel terrible!")
         EHR.Log("Transfusion: INCOMPATIBLE! Bad reaction!")
     end
 end
@@ -413,7 +437,7 @@ function EHR.Transfusion.ApplySaline(player, item)
         print("[EHR SALINE DEBUG] === SALINE APPLICATION END ===")
     end
 
-    player:Say("Feeling a bit better...")
+    EHR.Locale.Say(player, "Feeling a bit better...")
     EHR.Log("Saline: Added " .. EHR.Transfusion.SalineAmount .. " mL (total saline: " .. (data.EHR_Blood.transfusedSaline or 0) .. " mL)")
 end
 
@@ -558,7 +582,7 @@ function EHRTransfusionAction:perform()
             if data and data.EHR_Blood then
                 EHR.Transfusion.ApplySpoiledBloodReaction(self.character, data, spoilageState)
             end
-            self.character:Say("That blood was completely rotten!")
+            EHR.Locale.Say(self.character, "That blood was completely rotten!")
         else
             -- Fresh blood - normal transfusion
             EHR.Transfusion.ApplyBloodTransfusion(self.character, self.item)
@@ -576,10 +600,10 @@ function EHRTransfusionAction:perform()
                     stats:set(CharacterStat.SICKNESS, math.min(1, current + 0.15))
                 end)
             end
-            self.character:Say("That saline tasted a bit off...")
+            EHR.Locale.Say(self.character, "That saline tasted a bit off...")
         elseif spoilageState == "rotten" then
             -- Rotten saline should not reach here
-            self.character:Say("That saline was contaminated!")
+            EHR.Locale.Say(self.character, "That saline was contaminated!")
         else
             -- Fresh saline - normal use
             EHR.Transfusion.ApplySaline(self.character, self.item)
@@ -662,7 +686,7 @@ function EHRDrawBloodAction:perform()
 
     local filledBagType = bloodBagItems[playerType]
     if not filledBagType then
-        self.character:Say("Something went wrong...")
+        EHR.Locale.Say(self.character, "Something went wrong...")
         EHR.Log("DrawBlood: Unknown blood type: " .. tostring(playerType))
         ISBaseTimedAction.perform(self)
         return
@@ -670,7 +694,7 @@ function EHRDrawBloodAction:perform()
 
     local inventory = self.character:getInventory()
     if not inventory then
-        self.character:Say("Something went wrong...")
+        EHR.Locale.Say(self.character, "Something went wrong...")
         EHR.Log("DrawBlood: No inventory available")
         ISBaseTimedAction.perform(self)
         return
@@ -682,7 +706,7 @@ function EHRDrawBloodAction:perform()
     end)
 
     if not ok or not filledBag then
-        self.character:Say("Something went wrong...")
+        EHR.Locale.Say(self.character, "Something went wrong...")
         EHR.Log("DrawBlood: Failed to create " .. tostring(filledBagType) .. ": " .. tostring(filledBag))
         ISBaseTimedAction.perform(self)
         return
@@ -717,7 +741,7 @@ function EHRDrawBloodAction:perform()
     EHR.Log("DrawBlood: Created " .. filledBagType .. " from player's blood")
 
     -- Apply effects from blood loss
-    self.character:Say(getText("UI_EHR_DrawBlood_Complete") or "That made me lightheaded...")
+    EHR.Locale.Say(self.character, getText("UI_EHR_DrawBlood_Complete") or "That made me lightheaded...")
 
     -- Small chance of minor fatigue/dizziness
     local stats = self.character:getStats()
@@ -774,18 +798,18 @@ end
 function EHR.Transfusion.CanDrawBlood(player)
     local data = EHR.GetPlayerData(player)
     if not data or not data.EHR_Blood then
-        return false, "Blood system not initialized"
+        return false, transfusionText("BloodSystemNotInitialized", "Blood system not initialized")
     end
 
     local bloodPercent = data.EHR_Blood.currentVolume / data.EHR_Blood.maxVolume
 
     if bloodPercent < EHR.Transfusion.MinBloodToDrawPercent then
-        return false, string.format("Need at least %d%% blood (currently %d%%)",
+        return false, transfusionFormat("NeedAtLeastBloodCurrently", "Need at least %1% blood (currently %2%)",
             math.floor(EHR.Transfusion.MinBloodToDrawPercent * 100),
             math.floor(bloodPercent * 100))
     end
 
-    return true, "ok"
+    return true, transfusionText("Ok", "ok")
 end
 
 
@@ -821,11 +845,11 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
 
         -- Don't allow using completely rotten blood
         if spoilageState == "rotten" then
-            local option = context:addOption("Use Blood Bag (ROTTEN)", player, nil)
+            local option = context:addOption(transfusionText("UseBloodBagRotten", "Use Blood Bag (ROTTEN)"), player, nil)
             option.notAvailable = true
             local tooltip = ISWorldObjectContextMenu.addToolTip()
-            tooltip:setName("UNUSABLE")
-            tooltip.description = "<RGB:1,0,0> This blood bag has completely spoiled and cannot be used. <LINE> Dispose of it safely."
+            tooltip:setName(transfusionText("Unusable", "UNUSABLE"))
+            tooltip.description = "<RGB:1,0,0> " .. transfusionText("BloodSpoiledDesc", "This blood bag has completely spoiled and cannot be used.") .. " <LINE> " .. transfusionText("DisposeSafely", "Dispose of it safely.")
             option.toolTip = tooltip
             return
         end
@@ -835,35 +859,35 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         local compatible = data and EHR.Blood.IsCompatible(bagType, playerType)
         local compatText = ""
         if knowsBloodTypes then
-            compatText = compatible and " (Compatible)" or " (INCOMPATIBLE!)"
+            compatText = compatible and " " .. transfusionText("CompatibleSuffix", "(Compatible)") or " " .. transfusionText("IncompatibleSuffix", "(INCOMPATIBLE!)")
         end
 
         -- Add spoilage warning to text
         if spoilageState == "stale" then
-            compatText = compatText .. " - STALE!"
+            compatText = compatText .. " - " .. transfusionText("StaleSuffix", "STALE!")
         end
 
-        local option = context:addOption("Use Blood Bag" .. compatText, player, EHR.Transfusion.OnUseTransfusion, item)
+        local option = context:addOption(transfusionText("UseBloodBag", "Use Blood Bag") .. compatText, player, EHR.Transfusion.OnUseTransfusion, item)
 
         -- Build tooltip
         local tooltip = ISWorldObjectContextMenu.addToolTip()
         local warningParts = {}
 
         if knowsBloodTypes and not compatible then
-            tooltip:setName("WARNING")
-            table.insert(warningParts, "<RGB:1,0.3,0.3> This blood type is NOT compatible with yours (" .. playerType .. ")!")
-            table.insert(warningParts, "Using it will cause a severe reaction.")
+            tooltip:setName(transfusionText("Warning", "WARNING"))
+            table.insert(warningParts, "<RGB:1,0.3,0.3> " .. transfusionFormat("IncompatibleDesc", "This blood type is NOT compatible with yours (%1)!", playerType))
+            table.insert(warningParts, transfusionText("SevereReaction", "Using it will cause a severe reaction."))
         elseif not knowsBloodTypes then
-            tooltip:setName("Blood Compatibility Unknown")
-            table.insert(warningParts, "<RGB:0.7,0.7,0.7> Read the Blood Types flyer or reach First Aid level 8 to assess compatibility.")
+            tooltip:setName(transfusionText("BloodCompatibilityUnknown", "Blood Compatibility Unknown"))
+            table.insert(warningParts, "<RGB:0.7,0.7,0.7> " .. transfusionText("ReadBloodTypes", "Read the Blood Types flyer or reach First Aid level 8 to assess compatibility."))
         end
 
         if spoilageState == "stale" then
             if not tooltip.name or tooltip.name == "" then
-                tooltip:setName("CAUTION")
+                tooltip:setName(transfusionText("Caution", "CAUTION"))
             end
-            table.insert(warningParts, "<LINE> <RGB:1,0.5,0> This blood is past its prime!")
-            table.insert(warningParts, "Using spoiled blood may cause infection and illness.")
+            table.insert(warningParts, "<LINE> <RGB:1,0.5,0> " .. transfusionText("BloodStaleDesc", "This blood is past its prime!"))
+            table.insert(warningParts, transfusionText("SpoiledBloodRisk", "Using spoiled blood may cause infection and illness."))
         end
 
         if #warningParts > 0 then
@@ -876,15 +900,15 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         local spoilageState = EHR.Transfusion.GetSpoilageState(item)
 
         if spoilageState == "rotten" then
-            local option = context:addOption("Use Saline IV (CONTAMINATED)", player, nil)
+            local option = context:addOption(transfusionText("UseSalineContaminated", "Use Saline IV (CONTAMINATED)"), player, nil)
             option.notAvailable = true
             local tooltip = ISWorldObjectContextMenu.addToolTip()
-            tooltip:setName("UNUSABLE")
-            tooltip.description = "<RGB:1,0,0> This saline bag has become contaminated and cannot be used."
+            tooltip:setName(transfusionText("Unusable", "UNUSABLE"))
+            tooltip.description = "<RGB:1,0,0> " .. transfusionText("SalineContaminatedDesc", "This saline bag has become contaminated and cannot be used.")
             option.toolTip = tooltip
             return
         end
-        local option = context:addOption("Use Saline IV", player, EHR.Transfusion.OnUseTransfusion, item)
+        local option = context:addOption(transfusionText("UseSaline", "Use Saline IV"), player, EHR.Transfusion.OnUseTransfusion, item)
 
         -- Calculate current saline ratio for tooltip
         local data = EHR.GetPlayerData(player)
@@ -900,23 +924,22 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         end
 
         local tooltip = ISWorldObjectContextMenu.addToolTip()
-        tooltip:setName("Saline Infusion")
+        tooltip:setName(transfusionText("SalineInfusion", "Saline Infusion"))
 
         local warningText = ""
         if EHR.Blood and EHR.Blood.HEMODILUTION_WARNING and salineRatio >= EHR.Blood.HEMODILUTION_WARNING then
-            warningText = "<LINE> <RGB:1,0.5,0> WARNING: High saline! Risk of hemodilution!"
+            warningText = "<LINE> <RGB:1,0.5,0> " .. transfusionText("HighSalineWarning", "WARNING: High saline! Risk of hemodilution!")
         end
         if EHR.Blood and EHR.Blood.HEMODILUTION_THRESHOLD and salineRatio >= EHR.Blood.HEMODILUTION_THRESHOLD * 0.9 then
-            warningText = "<LINE> <RGB:1,0,0> DANGER: Near lethal saline! DO NOT USE!"
+            warningText = "<LINE> <RGB:1,0,0> " .. transfusionText("NearLethalSaline", "DANGER: Near lethal saline! DO NOT USE!")
         end
 
         local salineAmount = EHR.Transfusion.SalineAmount or 250
-        tooltip.description = "Restores fluid volume without blood type matching. <LINE> " ..
-                              "Adds " .. salineAmount .. "mL to blood volume. <LINE> " ..
-                              "Current saline: " .. math.floor(currentSaline) .. "mL (" .. math.floor(salineRatio * 100) .. "%)" ..
+        tooltip.description = transfusionText("SalineRestores", "Restores fluid volume without blood type matching.") .. " <LINE> " ..
+                              transfusionFormat("SalineAdds", "Adds %1mL to blood volume.", salineAmount) .. " <LINE> " ..
+                              transfusionFormat("CurrentSaline", "Current saline: %1mL (%2%)", math.floor(currentSaline), math.floor(salineRatio * 100)) ..
                               warningText .. "<LINE> <LINE> " ..
-                              "<RGB:1,0.5,0> CAUTION: >60% saline causes brain oxygen <LINE> " ..
-                              "deprivation and DEATH. Use blood bags when possible."
+                              "<RGB:1,0.5,0> " .. transfusionText("SalineDeathCaution", "CAUTION: >60% saline causes brain oxygen deprivation and DEATH. Use blood bags when possible.")
         option.toolTip = tooltip
 
     elseif EHR.Transfusion.IsEmptyBloodBag(item) then
@@ -925,12 +948,12 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         local playerType = data and data.EHR_Blood and data.EHR_Blood.bloodType or "?"
         local canDraw, drawReason = EHR.Transfusion.CanDrawBlood(player)
 
-        local optionText = getText("UI_EHR_DrawBlood_Option") or "Draw Blood"
+        local optionText = transfusionText("DrawBloodOption", "Draw Blood")
         local option = context:addOption(optionText, player, EHR.Transfusion.OnDrawBlood, item)
 
         -- Build tooltip
         local tooltip = ISWorldObjectContextMenu.addToolTip()
-        tooltip:setName(getText("UI_EHR_DrawBlood_Title") or "Blood Donation")
+        tooltip:setName(transfusionText("BloodDonation", "Blood Donation"))
 
         local currentBlood = 0
         local maxBlood = 5000
@@ -945,16 +968,16 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         local minPercent = math.floor(EHR.Transfusion.MinBloodToDrawPercent * 100)
 
         if canDraw then
-            tooltip.description = (getText("UI_EHR_DrawBlood_Desc") or "Draw your own blood to store for later use.") .. " <LINE> " ..
-                                  "<LINE> Your blood type: <RGB:0.5,1,0.5>" .. playerType .. " <LINE> " ..
-                                  "<RGB:1,1,1>Current blood: " .. math.floor(currentBlood) .. "mL (" .. bloodPercent .. "%) <LINE> " ..
-                                  "Will remove: " .. drawAmount .. "mL <LINE> " ..
-                                  "<LINE> <RGB:1,0.8,0.5>After donation you may feel dizzy."
+            tooltip.description = (getText("UI_EHR_DrawBlood_Desc") or transfusionText("DrawBloodDesc", "Draw your own blood to store for later use.")) .. " <LINE> " ..
+                                  "<LINE> " .. transfusionFormat("YourBloodType", "Your blood type: %1", "<RGB:0.5,1,0.5>" .. playerType) .. " <LINE> " ..
+                                  "<RGB:1,1,1>" .. transfusionFormat("CurrentBlood", "Current blood: %1mL (%2%)", math.floor(currentBlood), bloodPercent) .. " <LINE> " ..
+                                  transfusionFormat("WillRemove", "Will remove: %1mL", drawAmount) .. " <LINE> " ..
+                                  "<LINE> <RGB:1,0.8,0.5>" .. transfusionText("AfterDonationDizzy", "After donation you may feel dizzy.")
         else
             option.notAvailable = true
             tooltip.description = "<RGB:1,0.3,0.3>" .. drawReason .. " <LINE> " ..
-                                  "<LINE> <RGB:1,1,1>You need at least " .. minPercent .. "% blood to safely donate. <LINE> " ..
-                                  "Current blood: " .. bloodPercent .. "%"
+                                  "<LINE> <RGB:1,1,1>" .. transfusionFormat("NeedBlood", "You need at least %1% blood to safely donate.", minPercent) .. " <LINE> " ..
+                                  transfusionFormat("CurrentBloodPercent", "Current blood: %1%", bloodPercent)
         end
         option.toolTip = tooltip
     end
@@ -973,7 +996,7 @@ function EHR.Transfusion.OnDrawBlood(player, emptyBag)
     -- Verify player can still draw blood
     local canDraw, reason = EHR.Transfusion.CanDrawBlood(player)
     if not canDraw then
-        player:Say(reason)
+        EHR.Locale.Say(player, reason)
         return
     end
 

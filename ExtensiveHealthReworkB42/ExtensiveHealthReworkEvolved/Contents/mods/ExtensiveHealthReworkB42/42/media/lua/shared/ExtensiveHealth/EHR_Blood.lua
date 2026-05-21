@@ -11,6 +11,7 @@
 
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Dialogue"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Blood = {}
@@ -1138,7 +1139,7 @@ function EHR.Blood.ApplyHemodilutionWarning(player, salineRatio)
             "I can't catch my breath...",
             "Everything feels... distant...",
         }
-        player:Say(messages[ZombRand(#messages) + 1])
+        EHR.Locale.Say(player, messages[ZombRand(#messages) + 1])
     end
 
     if EHR.DEBUG then
@@ -1188,7 +1189,7 @@ function EHR.Blood.ApplyHemodilutionDeath(player, salineRatio)
             "Everything is going dark...",
             "Too much... saline... can't think...",
         }
-        player:Say(messages[ZombRand(#messages) + 1])
+        EHR.Locale.Say(player, messages[ZombRand(#messages) + 1])
     end
 
     EHR.Log(string.format("HEMODILUTION LETHAL: %.1f%% saline ratio - applying damage", salineRatio * 100))

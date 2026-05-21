@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework B42
     Knox Cure Context Menu Integration
@@ -334,7 +335,7 @@ end
 
 function ISEHRAntibodyTestAction:start()
     if self.character.Say then
-        self.character:Say("Running the test...")
+        EHR.Locale.Say(self.character, "Running the test...")
     end
 end
 

@@ -8,6 +8,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Disease"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.CorpseSickness = EHR.CorpseSickness or {}
@@ -1068,7 +1069,7 @@ function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
         data.lastFungalCorpseCount = 0
         data.lastFungalRiskReason = nil
         if player.Say then
-            player:Say("*coughs* My chest feels wrong after breathing that air...")
+            EHR.Locale.Say(player, "*coughs* My chest feels wrong after breathing that air...")
         end
         EHR.Log("Player contracted cadaveric aspergillosis from damp corpse exposure")
     end
@@ -1291,7 +1292,7 @@ function EHR.CorpseSickness.ShowSmellWarning(player)
     if not player or not player.Say then return end
     local dialogues = EHR.CorpseSickness.Config.SMELL_DIALOGUES
     local line = dialogues[ZombRand(#dialogues) + 1]
-    player:Say(line)
+    EHR.Locale.Say(player, line)
 end
 
 function EHR.CorpseSickness.GetVanillaSicknessTarget(exposure)
@@ -1692,7 +1693,7 @@ function EHR.CorpseSickness.TriggerSickness(player)
             data.suppressFoodSicknessUntil = 0
         end
         if player.Say then
-            player:Say("I don't feel so good... must be the corpses.")
+            EHR.Locale.Say(player, "I don't feel so good... must be the corpses.")
         end
         EHR.Log("Player contracted corpse sickness")
     end

@@ -7,12 +7,47 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 require "ExtensiveHealth/EHR_Medication"
 require "TimedActions/ISBaseTimedAction"
 require "TimedActions/ISInventoryTransferAction"
 
 EHR = EHR or {}
 EHR.MedicationAction = {}
+
+local function medActionText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_MedAction_" .. tostring(key), fallback)
+    end
+    local ok, value = pcall(getText, "UI_EHR_MedAction_" .. tostring(key))
+    if ok and value and value ~= "UI_EHR_MedAction_" .. tostring(key) then return value end
+    return fallback
+end
+
+local function medActionFormat(key, fallback, ...)
+    if EHR and EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format("UI_EHR_MedAction_" .. tostring(key), fallback, ...)
+    end
+    local text = medActionText(key, fallback)
+    local args = {...}
+    for i, value in ipairs(args) do
+        text = tostring(text):gsub("%%" .. tostring(i), tostring(value))
+    end
+    return text
+end
+
+local function medActionDiseaseName(id)
+    if EHR and EHR.DiseaseFlyers and EHR.DiseaseFlyers.GetDiseaseFriendlyName then
+        return EHR.DiseaseFlyers.GetDiseaseFriendlyName(id)
+    end
+    return tostring(id or "")
+end
+
+local function medActionAdminType(adminType)
+    adminType = tostring(adminType or "default")
+    return medActionText("AdminType_" .. adminType, adminType)
+end
+
 
 -- Time multipliers based on medication administration type (in ticks, ~30 ticks = 1 second)
 EHR.MedicationAction.Times = {
@@ -199,43 +234,44 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
 
                 -- What it treats
                 if medData.treats and #medData.treats > 0 then
-                    local treatsList = table.concat(medData.treats, ", ")
-                    desc = desc .. "Treats: " .. treatsList .. " <LINE> "
+                    local treatNames = {}
+                    for _, treatId in ipairs(medData.treats) do table.insert(treatNames, medActionDiseaseName(treatId)) end
+                    local treatsList = table.concat(treatNames, ", ")
+                    desc = desc .. medActionFormat("Treats", "Treats: %1", treatsList) .. " <LINE> "
                 else
-                    desc = desc .. "Symptom relief / Emergency use <LINE> "
+                    desc = desc .. medActionText("SymptomReliefEmergency", "Symptom relief / Emergency use") .. " <LINE> "
                 end
 
                 -- Administration type and time
                 local adminType = EHR.MedicationAction.GetAdminType(medData)
                 local timeSeconds = math.floor((EHR.MedicationAction.Times[adminType] or 120) / 30)
-                desc = desc .. "Administration: " .. adminType .. " (~" .. timeSeconds .. "s) <LINE> "
+                desc = desc .. medActionFormat("Administration", "Administration: %1 (~%2s)", medActionAdminType(adminType), timeSeconds) .. " <LINE> "
 
                 -- Remaining package doses
                 local hasPackageDoses = false
                 if EHR.Medication.GetItemDoseInfo then
                     local doseInfo = EHR.Medication.GetItemDoseInfo(item)
                     if doseInfo and doseInfo.maxDoses and doseInfo.maxDoses > 1 then
-                        desc = desc .. "Remaining: " .. tostring(doseInfo.remainingDoses or 0) ..
-                            "/" .. tostring(doseInfo.maxDoses) .. " <LINE> "
+                        desc = desc .. medActionFormat("Remaining", "Remaining: %1/%2", tostring(doseInfo.remainingDoses or 0), tostring(doseInfo.maxDoses)) .. " <LINE> "
                         hasPackageDoses = true
                     end
                 end
                 if not hasPackageDoses then
-                    desc = desc .. "Single use <LINE> "
+                    desc = desc .. medActionText("SingleUse", "Single use") .. " <LINE> "
                 end
 
                 -- Cure time if applicable
                 local treatmentTimeText = EHR.Medication.GetTreatmentTimeText and EHR.Medication.GetTreatmentTimeText(medData) or nil
                 if treatmentTimeText then
-                    desc = desc .. "Treatment time: " .. treatmentTimeText .. " <LINE> "
+                    desc = desc .. medActionFormat("TreatmentTime", "Treatment time: %1", treatmentTimeText) .. " <LINE> "
                 end
 
                 -- Requirements
                 if medData.requiresIVKit then
-                    desc = desc .. "<RGB:0.7,0.7,1> Requires: IV Kit <LINE> "
+                    desc = desc .. "<RGB:0.7,0.7,1> " .. medActionText("RequiresIVKit", "Requires: IV Kit") .. " <LINE> "
                 end
                 if medData.requiresSyringe then
-                    desc = desc .. "<RGB:0.7,0.7,1> Requires: Syringe <LINE> "
+                    desc = desc .. "<RGB:0.7,0.7,1> " .. medActionText("RequiresSyringe", "Requires: Syringe") .. " <LINE> "
                 end
 
                 -- Side effects warning
@@ -244,12 +280,12 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
                     for _, effectId in ipairs(medData.sideEffects) do
                         local effectDef = EHR.Medication.SideEffects and EHR.Medication.SideEffects[effectId]
                         if effectDef then
-                            table.insert(sideEffectNames, effectDef.displayName or effectId)
+                            table.insert(sideEffectNames, (EHR.Locale and EHR.Locale.SideEffectName and EHR.Locale.SideEffectName(effectDef.displayName or effectId)) or (effectDef.displayName or effectId))
                         else
                             table.insert(sideEffectNames, effectId)
                         end
                     end
-                    desc = desc .. "<RGB:1,0.5,0> Side effects: " .. table.concat(sideEffectNames, ", ")
+                    desc = desc .. "<RGB:1,0.5,0> " .. medActionFormat("SideEffects", "Side effects: %1", table.concat(sideEffectNames, ", "))
                 end
 
                 -- If can't use, show why

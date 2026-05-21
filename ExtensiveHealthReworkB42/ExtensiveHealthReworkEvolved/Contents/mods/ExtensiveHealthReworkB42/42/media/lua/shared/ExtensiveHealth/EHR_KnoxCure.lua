@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework B42
     Knox Infection Cure Module
@@ -905,7 +906,7 @@ function EHR.KnoxCure.UseAntibodyTest(player, item)
 
     -- Also show as HUD message if available
     if player.Say then
-        player:Say(resultText)
+        EHR.Locale.Say(player, resultText)
     end
 
     EHR.Log(string.format("KnoxCure: Antibody test - Blood: %s, Rating: %s, Chance: %d%%",

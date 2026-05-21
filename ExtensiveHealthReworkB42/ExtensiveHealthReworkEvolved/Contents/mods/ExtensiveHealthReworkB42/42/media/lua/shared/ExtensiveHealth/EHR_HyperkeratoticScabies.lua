@@ -4,6 +4,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.HyperkeratoticScabies = EHR.HyperkeratoticScabies or {}
@@ -260,7 +261,7 @@ function EHR.HyperkeratoticScabies.Start(player, source)
     modData.EHR_HyperkeratoticScabies.lastTriggerHour = worldHour()
 
     if player.Say then
-        player:Say("Something bit me...")
+        EHR.Locale.Say(player, "Something bit me...")
     end
 
     if player.transmitModData then

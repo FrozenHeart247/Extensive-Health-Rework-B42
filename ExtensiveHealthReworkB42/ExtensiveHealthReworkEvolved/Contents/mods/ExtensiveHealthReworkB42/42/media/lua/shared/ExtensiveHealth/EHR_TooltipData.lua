@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework - Tooltip Data
 
@@ -703,12 +704,12 @@ end
 
 -- Get tier name
 function EHR.Tooltips.GetTierName(tier)
-    if tier == 0 then return "Basic"
-    elseif tier == 1 then return "OTC (Tier 1)"
-    elseif tier == 2 then return "Prescription (Tier 2)"
-    elseif tier == 3 then return "Clinical (Tier 3)"
-    elseif tier == 4 then return "Experimental (Tier 4)"
-    else return "Unknown"
+    if tier == 0 then return EHR.Locale.Text("Tooltip_EHR_Tier_Basic", "Basic")
+    elseif tier == 1 then return EHR.Locale.Text("Tooltip_EHR_Tier_OTC", "OTC (Tier 1)")
+    elseif tier == 2 then return EHR.Locale.Text("Tooltip_EHR_Tier_Prescription", "Prescription (Tier 2)")
+    elseif tier == 3 then return EHR.Locale.Text("Tooltip_EHR_Tier_Clinical", "Clinical (Tier 3)")
+    elseif tier == 4 then return EHR.Locale.Text("Tooltip_EHR_Tier_Experimental", "Experimental (Tier 4)")
+    else return EHR.Locale.Text("Tooltip_EHR_Tier_Unknown", "Unknown")
     end
 end
 

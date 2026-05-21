@@ -14,6 +14,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.BodyTemp = {}
@@ -1390,7 +1391,7 @@ function EHR.BodyTemp.ApplyColdEffects(player, tempData, currentHour)
                 said = EHR.Dialogue.SayPeriodic(player, text, 1)  -- 1 = always (cooldown handles timing)
             else
                 -- Fallback if dialogue system not loaded
-                player:Say(text)
+                EHR.Locale.Say(player, text)
                 said = true
             end
 
@@ -1429,7 +1430,7 @@ function EHR.BodyTemp.ApplyHotEffects(player, tempData, currentHour)
                 said = EHR.Dialogue.SayPeriodic(player, text, 1)  -- 1 = always (cooldown handles timing)
             else
                 -- Fallback if dialogue system not loaded
-                player:Say(text)
+                EHR.Locale.Say(player, text)
                 said = true
             end
 

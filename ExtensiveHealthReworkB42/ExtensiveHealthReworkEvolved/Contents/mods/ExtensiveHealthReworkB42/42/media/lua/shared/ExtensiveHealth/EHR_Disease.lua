@@ -22,6 +22,7 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Dialogue"
 require "ExtensiveHealth/EHR_LifestyleCompat"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Disease = {}
@@ -1746,7 +1747,7 @@ local function EHR_DiseaseSay(player, lines)
         index = ZombRand(#lines) + 1
     end
 
-    player:Say(lines[index])
+    EHR.Locale.Say(player, lines[index])
 end
 
 local function EHR_DiseaseTriggerVomit(player)
@@ -1815,7 +1816,7 @@ local function EHR_DiseaseKillPlayer(player, cause)
     end
 
     if player.Say then
-        player:Say("*collapses*")
+        EHR.Locale.Say(player, "*collapses*")
     end
 
     pcall(function()

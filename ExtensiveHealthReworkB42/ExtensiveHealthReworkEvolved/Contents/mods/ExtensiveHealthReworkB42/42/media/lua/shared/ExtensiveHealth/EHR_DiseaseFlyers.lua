@@ -8,6 +8,7 @@
 
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_SkillXP"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.DiseaseFlyers = EHR.DiseaseFlyers or {}
@@ -214,32 +215,36 @@ function EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
     diseaseId = normalizeDiseaseId(diseaseId)
 
     local names = {
-        ahtr = "AHTR",
-        blood_types = "Blood Types",
-        common_cold = "Common Cold",
-        concussion = "Concussion",
-        delirium = "Delirium",
-        flu = "Influenza",
-        pneumonia = "Pneumonia",
-        food_poisoning = "Food Poisoning",
-        gastroenteritis = "Gastroenteritis",
-        dysentery = "Dysentery",
-        trichinosis = "Trichinosis",
-        hyperkeratotic_scabies = "Hyperkeratotic Scabies",
-        toxin_poisoning = "Toxin Poisoning",
-        hypothermia = "Hypothermia",
-        heat_exhaustion = "Heat Exhaustion",
-        heat_stroke = "Heat Stroke",
-        sepsis = "Sepsis",
-        corpse_sickness = "Corpse Exposure Illness",
-        cadaveric_aspergillosis = "Cadaveric Aspergillosis",
-        tuberculosis = "Tuberculosis",
-        tetanus = "Tetanus",
-        wound_infection = "Wound Infection",
-        cellulitis = "Cellulitis",
-        knox_infection = "Knox Infection",
+        ahtr = { "UI_EHR_Disease_AHTR", "AHTR" },
+        blood_types = { "UI_EHR_Disease_BloodTypes", "Blood Types" },
+        common_cold = { "UI_EHR_Disease_CommonCold", "Common Cold" },
+        concussion = { "UI_EHR_Disease_Concussion", "Concussion" },
+        delirium = { "UI_EHR_Disease_Delirium", "Delirium" },
+        flu = { "UI_EHR_Disease_Influenza", "Influenza" },
+        pneumonia = { "UI_EHR_Disease_Pneumonia", "Pneumonia" },
+        food_poisoning = { "UI_EHR_Disease_FoodPoisoning", "Food Poisoning" },
+        gastroenteritis = { "UI_EHR_Disease_Gastroenteritis", "Gastroenteritis" },
+        dysentery = { "UI_EHR_Disease_Dysentery", "Dysentery" },
+        trichinosis = { "UI_EHR_Disease_Trichinosis", "Trichinosis" },
+        hyperkeratotic_scabies = { "UI_EHR_Disease_HyperkeratoticScabies", "Hyperkeratotic Scabies" },
+        toxin_poisoning = { "UI_EHR_Disease_ToxinPoisoning", "Toxin Poisoning" },
+        hypothermia = { "UI_EHR_Disease_Hypothermia", "Hypothermia" },
+        heat_exhaustion = { "UI_EHR_Disease_HeatExhaustion", "Heat Exhaustion" },
+        heat_stroke = { "UI_EHR_Disease_HeatStroke", "Heat Stroke" },
+        sepsis = { "UI_EHR_Disease_Sepsis", "Sepsis" },
+        corpse_sickness = { "UI_EHR_Disease_CorpseSickness", "Corpse Exposure Illness" },
+        cadaveric_aspergillosis = { "UI_EHR_Disease_CadavericAspergillosis", "Cadaveric Aspergillosis" },
+        tuberculosis = { "UI_EHR_Disease_Tuberculosis", "Tuberculosis" },
+        tetanus = { "UI_EHR_Disease_Tetanus", "Tetanus" },
+        wound_infection = { "UI_EHR_Disease_WoundInfection", "Wound Infection" },
+        cellulitis = { "UI_EHR_Disease_Cellulitis", "Cellulitis" },
+        knox_infection = { "UI_EHR_Disease_KnoxInfection", "Knox Infection" },
     }
-    return names[diseaseId] or diseaseId
+    local entry = names[diseaseId]
+    if type(entry) == "table" then
+        return EHR.Locale.Text(entry[1], entry[2])
+    end
+    return diseaseId
 end
 
 function EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
@@ -279,7 +284,7 @@ function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
 
     local name = EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
     if player.Say then
-        player:Say(flyerText("UI_EHR_FlyerLearned", "Disease knowledge acquired: %1", name))
+        EHR.Locale.Say(player, flyerText("UI_EHR_FlyerLearned", "Disease knowledge acquired: %1", name))
     end
 
     EHR.Log("Player learned disease: " .. tostring(diseaseId))
@@ -377,7 +382,7 @@ function EHR.DiseaseFlyers.OnFlyerRead(player, item)
             EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
         end
         if not newlyLearned and player.Say then
-            player:Say(flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
+            EHR.Locale.Say(player, flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
         end
         if sendClientCommand then
             sendClientCommand(player, "EHR_Flyers", "UnlockDisease", { diseaseId = normalizeDiseaseId(diseaseId) })
@@ -390,7 +395,7 @@ function EHR.DiseaseFlyers.OnFlyerRead(player, item)
         EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
     end
     if not newlyLearned and player.Say then
-        player:Say(flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
+        EHR.Locale.Say(player, flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
     end
 end
 

@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework - Medication System
 
@@ -768,7 +769,7 @@ EHR.Medication.Database = {
                 if player.setForceWakeUpTime then
                     player:setForceWakeUpTime(-1)  -- Clear forced wake time
                 end
-                player:Say("*gasps* The adrenaline is kicking in!")
+                EHR.Locale.Say(player, "*gasps* The adrenaline is kicking in!")
                 EHR.Log("Epinephrine woke player from blackout sleep!")
             end
             EHR.Log("Epinephrine administered - emergency stimulant effects applied")
@@ -794,10 +795,10 @@ EHR.Medication.Database = {
             if EHR.KnoxCure and EHR.KnoxCure.IsInfected and EHR.KnoxCure.CureInfection then
                 if EHR.KnoxCure.IsInfected(player) then
                     EHR.KnoxCure.CureInfection(player)
-                    player:Say("*gasps* I can feel it... the infection is gone!")
+                    EHR.Locale.Say(player, "*gasps* I can feel it... the infection is gone!")
                     EHR.Log("Zomboxivir cured Knox infection via EHR system")
                 else
-                    player:Say("I'm not infected... that was a waste.")
+                    EHR.Locale.Say(player, "I'm not infected... that was a waste.")
                     EHR.Log("Zomboxivir used but player not infected")
                 end
             else
@@ -1784,7 +1785,7 @@ function EHR.Medication.KillFromOverdose(player, overdoseInfo, offScheduleCount)
     end
 
     if player.isLocalPlayer and player:isLocalPlayer() and player.Say then
-        player:Say("Too many doses... something is very wrong...")
+        EHR.Locale.Say(player, "Too many doses... something is very wrong...")
     end
 
     local bodyDamage = nil
@@ -1859,11 +1860,11 @@ function EHR.Medication.ApplyEarlyDoseOverdose(player, overdoseInfo)
     if player:isLocalPlayer() then
         local earlyText = string.format("%.1f", overdoseInfo.earlyBy or 0)
         if (overdoseInfo.intensity or 1) >= 3 then
-            player:Say("I took that way too soon... I feel awful.")
+            EHR.Locale.Say(player, "I took that way too soon... I feel awful.")
         elseif (overdoseInfo.intensity or 1) >= 2 then
-            player:Say("That dose was too early. My body is reacting badly.")
+            EHR.Locale.Say(player, "That dose was too early. My body is reacting badly.")
         else
-            player:Say("I should have waited another " .. earlyText .. "h before taking that.")
+            EHR.Locale.Say(player, "I should have waited another " .. earlyText .. "h before taking that.")
         end
     end
 
@@ -2351,7 +2352,7 @@ function EHR.Medication.UseMedication(player, item)
     local canUse, reason = EHR.Medication.CanUseMedication(player, item)
     if not canUse then
         if player:isLocalPlayer() then
-            player:Say(reason)
+            EHR.Locale.Say(player, reason)
         end
         return false
     end
@@ -2367,7 +2368,7 @@ function EHR.Medication.UseMedication(player, item)
 
     -- Display usage message
     if medData.usageMessage and player:isLocalPlayer() then
-        player:Say(medData.usageMessage)
+        EHR.Locale.Say(player, medData.usageMessage)
     end
 
     -- Consume required supplies (with MP sync)
@@ -3672,7 +3673,7 @@ function EHR.Medication.CheckAndApplyInteractions(player)
             EHR.Log("Drug interaction triggered: " .. interaction.message)
 
             if player:isLocalPlayer() then
-                player:Say("I don't feel right... these medications might not mix well.")
+                EHR.Locale.Say(player, "I don't feel right... these medications might not mix well.")
             end
         end
     end
@@ -3812,7 +3813,7 @@ function EHR.Medication.ApplySideEffect(player, effectId)
     end
 
     if player:isLocalPlayer() then
-        player:Say("Side effect: " .. sideEffect.displayName)
+        EHR.Locale.Say(player, "Side effect: " .. sideEffect.displayName)
 
         if effectId == "dizziness" and EHR.ToxinVision and EHR.ToxinVision.StartMedicationEpisode then
             EHR.ToxinVision.StartMedicationEpisode(player)
@@ -3889,12 +3890,12 @@ function EHR.Medication.Update(player)
                         and EHR.Medication.CureModuleDisease(player, diseaseId, treatment)
                     if moduleCured then
                         if player:isLocalPlayer() then
-                            player:Say("Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
+                            EHR.Locale.Say(player, "Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
                         end
                     elseif EHR.Disease and EHR.Disease.Cure then
                         EHR.Disease.Cure(player, diseaseId)
                         if player:isLocalPlayer() then
-                            player:Say("Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
+                            EHR.Locale.Say(player, "Treatment complete. " .. (treatment.medicationName or "Medication") .. " has cured your condition.")
                         end
                     end
                     table.insert(treatmentsToRemove, diseaseId)
@@ -4222,7 +4223,7 @@ local function OnEatItemHandler(character, item)
 
                 -- Show usage message if defined
                 if medData.usageMessage and character:isLocalPlayer() then
-                    character:Say(medData.usageMessage)
+                    EHR.Locale.Say(character, medData.usageMessage)
                 end
             end
         end

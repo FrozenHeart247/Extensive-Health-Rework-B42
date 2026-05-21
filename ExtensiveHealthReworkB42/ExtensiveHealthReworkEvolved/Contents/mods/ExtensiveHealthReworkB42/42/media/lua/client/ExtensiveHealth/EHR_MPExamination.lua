@@ -15,10 +15,166 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 require "ExtensiveHealth/EHR_MedicalMonitorUI"
+pcall(function() require "ExtensiveHealth/EHR_HealthPanelUI" end)
+pcall(function() require "TimedActions/ISMedicalCheckAction" end)
+pcall(function() require "XpSystem/ISUI/ISHealthPanel" end)
 
 EHR = EHR or {}
 EHR.MPExamination = {}
+
+-- Vanilla B42 can re-wrap an already open remote health panel when "Check Health"
+-- is performed again. The old wrapper is left behind as an empty black window.
+-- Prefer the EHR health panel for remote patients and keep this cleanup for
+-- any stale vanilla windows created before EHR takes over.
+local function EHR_PrepareRemoteHealthWindow(window, patient)
+    if not window or window.ehrRemoteHealthPrepared then return end
+    window.ehrRemoteHealthPrepared = true
+    window.ehrRemotePatient = patient
+
+    local originalRemoveFromUIManager = window.removeFromUIManager
+    window.removeFromUIManager = function(win, ...)
+        if ISMedicalCheckAction and ISMedicalCheckAction.HealthWindows and win.ehrRemotePatient then
+            if ISMedicalCheckAction.HealthWindows[win.ehrRemotePatient] == win then
+                ISMedicalCheckAction.HealthWindows[win.ehrRemotePatient] = nil
+            end
+        end
+        if originalRemoveFromUIManager then
+            return originalRemoveFromUIManager(win, ...)
+        end
+    end
+
+    local originalClose = window.close
+    if originalClose then
+        window.close = function(win, ...)
+            if ISMedicalCheckAction and ISMedicalCheckAction.HealthWindows and win.ehrRemotePatient then
+                if ISMedicalCheckAction.HealthWindows[win.ehrRemotePatient] == win then
+                    ISMedicalCheckAction.HealthWindows[win.ehrRemotePatient] = nil
+                end
+            end
+            return originalClose(win, ...)
+        end
+    end
+end
+
+local function EHR_ClearVanillaRemoteHealthWindow(patient)
+    if not patient or not ISMedicalCheckAction or not ISMedicalCheckAction.HealthWindows then return end
+    local window = ISMedicalCheckAction.HealthWindows[patient]
+    if not window then return end
+
+    pcall(function()
+        if window.setVisible then
+            window:setVisible(false)
+        end
+    end)
+    pcall(function()
+        if window.removeFromUIManager then
+            window:removeFromUIManager()
+        end
+    end)
+    ISMedicalCheckAction.HealthWindows[patient] = nil
+end
+
+local function EHR_PatchVanillaMedicalCheck()
+    if not ISMedicalCheckAction or ISMedicalCheckAction.ehrRemoteHealthReusePatch then return end
+    if not ISBaseTimedAction or not ISHealthPanel then return end
+
+    local originalPerform = ISMedicalCheckAction.perform
+    if not originalPerform then return end
+
+    ISMedicalCheckAction.ehrRemoteHealthReusePatch = true
+    ISMedicalCheckAction.perform = function(actionSelf)
+        local doctor = actionSelf and actionSelf.character
+        local patient = actionSelf and actionSelf.otherPlayer
+        if doctor and patient and EHR and EHR.UI and EHR.UI.ShowRemoteHealthPanel then
+            EHR_ClearVanillaRemoteHealthWindow(patient)
+
+            local panel = EHR.UI.ShowRemoteHealthPanel(doctor, patient)
+            if panel then
+                if doctor.startReceivingBodyDamageUpdates then
+                    pcall(function() doctor:startReceivingBodyDamageUpdates(patient) end)
+                end
+
+                if EHR.MPExamination and EHR.MPExamination.RequestExamData and isClient and isClient() then
+                    EHR.MPExamination.RequestExamData(doctor, patient)
+                end
+
+                local playerNum = doctor:getPlayerNum()
+                if JoypadState and JoypadState.players and JoypadState.players[playerNum + 1] then
+                    JoypadState.players[playerNum + 1].focus = panel
+                    if updateJoypadFocus then
+                        updateJoypadFocus(JoypadState.players[playerNum + 1])
+                    end
+                end
+
+                ISBaseTimedAction.perform(actionSelf)
+                return
+            end
+        end
+
+        if doctor and patient and ISMedicalCheckAction.HealthWindows then
+            local window = ISMedicalCheckAction.HealthWindows[patient]
+            local panel = window and window.nested or nil
+            if window and panel and panel.character == patient then
+                panel.doctorLevel = doctor:getPerkLevel(Perks.Doctor)
+                if panel.setOtherPlayer then
+                    panel:setOtherPlayer(doctor)
+                end
+                if panel.updateBodyPartList then
+                    pcall(function() panel:updateBodyPartList() end)
+                end
+
+                window.visibleTarget = actionSelf
+                EHR_PrepareRemoteHealthWindow(window, patient)
+
+                local wasVisible = false
+                pcall(function()
+                    wasVisible = window.isVisible and window:isVisible()
+                end)
+                if window.setVisible then
+                    pcall(function() window:setVisible(true) end)
+                end
+                if not wasVisible and window.addToUIManager then
+                    pcall(function() window:addToUIManager() end)
+                end
+                if window.bringToTop then
+                    pcall(function() window:bringToTop() end)
+                end
+
+                local playerNum = doctor:getPlayerNum()
+                if JoypadState and JoypadState.players and JoypadState.players[playerNum + 1] then
+                    JoypadState.players[playerNum + 1].focus = panel
+                    if updateJoypadFocus then
+                        updateJoypadFocus(JoypadState.players[playerNum + 1])
+                    end
+                end
+
+                if doctor.startReceivingBodyDamageUpdates then
+                    pcall(function() doctor:startReceivingBodyDamageUpdates(patient) end)
+                end
+
+                ISBaseTimedAction.perform(actionSelf)
+                return
+            elseif window then
+                pcall(function()
+                    if window.removeFromUIManager then
+                        window:removeFromUIManager()
+                    end
+                end)
+                ISMedicalCheckAction.HealthWindows[patient] = nil
+            end
+        end
+
+        local result = originalPerform(actionSelf)
+        if patient and ISMedicalCheckAction and ISMedicalCheckAction.HealthWindows then
+            EHR_PrepareRemoteHealthWindow(ISMedicalCheckAction.HealthWindows[patient], patient)
+        end
+        return result
+    end
+end
+
+EHR_PatchVanillaMedicalCheck()
 
 -- ============================================
 -- CONFIGURATION
@@ -112,7 +268,9 @@ function EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
 
     -- Don't examine yourself - use the regular monitor
     if targetPlayer == localPlayer then
-        if EHR.UI and EHR.UI.ToggleMonitor then
+        if EHR.UI and EHR.UI.ToggleHealthPanel then
+            EHR.UI.ToggleHealthPanel(localPlayer)
+        elseif EHR.UI and EHR.UI.ToggleMonitor then
             EHR.UI.ToggleMonitor(localPlayer)
         end
         return
@@ -127,29 +285,23 @@ function EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
     local targetID = EHR.MPExamination.GetPlayerID(targetPlayer)
     if not targetID then return end
 
-    -- Check if we already have a monitor for this player
-    local existingMonitor = EHR.MPExamination.ActiveMonitors[targetID]
-    if existingMonitor and existingMonitor.monitor then
-        -- Show existing monitor and refresh data
-        existingMonitor.monitor:setVisible(true)
-        existingMonitor.monitor:bringToTop()
-        EHR.Log("MPExamination: Showing existing monitor for " .. targetID)
-
-        -- Request fresh data from server
-        EHR.MPExamination.RequestExamData(localPlayer, targetPlayer)
-        return
-    end
-
     -- Get target player name
     local targetName = "Unknown"
     pcall(function() targetName = targetPlayer:getUsername() or ("Player " .. targetPlayer:getPlayerNum()) end)
 
-    -- On dedicated server, request data from server first
+    local cachedData = nil
+    local cached = EHR.MPExamination.ExamDataCache[targetName]
+    if cached then
+        cachedData = cached.data
+    end
+
+    -- Show the EHR panel immediately, then refresh server-side EHR data.
+    EHR.MPExamination.OpenMonitorForPlayer(localPlayer, targetPlayer, cachedData)
+
     if isClient() then
         EHR.MPExamination.RequestExamData(localPlayer, targetPlayer)
     else
-        -- Single player or host - can access data directly
-        EHR.MPExamination.OpenMonitorForPlayer(localPlayer, targetPlayer)
+        EHR.Log("MPExamination: Opened local examination for " .. targetID)
     end
 end
 
@@ -194,7 +346,7 @@ function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer)
     EHR.Log("MPExamination: Requested exam data for " .. targetName)
 
     -- Show loading feedback to player
-    localPlayer:Say(getText("UI_EHR_Exam_Requesting") or "Examining...")
+    EHR.Locale.Say(localPlayer, getText("UI_EHR_Exam_Requesting") or "Examining...")
 end
 
 --[[
@@ -210,6 +362,10 @@ function EHR.MPExamination.OnExamDataReceived(targetUsername, data)
         data = data,
         timestamp = getTimestampMs(),
     }
+
+    if EHR.UI and EHR.UI.UpdateRemoteHealthPanelData then
+        EHR.UI.UpdateRemoteHealthPanelData(targetUsername, data)
+    end
 
     -- Get pending request
     local pending = EHR.MPExamination.PendingRequests[targetUsername]
@@ -236,7 +392,7 @@ function EHR.MPExamination.OnExamDataFailed(targetUsername, error)
     -- Get pending request
     local pending = EHR.MPExamination.PendingRequests[targetUsername]
     if pending and pending.localPlayer then
-        pending.localPlayer:Say(getText("UI_EHR_Exam_Failed") or "Cannot examine that player")
+        EHR.Locale.Say(pending.localPlayer, getText("UI_EHR_Exam_Failed") or "Cannot examine that player")
     end
 
     -- Clear pending request
@@ -254,6 +410,22 @@ function EHR.MPExamination.OpenMonitorForPlayer(localPlayer, targetPlayer, examD
 
     local targetID = EHR.MPExamination.GetPlayerID(targetPlayer)
     if not targetID then return end
+
+    if EHR.UI and EHR.UI.ShowRemoteHealthPanel then
+        local monitor = EHR.UI.ShowRemoteHealthPanel(localPlayer, targetPlayer, examData)
+        if monitor then
+            EHR.MPExamination.ActiveMonitors[targetID] = {
+                monitor = monitor,
+                targetPlayer = targetPlayer,
+                localPlayer = localPlayer,
+            }
+
+            local targetName = "Unknown"
+            pcall(function() targetName = targetPlayer:getUsername() or ("Player " .. targetPlayer:getPlayerNum()) end)
+            EHR.Log("MPExamination: Opened EHR health panel for " .. targetName .. " (" .. targetID .. ")")
+            return
+        end
+    end
 
     -- Check if monitor already exists
     local existingMonitor = EHR.MPExamination.ActiveMonitors[targetID]
@@ -329,8 +501,12 @@ function EHR.MPExamination.CloseMonitor(targetPlayer)
 
     local entry = EHR.MPExamination.ActiveMonitors[targetID]
     if entry and entry.monitor then
-        entry.monitor:setVisible(false)
-        entry.monitor:removeFromUIManager()
+        if entry.monitor.isRemoteHealthPanel and EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
+            EHR.UI.DestroyRemoteHealthPanel(targetPlayer)
+        else
+            entry.monitor:setVisible(false)
+            entry.monitor:removeFromUIManager()
+        end
         EHR.MPExamination.ActiveMonitors[targetID] = nil
         EHR.Log("MPExamination: Closed monitor for " .. targetID)
     end
@@ -342,8 +518,12 @@ end
 function EHR.MPExamination.CloseAllMonitors()
     for targetID, entry in pairs(EHR.MPExamination.ActiveMonitors) do
         if entry.monitor then
-            entry.monitor:setVisible(false)
-            entry.monitor:removeFromUIManager()
+            if entry.monitor.isRemoteHealthPanel and EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
+                EHR.UI.DestroyRemoteHealthPanel(entry.targetPlayer or targetID)
+            else
+                entry.monitor:setVisible(false)
+                entry.monitor:removeFromUIManager()
+            end
         end
     end
     EHR.MPExamination.ActiveMonitors = {}
@@ -383,8 +563,12 @@ function EHR.MPExamination.UpdateDistanceCheck()
         local entry = EHR.MPExamination.ActiveMonitors[targetID]
         if entry then
             if entry.monitor then
-                entry.monitor:setVisible(false)
-                entry.monitor:removeFromUIManager()
+                if entry.monitor.isRemoteHealthPanel and EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
+                    EHR.UI.DestroyRemoteHealthPanel(entry.targetPlayer or targetID)
+                else
+                    entry.monitor:setVisible(false)
+                    entry.monitor:removeFromUIManager()
+                end
             end
             EHR.MPExamination.ActiveMonitors[targetID] = nil
             EHR.Log("MPExamination: Auto-closed monitor (out of range): " .. targetID)
@@ -417,7 +601,9 @@ function EHR.MPExamination.OnFillWorldObjectContextMenu(playerNum, context, worl
             if isSelf then
                 local optionText = getText("UI_EHR_Context_OpenMonitor") or "Open Medical Monitor"
                 local option = context:addOption(optionText, localPlayer, function(player)
-                    if EHR.UI and EHR.UI.ToggleMonitor then
+                    if EHR.UI and EHR.UI.ToggleHealthPanel then
+                        EHR.UI.ToggleHealthPanel(player)
+                    elseif EHR.UI and EHR.UI.ToggleMonitor then
                         EHR.UI.ToggleMonitor(player)
                     end
                 end)

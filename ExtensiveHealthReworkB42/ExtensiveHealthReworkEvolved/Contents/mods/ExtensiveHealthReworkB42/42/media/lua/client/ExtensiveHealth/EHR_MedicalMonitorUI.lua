@@ -20,6 +20,7 @@ require "ExtensiveHealth/EHR_WoundInfection"
 require "ExtensiveHealth/EHR_LifestyleCompat"
 require "ExtensiveHealth/EHR_SubstanceScanner"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.UI = EHR.UI or {}
@@ -578,7 +579,7 @@ function EHR_MedicalMonitorUI:onExamineSelf()
 
     -- Make the character say the dialogue
     if dialogue and self.player.Say then
-        self.player:Say(dialogue)
+        EHR.Locale.Say(self.player, dialogue)
     end
 
     -- Record examination to medical journal

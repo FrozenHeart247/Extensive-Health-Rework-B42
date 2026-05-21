@@ -7,6 +7,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Concussion = EHR.Concussion or {}
@@ -413,7 +414,7 @@ function EHR.Concussion.Start(player, source, force)
     modData.EHR_Concussion.lastSource = source or "trauma"
 
     if player.Say then
-        player:Say("My head... something is wrong.")
+        EHR.Locale.Say(player, "My head... something is wrong.")
     end
 
     if player.transmitModData then

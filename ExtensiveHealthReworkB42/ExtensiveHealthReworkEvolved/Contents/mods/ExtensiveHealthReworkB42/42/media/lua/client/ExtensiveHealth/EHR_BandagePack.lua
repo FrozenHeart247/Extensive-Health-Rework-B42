@@ -2,10 +2,34 @@
 -- Clean bandage pack support.
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 require "ExtensiveHealth/EHR_Medication"
 
 EHR = EHR or {}
 EHR.BandagePack = EHR.BandagePack or {}
+
+local function bandagePackText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_BandagePack_" .. tostring(key), fallback)
+    end
+    local fullKey = "UI_EHR_BandagePack_" .. tostring(key)
+    local ok, value = pcall(getText, fullKey)
+    if ok and value and value ~= fullKey then return value end
+    return fallback
+end
+
+local function bandagePackFormat(key, fallback, ...)
+    if EHR and EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format("UI_EHR_BandagePack_" .. tostring(key), fallback, ...)
+    end
+    local text = bandagePackText(key, fallback)
+    local args = {...}
+    for i, value in ipairs(args) do
+        text = tostring(text):gsub("%%" .. tostring(i), tostring(value))
+    end
+    return text
+end
+
 
 local PACK_TYPE = "ExtensiveHealth.SterilizedBandages"
 local CLEAN_BANDAGE_TYPE = "Base.Bandage"
@@ -294,13 +318,13 @@ function EHR.BandagePack.OnFillInventoryObjectContextMenu(playerNum, context, it
         if item then
             if EHR.BandagePack.IsCleanBandage(item) then
                 local pack = EHR.BandagePack.FindPackWithSpace(inventory)
-                local label = pack and "Add to Clean Bandages Pack" or "Create Clean Bandages Pack"
+                local label = pack and bandagePackText("AddToPack", "Add to Clean Bandages Pack") or bandagePackText("CreatePack", "Create Clean Bandages Pack")
                 context:addOption(label, player, function(plr, bandageItem, targetPack)
                     EHR.BandagePack.AddBandageToPack(plr, bandageItem, targetPack)
                 end, item, pack)
             elseif EHR.BandagePack.IsPack(item) then
                 if getRemainingDoses(item) > 0 then
-                    context:addOption("Unpack Clean Bandage", player, function(plr, packItem)
+                    context:addOption(bandagePackText("Unpack", "Unpack Clean Bandage"), player, function(plr, packItem)
                         EHR.BandagePack.UnpackBandage(plr, packItem)
                     end, item)
                 end
@@ -308,7 +332,7 @@ function EHR.BandagePack.OnFillInventoryObjectContextMenu(playerNum, context, it
                 if getRemainingDoses(item) < getMaxDoses(item) then
                     local bandage = EHR.BandagePack.FindCleanBandage(inventory)
                     if bandage then
-                        context:addOption("Add Clean Bandage to Pack", player, function(plr, bandageItem, packItem)
+                        context:addOption(bandagePackText("AddSingle", "Add Clean Bandage to Pack"), player, function(plr, bandageItem, packItem)
                             EHR.BandagePack.AddBandageToPack(plr, bandageItem, packItem)
                         end, bandage, item)
                     end

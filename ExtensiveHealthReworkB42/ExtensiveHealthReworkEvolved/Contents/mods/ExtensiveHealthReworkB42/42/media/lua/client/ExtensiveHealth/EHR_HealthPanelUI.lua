@@ -1315,14 +1315,22 @@ function EHR_HealthPanelUI:drawSectionTitle(text, x, y, w)
     self:drawRect(x + 8, y + 27, w - 16, 1, 0.72, c.border.r, c.border.g, c.border.b)
 end
 
+function EHR_HealthPanelUI:getKnowledgePlayer()
+    if self.isRemoteHealthPanel and self.remoteDoctor then
+        return self.remoteDoctor
+    end
+    return self.player
+end
+
 function EHR_HealthPanelUI:getMedicalSkillTier(ignoreDebugBypass)
     if not ignoreDebugBypass and EHR.IsDebugMode and EHR.IsDebugMode() then
         return 4, 10
     end
 
+    local knowledgePlayer = self:getKnowledgePlayer()
     local skillLevel = 0
-    if self.player and Perks and Perks.Doctor then
-        skillLevel = self.player:getPerkLevel(Perks.Doctor) or 0
+    if knowledgePlayer and Perks and Perks.Doctor then
+        skillLevel = knowledgePlayer:getPerkLevel(Perks.Doctor) or 0
     end
 
     local tier = 0
@@ -1396,9 +1404,10 @@ function EHR_HealthPanelUI:getDiseaseName(diseaseId, disease)
 end
 
 function EHR_HealthPanelUI:hasDiseaseKnowledge(diseaseId)
-    if not self.player then return false end
+    local knowledgePlayer = self:getKnowledgePlayer()
+    if not knowledgePlayer then return false end
     if EHR.DiseaseFlyers and EHR.DiseaseFlyers.KnowsDisease then
-        return EHR.DiseaseFlyers.KnowsDisease(self.player, diseaseId) == true
+        return EHR.DiseaseFlyers.KnowsDisease(knowledgePlayer, diseaseId) == true
     end
     return false
 end
@@ -1887,22 +1896,33 @@ function EHR_HealthPanelUI:updateCachedData()
         medicationData = data.EHR_Medication or {}
     end
 
+    local medicationView = nil
+    if self.isRemoteHealthPanel and type(data.EHR_MedicationView) == "table" then
+        medicationView = data.EHR_MedicationView
+    end
+
     local activeTreatments = {}
-    if self.isRemoteHealthPanel and medicationData.activeTreatments then
+    if medicationView and medicationView.activeTreatments then
+        activeTreatments = medicationView.activeTreatments or {}
+    elseif self.isRemoteHealthPanel and medicationData.activeTreatments then
         activeTreatments = medicationData.activeTreatments or {}
     elseif EHR.Medication and EHR.Medication.GetActiveTreatments and self.player then
         activeTreatments = EHR.Medication.GetActiveTreatments(self.player) or {}
     end
 
     local doseStatuses = {}
-    if self.isRemoteHealthPanel and medicationData.activeDoses then
+    if medicationView and medicationView.activeDoses then
+        doseStatuses = medicationView.activeDoses or {}
+    elseif self.isRemoteHealthPanel and medicationData.activeDoses then
         doseStatuses = medicationData.activeDoses or {}
     elseif EHR.Medication and EHR.Medication.GetAllDoseStatuses and self.player then
         doseStatuses = EHR.Medication.GetAllDoseStatuses(self.player) or {}
     end
 
     local activeSideEffects = {}
-    if self.isRemoteHealthPanel and medicationData.activeSideEffects then
+    if medicationView and medicationView.activeSideEffects then
+        activeSideEffects = medicationView.activeSideEffects or {}
+    elseif self.isRemoteHealthPanel and medicationData.activeSideEffects then
         activeSideEffects = medicationData.activeSideEffects or {}
     elseif EHR.Medication and EHR.Medication.GetActiveSideEffects and self.player then
         activeSideEffects = EHR.Medication.GetActiveSideEffects(self.player) or {}
@@ -1923,6 +1943,21 @@ function EHR_HealthPanelUI:updateCachedData()
         activeMedications = activeMedications,
         activeSideEffects = activeSideEffects,
     }
+end
+
+function EHR_HealthPanelUI:refreshRemoteExamDataIfNeeded()
+    if not self.isRemoteHealthPanel or not self.remoteDoctor or not self.remotePatient then return end
+    if not EHR.MPExamination or not EHR.MPExamination.RequestExamData then return end
+    if not isClient or not isClient() then return end
+
+    local now = getTimestampMs and getTimestampMs() or 0
+    if now <= 0 then return end
+    if self.lastRemoteExamRefreshMs and (now - self.lastRemoteExamRefreshMs) < 5000 then
+        return
+    end
+
+    self.lastRemoteExamRefreshMs = now
+    EHR.MPExamination.RequestExamData(self.remoteDoctor, self.remotePatient, true)
 end
 
 function EHR_HealthPanelUI:getBloodSummary()
@@ -2887,8 +2922,9 @@ function EHR_HealthPanelUI:buildActiveMedicationList(treatments, doseStatuses)
     local displayed = {}
     local seen = {}
 
-    for _, treatment in ipairs(treatments or {}) do
+    for keyFromMap, treatment in pairs(treatments or {}) do
         if type(treatment) == "table" then
+            treatment.diseaseId = treatment.diseaseId or tostring(keyFromMap)
             local key = treatment.medKey or treatment.medicationName
             if key then seen[key] = true end
             treatment.isTreatingDisease = true
@@ -2896,8 +2932,9 @@ function EHR_HealthPanelUI:buildActiveMedicationList(treatments, doseStatuses)
         end
     end
 
-    for _, doseStatus in ipairs(doseStatuses or {}) do
+    for keyFromMap, doseStatus in pairs(doseStatuses or {}) do
         if type(doseStatus) == "table" then
+            doseStatus.medKey = doseStatus.medKey or tostring(keyFromMap)
             local key = doseStatus.medKey or doseStatus.medicationName
             if key and not seen[key] and (doseStatus.isDoseActive or doseStatus.isOverdue or not doseStatus.treatmentComplete) then
                 table.insert(displayed, {
@@ -3258,6 +3295,7 @@ end
 function EHR_HealthPanelUI:prerender()
     ISPanel.prerender(self)
     self:ensureUsableSize()
+    self:refreshRemoteExamDataIfNeeded()
     self:updateCachedData()
     self:layoutEmbeddedVanillaTabs()
     self:syncTabVisibility()

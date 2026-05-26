@@ -6,6 +6,20 @@ module ExtensiveHealth
         Updated for B42 with balanced multi-dose packages
     =========================================== **/
 
+    model EHR_ActivatedCharcoal
+    {
+        mesh = EHR/ActivatedCharcoal,
+        texture = ActivatedCharcoal,
+
+    }
+ model EHR_AntibioticOintment
+    {
+        mesh = EHR/AntibioticOintment,
+        texture = AntibioticOintment,
+	scale=0.3,
+
+    }
+
     /** =========================================
         BLOOD BAGS (Single Use - Perishable)
         Fresh for ~1 hour outside frozen storage.
@@ -458,6 +472,8 @@ module ExtensiveHealth
         Tooltip = Tooltip_ActivatedCharcoal,
         UseDelta = 0.125,
         UseWhileEquipped = false,
+        StaticModel = EHR_ActivatedCharcoal,
+        WorldStaticModel = EHR_ActivatedCharcoal,
         Medical = true,
     }
 
@@ -570,8 +586,12 @@ module ExtensiveHealth
         DisplayName = Antibiotic Ointment,
         Icon = AntibioticOintment,
         Weight = 0.1,
+  	StaticModel = EHR_AntibioticOintment,
+        WorldStaticModel = EHR_AntibioticOintment,
+
         Tooltip = Tooltip_AntibioticOintment,
         UseDelta = 0.1667,
+
         UseWhileEquipped = false,
         Medical = true,
     }

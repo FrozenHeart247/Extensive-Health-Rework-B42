@@ -99,7 +99,8 @@ local function getWorldWaterSourceType(waterObject)
     if not waterObject then return "unknown" end
 
     local customName = safeProperty(waterObject, "CustomName")
-    if customName == "Toilet" then
+    local customNameLower = customName and string.lower(tostring(customName)) or ""
+    if customNameLower:find("toilet", 1, true) then
         return "toilet"
     elseif customName == "Dispenser" then
         return "tap"
@@ -111,6 +112,9 @@ local function getWorldWaterSourceType(waterObject)
     end
 
     local objectName = safeCall(waterObject, "getName")
+    if objectName and string.find(string.lower(tostring(objectName)), "toilet", 1, true) then
+        return "toilet"
+    end
     if objectName and string.find(string.lower(tostring(objectName)), "rain collector", 1, true) then
         return "rainCollector"
     end
@@ -147,8 +151,15 @@ function EHR.FoodHook.HandleWaterDrink(player, waterSource, sourceType)
     end
     EHR.FoodHook.lastDrinkRisk[key] = currentHour
 
-    if EHR.Environmental and EHR.Environmental.OnDrink then
-        EHR.Environmental.OnDrink(player, waterSource, sourceType)
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "DrinkWaterRisk", {
+            sourceType = tostring(sourceType),
+        })
+        return
+    end
+
+    if EHR.Environmental and EHR.Environmental.OnDrinkWater then
+        EHR.Environmental.OnDrinkWater(player, waterSource, sourceType)
     elseif EHR.Disease and EHR.Disease.TryContract then
         EHR.Disease.TryContract(player, "food_poisoning", 0.25)
     end

@@ -3219,12 +3219,15 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         end
         EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.0008 * severity * stageMult * breathingMult)
 
-        local coughChance = (stage == 3 and 0.010 or stage == 2 and 0.0035 or stage == 4 and 0.0012 or 0.0003) * severity * coughMult
+        local coughChance = (stage == 3 and 0.018 or stage == 2 and 0.0060 or stage == 4 and 0.0018 or 0.0005) * severity * coughMult
         trySymptom("aspergillosis_cough", coughChance, 0.14, function()
             EHR_DiseaseTriggerCough(player, stage == 3)
         end)
 
         if stage >= 2 then
+            trySymptom("aspergillosis_breathing_dialogue", (stage == 3 and 0.006 or 0.003) * severity * breathingMult, 0.22, function()
+                EHR_DiseaseSay(player, {"My lungs feel tight...", "It hurts to breathe...", "I can't get a full breath..."})
+            end)
             trySymptom("aspergillosis_fever", (stage == 3 and 0.004 or 0.0015) * severity * symptomMult, 0.28, function()
                 EHR_DiseaseSay(player, {"I'm burning up...", "My chest is on fire...", "This fever is getting worse..."})
             end)
@@ -4400,8 +4403,17 @@ function EHR.Disease.CheckFoodRisk(player, item)
             toxinType = "berry"
         end
 
-        EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
-        EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+        if isClient and isClient() and sendClientCommand then
+            sendClientCommand(player, "EHR", "FoodToxinRisk", {
+                itemName = tostring(itemName or "unknown"),
+                poisonPower = tonumber(poisonPower) or 0,
+                poisonDetectionLevel = tonumber(poisonDetectionLevel) or 0,
+                toxinType = tostring(toxinType or "toxin"),
+            })
+        else
+            EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
+            EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+        end
     end
 
     -- B42 alternative: check if item has "Rotten" in name or category
@@ -4511,6 +4523,23 @@ function EHR.Disease.CheckFoodRisk(player, item)
         EHR.Log(string.format("CheckFoodRisk: rotten=%s, burnt=%s, cooked=%s, age=%.2f/%.2f",
             tostring(isRotten), tostring(isBurnt), tostring(isCooked),
             age or 0, offAge or 0))
+    end
+
+    if isClient and isClient() and sendClientCommand and #risks > 0 then
+        local packetRisks = {}
+        for _, foodRisk in ipairs(risks) do
+            table.insert(packetRisks, {
+                diseaseId = tostring(foodRisk.diseaseId or ""),
+                reason = tostring(foodRisk.reason or "food"),
+                chance = math.max(0, math.min(1, tonumber(foodRisk.chance) or 0)),
+            })
+        end
+
+        sendClientCommand(player, "EHR", "FoodDiseaseRisk", {
+            itemName = tostring(itemName or "unknown"),
+            risks = packetRisks,
+        })
+        return
     end
 
     for _, foodRisk in ipairs(risks) do

@@ -37,7 +37,9 @@ function EHR.Locale.Format(key, fallback, ...)
     local values = { ... }
 
     for i, value in ipairs(values) do
-        text = string.gsub(text, "%%" .. tostring(i), tostring(value))
+        local replacement = tostring(value)
+        text = string.gsub(text, "%%" .. tostring(i) .. "%$[%a]", function() return replacement end)
+        text = string.gsub(text, "%%" .. tostring(i), function() return replacement end)
     end
 
     if string.find(text, "%%[cdeEfgGiouqsxX]") then

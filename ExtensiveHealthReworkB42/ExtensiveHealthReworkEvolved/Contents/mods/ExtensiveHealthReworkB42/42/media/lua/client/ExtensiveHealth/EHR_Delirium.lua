@@ -11,7 +11,7 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Disease"
 require "ISUI/ISPanel"
 require "TimedActions/ISSmashWindow"
-require "TimedActions/ISWalkToTimedAction"
+pcall(function() require "TimedActions/ISWalkToTimedAction" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
@@ -32,6 +32,7 @@ EHR.Delirium.Config = {
     OVERLAY_MAX_MINUTES = 8,
     OVERLAY_ALPHA_MIN = 0.08,
     OVERLAY_ALPHA_MAX = 0.16,
+    ENABLE_MULTIPLAYER_OVERLAY = false,
 
     WINDOW_SEARCH_RADIUS = 2,
     WINDOW_IMPULSE_CHANCE = 1.0,
@@ -335,6 +336,11 @@ function EHR.Delirium.RemoveOverlay(playerIndex)
 end
 
 function EHR.Delirium.UpdateOverlay(playerIndex, currentHour)
+    if isClient and isClient() and not EHR.Delirium.Config.ENABLE_MULTIPLAYER_OVERLAY then
+        EHR.Delirium.RemoveOverlay(playerIndex)
+        return
+    end
+
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
     if not runtime.overlay then return end
 
@@ -349,6 +355,11 @@ function EHR.Delirium.UpdateOverlay(playerIndex, currentHour)
 end
 
 function EHR.Delirium.StartOverlay(playerIndex, currentHour)
+    if isClient and isClient() and not EHR.Delirium.Config.ENABLE_MULTIPLAYER_OVERLAY then
+        EHR.Delirium.RemoveOverlay(playerIndex)
+        return
+    end
+
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
     local cfg = EHR.Delirium.Config
     local colors = EHR.Delirium.OverlayColors
@@ -459,6 +470,17 @@ local function sayRandomLine(player, runtime)
     end
 end
 
+local function playLocalUISound(sound)
+    if not sound or not getSoundManager then return false end
+    local soundManager = getSoundManager()
+    if not soundManager or type(soundManager.playUISound) ~= "function" then return false end
+
+    local ok = pcall(function()
+        soundManager:playUISound(sound)
+    end)
+    return ok == true
+end
+
 local function playRandomSound(player, runtime)
     local sounds = EHR.Delirium.Sounds
     if not sounds or #sounds == 0 or not player then return end
@@ -468,6 +490,14 @@ local function playRandomSound(player, runtime)
         index = (index % #sounds) + 1
     end
     runtime.lastSoundIndex = index
+
+    if playLocalUISound(sounds[index]) then
+        return
+    end
+
+    -- In multiplayer, player:playSound is spatial/network-audible. If the UI
+    -- sound path fails, fail silent rather than broadcasting hallucinations.
+    if isClient and isClient() then return end
     pcall(function() player:playSound(sounds[index]) end)
 end
 

@@ -219,6 +219,11 @@ local function OnServerCommand(module, command, args)
                 data.EHR_CorpseSickness = args.EHR_CorpseSickness
                 log("[EHR Client] Updated EHR_CorpseSickness")
             end
+
+            if args.EHR_KnoxCure ~= nil then
+                data.EHR_KnoxCure = args.EHR_KnoxCure
+                log("[EHR Client] Updated EHR_KnoxCure")
+            end
         end
 
         log("[EHR Client] ModData sync complete!")

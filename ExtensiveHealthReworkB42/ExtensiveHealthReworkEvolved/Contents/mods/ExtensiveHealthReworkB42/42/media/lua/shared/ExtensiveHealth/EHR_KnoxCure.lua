@@ -385,7 +385,8 @@ function EHR.KnoxCure.GrantImmunityTrait(player, data)
         traitToken = EHRCharacterTraits[EHR.KnoxCure.ImmunityTraitRegistryKey]
     end
 
-    if type(traitToken) == "string" or not traitToken then
+    traitToken = traitToken or EHR.KnoxCure.ImmunityTrait
+    if not traitToken then
         return false
     end
 
@@ -409,8 +410,14 @@ function EHR.KnoxCure.GrantImmunityTrait(player, data)
         return true
     end
 
-    traits:add(traitToken)
+    local added = pcall(function() traits:add(traitToken) end)
+    if added ~= true then
+        return false
+    end
     if data then data.immunityTraitGranted = true end
+    if player.transmitModData then
+        pcall(function() player:transmitModData() end)
+    end
     EHR.Log("KnoxCure: Granted Patient Zero trait")
     return true
 end

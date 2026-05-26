@@ -310,7 +310,7 @@ end
     @param localPlayer - The player requesting the examination
     @param targetPlayer - The player to examine
 ]]--
-function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer)
+function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent)
     if not localPlayer or not targetPlayer then return end
 
     local targetName = nil
@@ -346,7 +346,9 @@ function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer)
     EHR.Log("MPExamination: Requested exam data for " .. targetName)
 
     -- Show loading feedback to player
-    EHR.Locale.Say(localPlayer, getText("UI_EHR_Exam_Requesting") or "Examining...")
+    if not silent then
+        EHR.Locale.Say(localPlayer, getText("UI_EHR_Exam_Requesting") or "Examining...")
+    end
 end
 
 --[[

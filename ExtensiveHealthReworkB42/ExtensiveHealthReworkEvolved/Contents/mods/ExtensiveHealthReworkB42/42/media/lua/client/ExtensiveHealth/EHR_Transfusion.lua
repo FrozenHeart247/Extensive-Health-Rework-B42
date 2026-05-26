@@ -556,6 +556,16 @@ function EHRTransfusionAction:stop()
 end
 
 function EHRTransfusionAction:perform()
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(self.character, "EHR", "UseTransfusion", {
+            itemID = self.item:getID(),
+            itemFullType = self.item:getFullType(),
+            spoilageState = EHR.Transfusion.GetSpoilageState(self.item),
+        })
+        ISBaseTimedAction.perform(self)
+        return
+    end
+
     -- Remove the item with MP sync
     if isClient() then
         sendClientCommand(self.character, "EHR", "RemoveItem", {itemID = self.item:getID()})
@@ -663,6 +673,15 @@ function EHRDrawBloodAction:stop()
 end
 
 function EHRDrawBloodAction:perform()
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(self.character, "EHR", "DrawBlood", {
+            itemID = self.emptyBag:getID(),
+            itemFullType = self.emptyBag:getFullType(),
+        })
+        ISBaseTimedAction.perform(self)
+        return
+    end
+
     local data = EHR.GetPlayerData(self.character)
     if not data or not data.EHR_Blood then
         ISBaseTimedAction.perform(self)

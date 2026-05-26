@@ -31,7 +31,9 @@ local function medActionFormat(key, fallback, ...)
     local text = medActionText(key, fallback)
     local args = {...}
     for i, value in ipairs(args) do
-        text = tostring(text):gsub("%%" .. tostring(i), tostring(value))
+        local replacement = tostring(value)
+        text = tostring(text):gsub("%%" .. tostring(i) .. "%$[%a]", function() return replacement end)
+        text = tostring(text):gsub("%%" .. tostring(i), function() return replacement end)
     end
     return text
 end

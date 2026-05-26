@@ -17,6 +17,29 @@ require "ExtensiveHealth/EHR_KnoxCure"
 EHR = EHR or {}
 EHR.KnoxCureMenu = {}
 
+local function useKnoxCureItem(player, item, action)
+    if not player or not item then return end
+
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "UseKnoxCureItem", {
+            action = action,
+            itemID = item:getID(),
+            itemFullType = item:getFullType(),
+        })
+        return
+    end
+
+    if action == "geneTherapy" then
+        EHR.KnoxCure.UseGeneTherapy(player, item)
+    elseif action == "phalanx" then
+        EHR.KnoxCure.UsePhalanx(player, item)
+    elseif action == "antibodyTest" then
+        EHR.KnoxCure.UseAntibodyTest(player, item)
+    elseif action == "immunobooster" then
+        EHR.KnoxCure.UseImmunobooster(player, item)
+    end
+end
+
 -- ============================================
 -- CONTEXT MENU HANDLERS
 -- ============================================
@@ -131,7 +154,7 @@ end
 
 function EHR.KnoxCureMenu.OnGeneTherapyConfirm(this, button, player, item)
     if button.internal == "YES" then
-        EHR.KnoxCure.UseGeneTherapy(player, item)
+        useKnoxCureItem(player, item, "geneTherapy")
     end
 end
 
@@ -203,7 +226,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
 end
 
 function EHR.KnoxCureMenu.OnUsePhalanx(player, item)
-    EHR.KnoxCure.UsePhalanx(player, item)
+    useKnoxCureItem(player, item, "phalanx")
 end
 
 -- ============================================
@@ -311,7 +334,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
 end
 
 function EHR.KnoxCureMenu.OnUseImmunobooster(player, item)
-    EHR.KnoxCure.UseImmunobooster(player, item)
+    useKnoxCureItem(player, item, "immunobooster")
 end
 
 -- ============================================
@@ -348,7 +371,7 @@ function ISEHRAntibodyTestAction:stop()
 end
 
 function ISEHRAntibodyTestAction:perform()
-    EHR.KnoxCure.UseAntibodyTest(self.character, self.item)
+    useKnoxCureItem(self.character, self.item, "antibodyTest")
     ISBaseTimedAction.perform(self)
 end
 

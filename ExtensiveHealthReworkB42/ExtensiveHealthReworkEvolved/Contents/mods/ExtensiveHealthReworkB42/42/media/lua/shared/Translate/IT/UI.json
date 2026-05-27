@@ -1874,4 +1874,7 @@
     "UI_EHR_KnoxCure_RunningTest": "Running the test...",
     "UI_EHR_Transfusion_NotEnoughBloodSafe": "I don't have enough blood to do that safely.",
     "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong..."
+,
+    "UI_EHR_PrimaryHealthPanel": "Usa EHR come pannello salute principale",
+    "UI_EHR_PrimaryHealthPanel_tt": "Se attivo, il tasto EHR apre EHR e il pulsante cuore apre la salute vanilla. Disattiva per invertirli."
 }

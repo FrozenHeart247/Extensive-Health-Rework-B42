@@ -14,6 +14,7 @@ require "XpSystem/ISUI/ISCharacterScreen"
 require "XpSystem/ISUI/ISCharacterInfo"
 require "XpSystem/ISUI/ISCharacterProtection"
 require "XpSystem/ISUI/ISClothingInsPanel"
+pcall(function() require "ISUI/ISEquippedItem" end)
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
@@ -259,8 +260,36 @@ local function hideVanillaHealthWindow()
     if ISCharacterInfoWindow and ISCharacterInfoWindow.instance then
         hideWindow(ISCharacterInfoWindow.instance)
     end
+    if getPlayerInfoPanel then
+        for playerNum = 0, 3 do
+            hideWindow(getPlayerInfoPanel(playerNum))
+        end
+    end
     if ISHealthPanel and ISHealthPanel.instance then
         hideWindow(ISHealthPanel.instance)
+    end
+end
+
+local function isVanillaHealthViewName(viewName)
+    if not viewName then return false end
+    if getText and viewName == getText("IGUI_XP_Health") then return true end
+    if xpSystemText and viewName == xpSystemText.health then return true end
+    return false
+end
+
+local function patchCharacterInfoWindowHealthToggle()
+    if not ISCharacterInfoWindow or ISCharacterInfoWindow.ehrHealthToggleSuppressPatch then return end
+    if not ISCharacterInfoWindow.toggleView then return end
+
+    local originalToggleView = ISCharacterInfoWindow.toggleView
+    ISCharacterInfoWindow.ehrHealthToggleSuppressPatch = true
+
+    ISCharacterInfoWindow.toggleView = function(self, viewName)
+        if suppressVanillaTicks > 0 and isVanillaHealthViewName(viewName) then
+            hideWindow(self)
+            return
+        end
+        return originalToggleView(self, viewName)
     end
 end
 
@@ -281,6 +310,99 @@ local function suppressLegacyHealthUI(ticks)
 end
 
 EHR.UI.SuppressLegacyHealthUI = suppressLegacyHealthUI
+
+local function clearLegacyHealthSuppression()
+    suppressVanillaTicks = 0
+    EHR.UI.SuppressLegacyMonitorTicks = 0
+end
+
+EHR.UI.ClearLegacyHealthSuppression = clearLegacyHealthSuppression
+
+function EHR.UI.HideHealthPanelOnly()
+    if EHR.UI.HealthPanelInstance then
+        EHR.UI.HealthPanelInstance:setVisible(false)
+    end
+    EHR.UI.HealthPanelVisible = false
+end
+
+function EHR.UI.IsEHRPrimaryHealthPanel()
+    if EHR.Keybinds and EHR.Keybinds.IsEHRPrimaryHealthPanel then
+        return EHR.Keybinds.IsEHRPrimaryHealthPanel()
+    end
+    return true
+end
+
+function EHR.UI.ShouldHeartButtonOpenEHR()
+    if EHR.Keybinds and EHR.Keybinds.ShouldHeartButtonOpenEHR then
+        return EHR.Keybinds.ShouldHeartButtonOpenEHR()
+    end
+    return false
+end
+
+function EHR.UI.ToggleVanillaHealthPanel(player)
+    player = player or (getSpecificPlayer and getSpecificPlayer(0)) or (getPlayer and getPlayer())
+    if not player then return end
+
+    clearLegacyHealthSuppression()
+    EHR.UI.HideHealthPanelOnly()
+    if EHR.UI.HideMonitor then
+        EHR.UI.HideMonitor()
+    end
+
+    local playerNum = 0
+    if player.getPlayerNum then
+        playerNum = player:getPlayerNum()
+    end
+
+    if EHR.UI.OriginalEquippedItemHealthMouseDown and ISEquippedItem and ISEquippedItem.instance then
+        local equipped = ISEquippedItem.instance
+        if (not equipped.playerNum or equipped.playerNum == playerNum) and equipped.infopanel and equipped.healthBtn then
+            EHR.UI.OriginalEquippedItemHealthMouseDown(equipped, equipped.healthBtn, 0, 0)
+            return
+        end
+    end
+
+    local infoPanel = getPlayerInfoPanel and getPlayerInfoPanel(playerNum) or nil
+    if not infoPanel and getPlayerData then
+        local data = getPlayerData(playerNum)
+        infoPanel = data and data.characterInfo or nil
+    end
+    if not infoPanel and ISEquippedItem and ISEquippedItem.instance then
+        local equipped = ISEquippedItem.instance
+        if (not equipped.playerNum or equipped.playerNum == playerNum) and equipped.infopanel then
+            infoPanel = equipped.infopanel
+        end
+    end
+    if not infoPanel and ISCharacterInfoWindow and ISCharacterInfoWindow.instance then
+        infoPanel = ISCharacterInfoWindow.instance
+    end
+    if not infoPanel or not infoPanel.toggleView then return end
+
+    local healthViewName = getText("IGUI_XP_Health")
+    if infoPanel.isActive and infoPanel:isActive(healthViewName) then
+        if infoPanel.close then
+            infoPanel:close()
+        else
+            infoPanel:toggleView(healthViewName)
+        end
+        return
+    end
+
+    if infoPanel.panel and infoPanel.panel.getView and infoPanel.panel:getView(healthViewName) then
+        local wasVisible = infoPanel.getIsVisible and infoPanel:getIsVisible()
+        infoPanel.panel:activateView(healthViewName)
+        infoPanel:setVisible(true)
+        if not wasVisible and infoPanel.addToUIManager then
+            infoPanel:addToUIManager()
+        end
+    else
+        infoPanel:toggleView(healthViewName)
+    end
+
+    if infoPanel.bringToTop and infoPanel.getIsVisible and infoPanel:getIsVisible() then
+        infoPanel:bringToTop()
+    end
+end
 
 local function tableValuesSortedByName(tbl, nameGetter)
     local values = {}
@@ -3527,6 +3649,59 @@ function EHR.UI.ToggleHealthPanel(player)
     else
         EHR.UI.ShowHealthPanel(player)
     end
+end
+
+local function patchEquippedItemHealthButton()
+    if not ISEquippedItem or ISEquippedItem.ehrPrimaryPanelSwapPatch then return end
+    if not ISEquippedItem.onOptionMouseDown then return end
+
+    local originalOnOptionMouseDown = ISEquippedItem.onOptionMouseDown
+    local originalPrerender = ISEquippedItem.prerender
+    ISEquippedItem.ehrPrimaryPanelSwapPatch = true
+    EHR.UI.OriginalEquippedItemHealthMouseDown = originalOnOptionMouseDown
+
+    ISEquippedItem.onOptionMouseDown = function(self, button, x, y)
+        if button and button.internal == "HEALTH" and EHR.UI then
+            if EHR.UI.ShouldHeartButtonOpenEHR and EHR.UI.ShouldHeartButtonOpenEHR() then
+                local player = self and self.chr or (getSpecificPlayer and getSpecificPlayer(self and self.playerNum or 0)) or (getPlayer and getPlayer())
+                if EHR.UI.ToggleHealthPanel then
+                    EHR.UI.ToggleHealthPanel(player)
+                    return
+                end
+            elseif EHR.UI.HideHealthPanelOnly then
+                if EHR.UI.ClearLegacyHealthSuppression then
+                    EHR.UI.ClearLegacyHealthSuppression()
+                end
+                EHR.UI.HideHealthPanelOnly()
+                if EHR.UI.HideMonitor then
+                    EHR.UI.HideMonitor()
+                end
+            end
+        end
+
+        return originalOnOptionMouseDown(self, button, x, y)
+    end
+
+    if originalPrerender then
+        ISEquippedItem.prerender = function(self)
+            originalPrerender(self)
+            if self and self.healthBtn and self.heartIconOn and self.heartIconOff
+                    and EHR.UI and EHR.UI.ShouldHeartButtonOpenEHR and EHR.UI.ShouldHeartButtonOpenEHR() then
+                if EHR.UI.HealthPanelInstance and EHR.UI.HealthPanelInstance:isVisible() then
+                    self.healthBtn:setImage(self.heartIconOn)
+                else
+                    self.healthBtn:setImage(self.heartIconOff)
+                end
+            end
+        end
+    end
+end
+
+patchEquippedItemHealthButton()
+patchCharacterInfoWindowHealthToggle()
+if Events and Events.OnGameStart then
+    Events.OnGameStart.Add(patchEquippedItemHealthButton)
+    Events.OnGameStart.Add(patchCharacterInfoWindowHealthToggle)
 end
 
 function EHR.UI.GetRemoteHealthPanelKey(playerOrUsername)

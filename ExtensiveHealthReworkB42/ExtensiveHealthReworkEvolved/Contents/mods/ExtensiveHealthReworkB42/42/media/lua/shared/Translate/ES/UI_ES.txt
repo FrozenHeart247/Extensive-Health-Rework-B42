@@ -1874,4 +1874,6 @@ UI_ES = {
     UI_EHR_Transfusion_NotEnoughBloodSafe = "I don't have enough blood to do that safely.",
     UI_EHR_Transfusion_SomethingWentWrong = "Something went wrong...",
 
+    UI_EHR_PrimaryHealthPanel = "Usar EHR como panel de salud principal",
+    UI_EHR_PrimaryHealthPanel_tt = "Si esta activado, la tecla EHR abre EHR y el boton de corazon abre la salud vanilla. Desactivalo para invertirlos.",
 }

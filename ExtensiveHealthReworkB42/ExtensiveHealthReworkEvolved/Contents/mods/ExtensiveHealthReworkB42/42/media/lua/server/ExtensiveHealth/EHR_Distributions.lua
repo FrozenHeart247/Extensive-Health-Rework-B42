@@ -19,6 +19,7 @@
 
 require "Items/SuburbsDistributions"
 require "Items/ProceduralDistributions"
+require "Vehicles/VehicleDistributions"
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -123,6 +124,51 @@ local function addItemToDistribution(listName, itemName, chance)
     return false
 end
 
+local function addItemToRawDistribution(dist, itemName, chance)
+    if dist and dist.items then
+        table.insert(dist.items, itemName)
+        table.insert(dist.items, chance)
+        return true
+    end
+    return false
+end
+
+local function addItemToBagDistribution(bagName, itemName, chance)
+    local dist = SuburbsDistributions and SuburbsDistributions[bagName]
+    if not dist then
+        local all = SuburbsDistributions and SuburbsDistributions["all"]
+        dist = all and all[bagName]
+    end
+    return addItemToRawDistribution(dist, itemName, chance)
+end
+
+local function setRawDistributionMinRolls(dist, minRolls)
+    if dist and dist.rolls and dist.rolls < minRolls then
+        dist.rolls = minRolls
+        return true
+    end
+    return false
+end
+
+local function setBagDistributionMinRolls(bagName, minRolls)
+    local dist = SuburbsDistributions and SuburbsDistributions[bagName]
+    if not dist then
+        local all = SuburbsDistributions and SuburbsDistributions["all"]
+        dist = all and all[bagName]
+    end
+    return setRawDistributionMinRolls(dist, minRolls)
+end
+
+local function setVehicleDistributionMinRolls(distributionName, minRolls)
+    local dist = VehicleDistributions and VehicleDistributions[distributionName]
+    return setRawDistributionMinRolls(dist, minRolls)
+end
+
+local function addItemToVehicleDistribution(distributionName, itemName, chance)
+    local dist = VehicleDistributions and VehicleDistributions[distributionName]
+    return addItemToRawDistribution(dist, itemName, chance)
+end
+
 -- ============================================
 -- MAIN DISTRIBUTION FUNCTION
 -- ============================================
@@ -153,6 +199,38 @@ local function EHR_InitDistributions()
     local function tryAddMed(listName, itemName, chance)
         if medicationLootMultiplier <= 0 then return end
         tryAdd(listName, itemName, chance * medicationLootMultiplier)
+    end
+
+    local function tryAddBag(bagName, itemName, chance)
+        if addItemToBagDistribution(bagName, itemName, chance) then
+            added = added + 1
+        else
+            failed = failed + 1
+            if not failedTables[bagName] then
+                failedTables[bagName] = true
+            end
+        end
+    end
+
+    local function tryAddBagMed(bagName, itemName, chance)
+        if medicationLootMultiplier <= 0 then return end
+        tryAddBag(bagName, itemName, chance * medicationLootMultiplier)
+    end
+
+    local function tryAddVehicle(distributionName, itemName, chance)
+        if addItemToVehicleDistribution(distributionName, itemName, chance) then
+            added = added + 1
+        else
+            failed = failed + 1
+            if not failedTables[distributionName] then
+                failedTables[distributionName] = true
+            end
+        end
+    end
+
+    local function tryAddVehicleMed(distributionName, itemName, chance)
+        if medicationLootMultiplier <= 0 then return end
+        tryAddVehicle(distributionName, itemName, chance * medicationLootMultiplier)
     end
 
     local function itemListContains(items, itemName)
@@ -502,6 +580,124 @@ local function EHR_InitDistributions()
     tryAddMed("FirstAidKit", "ExtensiveHealth.AlchoholicBandage", 3)
     tryAddMed("FirstAidKit", "ExtensiveHealth.InstantIcePack", 3)
     tryAddMed("FirstAidKit", "ExtensiveHealth.TopicalPermethrin", 1)
+
+    -- Ambulance vehicle containers. These are the actual van loot tables, separate from
+    -- procedural "AmbulanceMedical" storage used by buildings/outfits.
+    local ambulanceGloveBoxMeds = {
+        ["ExtensiveHealth.SterilizedBandages"] = 4,
+        ["ExtensiveHealth.AlchoholicBandage"] = 2,
+        ["ExtensiveHealth.AntisepticCream"] = 3,
+        ["ExtensiveHealth.AntiInflammatory"] = 3,
+        ["ExtensiveHealth.AntipyreticTablets"] = 3,
+        ["ExtensiveHealth.AntiNauseaTablets"] = 2.5,
+        ["ExtensiveHealth.ElectrolytePowder"] = 2,
+        ["ExtensiveHealth.BronchodilatorInhaler"] = 1.5,
+        ["ExtensiveHealth.InstantIcePack"] = 1.5,
+        ["ExtensiveHealth.AntibioticOintment"] = 1.5,
+        ["ExtensiveHealth.ActivatedCharcoal"] = 1,
+    }
+
+    local ambulanceSeatMeds = {
+        ["ExtensiveHealth.SterilizedBandages"] = 5,
+        ["ExtensiveHealth.AlchoholicBandage"] = 2.5,
+        ["ExtensiveHealth.AntisepticCream"] = 4,
+        ["ExtensiveHealth.AntiInflammatory"] = 3,
+        ["ExtensiveHealth.AntipyreticTablets"] = 3,
+        ["ExtensiveHealth.AntiNauseaTablets"] = 2.5,
+        ["ExtensiveHealth.ElectrolytePowder"] = 2.5,
+        ["ExtensiveHealth.BronchodilatorInhaler"] = 2,
+        ["ExtensiveHealth.InstantIcePack"] = 2,
+        ["ExtensiveHealth.AntibioticOintment"] = 2,
+        ["ExtensiveHealth.ActivatedCharcoal"] = 1.2,
+    }
+
+    local ambulanceTruckMeds = {
+        ["ExtensiveHealth.SterilizedBandages"] = 14,
+        ["ExtensiveHealth.AlchoholicBandage"] = 9,
+        ["ExtensiveHealth.AntisepticCream"] = 10,
+        ["ExtensiveHealth.AntiInflammatory"] = 8,
+        ["ExtensiveHealth.AntipyreticTablets"] = 8,
+        ["ExtensiveHealth.AntiNauseaTablets"] = 7,
+        ["ExtensiveHealth.AntiDiarrheal"] = 5,
+        ["ExtensiveHealth.ElectrolytePowder"] = 8,
+        ["ExtensiveHealth.BronchodilatorInhaler"] = 5,
+        ["ExtensiveHealth.CoughSyrup"] = 4,
+        ["ExtensiveHealth.CoughSuppressant"] = 4,
+        ["ExtensiveHealth.InstantIcePack"] = 8,
+        ["ExtensiveHealth.AntibioticOintment"] = 6,
+        ["ExtensiveHealth.ActivatedCharcoal"] = 4,
+        ["ExtensiveHealth.OralRehydrationKit"] = 4,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 3,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 3,
+        ["ExtensiveHealth.IVKit"] = 8,
+        ["ExtensiveHealth.Syringe"] = 10,
+        ["ExtensiveHealth.SalineBag"] = 10,
+        ["ExtensiveHealth.IVFluids"] = 8,
+        ["ExtensiveHealth.Furosemide"] = 4,
+        ["ExtensiveHealth.Epinephrine"] = 3,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 3,
+        ["ExtensiveHealth.CorticosteroidInjection"] = 2.5,
+        ["ExtensiveHealth.EmergencySepsisKit"] = 1.5,
+        ["ExtensiveHealth.IVCiprofloxacin"] = 2,
+        ["ExtensiveHealth.IVAntibiotics"] = 1.2,
+        ["ExtensiveHealth.IVMetronidazole"] = 0.8,
+        ["ExtensiveHealth.IVVancomycin"] = 0.8,
+        ["ExtensiveHealth.TetanusImmunoglobulin"] = 1.5,
+        ["ExtensiveHealth.AlbendazoleInjection"] = 0.4,
+        ["ExtensiveHealth.IVAmphotericin"] = 0.3,
+    }
+
+    for item, chance in pairs(ambulanceGloveBoxMeds) do
+        tryAddVehicleMed("AmbulanceGloveBox", item, chance)
+    end
+    for item, chance in pairs(ambulanceSeatMeds) do
+        tryAddVehicleMed("AmbulanceSeatFront", item, chance)
+    end
+    for item, chance in pairs(ambulanceTruckMeds) do
+        tryAddVehicleMed("AmbulanceTruckBed", item, chance)
+    end
+    setVehicleDistributionMinRolls("AmbulanceGloveBox", 2)
+    setVehicleDistributionMinRolls("AmbulanceSeatFront", 2)
+    setVehicleDistributionMinRolls("AmbulanceTruckBed", 6)
+
+    -- Medical backpacks/satchels. Slightly richer than a generic first-aid kit,
+    -- but still below clinics and pharmacies.
+    local medicalBagMeds = {
+        ["ExtensiveHealth.SterilizedBandages"] = 18,
+        ["ExtensiveHealth.AlchoholicBandage"] = 9,
+        ["ExtensiveHealth.AntisepticCream"] = 14,
+        ["ExtensiveHealth.AntiInflammatory"] = 10,
+        ["ExtensiveHealth.AntipyreticTablets"] = 10,
+        ["ExtensiveHealth.AntiNauseaTablets"] = 8,
+        ["ExtensiveHealth.AntiDiarrheal"] = 7,
+        ["ExtensiveHealth.ElectrolytePowder"] = 8,
+        ["ExtensiveHealth.BronchodilatorInhaler"] = 5,
+        ["ExtensiveHealth.InstantIcePack"] = 7,
+        ["ExtensiveHealth.AntibioticOintment"] = 6,
+        ["ExtensiveHealth.Syringe"] = 4,
+        ["ExtensiveHealth.ActivatedCharcoal"] = 4,
+        ["ExtensiveHealth.OralRehydrationKit"] = 3,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 3,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 1.5,
+        ["ExtensiveHealth.AntiviralCapsules"] = 1.5,
+        ["ExtensiveHealth.AntifungalTablets"] = 1,
+        ["ExtensiveHealth.AntiparasiticPills"] = 0.8,
+        ["ExtensiveHealth.SalineBag"] = 3,
+        ["ExtensiveHealth.IVFluids"] = 1.5,
+        ["ExtensiveHealth.IVKit"] = 1.5,
+        ["ExtensiveHealth.Epinephrine"] = 1,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 0.8,
+        ["ExtensiveHealth.CorticosteroidInjection"] = 0.5,
+        ["ExtensiveHealth.EmergencySepsisKit"] = 0.35,
+        ["ExtensiveHealth.IVCiprofloxacin"] = 0.25,
+    }
+
+    for item, chance in pairs(medicalBagMeds) do
+        tryAddBagMed("Bag_MedicalBag", item, chance)
+        tryAddBagMed("Bag_Satchel_Medical", item, chance * 0.75)
+    end
+    setBagDistributionMinRolls("Bag_MedicalBag", 4)
+    setBagDistributionMinRolls("Bag_Satchel_Medical", 3)
 
     -- =========================================
     -- HOUSEHOLD SPAWNS (Very Rare)

@@ -70,6 +70,41 @@ EHR.KnoxCure.Config = {
     geneTherapyMigraineChance = 0.001,  -- Per tick chance of migraine
 }
 
+local function consumeKnoxItem(player, item)
+    if not player or not item then return false end
+
+    local container = nil
+    if item.getContainer then
+        local okContainer, itemContainer = pcall(function() return item:getContainer() end)
+        if okContainer then container = itemContainer end
+    end
+
+    if not container and player.getInventory then
+        container = player:getInventory()
+    end
+
+    if container and container.Remove then
+        local okRemove = pcall(function() container:Remove(item) end)
+        if okRemove then
+            if sendRemoveItemFromContainer then
+                pcall(function() sendRemoveItemFromContainer(container, item) end)
+            end
+            return true
+        end
+    end
+
+    local inventory = player.getInventory and player:getInventory() or nil
+    if inventory and inventory.Remove then
+        local okFallback = pcall(function() inventory:Remove(item) end)
+        if okFallback and sendRemoveItemFromContainer then
+            pcall(function() sendRemoveItemFromContainer(inventory, item) end)
+        end
+        return okFallback == true
+    end
+
+    return false
+end
+
 -- ============================================
 -- PLAYER DATA MANAGEMENT
 -- ============================================
@@ -666,7 +701,7 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
 
     -- Consume item
     if item then
-        player:getInventory():Remove(item)
+        consumeKnoxItem(player, item)
     end
 
     if roll < cureChance then
@@ -903,17 +938,17 @@ function EHR.KnoxCure.UseAntibodyTest(player, item)
 
     -- Consume item
     if item then
-        player:getInventory():Remove(item)
+        consumeKnoxItem(player, item)
     end
 
-    -- Show result via dialogue
+    -- Show result to the player. This is an action result, so do not gate it
+    -- behind dialogue frequency.
     local resultText = string.format("Test complete... Blood type %s. %s - %d%% survival chance.",
         bloodType, rating, chance)
-    EHR.Dialogue.SayStageChange(player, resultText)
-
-    -- Also show as HUD message if available
-    if player.Say then
+    if EHR.Locale and EHR.Locale.Say then
         EHR.Locale.Say(player, resultText)
+    elseif player.Say then
+        player:Say(resultText)
     end
 
     EHR.Log(string.format("KnoxCure: Antibody test - Blood: %s, Rating: %s, Chance: %d%%",
@@ -1023,7 +1058,7 @@ function EHR.KnoxCure.UseImmunobooster(player, item)
 
     -- Consume item
     if item then
-        player:getInventory():Remove(item)
+        consumeKnoxItem(player, item)
     end
 
     local currentHour = getGameTime():getWorldAgeHours()

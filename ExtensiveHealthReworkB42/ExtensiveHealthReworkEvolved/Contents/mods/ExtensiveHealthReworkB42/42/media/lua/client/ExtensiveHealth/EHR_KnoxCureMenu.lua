@@ -13,9 +13,21 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 ]]--
 
 require "ExtensiveHealth/EHR_KnoxCure"
+require "TimedActions/ISBaseTimedAction"
+require "TimedActions/ISInventoryTransferAction"
 
 EHR = EHR or {}
 EHR.KnoxCureMenu = {}
+
+local function knoxMenuText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_KnoxCure_" .. tostring(key), fallback)
+    end
+    local fullKey = "UI_EHR_KnoxCure_" .. tostring(key)
+    local ok, value = pcall(getText, fullKey)
+    if ok and value and value ~= fullKey then return value end
+    return fallback
+end
 
 local function useKnoxCureItem(player, item, action)
     if not player or not item then return end
@@ -257,6 +269,12 @@ function EHR.KnoxCureMenu.AddAntibodyTestOption(context, player, item)
 end
 
 function EHR.KnoxCureMenu.OnUseAntibodyTest(player, item)
+    -- Transfer first so timed action validation and server-side consumption work
+    -- the same from backpacks, belt slots, and the main inventory.
+    if item and item.getContainer and item:getContainer() ~= player:getInventory() then
+        ISTimedActionQueue.add(ISInventoryTransferAction:new(player, item, item:getContainer(), player:getInventory()))
+    end
+
     -- Start a timed action for the test
     ISTimedActionQueue.add(ISEHRAntibodyTestAction:new(player, item, 200))  -- ~6.6 seconds
 end
@@ -353,12 +371,14 @@ function ISEHRAntibodyTestAction:new(player, item, time)
 end
 
 function ISEHRAntibodyTestAction:isValid()
-    return self.item and self.character:getInventory():contains(self.item)
+    if not self.item or not self.character or not self.character:isAlive() then return false end
+    local inventory = self.character:getInventory()
+    return inventory and inventory:contains(self.item)
 end
 
 function ISEHRAntibodyTestAction:start()
     if self.character.Say then
-        EHR.Locale.Say(self.character, "Running the test...")
+        EHR.Locale.Say(self.character, knoxMenuText("RunningTest", "Running the test..."))
     end
 end
 

@@ -9,6 +9,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Blood"
 require "TimedActions/ISBaseTimedAction"
+require "TimedActions/ISInventoryTransferAction"
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
@@ -652,11 +653,18 @@ function EHRDrawBloodAction:isValid()
     if not self.emptyBag then return false end
     if not self.character:getInventory():contains(self.emptyBag) then return false end
 
+    if isClient and isClient() then
+        return true
+    end
+
     -- Check player still has enough blood
     local data = EHR.GetPlayerData(self.character)
     if not data or not data.EHR_Blood then return false end
 
-    local bloodPercent = data.EHR_Blood.currentVolume / data.EHR_Blood.maxVolume
+    local maxVolume = tonumber(data.EHR_Blood.maxVolume) or 0
+    if maxVolume <= 0 then return false end
+    local currentVolume = tonumber(data.EHR_Blood.currentVolume) or maxVolume
+    local bloodPercent = currentVolume / maxVolume
     return bloodPercent >= EHR.Transfusion.MinBloodToDrawPercent
 end
 
@@ -815,12 +823,22 @@ end
     Returns: canDraw, reason
 ]]--
 function EHR.Transfusion.CanDrawBlood(player)
+    if isClient and isClient() then
+        return true, transfusionText("Ok", "ok")
+    end
+
     local data = EHR.GetPlayerData(player)
     if not data or not data.EHR_Blood then
         return false, transfusionText("BloodSystemNotInitialized", "Blood system not initialized")
     end
 
-    local bloodPercent = data.EHR_Blood.currentVolume / data.EHR_Blood.maxVolume
+    local maxVolume = tonumber(data.EHR_Blood.maxVolume) or 0
+    if maxVolume <= 0 then
+        return false, transfusionText("BloodSystemNotInitialized", "Blood system not initialized")
+    end
+
+    local currentVolume = tonumber(data.EHR_Blood.currentVolume) or maxVolume
+    local bloodPercent = currentVolume / maxVolume
 
     if bloodPercent < EHR.Transfusion.MinBloodToDrawPercent then
         return false, transfusionFormat("NeedAtLeastBloodCurrently", "Need at least %1% blood (currently %2%)",
@@ -974,7 +992,7 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         local tooltip = ISWorldObjectContextMenu.addToolTip()
         tooltip:setName(transfusionText("BloodDonation", "Blood Donation"))
 
-        local currentBlood = 0
+        local currentBlood = 5000
         local maxBlood = 5000
         local bloodPercent = 100
         if data and data.EHR_Blood then

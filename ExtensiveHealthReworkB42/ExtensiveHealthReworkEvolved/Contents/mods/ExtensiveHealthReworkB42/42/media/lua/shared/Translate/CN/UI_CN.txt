@@ -1870,5 +1870,8 @@ UI_CN = {
     UI_EHR_Transfusion_DrawBloodOption = "抽血",
     UI_EHR_Transfusion_BloodDonation = "献血",
     UI_EHR_WoundHook_Antibiotics = "抗生素",
-    UI_EHR_WoundHook_AntibioticsHelpWound = "将有助于治疗您的伤口感染。",
+    UI_EHR_WoundHook_AntibioticsHelpWound = "将有助于治疗您的伤口感染。",    UI_EHR_KnoxCure_RunningTest = "Running the test...",
+    UI_EHR_Transfusion_NotEnoughBloodSafe = "I don't have enough blood to do that safely.",
+    UI_EHR_Transfusion_SomethingWentWrong = "Something went wrong...",
+
 }

@@ -1870,5 +1870,8 @@
     "UI_EHR_Transfusion_DrawBloodOption": "Малювати кров",
     "UI_EHR_Transfusion_BloodDonation": "Донорство крові",
     "UI_EHR_WoundHook_Antibiotics": "Антибіотики",
-    "UI_EHR_WoundHook_AntibioticsHelpWound": "Допоможе вилікувати ранову інфекцію."
+    "UI_EHR_WoundHook_AntibioticsHelpWound": "Допоможе вилікувати ранову інфекцію.",
+    "UI_EHR_KnoxCure_RunningTest": "Running the test...",
+    "UI_EHR_Transfusion_NotEnoughBloodSafe": "I don't have enough blood to do that safely.",
+    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong..."
 }

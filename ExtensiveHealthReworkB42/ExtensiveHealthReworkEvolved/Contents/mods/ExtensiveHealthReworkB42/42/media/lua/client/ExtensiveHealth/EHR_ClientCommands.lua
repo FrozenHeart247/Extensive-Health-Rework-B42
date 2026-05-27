@@ -31,6 +31,69 @@ end
 
 log("[EHR] EHR_ClientCommands.lua loading on client...")
 
+local function getLocalPlayerForCommand()
+    local player = getPlayer()
+    if not player then
+        log("[EHR Client] No local player found!")
+    end
+    return player
+end
+
+local function handleDialogueCommand(command, args)
+    if command ~= "Say" then
+        return false
+    end
+
+    local player = getLocalPlayerForCommand()
+    if not player or not args or not args.text then
+        return true
+    end
+
+    local text = tostring(args.text)
+    if EHR and EHR.Locale and EHR.Locale.Say then
+        EHR.Locale.Say(player, text)
+    elseif player.Say then
+        player:Say(text)
+    end
+    return true
+end
+
+local function handleFlyerCommand(command, args)
+    if command ~= "KnowledgeUnlocked" then
+        return false
+    end
+
+    local player = getLocalPlayerForCommand()
+    if not player or not args or not args.diseaseId then
+        return true
+    end
+
+    local data = player:getModData()
+    if not data then
+        return true
+    end
+
+    local diseaseId = tostring(args.diseaseId)
+    if EHR and EHR.DiseaseFlyers and EHR.DiseaseFlyers.NormalizeDiseaseId then
+        diseaseId = EHR.DiseaseFlyers.NormalizeDiseaseId(diseaseId)
+    end
+
+    data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
+    data.EHR_KnownDiseases[diseaseId] = true
+
+    if type(args.EHR_MedicalJournal) == "table" then
+        data.EHR_MedicalJournal = args.EHR_MedicalJournal
+    else
+        data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
+        data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
+        data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
+        data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+    end
+
+    log("[EHR Client] Knowledge unlocked ack: " .. tostring(diseaseId))
+    return true
+end
+
 -- ============================================
 -- SERVER COMMAND HANDLER
 -- ============================================
@@ -41,13 +104,20 @@ local function OnServerCommand(module, command, args)
     log("[EHR Client]   module = " .. tostring(module))
     log("[EHR Client]   command = " .. tostring(command))
 
+    if module == "EHR_Dialogue" then
+        if handleDialogueCommand(command, args) then return end
+    end
+
+    if module == "EHR_Flyers" then
+        if handleFlyerCommand(command, args) then return end
+    end
+
     if module ~= "EHR_Sync" then
         return
     end
 
-    local player = getPlayer()
+    local player = getLocalPlayerForCommand()
     if not player then
-        log("[EHR Client] No local player found!")
         return
     end
 

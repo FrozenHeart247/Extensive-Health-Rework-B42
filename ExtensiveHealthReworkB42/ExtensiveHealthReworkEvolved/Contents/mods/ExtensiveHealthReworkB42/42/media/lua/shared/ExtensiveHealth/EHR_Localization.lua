@@ -79,13 +79,23 @@ function EHR.Locale.TextForLine(text)
 end
 
 function EHR.Locale.Say(player, text)
-    if not player or not player.Say then
+    if not player then
         return false
     end
     if not text or text == "" then
         return false
     end
-    player:Say(EHR.Locale.TextForLine(text))
+
+    local line = EHR.Locale.TextForLine(text)
+    if isServer and isServer() and not (isClient and isClient()) and sendServerCommand then
+        sendServerCommand(player, "EHR_Dialogue", "Say", { text = line })
+        return true
+    end
+
+    if not player.Say then
+        return false
+    end
+    player:Say(line)
     return true
 end
 

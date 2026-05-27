@@ -1870,5 +1870,8 @@ UI_EN = {
     UI_EHR_Transfusion_DrawBloodOption = "Draw Blood",
     UI_EHR_Transfusion_BloodDonation = "Blood Donation",
     UI_EHR_WoundHook_Antibiotics = "Antibiotics",
-    UI_EHR_WoundHook_AntibioticsHelpWound = "Will help treat your wound infection.",
+    UI_EHR_WoundHook_AntibioticsHelpWound = "Will help treat your wound infection.",    UI_EHR_KnoxCure_RunningTest = "Running the test...",
+    UI_EHR_Transfusion_NotEnoughBloodSafe = "I don't have enough blood to do that safely.",
+    UI_EHR_Transfusion_SomethingWentWrong = "Something went wrong...",
+
 }

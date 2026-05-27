@@ -18,6 +18,8 @@ pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
 pcall(function() require "ExtensiveHealth/EHR_EnvironmentalDiseases" end)
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -34,6 +36,17 @@ local function log(msg)
         print(msg)
     end
     return
+end
+
+local function serverText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text(key, fallback)
+    end
+    if getText then
+        local ok, value = pcall(getText, key)
+        if ok and value and value ~= key then return value end
+    end
+    return fallback or key
 end
 
 log("=========================================")
@@ -369,8 +382,15 @@ local function removeInventoryItem(item, fallbackContainer)
     end
 
     if container then
-        pcall(function() container:Remove(item) end)
-        return true
+        local removed = false
+        local okRemove = pcall(function()
+            container:Remove(item)
+            removed = true
+        end)
+        if okRemove and removed and sendRemoveItemFromContainer then
+            pcall(function() sendRemoveItemFromContainer(container, item) end)
+        end
+        return okRemove and removed
     end
 
     return false
@@ -382,11 +402,23 @@ local function syncInventoryItem(item)
     end
 end
 
+local function syncInventoryItemAdded(container, item)
+    if not item then return end
+    if container and sendAddItemToContainer then
+        pcall(function() sendAddItemToContainer(container, item) end)
+    end
+    syncInventoryItem(item)
+end
+
 local function serverSay(player, text)
     if not player or not text then return end
     if EHR and EHR.Locale and EHR.Locale.Say then
         local ok = pcall(function() EHR.Locale.Say(player, text) end)
         if ok then return end
+    end
+    if sendServerCommand then
+        pcall(function() sendServerCommand(player, "EHR_Dialogue", "Say", { text = tostring(text) }) end)
+        return
     end
     if player.Say then
         pcall(function() player:Say(tostring(text)) end)
@@ -735,6 +767,10 @@ function EHR.ServerCommands.UseKnoxCureItem(player, args)
     end
 
     local action = tostring(args.action or "")
+    if action == "geneTherapy" or action == "antibodyTest" then
+        ensureServerBloodData(player)
+    end
+
     local ok, result
     if action == "geneTherapy" and EHR.KnoxCure.UseGeneTherapy then
         ok, result = pcall(EHR.KnoxCure.UseGeneTherapy, player, item)
@@ -825,7 +861,7 @@ function EHR.ServerCommands.DrawBlood(player, args)
     local current = tonumber(data.EHR_Blood.currentVolume) or 5000
     local maxVolume = tonumber(data.EHR_Blood.maxVolume) or 5000
     if maxVolume <= 0 or (current / maxVolume) < 0.80 then
-        serverSay(player, "I don't have enough blood to do that safely.")
+        serverSay(player, serverText("UI_EHR_Transfusion_NotEnoughBloodSafe", "I don't have enough blood to do that safely."))
         syncModDataToClient(player)
         return
     end
@@ -848,7 +884,7 @@ function EHR.ServerCommands.DrawBlood(player, args)
     }
     local filledBagType = bloodBagItems[playerType]
     if not filledBagType then
-        serverSay(player, "Something went wrong...")
+        serverSay(player, serverText("UI_EHR_Transfusion_SomethingWentWrong", "Something went wrong..."))
         log("[EHR Server] DrawBlood rejected: unknown blood type " .. tostring(playerType))
         syncModDataToClient(player)
         return
@@ -857,7 +893,7 @@ function EHR.ServerCommands.DrawBlood(player, args)
     local inventory = player:getInventory()
     local okAdd, filledBag = pcall(function() return inventory:AddItem(filledBagType) end)
     if not okAdd or not filledBag then
-        serverSay(player, "Something went wrong...")
+        serverSay(player, serverText("UI_EHR_Transfusion_SomethingWentWrong", "Something went wrong..."))
         log("[EHR Server] DrawBlood failed to create " .. tostring(filledBagType) .. ": " .. tostring(filledBag))
         syncModDataToClient(player)
         return
@@ -885,7 +921,7 @@ function EHR.ServerCommands.DrawBlood(player, args)
     end
 
     removeInventoryItem(emptyBag, container)
-    serverSay(player, "That made me lightheaded...")
+    serverSay(player, serverText("UI_EHR_DrawBlood_Complete", "That made me lightheaded..."))
 
     addCharacterStat(player, "FATIGUE", 0.15, 0.7)
     if CharacterStat and CharacterStat.ENDURANCE then
@@ -902,7 +938,7 @@ function EHR.ServerCommands.DrawBlood(player, args)
         pcall(function() EHR.SkillXP.OnTransfusion(player, true) end)
     end
 
-    syncInventoryItem(filledBag)
+    syncInventoryItemAdded(inventory, filledBag)
     syncModDataToClient(player)
 end
 
@@ -936,6 +972,13 @@ function EHR.ServerCommands.UnlockDiseaseKnowledge(player, args)
     end
 
     syncModDataToClient(player)
+    if sendServerCommand then
+        sendServerCommand(player, "EHR_Flyers", "KnowledgeUnlocked", {
+            diseaseId = diseaseId,
+            EHR_KnownDiseases = data.EHR_KnownDiseases,
+            EHR_MedicalJournal = data.EHR_MedicalJournal,
+        })
+    end
     log("[EHR Server] Disease knowledge unlocked: " .. tostring(diseaseId))
 end
 

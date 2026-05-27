@@ -134,5 +134,10 @@
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Bottino per prescrizioni domestiche",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Consente ai rari avanzi di farmaci soggetti a prescrizione di deporre le uova nelle case, nelle camere da letto, nelle scrivanie e in luoghi simili non medici.",
     "Sandbox_EHR_DebugMode": "Modalita debug",
-    "Sandbox_EHR_DebugMode_tooltip": "Abilita menu debug EHR (tasto G). Attiva anche i log. In multiplayer serve admin."
+    "Sandbox_EHR_DebugMode_tooltip": "Abilita menu debug EHR (tasto G). Attiva anche i log. In multiplayer serve admin.",
+    "Sandbox_EHR_RealisticTemperatureCompatibility": "Compatibilita Realistic Temperature",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "Controlla il comportamento di EHR quando Realistic Temperature e installato. <LINE> Auto rileva il mod. Attivato forza la modalita compatibile. Disattivato lascia che EHR gestisca normalmente la temperatura vanilla.",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "Auto",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "Attivato",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Disattivato"
 }

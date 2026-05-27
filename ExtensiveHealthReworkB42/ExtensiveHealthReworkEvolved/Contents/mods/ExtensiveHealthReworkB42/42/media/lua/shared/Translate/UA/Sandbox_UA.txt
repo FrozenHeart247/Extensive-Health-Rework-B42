@@ -135,4 +135,9 @@ Sandbox_UA = {
     Sandbox_EHR_HouseholdPrescriptionLoot_tooltip = "Дозволяє залишкам рідкісних рецептурних ліків з’являтися в будинках, спальнях, столах і подібних немедичних місцях.",
     Sandbox_EHR_DebugMode = "Режим налагодження",
     Sandbox_EHR_DebugMode_tooltip = "Увімкніть доступ до меню налагодження EHR (натисніть G). Також дозволяє вести журнал консолі. НЕ вимагає прапора налагодження Steam. У багатокористувацькій грі також потрібні права адміністратора.",
+    Sandbox_EHR_RealisticTemperatureCompatibility = "Сумісність з Realistic Temperature",
+    Sandbox_EHR_RealisticTemperatureCompatibility_tooltip = "Керує поведінкою EHR, коли встановлено Realistic Temperature. <LINE> Авто визначає мод. Увімкнено примусово вмикає режим сумісності. Вимкнено дозволяє EHR звичайно керувати ванільною температурою.",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option1 = "Авто",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option2 = "Увімкнено",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option3 = "Вимкнено",
 }

@@ -13,6 +13,8 @@ module ExtensiveHealth
         DisplayName = Gene Therapy Injector,
         Icon = GeneTherapyInjector,
         Weight = 0.3,
+        StaticModel = EHR_CorticosteroidInjection,
+        WorldStaticModel = EHR_CorticosteroidInjection,
         Tooltip = Tooltip_GeneTherapyKit,
         Medical = true,
     }
@@ -48,6 +50,8 @@ module ExtensiveHealth
         DisplayName = Immunobooster Shot,
         Icon = ImmunoboosterShot,
         Weight = 0.1,
+        StaticModel = EHR_CorticosteroidInjection,
+        WorldStaticModel = EHR_CorticosteroidInjection,
         Tooltip = Tooltip_ImmunoboosterShot,
         Medical = true,
     }

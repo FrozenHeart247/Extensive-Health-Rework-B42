@@ -261,12 +261,12 @@ function ISToolTipInv:render()
     -- Try EHR custom tooltip first
     local item = self.item
     if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
-        local itemFullType = item:getFullType()
-        local ehrData = EHR.Tooltips.GetData(itemFullType)
+        local itemFullType = item.getFullType and item:getFullType() or nil
+        local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
 
         -- Debug: Log what we're checking (only once per item type)
         if not EHR.Tooltips._debuggedTypes then EHR.Tooltips._debuggedTypes = {} end
-        if not EHR.Tooltips._debuggedTypes[itemFullType] then
+        if itemFullType and not EHR.Tooltips._debuggedTypes[itemFullType] then
             EHR.Tooltips._debuggedTypes[itemFullType] = true
             print("[EHR Tooltip] Checking item: " .. tostring(itemFullType) .. " | Has EHR data: " .. tostring(ehrData ~= nil))
         end
@@ -310,8 +310,8 @@ if ISFoodToolTip and type(ISFoodToolTip) == "table" and ISFoodToolTip.render the
         -- Try EHR custom tooltip first
         local item = self.item
         if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
-            local itemFullType = item:getFullType()
-            local ehrData = EHR.Tooltips.GetData(itemFullType)
+            local itemFullType = item.getFullType and item:getFullType() or nil
+            local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
             if ehrData then
                 -- Wrap in pcall to catch any rendering errors
                 local success, err = pcall(function()

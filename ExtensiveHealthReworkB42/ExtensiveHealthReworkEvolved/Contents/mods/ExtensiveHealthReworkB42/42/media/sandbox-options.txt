@@ -358,6 +358,15 @@ option ExtensiveHealthRework.PreDiseaseEffectsEnabled
     translation = EHR_PreDiseaseEffectsEnabled,
 }
 
+option ExtensiveHealthRework.RealisticTemperatureCompatibility
+{
+    type = enum,
+    numValues = 3,
+    default = 1,
+    page = EHR_Comp,
+    translation = EHR_RealisticTemperatureCompatibility,
+}
+
 option ExtensiveHealthRework.KnoxCureItemsEnabled
 {
     type = boolean,

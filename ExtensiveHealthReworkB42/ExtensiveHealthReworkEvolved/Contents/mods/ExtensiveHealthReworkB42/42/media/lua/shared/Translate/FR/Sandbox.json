@@ -134,5 +134,10 @@
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Butin sur ordonnance domestique",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Permet aux restes rares de médicaments sur ordonnance d’apparaître dans les maisons, les chambres, les bureaux et autres lieux non médicaux similaires.",
     "Sandbox_EHR_DebugMode": "Mode debug",
-    "Sandbox_EHR_DebugMode_tooltip": "Active le menu debug EHR (touche G). Active aussi les logs. En multi, admin requis."
+    "Sandbox_EHR_DebugMode_tooltip": "Active le menu debug EHR (touche G). Active aussi les logs. En multi, admin requis.",
+    "Sandbox_EHR_RealisticTemperatureCompatibility": "Compatibilite Realistic Temperature",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "Controle le comportement de EHR quand Realistic Temperature est installe. <LINE> Auto detecte le mod. Active force le mode compatibilite. Desactive laisse EHR gerer normalement la temperature vanilla.",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "Auto",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "Active",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Desactive"
 }

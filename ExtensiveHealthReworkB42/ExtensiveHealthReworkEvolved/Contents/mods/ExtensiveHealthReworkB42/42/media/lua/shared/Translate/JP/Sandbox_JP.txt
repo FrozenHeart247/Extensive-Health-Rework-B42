@@ -135,4 +135,9 @@ Sandbox_JP = {
     Sandbox_EHR_HouseholdPrescriptionLoot_tooltip = "稀に処方薬の残り物が家、寝室、机、および同様の非医療場所に出現することを許可します。",
     Sandbox_EHR_DebugMode = "デバッグモード",
     Sandbox_EHR_DebugMode_tooltip = "EHR デバッグ メニューへのアクセスを有効にします (G キーを押します)。コンソールログも有効にします。 Steam -debug フラグは必要ありません。マルチプレイヤーでは管理者権限も必要です。",
+    Sandbox_EHR_RealisticTemperatureCompatibility = "Realistic Temperature 互換性",
+    Sandbox_EHR_RealisticTemperatureCompatibility_tooltip = "Realistic Temperature が導入されている場合の EHR の動作を制御します。<LINE>自動はMODを検出します。有効は互換モードを強制します。無効はEHRが通常どおりバニラ体温を管理します。",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option1 = "自動",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option2 = "有効",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option3 = "無効",
 }

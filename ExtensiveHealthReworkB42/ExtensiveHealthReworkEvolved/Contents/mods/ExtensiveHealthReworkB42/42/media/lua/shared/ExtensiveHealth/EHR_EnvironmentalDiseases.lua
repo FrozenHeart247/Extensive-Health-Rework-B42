@@ -177,6 +177,19 @@ function EHR.Environmental.GetAirTemperature()
     return 15 -- Default moderate temp if can't read
 end
 
+local function EHR_EnvironmentalNormalizeBodyTempStat(value)
+    value = tonumber(value)
+    if not value then return nil end
+
+    -- Realistic Temperature stores CharacterStat.TEMPERATURE as real Celsius.
+    -- This module's legacy thresholds use vanilla's normalized 0-1-ish scale.
+    if value >= 25.0 and value <= 45.0 then
+        return ((value - 37.0) / 8.0) + 0.5
+    end
+
+    return value
+end
+
 --[[
     Get player body temperature (0-1 scale, ~0.5 = normal)
     B42: CharacterStat.TEMPERATURE through stats:get()
@@ -188,7 +201,7 @@ function EHR.Environmental.GetBodyTemperature(player)
     if CharacterStat and CharacterStat.TEMPERATURE then
         local success, temp = pcall(function() return stats:get(CharacterStat.TEMPERATURE) end)
         if success and temp then
-            return temp
+            return EHR_EnvironmentalNormalizeBodyTempStat(temp) or temp
         end
     end
 
@@ -196,7 +209,7 @@ function EHR.Environmental.GetBodyTemperature(player)
     if player.getTemperature then
         local success, temp = pcall(function() return player:getTemperature() end)
         if success and temp then
-            return temp
+            return EHR_EnvironmentalNormalizeBodyTempStat(temp) or temp
         end
     end
 
@@ -242,6 +255,10 @@ end
 ]]--
 function EHR.Environmental.SuppressVanillaTemperature(player)
     if not player then return end
+
+    if EHR.BodyTemp and EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive() then
+        return
+    end
 
     local modData = player:getModData()
     if not modData or not modData.EHR_Disease then return end
@@ -366,6 +383,10 @@ function EHR.Environmental.SuppressVanillaCold(player)
         end
     end
 
+    local realisticTemperatureActive = EHR.BodyTemp
+        and EHR.BodyTemp.IsRealisticTemperatureActive
+        and EHR.BodyTemp.IsRealisticTemperatureActive()
+
     if hasAnyModRespiratory then
         -- Mod HAS a respiratory disease - sync SICKNESS to mod's disease stage
         local targetSickness = 0
@@ -427,6 +448,12 @@ function EHR.Environmental.SuppressVanillaCold(player)
             end
         end
     else
+        if realisticTemperatureActive then
+            -- Let Realistic Temperature own vanilla cold/sickness when EHR is
+            -- not currently managing a respiratory/food/corpse sickness source.
+            return
+        end
+
         -- No mod respiratory disease - if vanilla SICKNESS is elevated (from vanilla cold), suppress it
         -- This prevents vanilla coughing moodle when mod shows "0 Conditions"
         if not hasCorpseExposure and not hasFoodSicknessSignal and currentSickness > 0.15 then

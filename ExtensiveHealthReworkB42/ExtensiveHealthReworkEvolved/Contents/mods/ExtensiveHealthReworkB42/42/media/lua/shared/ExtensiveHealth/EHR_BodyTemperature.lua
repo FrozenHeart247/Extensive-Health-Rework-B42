@@ -172,6 +172,39 @@ function EHR.BodyTemp.IsEnabled()
     return true -- Default enabled
 end
 
+local function EHR_BodyTempGetRealisticTemperatureCompatMode()
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local mode = SandboxVars.ExtensiveHealthRework.RealisticTemperatureCompatibility
+        mode = tonumber(mode)
+        if mode == 2 then return "enabled" end
+        if mode == 3 then return "disabled" end
+    end
+
+    return "auto"
+end
+
+function EHR.BodyTemp.DetectRealisticTemperatureActive()
+    if _G and _G.RC_TempSim then return true end
+
+    if getActivatedMods then
+        local ok, activeMods = pcall(getActivatedMods)
+        if ok and activeMods and activeMods.contains then
+            return activeMods:contains("RC_RealisticColdMod")
+                or activeMods:contains("RealisticTemperature")
+        end
+    end
+
+    return false
+end
+
+function EHR.BodyTemp.IsRealisticTemperatureActive()
+    local mode = EHR_BodyTempGetRealisticTemperatureCompatMode()
+    if mode == "enabled" then return true end
+    if mode == "disabled" then return false end
+
+    return EHR.BodyTemp.DetectRealisticTemperatureActive()
+end
+
 function EHR.BodyTemp.GetSpeedMultiplier()
     if SandboxVars and SandboxVars.ExtensiveHealthRework then
         local speed = SandboxVars.ExtensiveHealthRework.TemperatureChangeSpeed
@@ -321,6 +354,13 @@ function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     if not player then return false end
     bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
     if not bodyTemp then return false end
+
+    -- Realistic Temperature is an external temperature authority and rewrites
+    -- CharacterStat.TEMPERATURE frequently. Keep EHR fever in EHR_Temperature,
+    -- but do not fight that mod for the vanilla stat.
+    if EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive() then
+        return false
+    end
 
     local wrote = false
     local bodyDamage = nil

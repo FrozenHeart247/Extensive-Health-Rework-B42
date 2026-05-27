@@ -134,5 +134,10 @@
     "Sandbox_EHR_HouseholdPrescriptionLoot": "家庭处方战利品",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "允许罕见的处方药残留物在房屋、卧室、书桌和类似的非医疗场所产生。",
     "Sandbox_EHR_DebugMode": "调试模式",
-    "Sandbox_EHR_DebugMode_tooltip": "启用 EHR 调试菜单访问（按 G）。还启用控制台日志记录。不需要 Steam -debug 标志。在多人游戏中，还需要管理员权限。"
+    "Sandbox_EHR_DebugMode_tooltip": "启用 EHR 调试菜单访问（按 G）。还启用控制台日志记录。不需要 Steam -debug 标志。在多人游戏中，还需要管理员权限。",
+    "Sandbox_EHR_RealisticTemperatureCompatibility": "真实温度兼容性",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "控制安装 Realistic Temperature 时 EHR 的行为。<LINE>自动会检测该模组。启用会强制兼容模式。禁用则让 EHR 正常管理原版体温。",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "自动",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "启用",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "禁用"
 }

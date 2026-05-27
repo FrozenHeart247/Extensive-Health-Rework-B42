@@ -134,5 +134,10 @@
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Receitas em casas",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Permite sobras raras de medicamentos prescritos em casas, quartos, mesas e locais nao medicos similares.",
     "Sandbox_EHR_DebugMode": "Modo de Depuração (Debug)",
-    "Sandbox_EHR_DebugMode_tooltip": "HabilitarEHRAcesso ao menu de depuração (pressione G). Também habilita o log do console. NÃO requer sinalizador Steam -debug. No modo multijogador, também são necessários privilégios de administrador."
+    "Sandbox_EHR_DebugMode_tooltip": "HabilitarEHRAcesso ao menu de depuração (pressione G). Também habilita o log do console. NÃO requer sinalizador Steam -debug. No modo multijogador, também são necessários privilégios de administrador.",
+    "Sandbox_EHR_RealisticTemperatureCompatibility": "Compatibilidade com Realistic Temperature",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "Controla como o EHR se comporta quando Realistic Temperature esta instalado. <LINE> Auto detecta o mod. Ativado força o modo de compatibilidade. Desativado deixa o EHR gerenciar a temperatura vanilla normalmente.",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "Auto",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "Ativado",
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Desativado"
 }

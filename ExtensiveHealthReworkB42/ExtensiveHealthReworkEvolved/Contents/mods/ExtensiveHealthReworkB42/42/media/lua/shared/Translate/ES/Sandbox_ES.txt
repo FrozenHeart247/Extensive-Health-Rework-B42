@@ -135,4 +135,9 @@ Sandbox_ES = {
     Sandbox_EHR_HouseholdPrescriptionLoot_tooltip = "Permite restos raros de medicamentos con receta en casas, dormitorios, escritorios y lugares no medicos similares.",
     Sandbox_EHR_DebugMode = "Modo debug",
     Sandbox_EHR_DebugMode_tooltip = "Activa el menu debug EHR (tecla G). Tambien activa logs. En multi, admin requerido.",
+    Sandbox_EHR_RealisticTemperatureCompatibility = "Compatibilidad con Realistic Temperature",
+    Sandbox_EHR_RealisticTemperatureCompatibility_tooltip = "Controla como se comporta EHR cuando Realistic Temperature esta instalado. <LINE> Auto detecta el mod. Activado fuerza el modo compatible. Desactivado permite que EHR gestione la temperatura vanilla normalmente.",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option1 = "Auto",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option2 = "Activado",
+    Sandbox_EHR_RealisticTemperatureCompatibility_option3 = "Desactivado",
 }

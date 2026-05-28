@@ -70,6 +70,7 @@ ItemName_FR = {
     ExtensiveHealth.IVVancomycin = "IV Vancomycine",
     ExtensiveHealth.MuscleRelaxants = "Relaxants musculaires",
     ExtensiveHealth.NitricOxideBooster = "Boosters d'oxyde nitrique",
+    ExtensiveHealth.CombatStimulants = "Combat Stimulants",
     ExtensiveHealth.OralRehydrationKit = "Kit de réhydratation orale",
     ExtensiveHealth.PhalanxPills = "Pilules suppressives de phalange",
     ExtensiveHealth.PlantBasedAntibiotics = "Antibiotiques à base de plantes",

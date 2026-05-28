@@ -570,6 +570,48 @@ local function EHR_InitDistributions()
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.AlchoholicBandage", 4)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.InstantIcePack", 3)
 
+    -- Combat stimulants are restricted tactical supplies.
+    -- Keep them out of normal medical pools so they remain rare, military/police-flavored loot.
+    local combatStimulant = "ExtensiveHealth.CombatStimulants"
+    local combatStimulantWeaponStore = {
+        GunStoreAccessories = 1.2,
+        GunStoreCases = 1.0,
+        GunStoreBodyArmor = 0.9,
+        GunStoreAmmunition = 0.7,
+        GunStoreKnives = 0.5,
+    }
+    for container, chance in pairs(combatStimulantWeaponStore) do
+        tryAddMed(container, combatStimulant, chance)
+    end
+
+    local combatStimulantMilitary = {
+        ArmyStorageMedical = 3.0,
+        ArmyStorageOutfit = 2.0,
+        ArmyStorageGuns = 1.5,
+        ArmyStorageAmmunition = 1.5,
+    }
+    for container, chance in pairs(combatStimulantMilitary) do
+        tryAddMed(container, combatStimulant, chance)
+    end
+
+    local combatStimulantPoliceStation = {
+        PoliceStorageGuns = 0.8,
+        PoliceEvidence = 0.6,
+        PoliceCaptainCabinet = 0.4,
+        PoliceDesk = 0.3,
+    }
+    for container, chance in pairs(combatStimulantPoliceStation) do
+        tryAddMed(container, combatStimulant, chance)
+    end
+
+    tryAddBagMed("Bag_Police", combatStimulant, 0.6)
+    tryAddVehicleMed("PoliceGloveBox", combatStimulant, 0.25)
+    tryAddVehicleMed("PoliceSeatFront", combatStimulant, 0.25)
+    tryAddVehicleMed("PoliceTruckBed", combatStimulant, 0.4)
+    tryAddVehicleMed("PoliceSWATGloveBox", combatStimulant, 0.8)
+    tryAddVehicleMed("PoliceSWATSeatFront", combatStimulant, 0.8)
+    tryAddVehicleMed("PoliceSWATTruckBed", combatStimulant, 1.2)
+
     -- First Aid Kits (basic supplies)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
     tryAddMed("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)

@@ -334,6 +334,26 @@ EHR.Medication.Database = {
         sideEffects = {"whole_body_muscle_pain"},
     },
 
+    ["ExtensiveHealth.CombatStimulants"] = {
+        tier = 3,
+        treats = {},
+        displayName = "Combat Stimulants",
+        icon = "CombatStimulants",
+        usageMessage = "You take combat stimulants. Everything sharpens, fast.",
+        appliesWithoutDisease = true,
+        effectDurationHours = 3,
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The combat stimulants are still active. Another dose would be reckless.",
+        combatStimulants = {
+            durationHours = 3,
+            attackSpeedMultiplier = 2.0,
+            speedMod = 1.12,
+            maxEndurance = 0.92,
+            restorePerHour = 0.45,
+            delayedSideEffect = "combat_stimulant_crash",
+        },
+    },
+
     ["ExtensiveHealth.CoughSuppressant"] = {
         tier = 1,
         treats = {"common_cold", "pneumonia", "cadaveric_aspergillosis", "tuberculosis"},
@@ -400,6 +420,18 @@ EHR.Medication.Database = {
         displayName = "Activated Charcoal",
         usageMessage = "You swallow activated charcoal. It absorbs the toxins.",
         cureTimeHours = 6, -- Fallback cure time
+        diseaseCureTimeHours = {
+            food_poisoning = 6,
+            toxin_poisoning = 12,
+        },
+    },
+
+    ["ExtensiveHealth.HomeMadeActivatedCharcoal"] = {
+        tier = 2,
+        treats = {"food_poisoning", "toxin_poisoning"},
+        displayName = "Homemade Activated Charcoal",
+        usageMessage = "You swallow homemade activated charcoal. It absorbs the toxins.",
+        cureTimeHours = 6,
         diseaseCureTimeHours = {
             food_poisoning = 6,
             toxin_poisoning = 12,
@@ -1186,6 +1218,130 @@ local function EHRMedicationClearWholeBodyMusclePain(player)
     modData.EHR_WholeBodyMusclePain = nil
 end
 
+local function EHRMedicationIsCombatStimulantLimbPart(partName)
+    local name = tostring(partName or ""):lower()
+    return name:find("arm", 1, true)
+        or name:find("hand", 1, true)
+        or name:find("leg", 1, true)
+        or name:find("foot", 1, true)
+end
+
+local function EHRMedicationApplyCombatStimulantLimbPain(player, effectData)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if not modData then return false end
+
+    modData.EHR_CombatStimulantLimbPain = modData.EHR_CombatStimulantLimbPain or {}
+    local tracked = modData.EHR_CombatStimulantLimbPain
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        if not EHRMedicationIsCombatStimulantLimbPart(partName) then return false end
+
+        local targetStiffness = 28
+        local targetPain = 16
+        local currentStiffness = 0
+        local currentPain = 0
+
+        pcall(function()
+            if part.getStiffness then currentStiffness = part:getStiffness() or 0 end
+        end)
+        pcall(function()
+            if part.getAdditionalPain then currentPain = part:getAdditionalPain() or 0 end
+        end)
+
+        if not tracked[partName] then
+            tracked[partName] = {
+                stiffness = currentStiffness,
+                pain = currentPain,
+                targetStiffness = targetStiffness,
+                targetPain = targetPain,
+            }
+        end
+
+        local partChanged = false
+        if part.setStiffness and currentStiffness < targetStiffness then
+            local okSet = pcall(function()
+                part:setStiffness(targetStiffness)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        if part.setAdditionalPain and currentPain < targetPain then
+            local okSet = pcall(function()
+                part:setAdditionalPain(targetPain)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        return partChanged
+    end)
+
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+
+    if effectData then
+        effectData.limbPainApplied = changed or effectData.limbPainApplied
+    end
+
+    return changed or (effectData and effectData.limbPainApplied == true)
+end
+
+local function EHRMedicationClearCombatStimulantLimbPain(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    local tracked = modData and modData.EHR_CombatStimulantLimbPain or nil
+    if not tracked then return end
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        local record = tracked[partName]
+        if not record then return false end
+
+        local partChanged = false
+        local currentStiffness = nil
+        local currentPain = nil
+
+        pcall(function()
+            if part.getStiffness then currentStiffness = part:getStiffness() end
+        end)
+        pcall(function()
+            if part.getAdditionalPain then currentPain = part:getAdditionalPain() end
+        end)
+
+        if part.setStiffness and currentStiffness and currentStiffness <= (record.targetStiffness or 0) + 2 then
+            local restore = math.max(0, tonumber(record.stiffness) or 0)
+            local okSet = pcall(function()
+                part:setStiffness(restore)
+            end)
+            partChanged = okSet or partChanged
+
+            if okSet and restore <= 0.1 and player.getFitness and BodyPartType and BodyPartType.ToString then
+                pcall(function()
+                    player:getFitness():removeStiffnessValue(BodyPartType.ToString(partType))
+                end)
+            end
+        end
+
+        if part.setAdditionalPain and currentPain and currentPain <= (record.targetPain or 0) + 2 then
+            local restore = math.max(0, tonumber(record.pain) or 0)
+            local okSet = pcall(function()
+                part:setAdditionalPain(restore)
+            end)
+            partChanged = okSet or partChanged
+        end
+
+        return partChanged
+    end)
+
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+
+    modData.EHR_CombatStimulantLimbPain = nil
+end
+
 local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     if not player then return end
 
@@ -1201,6 +1357,9 @@ local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     end
     if not activeSideEffects or not activeSideEffects.whole_body_muscle_pain then
         EHRMedicationClearWholeBodyMusclePain(player)
+    end
+    if not activeSideEffects or not activeSideEffects.combat_stimulant_crash then
+        EHRMedicationClearCombatStimulantLimbPain(player)
     end
 end
 
@@ -1396,6 +1555,49 @@ EHR.Medication.SideEffects = {
             if stats and CharacterStat then
                 EHRMedicationCapStat(stats, CharacterStat.ENDURANCE, 0.55)
             end
+        end,
+    },
+
+    ["combat_stimulant_crash"] = {
+        displayName = "Combat Stimulant Crash",
+        duration = 6,
+        severity = 2,
+        effects = function(player, effectData)
+            if not player then return end
+            effectData = effectData or {}
+
+            EHRMedicationApplyCombatStimulantLimbPain(player, effectData)
+
+            local stats = EHRMedicationGetStats(player)
+            if stats and CharacterStat then
+                EHRMedicationRaiseStat(stats, CharacterStat.FATIGUE, 0.80)
+                EHRMedicationRaiseStat(stats, CharacterStat.PAIN, 0.34)
+                EHRMedicationRaiseStat(stats, CharacterStat.DISCOMFORT, 0.28)
+
+                local gameTime = getGameTime and getGameTime() or nil
+                local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+                if not effectData.initialThirstApplied then
+                    pcall(function()
+                        local currentThirst = stats:get(CharacterStat.THIRST) or 0
+                        stats:set(CharacterStat.THIRST, math.min(1, currentThirst + 0.08))
+                    end)
+                    effectData.initialThirstApplied = true
+                    effectData.lastThirstHour = currentHour
+                else
+                    local lastHour = tonumber(effectData.lastThirstHour) or currentHour
+                    local deltaHours = math.max(0, math.min(0.25, currentHour - lastHour))
+                    if deltaHours > 0 then
+                        pcall(function()
+                            local currentThirst = stats:get(CharacterStat.THIRST) or 0
+                            stats:set(CharacterStat.THIRST, math.min(1, currentThirst + (0.075 * deltaHours)))
+                        end)
+                        effectData.lastThirstHour = currentHour
+                    end
+                end
+            end
+        end,
+        onEnd = function(player)
+            EHRMedicationClearCombatStimulantLimbPain(player)
         end,
     },
 
@@ -1620,6 +1822,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.AntiDiarrheal"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.MuscleRelaxants"] = { doseInterval = 8, dosesRequired = 3 },
     ["ExtensiveHealth.NitricOxideBooster"] = { doseInterval = 3, dosesRequired = 1 },
+    ["ExtensiveHealth.CombatStimulants"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CoughSuppressant"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.AntisepticCream"] = { doseInterval = 8, dosesRequired = 3 },
 
@@ -1628,6 +1831,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.PrescriptionAntibiotics"] = { doseInterval = 8, dosesRequired = 9 },
     ["ExtensiveHealth.AntifungalTablets"] = { doseInterval = 12, dosesRequired = 10 },
     ["ExtensiveHealth.ActivatedCharcoal"] = { doseInterval = 0, dosesRequired = 1 },  -- Single dose absorbs toxins
+    ["ExtensiveHealth.HomeMadeActivatedCharcoal"] = { doseInterval = 0, dosesRequired = 1 },  -- Craftable single-dose toxin binder
     ["ExtensiveHealth.AntiparasiticPills"] = { doseInterval = 12, dosesRequired = 14 },
     ["ExtensiveHealth.TopicalPermethrin"] = { doseInterval = 12, dosesRequired = 6 },
     ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
@@ -2055,6 +2259,7 @@ EHR.Medication.DrugCategories = {
     ["Anti-Diarrheal Tablets"] = "anti-diarrheal",
     ["Muscle Relaxants"] = "muscle relaxant",
     ["Nitric Oxide Boosters"] = "stimulant",
+    ["Combat Stimulants"] = "stimulant",
     ["Cough Suppressant"] = "cough suppressant",
     ["Antiseptic Cream"] = "antiseptic",
 
@@ -2063,6 +2268,7 @@ EHR.Medication.DrugCategories = {
     ["Prescription Antibiotics"] = "antibiotic",
     ["Antifungal Tablets"] = "antifungal",
     ["Activated Charcoal"] = "charcoal",
+    ["Homemade Activated Charcoal"] = "charcoal",
     ["Antiparasitic Pills"] = "antiparasitic",
     ["Topical Permethrin"] = "antiparasitic",
     ["Oral Rehydration Kit"] = "rehydration",
@@ -2318,6 +2524,10 @@ function EHR.Medication.CanUseMedication(player, item)
         return false, medData.activeDoseMessage or "The current dose is still active"
     end
 
+    if medData.combatStimulants and EHR_MedicationHasActiveGeneralEffect(player, "combatStimulants") then
+        return false, medData.activeDoseMessage or "The current dose is still active"
+    end
+
     if medData.blockWhileDoseActive and EHR.Medication.GetDoseStatus then
         local ok, status = pcall(EHR.Medication.GetDoseStatus, player, itemFullType)
         local doseDue = ok and status and not status.treatmentComplete
@@ -2565,6 +2775,9 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
     if medData.fatigueBlock and EHR.Medication.StartFatigueBlock then
         EHR.Medication.StartFatigueBlock(player, medData)
+    end
+    if medData.combatStimulants and EHR.Medication.StartCombatStimulants then
+        EHR.Medication.StartCombatStimulants(player, medData)
     end
 
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
@@ -2963,6 +3176,231 @@ function EHR.Medication.IsCaffeineAwake(player)
     return currentHour < (tonumber(effect.endTime) or 0)
 end
 
+local function EHRMedicationClearCombatStress(player)
+    if not player or not CharacterStat then return end
+
+    EHR_MedicationSetStat(player, CharacterStat.STRESS, 0)
+    EHR_MedicationSetStat(player, CharacterStat.PANIC, 0)
+    EHR_MedicationSetStat(player, CharacterStat.UNHAPPINESS, 0)
+end
+
+local function EHRMedicationGetItemId(item)
+    if not item or not item.getID then return nil end
+    local ok, id = pcall(function() return item:getID() end)
+    if ok then return id end
+    return nil
+end
+
+local function EHRMedicationFindItemById(container, itemId, depth)
+    if not container or itemId == nil then return nil end
+    depth = depth or 0
+    if depth > 4 then return nil end
+
+    local items = nil
+    pcall(function() items = container:getItems() end)
+    if not items then return nil end
+
+    local size = 0
+    pcall(function() size = items:size() end)
+    size = tonumber(size) or 0
+    if size <= 0 then return nil end
+
+    for i = 0, size - 1 do
+        local item = nil
+        pcall(function() item = items:get(i) end)
+        if item then
+            local id = EHRMedicationGetItemId(item)
+            if id ~= nil and tostring(id) == tostring(itemId) then
+                return item
+            end
+
+            local nested = nil
+            if item.getInventory then
+                pcall(function() nested = item:getInventory() end)
+            end
+            local found = EHRMedicationFindItemById(nested, itemId, depth + 1)
+            if found then return found end
+        end
+    end
+
+    return nil
+end
+
+local function EHRMedicationRestoreCombatWeaponSpeed(player, explicitWeapon)
+    if not player then return false end
+
+    local modData = player:getModData()
+    local weapon = explicitWeapon
+    if not weapon and modData and modData.EHR_CombatStimWeaponId then
+        local inventory = nil
+        pcall(function() inventory = player:getInventory() end)
+        weapon = EHRMedicationFindItemById(inventory, modData.EHR_CombatStimWeaponId)
+    end
+
+    local restored = false
+    if weapon and weapon.getModData and weapon.setBaseSpeed then
+        local itemData = weapon:getModData()
+        local originalSpeed = tonumber(itemData and itemData.EHR_CombatStimBaseSpeed)
+        if originalSpeed and originalSpeed > 0 then
+            restored = pcall(function()
+                weapon:setBaseSpeed(originalSpeed)
+            end) or restored
+        end
+        if itemData then
+            itemData.EHR_CombatStimBaseSpeed = nil
+            itemData.EHR_CombatStimAppliedSpeed = nil
+        end
+    end
+
+    if modData then
+        modData.EHR_CombatStimWeaponId = nil
+    end
+
+    return restored
+end
+
+local function EHRMedicationApplyCombatWeaponSpeed(player, effect)
+    if not player or not effect then return false end
+
+    local weapon = nil
+    pcall(function() weapon = player:getPrimaryHandItem() end)
+    local modData = player:getModData()
+
+    if not weapon or not weapon.getBaseSpeed or not weapon.setBaseSpeed or not weapon.getModData then
+        if modData and modData.EHR_CombatStimWeaponId then
+            EHRMedicationRestoreCombatWeaponSpeed(player)
+        end
+        return false
+    end
+
+    local weaponId = EHRMedicationGetItemId(weapon)
+    if modData and modData.EHR_CombatStimWeaponId and tostring(modData.EHR_CombatStimWeaponId) ~= tostring(weaponId) then
+        EHRMedicationRestoreCombatWeaponSpeed(player)
+    end
+
+    local itemData = weapon:getModData()
+    if not itemData then return false end
+
+    local currentSpeed = nil
+    pcall(function() currentSpeed = weapon:getBaseSpeed() end)
+    currentSpeed = tonumber(currentSpeed)
+    if not currentSpeed or currentSpeed <= 0 then return false end
+
+    local originalSpeed = tonumber(itemData.EHR_CombatStimBaseSpeed)
+    if not originalSpeed or originalSpeed <= 0 then
+        originalSpeed = currentSpeed
+        itemData.EHR_CombatStimBaseSpeed = originalSpeed
+    end
+
+    local multiplier = math.max(1.0, tonumber(effect.attackSpeedMultiplier) or 2.0)
+    local targetSpeed = originalSpeed * multiplier
+    local appliedSpeed = tonumber(itemData.EHR_CombatStimAppliedSpeed)
+    if (not appliedSpeed) or math.abs(appliedSpeed - targetSpeed) > 0.001 then
+        local okSet = pcall(function()
+            weapon:setBaseSpeed(targetSpeed)
+        end)
+        if okSet then
+            itemData.EHR_CombatStimAppliedSpeed = targetSpeed
+            if modData then
+                modData.EHR_CombatStimWeaponId = weaponId
+            end
+            return true
+        end
+    end
+
+    if modData then
+        modData.EHR_CombatStimWeaponId = weaponId
+    end
+    return true
+end
+
+local function EHRMedicationHasOtherSpeedPenalty(player)
+    if not player then return false end
+
+    local modData = player:getModData()
+    local active = modData and modData.EHR_Disease and modData.EHR_Disease.active or nil
+    if not active or not EHR or not EHR.Disease or not EHR.Disease.Diseases then return false end
+
+    for diseaseId, disease in pairs(active) do
+        local def = EHR.Disease.Diseases[diseaseId]
+        local effects = def and def.effects and def.effects[disease.stage or 1]
+        local movementPenalty = effects and tonumber(effects.movementPenalty)
+        if movementPenalty and movementPenalty < 1.0 then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function EHRMedicationClearCombatSpeedBoost(player)
+    if not player then return end
+
+    local modData = player:getModData()
+    if not modData or not modData.EHR_CombatStimSpeedActive then return end
+
+    if player.setSpeedMod and not EHRMedicationHasOtherSpeedPenalty(player) then
+        pcall(function() player:setSpeedMod(1.0) end)
+    end
+
+    modData.EHR_CombatStimSpeedActive = nil
+end
+
+local function EHRMedicationApplyCombatSpeedBoost(player, effect)
+    if not player or not effect or not player.setSpeedMod then return false end
+    if EHRMedicationHasOtherSpeedPenalty(player) then return false end
+
+    local speedMod = math.max(1.0, math.min(1.25, tonumber(effect.speedMod) or 1.0))
+    if speedMod <= 1.001 then return false end
+
+    local ok = pcall(function() player:setSpeedMod(speedMod) end)
+    if ok then
+        local modData = player:getModData()
+        if modData then
+            modData.EHR_CombatStimSpeedActive = true
+        end
+        return true
+    end
+
+    return false
+end
+
+function EHR.Medication.StartCombatStimulants(player, medData)
+    local support = medData and medData.combatStimulants
+    if not player or not support then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local duration = support.durationHours or medData.effectDurationHours or 3
+
+    medTracking.activeGeneralEffects.combatStimulants = {
+        startTime = currentHour,
+        endTime = currentHour + math.max(0.05, duration),
+        lastUpdateHour = currentHour,
+        attackSpeedMultiplier = support.attackSpeedMultiplier or 2.0,
+        speedMod = support.speedMod or 1.12,
+        maxEndurance = support.maxEndurance or 0.92,
+        restorePerHour = support.restorePerHour or 0.45,
+        delayedSideEffect = support.delayedSideEffect,
+        medicationName = medData.displayName or "Combat Stimulants",
+    }
+
+    local modData = player:getModData()
+    if modData then
+        modData.EHR_CombatStimulantsActive = true
+    end
+
+    EHRMedicationClearCombatStress(player)
+    EHRMedicationApplyCombatWeaponSpeed(player, medTracking.activeGeneralEffects.combatStimulants)
+    EHRMedicationApplyCombatSpeedBoost(player, medTracking.activeGeneralEffects.combatStimulants)
+    return true
+end
+
 function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
     if not player or not medTracking or not medTracking.activeGeneralEffects then return end
 
@@ -3026,6 +3464,49 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
         else
             local targetEndurance = math.max(0, math.min(1, tonumber(stamina.targetEndurance) or 1.0))
             EHR_MedicationSetStat(player, CharacterStat and CharacterStat.ENDURANCE, targetEndurance)
+        end
+    end
+
+    local combatStim = medTracking.activeGeneralEffects.combatStimulants
+    if type(combatStim) == "table" then
+        local endTime = tonumber(combatStim.endTime) or currentHour
+        if currentHour >= endTime then
+            local delayedSideEffect = combatStim.delayedSideEffect
+            medTracking.activeGeneralEffects.combatStimulants = nil
+            EHRMedicationRestoreCombatWeaponSpeed(player)
+            EHRMedicationClearCombatSpeedBoost(player)
+            local modDataCombat = player:getModData()
+            if modDataCombat then
+                modDataCombat.EHR_CombatStimulantsActive = nil
+            end
+            if delayedSideEffect and EHR.Medication.ApplySideEffect then
+                EHR.Medication.ApplySideEffect(player, delayedSideEffect)
+            end
+        else
+            local lastUpdateHour = tonumber(combatStim.lastUpdateHour) or currentHour
+            local deltaHours = math.max(0, math.min(0.25, currentHour - lastUpdateHour))
+            combatStim.lastUpdateHour = currentHour
+
+            EHRMedicationClearCombatStress(player)
+            EHRMedicationApplyCombatWeaponSpeed(player, combatStim)
+            EHRMedicationApplyCombatSpeedBoost(player, combatStim)
+
+            if deltaHours > 0 then
+                local currentEndurance = EHR_MedicationGetStat(player, CharacterStat and CharacterStat.ENDURANCE)
+                if currentEndurance then
+                    local maxEndurance = math.max(0.20, math.min(0.98, tonumber(combatStim.maxEndurance) or 0.92))
+                    if currentEndurance < maxEndurance then
+                        local restorePerHour = math.max(0, tonumber(combatStim.restorePerHour) or 0.45)
+                        local nextEndurance = math.min(maxEndurance, currentEndurance + (restorePerHour * deltaHours))
+                        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.ENDURANCE, nextEndurance)
+                    end
+                end
+            end
+
+            local modDataCombat = player:getModData()
+            if modDataCombat then
+                modDataCombat.EHR_CombatStimulantsActive = true
+            end
         end
     end
 

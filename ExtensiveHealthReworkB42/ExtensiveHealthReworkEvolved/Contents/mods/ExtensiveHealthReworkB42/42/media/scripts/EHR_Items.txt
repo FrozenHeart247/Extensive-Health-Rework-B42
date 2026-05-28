@@ -430,6 +430,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item CombatStimulants
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Combat Stimulants,
+        Icon = CombatStimulants,
+        Weight = 0.2,
+        Tooltip = Tooltip_CombatStimulants,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item CoughSuppressant
     {
         DisplayCategory = FirstAid,
@@ -506,6 +519,21 @@ module ExtensiveHealth
         ItemType = base:drainable,
         DisplayName = Activated Charcoal,
         Icon = ActivatedCharcoal,
+        Weight = 0.2,
+        Tooltip = Tooltip_ActivatedCharcoal,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        StaticModel = EHR_ActivatedCharcoal,
+        WorldStaticModel = EHR_ActivatedCharcoal,
+        Medical = true,
+    }
+
+    item HomeMadeActivatedCharcoal
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Activated Charcoal,
+        Icon = HomeMadeActivatedCharcoal,
         Weight = 0.2,
         Tooltip = Tooltip_ActivatedCharcoal,
         UseDelta = 0.125,

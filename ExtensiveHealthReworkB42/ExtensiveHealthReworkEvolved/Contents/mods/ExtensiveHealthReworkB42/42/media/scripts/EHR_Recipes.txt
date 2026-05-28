@@ -23,4 +23,22 @@ module ExtensiveHealth
             item 1 ExtensiveHealth.PlantBasedAntibiotics,
         }
     }
+
+    craftRecipe MakeHomemadeActivatedCharcoal
+    {
+        timedAction = MixingMortarPestle,
+        time = 120,
+        Tags = AnySurfaceCraft;Health,
+        category = EHRMedicine,
+        inputs
+        {
+            item 1 tags[base:mortarpestle] mode:keep,
+            item 1 [Base.Charcoal],
+            item 1 [Base.Lemon],
+        }
+        outputs
+        {
+            item 1 ExtensiveHealth.HomeMadeActivatedCharcoal,
+        }
+    }
 }

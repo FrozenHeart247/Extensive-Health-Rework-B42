@@ -108,6 +108,25 @@ function EHR.WoundHook.IsIVAntibiotics(item)
     return EHR.WoundHook.IVAntibioticItems[fullType] == true
 end
 
+local function getContextOptions(context)
+    if not context then return {} end
+
+    if context.getOptions then
+        local ok, options = pcall(function()
+            return context:getOptions()
+        end)
+        if ok and type(options) == "table" then
+            return options
+        end
+    end
+
+    if type(context.options) == "table" then
+        return context.options
+    end
+
+    return {}
+end
+
 function EHR.WoundHook.HasTreatableWoundInfection(player)
     if not player or not EHR.WoundInfection or not EHR.WoundInfection.GetData then
         return false
@@ -434,7 +453,7 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
 
             if hasInfection then
                 -- Show infection status in tooltip
-                local existingOptions = context:getOptions()
+                local existingOptions = getContextOptions(context)
                 for _, opt in ipairs(existingOptions) do
                     if opt.name and string.find(opt.name, "Antibiotics") then
                         local tooltip = ISWorldObjectContextMenu.addToolTip()

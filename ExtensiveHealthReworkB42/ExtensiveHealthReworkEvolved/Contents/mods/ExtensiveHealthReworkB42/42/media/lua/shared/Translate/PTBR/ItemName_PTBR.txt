@@ -70,6 +70,7 @@ ItemName_PTBR = {
     ExtensiveHealth.IVVancomycin = "IV Vancomicina",
     ExtensiveHealth.MuscleRelaxants = "Relaxantes musculares",
     ExtensiveHealth.NitricOxideBooster = "Impulsionadores de Óxido Nítrico",
+    ExtensiveHealth.CombatStimulants = "Combat Stimulants",
     ExtensiveHealth.OralRehydrationKit = "Kit de Reidratação Oral",
     ExtensiveHealth.PhalanxPills = "Comprimidos supressores de falange",
     ExtensiveHealth.PlantBasedAntibiotics = "Antibióticos à base de plantas",

@@ -70,6 +70,7 @@ ItemName_UA = {
     ExtensiveHealth.IVVancomycin = "IV Ванкоміцин",
     ExtensiveHealth.MuscleRelaxants = "М'язові релаксанти",
     ExtensiveHealth.NitricOxideBooster = "Підсилювачі оксиду азоту",
+    ExtensiveHealth.CombatStimulants = "Combat Stimulants",
     ExtensiveHealth.OralRehydrationKit = "Набір для оральної регідратації",
     ExtensiveHealth.PhalanxPills = "Таблетки для придушення фаланг",
     ExtensiveHealth.PlantBasedAntibiotics = "Антибіотики рослинного походження",

@@ -70,6 +70,7 @@ ItemName_CH = {
     ExtensiveHealth.IVVancomycin = "IV 萬古黴素",
     ExtensiveHealth.MuscleRelaxants = "肌肉鬆弛劑",
     ExtensiveHealth.NitricOxideBooster = "一氧化氮促進劑",
+    ExtensiveHealth.CombatStimulants = "Combat Stimulants",
     ExtensiveHealth.OralRehydrationKit = "口服補液套件",
     ExtensiveHealth.PhalanxPills = "方陣抑制劑丸",
     ExtensiveHealth.PlantBasedAntibiotics = "植物性抗生素",

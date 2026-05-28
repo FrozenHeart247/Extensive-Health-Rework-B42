@@ -224,6 +224,7 @@ function EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
         common_cold = { "UI_EHR_Disease_CommonCold", "Common Cold" },
         concussion = { "UI_EHR_Disease_Concussion", "Concussion" },
         delirium = { "UI_EHR_Disease_Delirium", "Delirium" },
+        insomnia = { "UI_EHR_Disease_Insomnia", "Insomnia" },
         flu = { "UI_EHR_Disease_Influenza", "Influenza" },
         pneumonia = { "UI_EHR_Disease_Pneumonia", "Pneumonia" },
         food_poisoning = { "UI_EHR_Disease_FoodPoisoning", "Food Poisoning" },

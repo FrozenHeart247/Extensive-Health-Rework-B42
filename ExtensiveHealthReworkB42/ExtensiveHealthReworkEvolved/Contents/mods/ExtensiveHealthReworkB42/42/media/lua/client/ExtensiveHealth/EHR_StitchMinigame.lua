@@ -15,6 +15,13 @@ local C = {
     bg = { r = 0.018, g = 0.016, b = 0.016, a = 0.97 },
     panel = { r = 0.055, g = 0.030, b = 0.030, a = 0.92 },
     panelSoft = { r = 0.08, g = 0.020, b = 0.020, a = 0.72 },
+    skin = { r = 0.24, g = 0.13, b = 0.10, a = 0.56 },
+    skinDark = { r = 0.12, g = 0.045, b = 0.035, a = 0.64 },
+    wound = { r = 0.52, g = 0.018, b = 0.014, a = 0.82 },
+    woundDark = { r = 0.10, g = 0.005, b = 0.004, a = 0.76 },
+    thread = { r = 0.86, g = 0.80, b = 0.68, a = 0.96 },
+    threadDim = { r = 0.50, g = 0.46, b = 0.38, a = 0.55 },
+    threadLive = { r = 1.00, g = 0.66, b = 0.18, a = 0.72 },
     red = { r = 0.90, g = 0.045, b = 0.040, a = 1.0 },
     redDim = { r = 0.42, g = 0.020, b = 0.018, a = 1.0 },
     gold = { r = 1.00, g = 0.66, b = 0.18, a = 1.0 },
@@ -33,6 +40,16 @@ local function L(key, fallback)
     local ok, value = pcall(getText, fullKey)
     if ok and value and value ~= fullKey then return value end
     return fallback
+end
+
+local TextureCache = {}
+local function stitchTexture(path)
+    if not path or not getTexture then return nil end
+    if TextureCache[path] == nil then
+        TextureCache[path] = getTexture(path) or false
+    end
+    if TextureCache[path] == false then return nil end
+    return TextureCache[path]
 end
 
 local function getDoctorLevel(player)
@@ -474,9 +491,54 @@ function EHR_StitchMinigameUI:onMouseUpOutside(x, y)
     return true
 end
 
+function EHR_StitchMinigameUI:drawTextureSafe(path, x, y, w, h, alpha)
+    local texture = stitchTexture(path)
+    if texture and self.drawTextureScaled then
+        self:drawTextureScaled(texture, x, y, w, h, alpha or 1.0, 1.0, 1.0, 1.0)
+        return true
+    end
+    return false
+end
+
+function EHR_StitchMinigameUI:drawThreadLine(x1, y1, x2, y2, color, alpha, width)
+    color = color or C.thread
+    alpha = alpha or color.a or 1.0
+    width = math.max(1, math.floor(width or 1))
+
+    local dx = x2 - x1
+    local dy = y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 0.5 then return end
+
+    -- drawLine2 can escape this panel on some B42 UI paths, so draw the
+    -- thread as dense local rect segments instead.
+    local step = math.max(1.5, width * 0.55)
+    local steps = math.max(1, math.ceil(len / step))
+    local half = math.floor(width / 2)
+    for i = 0, steps do
+        local t = i / steps
+        local x = x1 + dx * t
+        local y = y1 + dy * t
+        self:drawRect(math.floor(x - half), math.floor(y - half), width, width, alpha, color.r, color.g, color.b)
+    end
+end
+
+function EHR_StitchMinigameUI:drawStitchMark(point, color, alpha)
+    if not point then return end
+    local x = point.hitX or point.x
+    local y = point.hitY or point.y
+    if not x or not y then return end
+
+    local size = 7
+    local angleX = 0.72
+    local angleY = self.orientation == "horizontal" and 0.42 or -0.42
+    self:drawThreadLine(x - size * angleX, y - size * angleY, x + size * angleX, y + size * angleY, color or C.thread, alpha or 0.85, 2)
+end
+
 function EHR_StitchMinigameUI:prerender()
     ISPanel.prerender(self)
     self:drawRect(0, 0, self.width, self.height, C.bg.a, C.bg.r, C.bg.g, C.bg.b)
+    self:drawTextureSafe("media/textures/EHR_Stitch_PanelGrime.png", 0, 42, self.width, self.height - 42, 0.42)
     self:drawRectBorder(0, 0, self.width, self.height, 0.95, C.red.r, C.red.g, C.red.b)
     self:drawRect(0, 0, self.width, 42, 0.96, 0.07, 0.01, 0.01)
     self:drawText(L("Title", "Suture Wound"), 16, 8, C.text.r, C.text.g, C.text.b, C.text.a, UIFont.Medium)
@@ -497,11 +559,16 @@ function EHR_StitchMinigameUI:render()
     self:drawRect(self.boardX, self.boardY, self.boardW, self.boardH, C.panel.a, C.panel.r, C.panel.g, C.panel.b)
     self:drawRectBorder(self.boardX, self.boardY, self.boardW, self.boardH, 0.72, C.redDim.r, C.redDim.g, C.redDim.b)
 
-    if self.orientation == "horizontal" then
+    local woundPath = self.orientation == "horizontal"
+        and "media/textures/EHR_Stitch_WoundHorizontal.png"
+        or "media/textures/EHR_Stitch_WoundVertical.png"
+    local hasWoundTexture = self:drawTextureSafe(woundPath, self.boardX + 2, self.boardY + 2, self.boardW - 4, self.boardH - 4, 0.98)
+
+    if not hasWoundTexture and self.orientation == "horizontal" then
         local cy = self.boardY + math.floor(self.boardH / 2)
         self:drawRect(self.boardX + 34, cy - 4, self.boardW - 68, 8, 0.70, C.red.r, C.red.g, C.red.b)
         self:drawRect(self.boardX + 52, cy - 18, self.boardW - 104, 36, 0.18, 0.95, 0.05, 0.05)
-    else
+    elseif not hasWoundTexture then
         local cx = self.boardX + math.floor(self.boardW / 2)
         self:drawRect(cx - 4, self.boardY + 22, 8, self.boardH - 44, 0.70, C.red.r, C.red.g, C.red.b)
         self:drawRect(cx - 18, self.boardY + 34, 36, self.boardH - 68, 0.18, 0.95, 0.05, 0.05)
@@ -511,23 +578,39 @@ function EHR_StitchMinigameUI:render()
         if self.points[i].hit and self.points[i + 1].hit then
             local a = self.points[i]
             local b = self.points[i + 1]
-            self:drawLine2(a.hitX or a.x, a.hitY or a.y, b.hitX or b.x, b.hitY or b.y, 0.95, C.text.r, C.text.g, C.text.b)
+            self:drawThreadLine(a.hitX or a.x, a.hitY or a.y, b.hitX or b.x, b.hitY or b.y, C.woundDark, 0.52, 5)
+            self:drawThreadLine(a.hitX or a.x, a.hitY or a.y, b.hitX or b.x, b.hitY or b.y, C.thread, 0.95, 3)
         end
+    end
+
+    if self.currentIndex > 1 and self.currentIndex <= #self.points then
+        local prev = self.points[self.currentIndex - 1]
+        local current = self.points[self.currentIndex]
+        local cx, cy = self:getPointPosition(current, self.currentIndex)
+        self:drawThreadLine(prev.hitX or prev.x, prev.hitY or prev.y, cx, cy, C.threadLive, 0.50, 1)
     end
 
     for i, point in ipairs(self.points) do
         local color = C.dim
         local size = self.pointSize or 10
+        local path = "media/textures/EHR_Stitch_PointIdle.png"
         if point.hit then
             color = C.green
             size = self.hitPointSize or 9
+            path = "media/textures/EHR_Stitch_PointDone.png"
+            self:drawStitchMark(point, C.thread, 0.86)
         elseif i == self.currentIndex then
             color = self.flash < 0 and C.bad or C.gold
             size = self.activePointSize or 18
+            path = "media/textures/EHR_Stitch_PointActive.png"
             self:drawRectBorder(point.x - size, point.y - size, size * 2, size * 2, 0.35, color.r, color.g, color.b)
         end
-        self:drawRect(point.x - math.floor(size / 2), point.y - math.floor(size / 2), size, size, color.a, color.r, color.g, color.b)
-        self:drawRectBorder(point.x - math.floor(size / 2), point.y - math.floor(size / 2), size, size, 0.85, C.text.r, C.text.g, C.text.b)
+        local textureSize = size + (i == self.currentIndex and 16 or 10)
+        local usedTexture = self:drawTextureSafe(path, point.x - math.floor(textureSize / 2), point.y - math.floor(textureSize / 2), textureSize, textureSize, 1.0)
+        if not usedTexture then
+            self:drawRect(point.x - math.floor(size / 2), point.y - math.floor(size / 2), size, size, color.a, color.r, color.g, color.b)
+            self:drawRectBorder(point.x - math.floor(size / 2), point.y - math.floor(size / 2), size, size, 0.85, C.text.r, C.text.g, C.text.b)
+        end
     end
 
     self:drawText(L("Steady", "Steady hand reduces pain and infection risk."), 24, self.height - 34, C.dim.r, C.dim.g, C.dim.b, C.dim.a, UIFont.Small)

@@ -125,6 +125,7 @@ local CatalogOrder = {
     "hyperkeratotic_scabies",
     "concussion",
     "delirium",
+    "insomnia",
     "ahtr",
     "knox_infection",
 }
@@ -273,6 +274,15 @@ local CodexInfo = {
         symptoms = "Hallucinated sounds, irrational speech, visual distortion, and unsafe impulsive behavior.",
         prevention = "Reduce stress before it reaches a prolonged maximum state.",
         treatment = "Antipsychotics. Requires an 8-dose course over 4 days.",
+    },
+    insomnia = {
+        category = "mental",
+        incubation = "Triggered after 12 hours at very high fatigue, or rarely after stimulant crashes.",
+        duration = "Stage 3 is persistent until treated.",
+        cause = "Prolonged extreme fatigue, caffeine crash, combat stimulant crash, or nitric oxide booster crash.",
+        symptoms = "Poor rest, inability to sleep naturally in later stages, stress, fatigue, and headache.",
+        prevention = "Sleep before exhaustion becomes prolonged and avoid stacking strong stimulants.",
+        treatment = "Sleeping pills allow sleep while active. Dual orexin receptor medication cures over 96 hours; antidepressants cure over 168 hours.",
     },
     ahtr = {
         category = "blood",

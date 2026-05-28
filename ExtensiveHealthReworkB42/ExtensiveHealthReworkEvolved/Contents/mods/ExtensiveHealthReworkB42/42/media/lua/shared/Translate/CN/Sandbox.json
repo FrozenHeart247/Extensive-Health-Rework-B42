@@ -6,7 +6,7 @@
     "Sandbox_EHR_Temperature": "EHR：体温",
     "Sandbox_EHR_Comp": "EHR：兼容性",
     "Sandbox_EHR_Other": "EHR：其他",
-    "Sandbox_EHR_Debug": "EHR：调试",
+    "Sandbox_EHR_Debug": "EHRï¼šè°ƒè¯•",
     "Sandbox_EHR_BloodLossMultiplier": "失血乘数",
     "Sandbox_EHR_BloodLossMultiplier_tooltip": "血液从伤口流走的速度有多快。 1.0 = 正常，2.0 = 两倍快。",
     "Sandbox_EHR_BloodThresholdHealthy": "健康血液阈值 (%)",
@@ -126,7 +126,7 @@
     "Sandbox_EHR_MedicationPackageFill": "药品包装填充",
     "Sandbox_EHR_MedicationPackageFill_tooltip": "控制生成的多剂量药物包装内剩余的剂量。",
     "Sandbox_EHR_MedicationPackageFill_option1": "稀缺",
-    "Sandbox_EHR_MedicationPackageFill_option2": "低",
+    "Sandbox_EHR_MedicationPackageFill_option2": "ä½Ž",
     "Sandbox_EHR_MedicationPackageFill_option3": "正常",
     "Sandbox_EHR_MedicationPackageFill_option4": "慷慨",
     "Sandbox_EHR_AllowFullPharmacyPackages": "允许完整的药房套餐",
@@ -139,5 +139,7 @@
     "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "控制安装 Realistic Temperature 时 EHR 的行为。<LINE>自动会检测该模组。启用会强制兼容模式。禁用则让 EHR 正常管理原版体温。",
     "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "自动",
     "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "启用",
-    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "禁用"
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "禁用",
+    "Sandbox_EHR_StitchMinigameEnabled": "Enable Stitch Minigame",
+    "Sandbox_EHR_StitchMinigameEnabled_tooltip": "When enabled, stitching deep wounds opens a short EHR suturing minigame before the vanilla stitch action. Disable for vanilla stitching."
 }

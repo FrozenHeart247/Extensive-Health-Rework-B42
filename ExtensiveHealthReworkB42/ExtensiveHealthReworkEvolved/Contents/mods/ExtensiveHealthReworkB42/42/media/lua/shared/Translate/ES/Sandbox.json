@@ -139,5 +139,7 @@
     "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "Controla como se comporta EHR cuando Realistic Temperature esta instalado. <LINE> Auto detecta el mod. Activado fuerza el modo compatible. Desactivado permite que EHR gestione la temperatura vanilla normalmente.",
     "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "Auto",
     "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "Activado",
-    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Desactivado"
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Desactivado",
+    "Sandbox_EHR_StitchMinigameEnabled": "Enable Stitch Minigame",
+    "Sandbox_EHR_StitchMinigameEnabled_tooltip": "When enabled, stitching deep wounds opens a short EHR suturing minigame before the vanilla stitch action. Disable for vanilla stitching."
 }

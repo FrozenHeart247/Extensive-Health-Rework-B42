@@ -139,5 +139,7 @@
     "Sandbox_EHR_RealisticTemperatureCompatibility_tooltip": "Керує поведінкою EHR, коли встановлено Realistic Temperature. <LINE> Авто визначає мод. Увімкнено примусово вмикає режим сумісності. Вимкнено дозволяє EHR звичайно керувати ванільною температурою.",
     "Sandbox_EHR_RealisticTemperatureCompatibility_option1": "Авто",
     "Sandbox_EHR_RealisticTemperatureCompatibility_option2": "Увімкнено",
-    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Вимкнено"
+    "Sandbox_EHR_RealisticTemperatureCompatibility_option3": "Вимкнено",
+    "Sandbox_EHR_StitchMinigameEnabled": "Enable Stitch Minigame",
+    "Sandbox_EHR_StitchMinigameEnabled_tooltip": "When enabled, stitching deep wounds opens a short EHR suturing minigame before the vanilla stitch action. Disable for vanilla stitching."
 }

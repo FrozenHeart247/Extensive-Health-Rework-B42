@@ -1888,4 +1888,17 @@ UI_EN = {
 
     UI_EHR_PrimaryHealthPanel = "Use EHR as primary health panel",
     UI_EHR_PrimaryHealthPanel_tt = "When enabled, the EHR hotkey opens EHR and the heart button opens vanilla health. Disable to swap them.",
+    UI_EHR_StitchMinigame_Title = "Suture Wound",
+    UI_EHR_StitchMinigame_Target = "Target",
+    UI_EHR_StitchMinigame_Hint = "Click each glowing stitch point in order.",
+    UI_EHR_StitchMinigame_Quality = "Quality",
+    UI_EHR_StitchMinigame_Misses = "Misses",
+    UI_EHR_StitchMinigame_Cancel = "Cancel",
+    UI_EHR_StitchMinigame_Excellent = "Excellent",
+    UI_EHR_StitchMinigame_Stable = "Stable",
+    UI_EHR_StitchMinigame_Rough = "Rough",
+    UI_EHR_StitchMinigame_Poor = "Poor",
+    UI_EHR_StitchMinigame_Steady = "Steady hand reduces pain and infection risk.",
+    UI_EHR_StitchMinigame_FailLine = "I cannot keep the needle steady.",
+    UI_EHR_StitchMinigame_UnknownPart = "Unknown body part",
 }

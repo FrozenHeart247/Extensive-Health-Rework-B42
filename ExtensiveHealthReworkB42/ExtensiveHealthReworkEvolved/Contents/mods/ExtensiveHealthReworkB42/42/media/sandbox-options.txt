@@ -505,6 +505,14 @@ option ExtensiveHealthRework.FirstAidXPMultiplier
     translation = EHR_FirstAidXPMultiplier,
 }
 
+option ExtensiveHealthRework.StitchMinigameEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_StitchMinigameEnabled,
+}
+
 option ExtensiveHealthRework.TheLastPrescriptionEnabled
 {
     type = boolean,

@@ -140,4 +140,6 @@ Sandbox_JP = {
     Sandbox_EHR_RealisticTemperatureCompatibility_option1 = "自動",
     Sandbox_EHR_RealisticTemperatureCompatibility_option2 = "有効",
     Sandbox_EHR_RealisticTemperatureCompatibility_option3 = "無効",
+    Sandbox_EHR_StitchMinigameEnabled = "Enable Stitch Minigame",
+    Sandbox_EHR_StitchMinigameEnabled_tooltip = "When enabled, stitching deep wounds opens a short EHR suturing minigame before the vanilla stitch action. Disable for vanilla stitching.",
 }

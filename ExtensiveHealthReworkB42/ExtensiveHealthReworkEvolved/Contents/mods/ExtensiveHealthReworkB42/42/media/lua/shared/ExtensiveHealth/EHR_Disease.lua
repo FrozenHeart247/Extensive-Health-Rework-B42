@@ -1239,6 +1239,13 @@ function EHR.Disease.UpdateProgression(player, data)
                 disease.incubationEnd = disease.startTime or currentHour
                 disease.peakTime = currentHour
                 disease.endTime = math.max(tonumber(disease.endTime) or 0, currentHour + 999999)
+            elseif def.manualProgression then
+                disease.stageCount = tonumber(def.stageCount) or tonumber(disease.stageCount) or 3
+                disease.incubationEnd = disease.startTime or currentHour
+                disease.peakTime = disease.peakTime or currentHour
+                if def.noNaturalRecovery then
+                    disease.endTime = math.max(tonumber(disease.endTime) or 0, currentHour + 999999)
+                end
             elseif def.reverseProgression then
                 local oldStage = disease.stage
                 local stageCount = tonumber(def.stageCount) or tonumber(disease.stageCount) or 3
@@ -1412,6 +1419,12 @@ function EHR.Disease.OnRecovery(player, diseaseId)
             EHR.Concussion.ClearAfterCure(player)
         elseif EHR.Concussion.ClearHeadPain then
             EHR.Concussion.ClearHeadPain(player)
+        end
+    elseif diseaseId == "insomnia" then
+        local modData = player and player:getModData() or nil
+        if modData then modData.EHR_Insomnia = nil end
+        if EHR.Insomnia and EHR.Insomnia.ClearAfterCure then
+            EHR.Insomnia.ClearAfterCure(player)
         end
     elseif diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
         EHR.HyperkeratoticScabies.ClearAfterCure(player)
@@ -3501,6 +3514,75 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             EHR_DiseaseSay(player, lines)
         end)
 
+    elseif diseaseId == "insomnia" then
+        local sleepAidActive = EHR.Medication
+            and EHR.Medication.HasActiveSleepAid
+            and EHR.Medication.HasActiveSleepAid(player)
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "insomnia", disease)
+
+        local fatigueTarget = 0.82
+        local stressTarget = 0.22
+        local unhappinessTarget = 0.10
+        local painTarget = 0.06
+        local headPainTarget = 8
+        local dialogueChance = 0.0009
+        local dialogueCooldown = 2.0
+
+        if stage == 2 then
+            fatigueTarget = 0.90
+            stressTarget = 0.34
+            unhappinessTarget = 0.18
+            painTarget = 0.12
+            headPainTarget = 18
+            dialogueChance = 0.0025
+            dialogueCooldown = 1.1
+        elseif stage >= 3 then
+            fatigueTarget = 0.96
+            stressTarget = 0.48
+            unhappinessTarget = 0.28
+            painTarget = 0.18
+            headPainTarget = 28
+            dialogueChance = 0.0038
+            dialogueCooldown = 0.75
+        end
+
+        if sleepAidActive then
+            symptomMult = math.min(symptomMult, 0.25)
+            fatigueTarget = math.min(fatigueTarget, 0.74)
+            stressTarget = math.min(stressTarget, 0.10)
+            unhappinessTarget = math.min(unhappinessTarget, 0.08)
+            painTarget = math.min(painTarget, 0.06)
+            headPainTarget = math.min(headPainTarget, 8)
+        end
+
+        if CharacterStat then
+            if not sleepAidActive then
+                EHR_DiseaseRaiseStatToward(stats, CharacterStat.FATIGUE, fatigueTarget, 0.00075 * severity * math.max(0.25, symptomMult))
+            end
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * math.max(0.35, symptomMult), 0.00055 * severity)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * math.max(0.35, symptomMult), 0.00035 * severity)
+            EHR_DiseaseMovePainToward(stats, painTarget * math.max(0.35, symptomMult), 0.0012 * severity, sleepAidActive and 0.020 or 0.006)
+        end
+
+        EHR_DiseaseMoveTargetedPainToward(
+            player,
+            headPainTarget * math.max(0.35, symptomMult),
+            0.55 * severity,
+            sleepAidActive and 4.0 or 1.25,
+            EHR_DiseaseIsHeadPart
+        )
+
+        trySymptom("insomnia_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+            local lines = sleepAidActive
+                and {"The medicine is finally quieting my head...", "Maybe I can sleep now...", "The edge is softening..."}
+                or stage >= 3
+                    and {"I need sleep. I can't make myself sleep.", "My head won't shut up...", "I'm exhausted and still wide awake...", "Every sound is too sharp."}
+                    or stage == 2
+                        and {"I'm so tired, but I can't sleep...", "My eyes burn. My brain won't stop.", "Just let me sleep..."}
+                        or {"I slept, but it didn't feel like sleep...", "I keep waking up...", "Rest isn't sticking."}
+            EHR_DiseaseSay(player, lines)
+        end)
+
     elseif diseaseId == "tuberculosis" then
         local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
         local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
@@ -4636,6 +4718,14 @@ function EHR.Disease.Cure(player, diseaseId)
             end
         end
 
+        if diseaseId == "insomnia" then
+            local modData = player and player:getModData() or nil
+            if modData then modData.EHR_Insomnia = nil end
+            if EHR.Insomnia and EHR.Insomnia.ClearAfterCure then
+                EHR.Insomnia.ClearAfterCure(player)
+            end
+        end
+
         if diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
             EHR.HyperkeratoticScabies.ClearAfterCure(player)
         end
@@ -5727,6 +5817,13 @@ if not (EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.UpdatePlayer) th
     local okScabies, scabiesErr = pcall(require, "ExtensiveHealth/EHR_HyperkeratoticScabies")
     if not okScabies then
         EHR.Log("Disease module: failed to load scabies detector: " .. tostring(scabiesErr))
+    end
+end
+
+if not (EHR.Insomnia and EHR.Insomnia.UpdateTracking) then
+    local okInsomnia, insomniaErr = pcall(require, "ExtensiveHealth/EHR_Insomnia")
+    if not okInsomnia then
+        EHR.Log("Disease module: failed to load insomnia detector: " .. tostring(insomniaErr))
     end
 end
 

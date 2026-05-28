@@ -64,7 +64,7 @@ Tooltip_CN = {
     Tooltip_ImmunoboosterShot = "暴露前诺克斯病毒预防。 <LINE> <RGB:0,1,0> 赋予 24 小时免疫力 <LINE> <LINE> 必须在被咬之前服用！ <LINE> 如果已经感染，则没有帮助。 <LINE> <LINE> 使用之间有 7 天的冷却时间。 <LINE> <LINE> <RGB:1,0.5,0> 副作用（活动时）： <LINE> 轻度恶心、耐力恢复减少、<LINE> 偶尔震颤",
     Tooltip_Antibiotics = "碱性抗生素。 <LINE> 提供轻微感染支持。 <LINE> 不能替代完整的 EHR 治疗课程。",
     Tooltip_Painkillers = "基本止痛药。 <LINE> 使用普通行为减轻疼痛。 <LINE> EHR 跟踪剩余剂量和有效持续时间。",
-    Tooltip_PillsAntidepressant = "抗抑郁药。 <LINE> 使用普通行为帮助减少恐慌和抑郁。 <LINE> EHR 跟踪剩余剂量和有效持续时间。",
+    Tooltip_PillsAntidepressant = "抗抑郁药。 <LINE> 使用普通行为帮助减少恐慌和抑郁。 <LINE> 在失眠发作期间允许睡眠。 <LINE> 失眠长疗程治疗：168小时。",
     Tooltip_PillsBetablocker = "β受体阻滞剂。 <LINE> 使用普通行为帮助控制恐慌。 <LINE> EHR 跟踪剩余剂量和有效持续时间。",
     Tooltip_EHR_Label_ZeroHours = "0小时",
     Tooltip_EHR_Label_Minutes = "%1 分钟",
@@ -536,4 +536,5 @@ Tooltip_CN = {
     Tooltip_EHR_ImmunoboosterShot_SideEffect_1 = "轻度恶心",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_2 = "耐力恢复减少",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_3 = "偶尔颤抖",
+    Tooltip_DualOrexinReceptor = "处方睡眠药物。 <LINE> 在失眠发作期间允许睡眠。 <LINE> 通过8剂疗程治愈失眠。 <LINE> 治疗时间：96小时。",
 }

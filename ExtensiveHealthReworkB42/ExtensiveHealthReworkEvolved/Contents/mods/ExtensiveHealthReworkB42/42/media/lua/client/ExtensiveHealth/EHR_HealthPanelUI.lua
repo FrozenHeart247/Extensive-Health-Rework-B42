@@ -75,6 +75,7 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     heat_stroke = "media/textures/EHR_Disease_HeatStroke.png",
     hyperkeratotic_scabies = "media/textures/EHR_Disease_hyperkeratoticScabies.png",
     hypothermia = "media/textures/EHR_Disease_Hypotermia.png",
+    insomnia = "media/textures/EHR_Disease_Insomina.png",
     knox_infection = "media/textures/EHR_Disease_KnoxInfection.png",
     pneumonia = "media/textures/EHR_Disease_Pneumonia.png",
     sepsis = "media/textures/EHR_Disease_Sepsis.png",
@@ -1657,6 +1658,20 @@ end
 
 function EHR_HealthPanelUI:getDiseaseProgress(disease)
     if type(disease) ~= "table" then return 0 end
+
+    if disease.progressMode == "stage" then
+        local stageProgress = tonumber(disease.stageProgress)
+        if stageProgress then
+            if stageProgress <= 1 then return clamp(stageProgress * 100, 0, 100) end
+            return clamp(stageProgress, 0, 100)
+        end
+
+        local progress = tonumber(disease.progress)
+        if progress then
+            if progress <= 1 then return clamp(progress * 100, 0, 100) end
+            return clamp(progress, 0, 100)
+        end
+    end
 
     local progress = tonumber(disease.progress)
     if disease.temperatureDriven and progress then

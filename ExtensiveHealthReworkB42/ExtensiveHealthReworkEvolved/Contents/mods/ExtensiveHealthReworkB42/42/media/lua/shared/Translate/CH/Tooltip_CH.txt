@@ -64,7 +64,7 @@ Tooltip_CH = {
     Tooltip_ImmunoboosterShot = "Pre-exposure Knox Virus prophylaxis. <LINE> <RGB:0,1,0> 給予 24 小時免疫力 <LINE> <LINE> 必須在被咬之前服用！ <LINE> Does NOT help if already infected. <LINE> <LINE> 使用之間有 7 天的冷卻時間。 <LINE> <LINE> <RGB:1,0.5,0> 副作用（活動時）： <LINE> 輕度噁心、耐力恢復減少、<LINE> 偶爾震顫",
     Tooltip_Antibiotics = "鹼性抗生素。 <LINE> Provides minor infection support. <LINE> 不能取代完整的 EHR 治療課程。",
     Tooltip_Painkillers = "基本止痛藥。 <LINE> Reduces pain using vanilla behavior. <LINE> EHR 追蹤剩餘劑量和有效持續時間。",
-    Tooltip_PillsAntidepressant = "抗憂鬱藥。 <LINE> 使用普通行為幫助減少恐慌和憂鬱。 <LINE> EHR 追蹤剩餘劑量和有效持續時間。",
+    Tooltip_PillsAntidepressant = "抗憂鬱藥。 <LINE> 使用普通行為幫助減少恐慌和憂鬱。 <LINE> 在失眠發作期間允許睡眠。 <LINE> 失眠長療程治療：168小時。",
     Tooltip_PillsBetablocker = "β受體阻斷劑。 <LINE> 使用普通行為幫助控制恐慌。 <LINE> EHR 追蹤剩餘劑量和有效持續時間。",
     Tooltip_EHR_Label_ZeroHours = "0小時",
     Tooltip_EHR_Label_Minutes = "%1 分鐘",
@@ -536,4 +536,5 @@ Tooltip_CH = {
     Tooltip_EHR_ImmunoboosterShot_SideEffect_1 = "輕度噁心",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_2 = "耐力恢復減少",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_3 = "偶爾顫抖",
+    Tooltip_DualOrexinReceptor = "處方睡眠藥物。 <LINE> 在失眠發作期間允許睡眠。 <LINE> 透過8劑療程治癒失眠。 <LINE> 治療時間：96小時。",
 }

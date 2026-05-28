@@ -44,6 +44,7 @@ EHR.DiseaseFlyers.Config = {
         common_cold = true,
         concussion = true,
         delirium = true,
+        insomnia = true,
         flu = true,
         pneumonia = true,
         food_poisoning = true,
@@ -71,6 +72,7 @@ EHR.DiseaseFlyers.Config = {
         heat_stroke = true,
         concussion = true,
         delirium = true,
+        insomnia = true,
     },
 }
 
@@ -87,6 +89,7 @@ local diseaseAliases = {
     Concussion = "concussion",
     Delirium = "delirium",
     Madness = "delirium",
+    Insomnia = "insomnia",
     Flu = "flu",
     Influenza = "flu",
     Pneumonia = "pneumonia",
@@ -129,6 +132,7 @@ local compactDiseaseAliases = {
     concussion = "concussion",
     delirium = "delirium",
     madness = "delirium",
+    insomnia = "insomnia",
     flu = "flu",
     influenza = "flu",
     pneumonia = "pneumonia",

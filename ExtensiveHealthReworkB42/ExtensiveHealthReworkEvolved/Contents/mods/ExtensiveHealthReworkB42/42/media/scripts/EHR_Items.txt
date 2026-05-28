@@ -621,6 +621,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item DualOrexinReceptor
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Dual Orexin Receptor,
+        Icon = DualOrexinReceptor,
+        Weight = 0.1,
+        Tooltip = Tooltip_DualOrexinReceptor,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item TetanusAntitoxin
     {
         DisplayCategory = FirstAid,

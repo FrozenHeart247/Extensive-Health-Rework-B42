@@ -1878,4 +1878,14 @@ UI_JP = {
 
     UI_EHR_PrimaryHealthPanel = "Use EHR as primary health panel",
     UI_EHR_PrimaryHealthPanel_tt = "When enabled, the EHR hotkey opens EHR and the heart button opens vanilla health. Disable to swap them.",
+    UI_EHR_Codex_insomnia_Prevention = "疲労が長引く前に眠り、強力な刺激薬の重ね使用を避けてください。",
+    UI_EHR_Codex_insomnia_Cause = "長時間の極度の疲労、カフェインのクラッシュ、戦闘刺激薬のクラッシュ、一酸化窒素ブースターのクラッシュ。",
+    UI_EHR_Insomnia_NoSleep = "疲れ切っているのに、薬なしでは眠れない。",
+    UI_EHR_Disease_insomnia = "不眠症",
+    UI_EHR_Disease_Insomnia = "不眠症",
+    UI_EHR_Codex_insomnia_Symptoms = "休息不足、後期での自然睡眠不能、ストレス、疲労、頭痛。",
+    UI_EHR_Codex_insomnia_Duration = "ステージ3は治療されるまで持続します。",
+    UI_EHR_Codex_insomnia_Name = "不眠症",
+    UI_EHR_Codex_insomnia_Treatment = "睡眠薬は効果中に睡眠を可能にします。デュアルオレキシン受容体薬は96時間で治療し、抗うつ薬は168時間で治療します。",
+    UI_EHR_Codex_insomnia_Incubation = "非常に高い疲労が12時間続くと発症し、まれに刺激薬のクラッシュでも発症します。",
 }

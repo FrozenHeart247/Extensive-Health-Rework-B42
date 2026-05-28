@@ -84,4 +84,5 @@ ItemName_CH = {
     ExtensiveHealth.TetanusAntitoxin = "破傷風抗毒素",
     ExtensiveHealth.TetanusImmunoglobulin = "破傷風免疫球蛋白",
     ExtensiveHealth.TopicalPermethrin = "外用氯菊酯",
+    ExtensiveHealth.DualOrexinReceptor = "雙重食慾素受體藥",
 }

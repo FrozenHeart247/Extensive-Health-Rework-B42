@@ -1878,4 +1878,14 @@ UI_UA = {
 
     UI_EHR_PrimaryHealthPanel = "Use EHR as primary health panel",
     UI_EHR_PrimaryHealthPanel_tt = "When enabled, the EHR hotkey opens EHR and the heart button opens vanilla health. Disable to swap them.",
+    UI_EHR_Codex_insomnia_Prevention = "Спіть до того, як виснаження стане тривалим, і не поєднуйте сильні стимулятори.",
+    UI_EHR_Codex_insomnia_Cause = "Тривала крайня втома, відкат кофеїну, бойових стимуляторів або бустера оксиду азоту.",
+    UI_EHR_Insomnia_NoSleep = "Я виснажений, але не можу заснути без ліків.",
+    UI_EHR_Disease_insomnia = "Безсоння",
+    UI_EHR_Disease_Insomnia = "Безсоння",
+    UI_EHR_Codex_insomnia_Symptoms = "Поганий відпочинок, неможливість природно заснути на пізніх стадіях, стрес, втома та головний біль.",
+    UI_EHR_Codex_insomnia_Duration = "3 стадія триває, доки її не вилікувати.",
+    UI_EHR_Codex_insomnia_Name = "Безсоння",
+    UI_EHR_Codex_insomnia_Treatment = "Снодійні дозволяють спати, доки діють. Подвійний антагоніст орексину лікує за 96 годин; антидепресанти лікують за 168 годин.",
+    UI_EHR_Codex_insomnia_Incubation = "Спрацьовує після 12 годин дуже високої втоми або рідко після відкату стимуляторів.",
 }

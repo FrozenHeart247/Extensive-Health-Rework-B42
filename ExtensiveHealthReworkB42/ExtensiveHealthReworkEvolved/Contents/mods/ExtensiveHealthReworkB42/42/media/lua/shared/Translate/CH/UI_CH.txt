@@ -1878,4 +1878,14 @@ UI_CH = {
 
     UI_EHR_PrimaryHealthPanel = "Use EHR as primary health panel",
     UI_EHR_PrimaryHealthPanel_tt = "When enabled, the EHR hotkey opens EHR and the heart button opens vanilla health. Disable to swap them.",
+    UI_EHR_Codex_insomnia_Prevention = "在疲勞持續惡化前睡覺，並避免疊加强力興奮劑。",
+    UI_EHR_Codex_insomnia_Cause = "長期極度疲勞、咖啡因崩潰、戰鬥興奮劑崩潰或一氧化氮增強劑崩潰。",
+    UI_EHR_Insomnia_NoSleep = "我已經筋疲力盡，但沒有藥物就睡不著。",
+    UI_EHR_Disease_insomnia = "失眠",
+    UI_EHR_Disease_Insomnia = "失眠",
+    UI_EHR_Codex_insomnia_Symptoms = "休息品質差，後期無法自然入睡，壓力、疲勞和頭痛。",
+    UI_EHR_Codex_insomnia_Duration = "第3階段會持續到接受治療。",
+    UI_EHR_Codex_insomnia_Name = "失眠",
+    UI_EHR_Codex_insomnia_Treatment = "安眠藥在生效期間允許睡眠。雙重食慾素受體藥可在96小時內治癒；抗憂鬱藥可在168小時內治癒。",
+    UI_EHR_Codex_insomnia_Incubation = "在極高疲勞持續12小時後觸發，或少數情況下由興奮劑崩潰觸發。",
 }

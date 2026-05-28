@@ -64,7 +64,7 @@
     "Tooltip_ImmunoboosterShot": "ノックスウイルス暴露前の予防。 <LINE> <RGB:0,1,0> 24 時間の免疫を付与 <LINE> <LINE> 噛まれる前に服用する必要があります。 <LINE> すでに感染している場合は役に立ちません。 <LINE> <LINE> 使用間のクールダウンは 7 日間。 <LINE> <LINE> <RGB:1,0.5,0> 副作用 (活動中): <LINE> 軽度の吐き気、スタミナ回復の減少、<LINE> 時折の震え",
     "Tooltip_Antibiotics": "基本的な抗生物質。 <LINE> 軽微な感染のサポートを提供します。 <LINE> EHR 治療コース全体を置き換えるものではありません。",
     "Tooltip_Painkillers": "基本的な鎮痛剤。 <LINE> バニラの動作を使用して痛みを軽減します。 <LINE> EHR は、残りの投与量とアクティブ期間を追跡します。",
-    "Tooltip_PillsAntidepressant": "抗うつ薬。 <LINE> バニラの動作を使用してパニックとうつ病を軽減します。 <LINE> EHR は、残りの投与量とアクティブ期間を追跡します。",
+    "Tooltip_PillsAntidepressant": "抗うつ薬。 <LINE> バニラの動作を使用してパニックとうつ病を軽減します。 <LINE> 不眠症の発症中でも睡眠を可能にします。 <LINE> 不眠症の長期治療: 168時間。",
     "Tooltip_PillsBetablocker": "ベータブロッカー。 <LINE> バニラの動作を使用してパニックを制御するのに役立ちます。 <LINE> EHR は、残りの投与量とアクティブ期間を追跡します。",
     "Tooltip_EHR_Label_ZeroHours": "0時間",
     "Tooltip_EHR_Label_Minutes": "%1 分",
@@ -535,5 +535,6 @@
     "Tooltip_EHR_ImmunoboosterShot_Requirement_1": "注射器",
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_1": "軽い吐き気",
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_2": "スタミナ回復の減少",
-    "Tooltip_EHR_ImmunoboosterShot_SideEffect_3": "時折揺れる"
+    "Tooltip_EHR_ImmunoboosterShot_SideEffect_3": "時折揺れる",
+    "Tooltip_DualOrexinReceptor": "処方睡眠薬。 <LINE> 不眠症の発症中でも睡眠を可能にします。 <LINE> 8回分のコースで不眠症を治療します。 <LINE> 治療時間: 96時間。"
 }

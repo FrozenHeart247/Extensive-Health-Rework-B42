@@ -154,14 +154,42 @@ EHR.Medication.Database = {
     -- Base.PillsSleepingTablets (vanilla sleeping pills)
     ["Base.PillsSleepingTablets"] = {
         tier = 0,
-        treats = {},
+        treats = {"insomnia"},
         displayName = "Sleeping Pills",
         icon = "PillsSleeping",
         useVanillaActionOnly = true,
         skipDrugInteractions = true,
         appliesWithoutDisease = true,
         effectDurationHours = 8,
+        canCure = false,
+        sleepAid = {
+            durationHours = 8,
+        },
         usageMessage = "You take sleeping pills. Drowsiness settles in.",
+    },
+
+    -- Base.PillsAntiDep (vanilla antidepressants)
+    ["Base.PillsAntiDep"] = {
+        tier = 2,
+        treats = {"insomnia"},
+        displayName = "Antidepressants",
+        icon = "PillsAntidepressant",
+        useVanillaActionOnly = true,
+        skipDrugInteractions = true,
+        appliesWithoutDisease = true,
+        effectDurationHours = 12,
+        cureTimeHours = 168,
+        treatmentTimeText = "168 hours (14-dose course)",
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The antidepressant dose is still active.",
+        sleepAid = {
+            durationHours = 12,
+        },
+        symptomReduction = {
+            stress = 0.35,
+            fatigue = 0.20,
+        },
+        usageMessage = "You take antidepressants. The edge softens a little.",
     },
 
     -- Base.PillsBeta
@@ -539,6 +567,27 @@ EHR.Medication.Database = {
         usageMessage = "You take antipsychotics. The noise should start losing its grip.",
         cureTimeHours = 96,
         treatmentTimeText = "96 hours (8-dose course)",
+    },
+
+    ["ExtensiveHealth.DualOrexinReceptor"] = {
+        tier = 2,
+        treats = {"insomnia"},
+        displayName = "Dual Orexin Receptor",
+        icon = "DualOrexinReceptor",
+        usageMessage = "You take the dual orexin receptor medication. Sleep feels reachable again.",
+        appliesWithoutDisease = true,
+        effectDurationHours = 12,
+        cureTimeHours = 96,
+        treatmentTimeText = "96 hours (8-dose course)",
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The current orexin dose is still active.",
+        sleepAid = {
+            durationHours = 12,
+        },
+        symptomReduction = {
+            fatigue = 0.35,
+            stress = 0.30,
+        },
     },
 
     ["ExtensiveHealth.TetanusAntitoxin"] = {
@@ -1809,6 +1858,7 @@ EHR.Medication.DosingSchedules = {
     ["Base.Pills"] = { doseInterval = 4, dosesRequired = 3 },
     ["Base.PillsVitamins"] = { doseInterval = 12, dosesRequired = 1 },
     ["Base.PillsSleepingTablets"] = { doseInterval = 8, dosesRequired = 1 },
+    ["Base.PillsAntiDep"] = { doseInterval = 12, dosesRequired = 14 },
     ["Base.PillsBeta"] = { doseInterval = 8, dosesRequired = 3 },
 
     -- Tier 1 - OTC (every 4-6 hours)
@@ -1838,6 +1888,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.InstantIcePack"] = { doseInterval = 1, dosesRequired = 4 },  -- Emergency cooling course
     ["ExtensiveHealth.Furosemide"] = { doseInterval = 8, dosesRequired = 6 },  -- Transfusion reaction support course
     ["ExtensiveHealth.Antipsychotics"] = { doseInterval = 12, dosesRequired = 8 },  -- 4-day mental health course
+    ["ExtensiveHealth.DualOrexinReceptor"] = { doseInterval = 12, dosesRequired = 8 },  -- 4-day insomnia course
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
@@ -2247,6 +2298,7 @@ EHR.Medication.DrugCategories = {
     ["Antibiotics"] = "antibiotic",
     ["Painkillers"] = "painkiller",
     ["Caffeine Pills"] = "stimulant",
+    ["Antidepressants"] = "antidepressant",
     ["Beta Blockers"] = "beta blocker",
 
     -- Tier 1 - OTC
@@ -2273,6 +2325,7 @@ EHR.Medication.DrugCategories = {
     ["Topical Permethrin"] = "antiparasitic",
     ["Oral Rehydration Kit"] = "rehydration",
     ["Antipsychotics"] = "antipsychotic",
+    ["Dual Orexin Receptor"] = "sleep aid",
     ["Tetanus Antitoxin"] = "antitoxin",
     ["TB Antibiotics (Isoniazid)"] = "tb antibiotics",
     ["Antibiotic Ointment"] = "antibiotic",
@@ -2528,6 +2581,10 @@ function EHR.Medication.CanUseMedication(player, item)
         return false, medData.activeDoseMessage or "The current dose is still active"
     end
 
+    if medData.sleepAid and EHR_MedicationHasActiveGeneralEffect(player, "sleepAid") then
+        return false, medData.activeDoseMessage or "A sleep-aid dose is still active"
+    end
+
     if medData.blockWhileDoseActive and EHR.Medication.GetDoseStatus then
         local ok, status = pcall(EHR.Medication.GetDoseStatus, player, itemFullType)
         local doseDue = ok and status and not status.treatmentComplete
@@ -2661,6 +2718,10 @@ function EHR.Medication.UseMedication(player, item)
         EHR.Medication.StartHydrationSupport(player, medData)
     end
 
+    if medData.sleepAid and EHR.Medication.StartSleepAid then
+        EHR.Medication.StartSleepAid(player, medData)
+    end
+
     -- If no disease was treated, still track the dose for drug interaction purposes
     if not treatedAny then
         if medData.appliesWithoutDisease and EHR.Medication.ApplyGeneralSymptomRelief then
@@ -2778,6 +2839,9 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
     if medData.combatStimulants and EHR.Medication.StartCombatStimulants then
         EHR.Medication.StartCombatStimulants(player, medData)
+    end
+    if medData.sleepAid and EHR.Medication.StartSleepAid then
+        EHR.Medication.StartSleepAid(player, medData)
     end
 
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
@@ -3176,6 +3240,40 @@ function EHR.Medication.IsCaffeineAwake(player)
     return currentHour < (tonumber(effect.endTime) or 0)
 end
 
+function EHR.Medication.StartSleepAid(player, medData)
+    local support = medData and medData.sleepAid
+    if not player or not support then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local duration = support.durationHours or medData.effectDurationHours or 8
+
+    medTracking.activeGeneralEffects.sleepAid = {
+        startTime = currentHour,
+        endTime = currentHour + math.max(0.05, duration),
+        medicationName = medData.displayName or "Sleep Aid",
+    }
+
+    return true
+end
+
+function EHR.Medication.HasActiveSleepAid(player)
+    if not player then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    local effect = medTracking and medTracking.activeGeneralEffects and medTracking.activeGeneralEffects.sleepAid
+    if type(effect) ~= "table" then return false end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    return currentHour < (tonumber(effect.endTime) or 0)
+end
+
 local function EHRMedicationClearCombatStress(player)
     if not player or not CharacterStat then return end
 
@@ -3401,8 +3499,28 @@ function EHR.Medication.StartCombatStimulants(player, medData)
     return true
 end
 
+local function EHRMedicationRollInsomniaCrash(player, source)
+    if not player then return false end
+    if not (EHR.Insomnia and EHR.Insomnia.RollStimulantCrash) then
+        pcall(function() require "ExtensiveHealth/EHR_Insomnia" end)
+    end
+    if EHR.Insomnia and EHR.Insomnia.RollStimulantCrash then
+        local ok, result = pcall(EHR.Insomnia.RollStimulantCrash, player, source)
+        return ok and result == true
+    end
+    return false
+end
+
 function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
     if not player or not medTracking or not medTracking.activeGeneralEffects then return end
+
+    local sleepAid = medTracking.activeGeneralEffects.sleepAid
+    if type(sleepAid) == "table" then
+        local endTime = tonumber(sleepAid.endTime) or currentHour
+        if currentHour >= endTime then
+            medTracking.activeGeneralEffects.sleepAid = nil
+        end
+    end
 
     local effect = medTracking.activeGeneralEffects.bronchodilator
     if type(effect) == "table" then
@@ -3461,6 +3579,7 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
             if delayedSideEffect and EHR.Medication.ApplySideEffect then
                 EHR.Medication.ApplySideEffect(player, delayedSideEffect)
             end
+            EHRMedicationRollInsomniaCrash(player, "nitric_oxide_crash")
         else
             local targetEndurance = math.max(0, math.min(1, tonumber(stamina.targetEndurance) or 1.0))
             EHR_MedicationSetStat(player, CharacterStat and CharacterStat.ENDURANCE, targetEndurance)
@@ -3482,6 +3601,7 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
             if delayedSideEffect and EHR.Medication.ApplySideEffect then
                 EHR.Medication.ApplySideEffect(player, delayedSideEffect)
             end
+            EHRMedicationRollInsomniaCrash(player, "combat_stimulant_crash")
         else
             local lastUpdateHour = tonumber(combatStim.lastUpdateHour) or currentHour
             local deltaHours = math.max(0, math.min(0.25, currentHour - lastUpdateHour))
@@ -3524,6 +3644,7 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
             if crashSideEffect and EHR.Medication.ApplySideEffect then
                 EHR.Medication.ApplySideEffect(player, crashSideEffect)
             end
+            EHRMedicationRollInsomniaCrash(player, "caffeine_crash")
         else
             if modData then
                 modData.EHR_CaffeineAwake = true
@@ -4041,6 +4162,9 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
     EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medData, doseTiming, currentHour)
     if medData.respiratorySupport and EHR.Medication.StartRespiratorySupport then
         EHR.Medication.StartRespiratorySupport(player, medData)
+    end
+    if medData.sleepAid and EHR.Medication.StartSleepAid then
+        EHR.Medication.StartSleepAid(player, medData)
     end
 
     -- Track dose for this medication

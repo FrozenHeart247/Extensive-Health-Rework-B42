@@ -1878,4 +1878,14 @@ UI_ES = {
 
     UI_EHR_PrimaryHealthPanel = "Usar EHR como panel de salud principal",
     UI_EHR_PrimaryHealthPanel_tt = "Si esta activado, la tecla EHR abre EHR y el boton de corazon abre la salud vanilla. Desactivalo para invertirlos.",
+    UI_EHR_Codex_insomnia_Prevention = "Duerme antes de que el agotamiento se prolongue y evita acumular estimulantes fuertes.",
+    UI_EHR_Codex_insomnia_Cause = "Fatiga extrema prolongada, bajón de cafeína, bajón de estimulantes de combate o bajón de potenciadores de óxido nítrico.",
+    UI_EHR_Insomnia_NoSleep = "Estoy agotado, pero no puedo dormir sin medicación.",
+    UI_EHR_Disease_insomnia = "Insomnio",
+    UI_EHR_Disease_Insomnia = "Insomnio",
+    UI_EHR_Codex_insomnia_Symptoms = "Descanso deficiente, incapacidad para dormir de forma natural en etapas avanzadas, estrés, fatiga y dolor de cabeza.",
+    UI_EHR_Codex_insomnia_Duration = "La etapa 3 persiste hasta recibir tratamiento.",
+    UI_EHR_Codex_insomnia_Name = "Insomnio",
+    UI_EHR_Codex_insomnia_Treatment = "Las pastillas para dormir permiten dormir mientras están activas. El antagonista dual de orexina cura en 96 horas; los antidepresivos curan en 168 horas.",
+    UI_EHR_Codex_insomnia_Incubation = "Se activa tras 12 horas con fatiga muy alta, o rara vez tras bajones de estimulantes.",
 }

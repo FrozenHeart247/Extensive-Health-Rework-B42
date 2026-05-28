@@ -1878,5 +1878,15 @@
     "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong..."
 ,
     "UI_EHR_PrimaryHealthPanel": "Utiliser EHR comme panneau de sante principal",
-    "UI_EHR_PrimaryHealthPanel_tt": "Active, le raccourci EHR ouvre EHR et le bouton coeur ouvre la sante vanilla. Desactivez pour les inverser."
+    "UI_EHR_PrimaryHealthPanel_tt": "Active, le raccourci EHR ouvre EHR et le bouton coeur ouvre la sante vanilla. Desactivez pour les inverser.",
+    "UI_EHR_Codex_insomnia_Prevention": "Dormez avant que l'épuisement ne dure trop longtemps et évitez d'empiler les stimulants puissants.",
+    "UI_EHR_Codex_insomnia_Cause": "Fatigue extrême prolongée, contrecoup de caféine, de stimulants de combat ou de booster d'oxyde nitrique.",
+    "UI_EHR_Insomnia_NoSleep": "Je suis épuisé, mais je ne peux pas dormir sans médicament.",
+    "UI_EHR_Disease_insomnia": "Insomnie",
+    "UI_EHR_Disease_Insomnia": "Insomnie",
+    "UI_EHR_Codex_insomnia_Symptoms": "Repos inefficace, impossibilité de dormir naturellement aux stades avancés, stress, fatigue et mal de tête.",
+    "UI_EHR_Codex_insomnia_Duration": "Le stade 3 persiste jusqu'au traitement.",
+    "UI_EHR_Codex_insomnia_Name": "Insomnie",
+    "UI_EHR_Codex_insomnia_Treatment": "Les somnifères permettent de dormir pendant leur effet. L'antagoniste double de l'orexine guérit en 96 heures; les antidépresseurs en 168 heures.",
+    "UI_EHR_Codex_insomnia_Incubation": "Se déclenche après 12 heures de fatigue très élevée, ou rarement après un contrecoup de stimulants."
 }

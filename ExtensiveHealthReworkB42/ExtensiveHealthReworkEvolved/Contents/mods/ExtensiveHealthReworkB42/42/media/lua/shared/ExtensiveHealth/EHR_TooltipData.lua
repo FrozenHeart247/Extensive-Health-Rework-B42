@@ -220,6 +220,19 @@ EHR.Tooltips.Data = {
             "Multi-dose bottle",
         },
     },
+    ["Base.PillsAntiDep"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Antidepressant tablets.",
+        relieves = {"Stress", "Insomnia sleep lock"},
+        cures = {"Insomnia"},
+        treatmentTime = "168 hours (14-dose course)",
+        effects = {
+            "Allows sleep while the dose is active",
+            "Long-course insomnia treatment",
+            "Multi-dose bottle",
+        },
+    },
     ["ExtensiveHealth.ColdFluTablets"] = {
         category = "OTC Medication",
         tier = 1,
@@ -497,6 +510,18 @@ EHR.Tooltips.Data = {
         cures = {"Delirium"},
         treatmentTime = "96 hours (8-dose course)",
         effects = {"CURES stress-induced delirium"},
+    },
+    ["ExtensiveHealth.DualOrexinReceptor"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Dual orexin receptor sleep medication.",
+        relieves = {"Insomnia sleep lock", "Stress"},
+        cures = {"Insomnia"},
+        treatmentTime = "96 hours (8-dose course)",
+        effects = {
+            "Allows sleep while the dose is active",
+            "CURES insomnia over a full course",
+        },
     },
 
     -- =========================================

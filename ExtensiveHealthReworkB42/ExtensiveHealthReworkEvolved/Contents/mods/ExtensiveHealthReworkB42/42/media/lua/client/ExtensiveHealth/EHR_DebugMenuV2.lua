@@ -964,6 +964,7 @@ EHR.DebugV2.DiseaseList = {
     "tetanus",
     "concussion",
     "delirium",
+    "insomnia",
     "tuberculosis",
 }
 

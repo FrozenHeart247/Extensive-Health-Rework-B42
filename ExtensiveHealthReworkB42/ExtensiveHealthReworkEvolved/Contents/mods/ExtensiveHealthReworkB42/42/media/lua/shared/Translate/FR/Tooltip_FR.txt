@@ -64,7 +64,7 @@ Tooltip_FR = {
     Tooltip_ImmunoboosterShot = "Prophylaxie pre-exposition contre le virus Knox. <LINE> <RGB:0,1,0> 24h d'immunite <LINE> <LINE> A prendre AVANT une morsure! <LINE> Ne fonctionne pas si deja infecte. <LINE> <LINE> Reutilisation: 7 jours. <LINE> <LINE> <RGB:1,0.5,0> EFFETS (actif): <LINE> Nausee legere, regen endurance reduite, <LINE> Tremblements occasionnels",
     Tooltip_Antibiotics = "Antibiotiques de base. <LINE> Soutien mineur contre les infections. <LINE> Ne remplace pas les traitements complets EHR.",
     Tooltip_Painkillers = "Antidouleurs de base. <LINE> Reduit la douleur avec le comportement vanilla. <LINE> EHR suit les doses restantes et la duree active.",
-    Tooltip_PillsAntidepressant = "Antidepresseurs. <LINE> Aident a reduire panique et depression avec le comportement vanilla. <LINE> EHR suit les doses restantes et la duree active.",
+    Tooltip_PillsAntidepressant = "Antidépresseurs. <LINE> Aident à réduire panique et dépression avec le comportement vanilla. <LINE> Permettent de dormir pendant une insomnie active. <LINE> Traitement long de l'insomnie: 168 heures.",
     Tooltip_PillsBetablocker = "Beta-bloquants. <LINE> Aident a controler la panique avec le comportement vanilla. <LINE> EHR suit les doses restantes et la duree active.",
     Tooltip_EHR_Label_ZeroHours = "0 heures",
     Tooltip_EHR_Label_Minutes = "%1 min.",
@@ -536,4 +536,5 @@ Tooltip_FR = {
     Tooltip_EHR_ImmunoboosterShot_SideEffect_1 = "Légères nausées",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_2 = "Régénération d'endurance réduite",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_3 = "Tremblements occasionnels",
+    Tooltip_DualOrexinReceptor = "Médicament du sommeil sur ordonnance. <LINE> Permet de dormir pendant une insomnie active. <LINE> SOIGNE l'insomnie avec un traitement de 8 doses. <LINE> Durée du traitement: 96 heures.",
 }

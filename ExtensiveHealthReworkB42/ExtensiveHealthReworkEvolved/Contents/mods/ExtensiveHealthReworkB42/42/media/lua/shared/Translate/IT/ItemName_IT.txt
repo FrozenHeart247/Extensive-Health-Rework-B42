@@ -84,4 +84,5 @@ ItemName_IT = {
     ExtensiveHealth.TetanusAntitoxin = "Antitossina del tetano",
     ExtensiveHealth.TetanusImmunoglobulin = "Immunoglobulina antitetanica",
     ExtensiveHealth.TopicalPermethrin = "Permetrina topica",
+    ExtensiveHealth.DualOrexinReceptor = "Antagonista duale dell'orexina",
 }

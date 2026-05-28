@@ -1878,4 +1878,14 @@ UI_IT = {
 
     UI_EHR_PrimaryHealthPanel = "Usa EHR come pannello salute principale",
     UI_EHR_PrimaryHealthPanel_tt = "Se attivo, il tasto EHR apre EHR e il pulsante cuore apre la salute vanilla. Disattiva per invertirli.",
+    UI_EHR_Codex_insomnia_Prevention = "Dormi prima che l'esaurimento duri troppo a lungo ed evita di accumulare stimolanti forti.",
+    UI_EHR_Codex_insomnia_Cause = "Fatica estrema prolungata, crollo da caffeina, da stimolanti da combattimento o da booster di ossido nitrico.",
+    UI_EHR_Insomnia_NoSleep = "Sono esausto, ma non riesco a dormire senza farmaci.",
+    UI_EHR_Disease_insomnia = "Insonnia",
+    UI_EHR_Disease_Insomnia = "Insonnia",
+    UI_EHR_Codex_insomnia_Symptoms = "Riposo scarso, incapacità di dormire naturalmente negli stadi avanzati, stress, fatica e mal di testa.",
+    UI_EHR_Codex_insomnia_Duration = "Lo stadio 3 persiste finché non viene curato.",
+    UI_EHR_Codex_insomnia_Name = "Insonnia",
+    UI_EHR_Codex_insomnia_Treatment = "I sonniferi permettono di dormire mentre sono attivi. L'antagonista duale dell'orexina cura in 96 ore; gli antidepressivi in 168 ore.",
+    UI_EHR_Codex_insomnia_Incubation = "Si attiva dopo 12 ore con fatica molto alta, o raramente dopo il crollo degli stimolanti.",
 }

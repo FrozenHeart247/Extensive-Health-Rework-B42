@@ -84,4 +84,5 @@ ItemName_PTBR = {
     ExtensiveHealth.TetanusAntitoxin = "Antitoxina Tétano",
     ExtensiveHealth.TetanusImmunoglobulin = "Imunoglobulina Tétano",
     ExtensiveHealth.TopicalPermethrin = "Permetrina Tópica",
+    ExtensiveHealth.DualOrexinReceptor = "Antagonista dual de orexina",
 }

@@ -1407,6 +1407,71 @@ EHR.Disease.Diseases["delirium"] = {
 }
 
 -- ============================================
+-- INSOMNIA (Exhaustion-triggered sleep disorder)
+-- ============================================
+--[[
+    Trigger: 12 hours at high fatigue, or a small crash chance from strong stimulants.
+    Progression: Three manual stages. Stage 3 does not naturally recover.
+    Treatment: Sleep aids allow sleep while active; DORA and antidepressants can cure
+               through a long course.
+]]--
+EHR.Disease.Diseases["insomnia"] = {
+    name = "Insomnia",
+    category = "mental",
+
+    incubationMin = 0,
+    incubationMax = 0,
+    durationMin = 72,
+    durationMax = 72,
+
+    stageCount = 3,
+    manualProgression = true,
+    noNaturalRecovery = true,
+    applyEffectsInStage1 = true,
+
+    baseSeverity = 0.65,
+    canKill = false,
+
+    symptoms = {"sleeplessness", "fatigue", "stress", "headache"},
+
+    treatments = {
+        tier0 = {"Base.PillsSleepingTablets"},
+        tier1 = {},
+        tier2 = {"ExtensiveHealth.DualOrexinReceptor", "Base.PillsAntiDep"},
+        tier3 = {},
+    },
+
+    stageEntryDialogue = {
+        [1] = "I slept, but it did nothing...",
+        [2] = "I'm exhausted, but I can't fall asleep...",
+        [3] = "I can't sleep. Something is wrong.",
+    },
+
+    dialogueChanceBase = {
+        [1] = 24,
+        [2] = 12,
+        [3] = 8,
+        default = 16,
+    },
+
+    dialogue = {
+        [1] = {
+            "I keep waking up...",
+            "Rest isn't working.",
+        },
+        [2] = {
+            "I'm tired enough to collapse, but I can't sleep.",
+            "My eyes hurt. My head won't stop.",
+        },
+        [3] = {
+            "I need sleep. I can't get it.",
+            "Everything feels too loud.",
+            "I can't keep going like this.",
+        },
+    },
+}
+
+-- ============================================
 -- KNOX VIRUS INFECTION (Zombie Infection)
 -- ============================================
 --[[
@@ -1522,4 +1587,5 @@ EHR.Log("  - gastroenteritis: Dirty hands + eating -> vomiting, dehydration")
 EHR.Log("  - tetanus: Rusty wounds -> LETHAL lockjaw, spasms")
 EHR.Log("  - tuberculosis: Long-term corpse exposure -> LETHAL chronic illness")
 EHR.Log("  - concussion: Falls/crashes -> head trauma, nausea, dizziness")
+EHR.Log("  - insomnia: Prolonged exhaustion/stimulant crash -> sleep lock until treated")
 EHR.Log("  - Knox_Infection: Zombie bite -> LETHAL without Knox cure items")

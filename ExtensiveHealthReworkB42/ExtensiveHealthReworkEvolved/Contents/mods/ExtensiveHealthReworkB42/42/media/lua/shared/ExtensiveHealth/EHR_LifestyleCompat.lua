@@ -360,25 +360,11 @@ function EHR.LifestyleCompat.GetBathroomNeed(player)
 end
 
 local function EHR_LifestyleCompatSyncBladderMoodle(data)
-    if not data or type(data.LSMoodles) ~= "table" then return end
-
-    local bladder = data.LSMoodles.BladderNeed
-    if type(bladder) ~= "table" then return end
-
-    local need = math.max(0, math.min(100, tonumber(data.bathroomNeed) or 0))
-    local value = 0
-
-    if need >= 90 then
-        value = 0.8
-    elseif need >= 80 then
-        value = 0.6
-    elseif need >= 60 then
-        value = 0.4
-    elseif need >= 30 then
-        value = 0.2
-    end
-
-    bladder.Value = value
+    -- Let Lifestyle own its own moodle state. EHR may add pressure to the
+    -- underlying bathroomNeed during dysentery/diuretic effects, but forcing
+    -- LSMoodles here can fight Lifestyle's own update loop and cause visible
+    -- bladder moodle rollbacks.
+    return
 end
 
 local function EHR_LifestyleCompatGetDysenteryMultiplier(player, disease)

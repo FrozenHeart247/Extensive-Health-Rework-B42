@@ -525,6 +525,42 @@ local function handleInitDataRequest(player, data)
     end
 end
 
+function EHR.SyncEHRModDataToClient(player)
+    if not player or not sendServerCommand then return false end
+
+    local data = player:getModData()
+    if not data then return false end
+
+    sendServerCommand(player, "EHR_Sync", "UpdateModData", {
+        EHR_Sepsis = data.EHR_Sepsis,
+        EHR_Disease = data.EHR_Disease,
+        EHR_Blood = data.EHR_Blood,
+        EHR_WoundInfection = data.EHR_WoundInfection,
+        EHR_WoundInfections = data.EHR_WoundInfections,
+        EHR_Medication = data.EHR_Medication,
+        EHR_MedicalJournal = data.EHR_MedicalJournal,
+        EHR_Temperature = data.EHR_Temperature,
+        EHR_KnownDiseases = data.EHR_KnownDiseases,
+        EHR_CorpseSickness = data.EHR_CorpseSickness,
+        EHR_KnoxCure = data.EHR_KnoxCure,
+    })
+
+    return true
+end
+
+function EHR.SafeTransmitModData(player)
+    if not player then return false end
+
+    if isServer and isServer() then
+        return EHR.SyncEHRModDataToClient(player)
+    end
+
+    -- In SP/client contexts the local player modData is already available.
+    -- Avoid full transmitModData here: other mods store live client-side state
+    -- in the same table, and broad syncs can roll that state backwards.
+    return true
+end
+
 local function processPlayerTick(player)
     if not player then return end
     if not player:isAlive() then return end
@@ -554,11 +590,13 @@ local function processPlayerTick(player)
         end
     end
 
-    if isServer and isServer() and player.transmitModData then
+    if isServer and isServer() then
         state.sync = state.sync + 1
         if state.sync >= SYNC_TICK_INTERVAL then
             state.sync = 0
-            pcall(function() player:transmitModData() end)
+            if not EHR.SyncEHRModDataToClient(player) then
+                EHR.Log("EHR MP sync skipped: sendServerCommand unavailable")
+            end
         end
     end
 end

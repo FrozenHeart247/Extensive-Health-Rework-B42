@@ -1427,8 +1427,8 @@ function EHR.WoundInfection.OnTick()
             if runEffects or runScan then
                 EHR.WoundInfection.ApplyEffects(player)
             end
-            if runScan and isServer and isServer() and player.transmitModData then
-                pcall(function() player:transmitModData() end)
+            if runScan and EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
             end
         end
     end

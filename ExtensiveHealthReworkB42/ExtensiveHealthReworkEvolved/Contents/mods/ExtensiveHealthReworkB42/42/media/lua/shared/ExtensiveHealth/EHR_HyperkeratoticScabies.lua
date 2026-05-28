@@ -264,8 +264,8 @@ function EHR.HyperkeratoticScabies.Start(player, source)
         EHR.Locale.Say(player, "Something bit me...")
     end
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     return true

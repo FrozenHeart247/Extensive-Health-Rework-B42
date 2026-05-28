@@ -304,7 +304,8 @@ local function syncModDataToClient(player)
 
     local data = player:getModData()
 
-    -- Method 1: Send EHR data directly to client via server command
+    -- Send only EHR-owned data. Full transmitModData can overwrite other mods'
+    -- client-side player fields, such as Lifestyle bathroom/hygiene state.
     if sendServerCommand then
         local ehrData = {
             EHR_Sepsis = data.EHR_Sepsis,
@@ -321,12 +322,6 @@ local function syncModDataToClient(player)
         }
         sendServerCommand(player, "EHR_Sync", "UpdateModData", ehrData)
         log("[EHR Server] Sent EHR data to client via sendServerCommand")
-    end
-
-    -- Method 2: transmitModData (backup)
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
-        log("[EHR Server] ModData transmitted to client")
     end
 end
 
@@ -966,10 +961,6 @@ function EHR.ServerCommands.UnlockDiseaseKnowledge(player, args)
     data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
     data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
     data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
-
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
-    end
 
     syncModDataToClient(player)
     if sendServerCommand then

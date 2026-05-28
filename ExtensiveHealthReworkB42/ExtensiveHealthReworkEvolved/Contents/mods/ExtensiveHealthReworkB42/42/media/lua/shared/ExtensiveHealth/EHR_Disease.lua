@@ -4043,8 +4043,8 @@ function EHR.Disease.ClearVanillaPoison(player)
         pcall(function() stats:set(CharacterStat.POISON, 0) end)
     end
 
-    if player and player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 end
 
@@ -4089,8 +4089,8 @@ function EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poison
         graceUntil = now + 24,
     }
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     if EHR.DEBUG then
@@ -4991,8 +4991,8 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
 
         if isClient() then
             sendClientCommand(player, "EHR", "RequestSync", {})
-        elseif player.transmitModData then
-            pcall(function() player:transmitModData() end)
+        elseif EHR and EHR.SafeTransmitModData then
+            EHR.SafeTransmitModData(player)
         end
 
         EHR.Log("Set " .. tostring(diseaseId) .. " to stage " .. tostring(stage))
@@ -5353,8 +5353,8 @@ function EHR.Disease.ResetFoodSicknessAfterCure(player, curedDiseaseId)
     local playerID = player:getUsername() or "default"
     cachedSicknessTargets[playerID] = { target = targetB42, lastSetTime = getGameTime():getWorldAgeHours() }
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     EHR.Log("Food sickness reset after cure")
@@ -5721,8 +5721,8 @@ local function processPlayerTick(player)
         state.sync = state.sync + 1
         if state.sync >= SYNC_TICK_INTERVAL then
             state.sync = 0
-            if player.transmitModData then
-                pcall(function() player:transmitModData() end)
+            if EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
             end
         end
     end

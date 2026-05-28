@@ -321,8 +321,8 @@ function EHR.KnoxCure.ClearStaleExternalInfection(player)
     end
 
     if changed then
-        if player.transmitModData then
-            pcall(function() player:transmitModData() end)
+        if EHR and EHR.SafeTransmitModData then
+            EHR.SafeTransmitModData(player)
         end
         if EHR.Log then
             EHR.Log("KnoxCure: cleared stale Knox state after external cure")
@@ -450,8 +450,8 @@ function EHR.KnoxCure.GrantImmunityTrait(player, data)
         return false
     end
     if data then data.immunityTraitGranted = true end
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
     EHR.Log("KnoxCure: Granted Patient Zero trait")
     return true

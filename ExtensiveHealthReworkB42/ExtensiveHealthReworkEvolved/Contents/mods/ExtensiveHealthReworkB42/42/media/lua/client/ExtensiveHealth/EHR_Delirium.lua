@@ -241,8 +241,8 @@ function EHR.Delirium.Contract(player, currentHour)
         state.triggeredAt = currentHour
     end
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     EHR.Log("Delirium triggered by prolonged maximum stress")

@@ -424,8 +424,8 @@ function EHR.Concussion.Start(player, source, force)
         EHR.Locale.Say(player, "My head... something is wrong.")
     end
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     print("[EHR] Concussion triggered by " .. tostring(source or "trauma"))

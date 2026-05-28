@@ -292,8 +292,8 @@ function EHR.CorpseSickness.ResetAfterCure(player)
     EHR.CorpseSickness.ClampVanillaSickness(player, 0)
     EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     EHR.Log("Corpse sickness exposure reset after cure")
@@ -1815,8 +1815,8 @@ function EHR.CorpseSickness.OnTick()
             if state.tick >= EHR.CorpseSickness.Config.UPDATE_TICKS then
                 state.tick = 0
                 EHR.CorpseSickness.UpdateExposure(player)
-                if player.transmitModData then
-                    pcall(function() player:transmitModData() end)
+                if EHR and EHR.SafeTransmitModData then
+                    EHR.SafeTransmitModData(player)
                 end
             end
         end

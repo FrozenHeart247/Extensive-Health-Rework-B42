@@ -90,8 +90,8 @@ local DEBUG_WOUND_VANILLA_LEVELS = {
 }
 
 local function debugTransmitPlayerModData(player)
-    if player and player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 end
 

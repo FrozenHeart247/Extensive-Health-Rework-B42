@@ -282,8 +282,8 @@ function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
     modData.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
     modData.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     local name = EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)

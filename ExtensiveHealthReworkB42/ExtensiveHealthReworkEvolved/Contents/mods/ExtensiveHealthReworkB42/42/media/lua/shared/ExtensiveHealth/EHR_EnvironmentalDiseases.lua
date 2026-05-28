@@ -698,6 +698,41 @@ end
 -- COLD EXPOSURE LOGIC
 -- ============================================
 
+local function EHR_EnvironmentalIsControlledBathing(player)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if modData then
+        if modData.EHR_HeatStrokeColdBathActive == true then
+            local untilHour = tonumber(modData.EHR_HeatStrokeColdBathUntil) or 0
+            local worldHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+            if untilHour <= 0 or worldHour <= untilHour then
+                return true
+            end
+        end
+
+        if modData.IsDoingShower == true or
+           modData.isDoingShower == true or
+           modData.IsBathing == true or
+           modData.isBathing == true or
+           modData.LSBathing == true or
+           modData.LSShowering == true or
+           modData.takingBath == true or
+           modData.TakingBath == true then
+            return true
+        end
+    end
+
+    if EHR.LifestyleCompat and EHR.LifestyleCompat.IsShowering then
+        local ok, isShowering = pcall(EHR.LifestyleCompat.IsShowering, player)
+        if ok and isShowering == true then
+            return true
+        end
+    end
+
+    return false
+end
+
 --[[
     Update cold exposure tracking
     Called periodically from main tick handler
@@ -732,6 +767,21 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     if EHR.DEBUG then
         EHR.Log(string.format("Cold check: indoors=%s, bodyTemp=%.2f, airTemp=%.1f, isWarm=%s",
             tostring(isIndoors), bodyTemp, airTemp, tostring(isWarm)))
+    end
+
+    -- Lifestyle baths/showers intentionally make the character wet. Treat that as
+    -- controlled bathing wetness so it does not become a common-cold trigger.
+    if EHR_EnvironmentalIsControlledBathing(player) then
+        exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours * 3)
+        exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours * 3)
+        exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours)
+        exposure.indoorDuration = exposure.indoorDuration + deltaHours
+
+        if EHR.DEBUG then
+            EHR.Log(string.format("Cold exposure skipped during controlled bath/shower (wet=%.2f)", wetness))
+        end
+
+        return
     end
 
     -- Check cold conditions

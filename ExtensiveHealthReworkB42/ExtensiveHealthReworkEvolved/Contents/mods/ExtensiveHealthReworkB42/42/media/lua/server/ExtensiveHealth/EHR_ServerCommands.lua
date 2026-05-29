@@ -49,6 +49,80 @@ local function serverText(key, fallback)
     return fallback or key
 end
 
+local function callBodyPartMethod(bodyPart, methodName, fallback)
+    if not bodyPart or not methodName then return fallback end
+    local method = bodyPart[methodName]
+    if not method then return fallback end
+    local ok, result = pcall(function()
+        return method(bodyPart)
+    end)
+    if ok then return result end
+    return fallback
+end
+
+local function getBodyPartName(bodyPart)
+    local partType = callBodyPartMethod(bodyPart, "getType", nil)
+    if partType ~= nil then
+        return tostring(partType)
+    end
+    return nil
+end
+
+local function buildBodyStatusSnapshot(player)
+    local snapshot = {
+        parts = {},
+        timestamp = getTimestampMs and getTimestampMs() or 0,
+    }
+    if not player or not player.getBodyDamage then return snapshot end
+
+    local okDamage, bodyDamage = pcall(function()
+        return player:getBodyDamage()
+    end)
+    if not okDamage or not bodyDamage or not bodyDamage.getBodyParts then
+        return snapshot
+    end
+
+    local okParts, bodyParts = pcall(function()
+        return bodyDamage:getBodyParts()
+    end)
+    if not okParts or not bodyParts or not bodyParts.size then
+        return snapshot
+    end
+
+    for i = 0, bodyParts:size() - 1 do
+        local bodyPart = bodyParts:get(i)
+        local partName = getBodyPartName(bodyPart)
+        if partName then
+            snapshot.parts[partName] = {
+                health = tonumber(callBodyPartMethod(bodyPart, "getHealth", 100)) or 100,
+                bandaged = callBodyPartMethod(bodyPart, "bandaged", false) == true,
+                bandageLife = tonumber(callBodyPartMethod(bodyPart, "getBandageLife", 1)) or 1,
+                infected = callBodyPartMethod(bodyPart, "isInfectedWound", false) == true,
+                infectionLevel = tonumber(callBodyPartMethod(bodyPart, "getWoundInfectionLevel", 0)) or 0,
+                additionalPain = tonumber(callBodyPartMethod(bodyPart, "getAdditionalPain", 0)) or 0,
+                stiffness = tonumber(callBodyPartMethod(bodyPart, "getStiffness", 0)) or 0,
+                hasInjury = callBodyPartMethod(bodyPart, "HasInjury", false) == true,
+                bleeding = callBodyPartMethod(bodyPart, "bleeding", false) == true,
+                fractureTime = tonumber(callBodyPartMethod(bodyPart, "getFractureTime", 0)) or 0,
+                haveBullet = callBodyPartMethod(bodyPart, "haveBullet", false) == true,
+                haveGlass = callBodyPartMethod(bodyPart, "haveGlass", false) == true,
+                burnTime = tonumber(callBodyPartMethod(bodyPart, "getBurnTime", 0)) or 0,
+                needBurnWash = callBodyPartMethod(bodyPart, "isNeedBurnWash", false) == true,
+                deepWounded = callBodyPartMethod(bodyPart, "deepWounded", false) == true,
+                bitten = callBodyPartMethod(bodyPart, "bitten", false) == true,
+                cut = callBodyPartMethod(bodyPart, "isCut", false) == true,
+                scratched = callBodyPartMethod(bodyPart, "scratched", false) == true,
+                stitched = callBodyPartMethod(bodyPart, "stitched", false) == true,
+                splintFactor = tonumber(callBodyPartMethod(bodyPart, "getSplintFactor", 0)) or 0,
+                plantainFactor = tonumber(callBodyPartMethod(bodyPart, "getPlantainFactor", 0)) or 0,
+                comfreyFactor = tonumber(callBodyPartMethod(bodyPart, "getComfreyFactor", 0)) or 0,
+            }
+        end
+    end
+
+    return snapshot
+end
+
 log("=========================================")
 log("[EHR] EHR_ServerCommands.lua LOADING ON SERVER")
 log("[EHR] isServer() = " .. tostring(isServer()))
@@ -320,25 +394,79 @@ local function generateBloodType()
     return "O+"  -- Fallback
 end
 
+local function isValidBloodType(bloodType)
+    return bloodType == "O-" or bloodType == "O+" or
+           bloodType == "A-" or bloodType == "A+" or
+           bloodType == "B-" or bloodType == "B+" or
+           bloodType == "AB-" or bloodType == "AB+"
+end
+
+local function getBloodTypeStorageKey(player, fallbackUsername)
+    local username = tostring(fallbackUsername or "unknown")
+
+    if player and player.getUsername then
+        pcall(function()
+            username = tostring(player:getUsername() or username)
+        end)
+    end
+
+    local forename = "unknown"
+    local surname = "unknown"
+    local profession = "unknown"
+
+    if player and player.getDescriptor then
+        pcall(function()
+            local descriptor = player:getDescriptor()
+            if descriptor then
+                forename = tostring(descriptor:getForename() or forename)
+                surname = tostring(descriptor:getSurname() or surname)
+                if descriptor.getCharacterProfession then
+                    local prof = descriptor:getCharacterProfession()
+                    if prof then
+                        if prof.getName then
+                            profession = tostring(prof:getName() or profession)
+                        elseif prof.getType then
+                            profession = tostring(prof:getType() or profession)
+                        else
+                            profession = tostring(prof)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    return username .. "|" .. forename .. "|" .. surname .. "|" .. profession
+end
+
+local function storeBloodType(player, playerUsername, bloodType)
+    if not isValidBloodType(bloodType) then return end
+
+    local globalBloodTypes = ModData.getOrCreate("EHR_BloodTypes_Server")
+    local storageKey = getBloodTypeStorageKey(player, playerUsername)
+    globalBloodTypes[storageKey] = bloodType
+end
+
 -- ============================================
 -- HELPER: Get or create blood type from GlobalModData (server-side persistent storage)
 -- This ensures blood type survives server restarts
 -- ============================================
-local function getOrCreateBloodType(playerUsername)
+local function getOrCreateBloodType(player, playerUsername)
     -- GlobalModData persists across server restarts - use it as the authoritative source
     local globalBloodTypes = ModData.getOrCreate("EHR_BloodTypes_Server")
+    local storageKey = getBloodTypeStorageKey(player, playerUsername)
 
-    log("[EHR Server] getOrCreateBloodType for: " .. tostring(playerUsername))
-    log("[EHR Server] GlobalModData existing blood type: " .. tostring(globalBloodTypes[playerUsername]))
+    log("[EHR Server] getOrCreateBloodType for: " .. tostring(storageKey))
+    log("[EHR Server] GlobalModData existing blood type: " .. tostring(globalBloodTypes[storageKey]))
 
-    if globalBloodTypes[playerUsername] and globalBloodTypes[playerUsername] ~= "PENDING" then
-        log("[EHR Server] Returning EXISTING blood type from GlobalModData: " .. globalBloodTypes[playerUsername])
-        return globalBloodTypes[playerUsername]
+    if isValidBloodType(globalBloodTypes[storageKey]) then
+        log("[EHR Server] Returning EXISTING blood type from GlobalModData: " .. globalBloodTypes[storageKey])
+        return globalBloodTypes[storageKey]
     end
 
     -- Generate new blood type and store in GlobalModData
     local newBloodType = generateBloodType()
-    globalBloodTypes[playerUsername] = newBloodType
+    globalBloodTypes[storageKey] = newBloodType
     log("[EHR Server] Generated NEW blood type and stored in GlobalModData: " .. newBloodType)
 
     return newBloodType
@@ -347,22 +475,31 @@ end
 -- ============================================
 -- HELPER: Initialize blood data structure with proper blood type
 -- ============================================
-local function initializeBloodData(data, playerUsername)
+local function initializeBloodData(data, playerUsername, player)
+    if data.EHR_DeadCharacter == true then
+        data.EHR_Blood = {}
+    end
+
     data.EHR_Blood = data.EHR_Blood or {}
     data.EHR_Blood.maxVolume = data.EHR_Blood.maxVolume or 5000
     data.EHR_Blood.currentVolume = data.EHR_Blood.currentVolume or 5000
 
-    -- CRITICAL: Always get blood type from GlobalModData (authoritative source)
-    -- This ensures persistence across reconnects AND server restarts
-    if playerUsername then
-        local bloodType = getOrCreateBloodType(playerUsername)
+    local existingBloodType = data.EHR_Blood.bloodType
+    if isValidBloodType(existingBloodType) and data.EHR_DeadCharacter ~= true then
+        data.EHR_Blood.bloodType = existingBloodType
+        storeBloodType(player, playerUsername, existingBloodType)
+        log("[EHR Server] initializeBloodData: Kept existing character blood type " .. existingBloodType .. " for " .. tostring(playerUsername))
+    elseif playerUsername then
+        local bloodType = getOrCreateBloodType(player, playerUsername)
         data.EHR_Blood.bloodType = bloodType
         log("[EHR Server] initializeBloodData: Set blood type to " .. bloodType .. " for " .. playerUsername)
-    elseif not data.EHR_Blood.bloodType or data.EHR_Blood.bloodType == "PENDING" then
+    else
         -- Fallback if no username provided (shouldn't happen)
         data.EHR_Blood.bloodType = generateBloodType()
         log("[EHR Server] initializeBloodData: Generated fallback blood type: " .. data.EHR_Blood.bloodType)
     end
+
+    data.EHR_DeadCharacter = nil
 
     data.EHR_Blood.transfusedSaline = data.EHR_Blood.transfusedSaline or 0
     data.EHR_Blood.transfusedBlood = data.EHR_Blood.transfusedBlood or 0
@@ -619,7 +756,7 @@ local function ensureServerBloodData(player)
 
     local username = nil
     pcall(function() username = player:getUsername() end)
-    initializeBloodData(data, username)
+    initializeBloodData(data, username, player)
     return data
 end
 
@@ -1501,7 +1638,7 @@ function EHR.ServerCommands.SetBloodPercent(player, args)
 
     -- Ensure blood structure is fully initialized with proper blood type
     if not data.EHR_Blood or not data.EHR_Blood.maxVolume then
-        initializeBloodData(data, playerUsername)
+        initializeBloodData(data, playerUsername, player)
         log("[EHR Server] Initialized blood data structure")
     end
 
@@ -1538,7 +1675,7 @@ function EHR.ServerCommands.AdjustBlood(player, args)
 
     -- Ensure blood structure is fully initialized with proper blood type
     if not data.EHR_Blood or not data.EHR_Blood.maxVolume then
-        initializeBloodData(data, playerUsername)
+        initializeBloodData(data, playerUsername, player)
         log("[EHR Server] Initialized blood data structure")
     end
 
@@ -1575,7 +1712,7 @@ function EHR.ServerCommands.AddSaline(player, args)
 
     -- Ensure blood structure is fully initialized with proper blood type
     if not data.EHR_Blood or not data.EHR_Blood.maxVolume then
-        initializeBloodData(data, playerUsername)
+        initializeBloodData(data, playerUsername, player)
     end
     if not data.EHR_Initialized then data.EHR_Initialized = true end
 
@@ -2361,21 +2498,43 @@ local function OnClientCommand(module, command, player, args)
             return
         elseif command == "RequestExamData" then
             -- Client requests another player's EHR data for examination
-            -- args.targetUsername = username of player to examine
-            if not args or not args.targetUsername then
-                log("[EHR] Server: RequestExamData missing targetUsername")
+            -- args.targetUsername/targetOnlineID/targetDisplayName = identifiers of player to examine
+            if not args or (not args.targetUsername and not args.targetOnlineID and not args.targetDisplayName and not args.targetKey) then
+                log("[EHR] Server: RequestExamData missing target identifier")
                 return
             end
 
             local targetUsername = args.targetUsername
+            local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
+            local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
+            local requestKey = args.targetKey or targetUsername or (targetOnlineID and ("online_" .. targetOnlineID)) or targetDisplayName
             local targetPlayer = nil
 
-            -- Find target player by username
+            -- Find target player by the most stable identifiers available. In
+            -- MP/listen-server cases getUsername() can be missing on one side
+            -- of the client, while onlineID/displayName still resolve.
             local onlinePlayers = getOnlinePlayers()
             if onlinePlayers then
                 for i = 0, onlinePlayers:size() - 1 do
                     local p = onlinePlayers:get(i)
-                    if p and p:getUsername() == targetUsername then
+                    local username = nil
+                    local onlineID = nil
+                    local displayName = nil
+                    if p then
+                        pcall(function() username = p:getUsername() end)
+                        pcall(function()
+                            if p.getOnlineID then onlineID = tostring(p:getOnlineID()) end
+                        end)
+                        pcall(function()
+                            if p.getDisplayName then displayName = tostring(p:getDisplayName()) end
+                        end)
+                    end
+
+                    if p and (
+                        (targetUsername and username == targetUsername) or
+                        (targetOnlineID and onlineID == targetOnlineID) or
+                        (targetDisplayName and displayName == targetDisplayName)
+                    ) then
                         targetPlayer = p
                         break
                     end
@@ -2383,10 +2542,10 @@ local function OnClientCommand(module, command, player, args)
             end
 
             if not targetPlayer then
-                log("[EHR] Server: RequestExamData - target player not found: " .. targetUsername)
+                log("[EHR] Server: RequestExamData - target player not found: " .. tostring(requestKey))
                 -- Send empty response so client knows request failed
                 sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
-                    targetUsername = targetUsername,
+                    targetUsername = requestKey,
                     success = false,
                     error = "Player not found or offline",
                 })
@@ -2397,7 +2556,7 @@ local function OnClientCommand(module, command, player, args)
             local targetData = targetPlayer:getModData()
             if not targetData then
                 sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
-                    targetUsername = targetUsername,
+                    targetUsername = requestKey,
                     success = false,
                     error = "No data available",
                 })
@@ -2414,13 +2573,18 @@ local function OnClientCommand(module, command, player, args)
                 }
             end
 
+            local actualUsername = targetUsername
+            pcall(function() actualUsername = targetPlayer:getUsername() or actualUsername end)
+
             local examData = {
-                targetUsername = targetUsername,
+                targetUsername = requestKey,
+                targetActualUsername = actualUsername,
                 success = true,
                 EHR_Blood = targetData.EHR_Blood,
                 EHR_Disease = targetData.EHR_Disease,
                 EHR_Sepsis = targetData.EHR_Sepsis,
                 EHR_WoundInfection = targetData.EHR_WoundInfection,
+                EHR_BodyStatus = buildBodyStatusSnapshot(targetPlayer),
                 EHR_Medication = targetData.EHR_Medication,
                 EHR_MedicationView = medicationView,
                 EHR_MedicalJournal = targetData.EHR_MedicalJournal,
@@ -2432,7 +2596,7 @@ local function OnClientCommand(module, command, player, args)
 
             -- Send data to requesting player
             sendServerCommand(player, "EHR_Exam", "ExamDataResponse", examData)
-            log("[EHR] Server: Sent exam data for " .. targetUsername .. " to " .. player:getUsername())
+            log("[EHR] Server: Sent exam data for " .. tostring(requestKey) .. " to " .. player:getUsername())
             return
         end
         return
@@ -2570,12 +2734,8 @@ function EHR.ServerCommands.RequestInitData(player, args)
 
     local data = player:getModData()
 
-    -- CRITICAL: Always use GlobalModData for blood type (ensures persistence)
-    -- This will either return existing or generate new
-    local bloodType = getOrCreateBloodType(playerUsername)
-
     -- Initialize blood data with the authoritative blood type
-    initializeBloodData(data, playerUsername)
+    initializeBloodData(data, playerUsername, player)
 
     log("[EHR Server] Blood type for " .. playerUsername .. ": " .. tostring(data.EHR_Blood.bloodType))
 
@@ -2612,12 +2772,8 @@ local function OnServerCreatePlayer(playerIndex, player)
 
     local data = player:getModData()
 
-    -- CRITICAL: Get blood type from GlobalModData (authoritative, persists across restarts)
-    local bloodType = getOrCreateBloodType(playerUsername)
-    log("[EHR Server] Blood type from GlobalModData: " .. tostring(bloodType))
-
     -- Initialize blood data with authoritative blood type
-    initializeBloodData(data, playerUsername)
+    initializeBloodData(data, playerUsername, player)
     log("[EHR Server] After initializeBloodData, blood type: " .. tostring(data.EHR_Blood and data.EHR_Blood.bloodType))
 
     -- Ensure other EHR data structures exist
@@ -2662,6 +2818,24 @@ local function OnServerCreatePlayer(playerIndex, player)
     end
 end
 
+local function OnServerPlayerDeath(player)
+    if not player then return end
+
+    local playerUsername = player:getUsername() or ("Player" .. player:getPlayerNum())
+    local globalBloodTypes = ModData.getOrCreate("EHR_BloodTypes_Server")
+    local storageKey = getBloodTypeStorageKey(player, playerUsername)
+
+    globalBloodTypes[storageKey] = nil
+    globalBloodTypes[playerUsername] = nil -- legacy username-only key
+
+    local data = player:getModData()
+    if data then
+        data.EHR_DeadCharacter = true
+    end
+
+    log("[EHR Server] Cleared stored blood type for dead character: " .. tostring(storageKey))
+end
+
 -- Register server command handler
 log("[EHR Server DEBUG] Attempting to register OnClientCommand handler...")
 log("[EHR Server DEBUG] Events = " .. tostring(Events))
@@ -2681,6 +2855,11 @@ if Events and Events.OnCreatePlayer then
     log("[EHR Server] Registered OnCreatePlayer handler for MP data initialization")
 else
     log("[EHR Server] WARNING: Events.OnCreatePlayer not available!")
+end
+
+if Events and Events.OnPlayerDeath then
+    Events.OnPlayerDeath.Add(OnServerPlayerDeath)
+    log("[EHR Server] Registered OnPlayerDeath handler for blood type reset")
 end
 
 -- ============================================
@@ -2715,8 +2894,56 @@ end
 
 local PROGRESSION_INTERVAL_TICKS = 300  -- ~10 seconds
 local MEDICATION_INTERVAL_TICKS = 30    -- ~1 second; keeps delayed side effects responsive in MP
+local BLOOD_INTERVAL_TICKS = 30         -- ~1 second; server is authoritative for MP blood
+local BLOOD_SYNC_INTERVAL_TICKS = 90    -- ~3 seconds while bleeding; keeps UI responsive without spam
 local progressionTickCounter = 0
 local medicationTickCounter = 0
+local bloodTickCounter = 0
+local bloodSyncTickCounter = 0
+
+local function syncBloodDataToClient(player, data)
+    if not player or not data or not data.EHR_Blood or not sendServerCommand then return end
+    sendServerCommand(player, "EHR_Sync", "UpdateModData", { EHR_Blood = data.EHR_Blood })
+end
+
+local function processPlayerBlood(player, shouldSync)
+    if not player or not player:isAlive() then return end
+    if not (EHR and EHR.Blood and EHR.Blood.UpdateBloodVolume) then return end
+
+    local data = nil
+    if EHR.GetPlayerData then
+        data = EHR.GetPlayerData(player)
+    end
+    data = data or player:getModData()
+    if not data then return end
+
+    if not data.EHR_Blood then
+        local username = nil
+        pcall(function() username = player:getUsername() end)
+        initializeBloodData(data, username, player)
+    end
+
+    local oldVolume = data.EHR_Blood and data.EHR_Blood.currentVolume or nil
+    local wasBleeding = data.EHR_Blood and data.EHR_Blood.isCurrentlyBleeding == true
+
+    local ok, err = pcall(function()
+        EHR.Blood.UpdateBloodVolume(player, data)
+    end)
+    if not ok then
+        log("[EHR Server] Blood progression failed: " .. tostring(err))
+        return
+    end
+
+    local newVolume = data.EHR_Blood and data.EHR_Blood.currentVolume or nil
+    local isBleedingNow = data.EHR_Blood and data.EHR_Blood.isCurrentlyBleeding == true
+
+    if shouldSync and newVolume then
+        local changed = oldVolume == nil or math.abs((newVolume or 0) - (oldVolume or 0)) >= 0.5
+        if changed or wasBleeding or isBleedingNow then
+            syncBloodDataToClient(player, data)
+        end
+    end
+end
 
 local function processPlayerMedication(player)
     if not player or not player:isAlive() then return end
@@ -2871,6 +3098,24 @@ local function OnServerTick()
         if players then
             for i = 0, players:size() - 1 do
                 processPlayerMedication(players:get(i))
+            end
+        end
+    end
+
+    bloodTickCounter = bloodTickCounter + 1
+    bloodSyncTickCounter = bloodSyncTickCounter + 1
+    if bloodTickCounter >= BLOOD_INTERVAL_TICKS then
+        bloodTickCounter = 0
+
+        local shouldSyncBlood = bloodSyncTickCounter >= BLOOD_SYNC_INTERVAL_TICKS
+        if shouldSyncBlood then
+            bloodSyncTickCounter = 0
+        end
+
+        local players = getOnlinePlayers()
+        if players then
+            for i = 0, players:size() - 1 do
+                processPlayerBlood(players:get(i), shouldSyncBlood)
             end
         end
     end

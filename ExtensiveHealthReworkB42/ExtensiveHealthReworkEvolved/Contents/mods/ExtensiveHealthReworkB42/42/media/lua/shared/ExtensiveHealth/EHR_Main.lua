@@ -266,6 +266,11 @@ function EHR.OnPlayerDeath(player)
 
     local playerID = tostring(player:getUsername() or player:getPlayerNum())
 
+    local modData = player:getModData()
+    if modData then
+        modData.EHR_DeadCharacter = true
+    end
+
     -- Print to console for debugging
     print("=====================================")
     print("[EHR] PLAYER DEATH REPORT")
@@ -369,8 +374,9 @@ function EHR.InitializePlayer(player)
     EHR.Log("Initializing player health data...")
 
     -- BUG FIX: Preserve existing blood type if present (fixes blood type changing on save/load)
-    local existingBloodType = modData.EHR_Blood and modData.EHR_Blood.bloodType
-    local existingVolume = modData.EHR_Blood and modData.EHR_Blood.currentVolume
+    local isDeadCharacterData = modData.EHR_DeadCharacter == true
+    local existingBloodType = (not isDeadCharacterData) and modData.EHR_Blood and modData.EHR_Blood.bloodType or nil
+    local existingVolume = (not isDeadCharacterData) and modData.EHR_Blood and modData.EHR_Blood.currentVolume or nil
 
     -- Determine if we're in MP context
     local playerUsername = player:getUsername() or ("Player" .. player:getPlayerNum())
@@ -415,6 +421,7 @@ function EHR.InitializePlayer(player)
         lastRegenHour = 0,      -- Game hour of last regeneration (for elapsed time calculation)
     }
 
+    modData.EHR_DeadCharacter = nil
     modData.EHR_Initialized = true
     modData.EHR_Version = EHR.VERSION
 
@@ -695,7 +702,9 @@ function EHR.OnCreatePlayer(playerIndex, player)
         modData.EHR_CorpseSickness
     )
 
-    if hasExistingData then
+    local isDeadCharacterData = modData and modData.EHR_DeadCharacter == true
+
+    if hasExistingData and not isDeadCharacterData then
         EHR.Log("OnCreatePlayer: Existing EHR data found, preserving player state")
         -- Log which fields exist for debugging
         if EHR.DEBUG then
@@ -717,6 +726,10 @@ function EHR.OnCreatePlayer(playerIndex, player)
         return
     end
 
+    if isDeadCharacterData then
+        EHR.Log("OnCreatePlayer: Dead-character EHR data found, forcing fresh blood type roll")
+    end
+
     -- CRITICAL: Log when we're about to wipe data - this helps debug data loss reports
     print("[EHR WARNING] OnCreatePlayer: No existing EHR data found for player " .. playerID .. " - initializing fresh state")
 
@@ -731,14 +744,15 @@ function EHR.OnCreatePlayer(playerIndex, player)
     -- BUG FIX: Clear ALL EHR modules, not just blood/disease (sepsis was persisting between characters!)
     modData = player:getModData()
     if modData then
-        -- BUG FIX: Preserve blood type - it should NEVER change once assigned
-        -- Blood type is a permanent characteristic, not something that resets on reconnect/death
-        local existingBloodType = modData.EHR_Blood and modData.EHR_Blood.bloodType
+        -- Preserve blood type only for the same living character. A newly-created
+        -- survivor after death should roll their own blood type.
+        local existingBloodType = (not isDeadCharacterData) and modData.EHR_Blood and modData.EHR_Blood.bloodType or nil
 
         -- Core systems
         modData.EHR_Initialized = nil
         modData.EHR_Blood = nil
         modData.EHR_Blood_Initialized = nil
+        modData.EHR_DeadCharacter = nil
 
         -- Restore blood type if it existed (will be used by InitializePlayer)
         if existingBloodType then

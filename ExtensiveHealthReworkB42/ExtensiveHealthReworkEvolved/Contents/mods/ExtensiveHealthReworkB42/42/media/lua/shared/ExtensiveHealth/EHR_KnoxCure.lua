@@ -645,13 +645,16 @@ function EHR.KnoxCure.GetGeneTherapyChance(player)
     if not player then return 50 end
 
     -- Get blood type from EHR blood system
-    local bloodType = "O+"  -- Default
+    local bloodType = nil
     if EHR.Blood and EHR.Blood.GetPlayerBloodType then
-        bloodType = EHR.Blood.GetPlayerBloodType(player) or "O+"
+        bloodType = EHR.Blood.GetPlayerBloodType(player)
     end
 
     local config = EHR.KnoxCure.Config
-    return config.geneTherapyCompatibility[bloodType] or 50
+    if bloodType and config.geneTherapyCompatibility[bloodType] then
+        return config.geneTherapyCompatibility[bloodType]
+    end
+    return 50
 end
 
 --[[

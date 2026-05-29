@@ -85,7 +85,12 @@ end
 
 local function isBodyPartStillValid(bodyPart)
     if not bodyPart then return false end
-    local okDeep, deep = pcall(function() return bodyPart:isDeepWounded() end)
+    local okDeep, deep = pcall(function()
+        if bodyPart.deepWounded then
+            return bodyPart:deepWounded()
+        end
+        return bodyPart:isDeepWounded()
+    end)
     local okGlass, glass = pcall(function() return bodyPart:haveGlass() end)
     local okStitched, stitched = pcall(function() return bodyPart:stitched() end)
     return okDeep and deep == true and (not okGlass or glass ~= true) and (not okStitched or stitched ~= true)

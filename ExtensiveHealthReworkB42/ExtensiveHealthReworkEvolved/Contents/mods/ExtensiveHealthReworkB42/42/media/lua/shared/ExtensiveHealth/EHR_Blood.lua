@@ -80,6 +80,29 @@ local function getBodyPartMaxIndex()
     return CACHED_BODY_PART_MAX
 end
 
+local function callBodyPartBoolean(part, methodName)
+    if not part or not methodName or not part[methodName] then return false end
+    local ok, value = pcall(function() return part[methodName](part) end)
+    return ok and value == true
+end
+
+function EHR.Blood.IsBodyPartBleeding(part)
+    if not part then return false end
+
+    if callBodyPartBoolean(part, "bleeding") then
+        return true
+    end
+
+    local bleedingTime = 0
+    if part.getBleedingTime then
+        pcall(function()
+            bleedingTime = tonumber(part:getBleedingTime()) or 0
+        end)
+    end
+
+    return bleedingTime > 0
+end
+
 -- Wound type determines how much blood is lost per damage point
 -- Higher = more dangerous wound type
 EHR.Blood.WoundTypeMultipliers = {
@@ -154,16 +177,18 @@ function EHR.Blood.GetWoundTypeMultiplier(part)
     local hasBite = false
     local hasScratch = false
     local isBleeding = false
+    local hasGlass = false
     local hasBurn = false
 
     -- Safely check wound types with pcall
-    pcall(function() hasDeepWound = part:isDeepWounded() end)
-    pcall(function() hasBullet = part:haveBullet() end)
-    pcall(function() hasCut = part:isCut() end)
-    pcall(function() hasBite = part:bitten() end)
-    pcall(function() hasScratch = part:scratched() end)
-    pcall(function() isBleeding = part:bleeding() end)
-    pcall(function() hasBurn = part:isBurnt() end)
+    hasDeepWound = callBodyPartBoolean(part, "isDeepWounded") or callBodyPartBoolean(part, "deepWounded")
+    hasBullet = callBodyPartBoolean(part, "haveBullet")
+    hasCut = callBodyPartBoolean(part, "isCut")
+    hasBite = callBodyPartBoolean(part, "bitten")
+    hasScratch = callBodyPartBoolean(part, "scratched")
+    isBleeding = EHR.Blood.IsBodyPartBleeding(part)
+    hasGlass = callBodyPartBoolean(part, "haveGlass")
+    hasBurn = callBodyPartBoolean(part, "isBurnt")
 
     -- Return highest applicable multiplier
     if hasDeepWound then
@@ -171,6 +196,9 @@ function EHR.Blood.GetWoundTypeMultiplier(part)
     end
     if hasBullet then
         highest = math.max(highest, mult.bullet)
+    end
+    if hasGlass then
+        highest = math.max(highest, mult.glass)
     end
     if hasCut then
         highest = math.max(highest, mult.cut)
@@ -329,9 +357,7 @@ function EHR.Blood.MigrateData(data, player)
                 if partType then
                     local part = bodyDamage:getBodyPart(partType)
                     if part then
-                        local bleeding = false
-                        pcall(function() bleeding = part:bleeding() end)
-                        if bleeding then
+                        if EHR.Blood.IsBodyPartBleeding(part) then
                             isAnyBleeding = true
                             break
                         end
@@ -550,10 +576,7 @@ function EHR.Blood.UpdateBloodVolume(player, data)
                 local part = bodyDamage:getBodyPart(partType)
                 if part then
                     -- Check if this part is ACTIVELY BLEEDING (MED-001 fix: proper nil guard)
-                    local isBleeding = false
-                    local success = pcall(function() isBleeding = part:bleeding() end)
-
-                    if success and isBleeding then
+                    if EHR.Blood.IsBodyPartBleeding(part) then
                         isAnyBleeding = true
                         bleedingParts = bleedingParts + 1
 
@@ -968,7 +991,13 @@ end
 ]]--
 function EHR.Blood.GetPlayerBloodType(player)
     local data = EHR.GetPlayerData(player)
-    if not data or not data.EHR_Blood then return "O+" end
+    if (not data or not data.EHR_Blood) and EHR.InitializePlayer then
+        pcall(function() EHR.InitializePlayer(player) end)
+        data = EHR.GetPlayerData(player)
+    end
+
+    if not data or not data.EHR_Blood then return nil end
+    if data.EHR_Blood.bloodType == "PENDING" then return nil end
 
     -- Assign blood type if not set - use the centralized function for consistency
     if not data.EHR_Blood.bloodType then
@@ -976,8 +1005,7 @@ function EHR.Blood.GetPlayerBloodType(player)
         if EHR.GenerateBloodType then
             data.EHR_Blood.bloodType = EHR.GenerateBloodType()
         else
-            -- Fallback if main function not available (shouldn't happen)
-            data.EHR_Blood.bloodType = "O+"
+            return nil
         end
         EHR.Log("Assigned blood type: " .. data.EHR_Blood.bloodType)
     end

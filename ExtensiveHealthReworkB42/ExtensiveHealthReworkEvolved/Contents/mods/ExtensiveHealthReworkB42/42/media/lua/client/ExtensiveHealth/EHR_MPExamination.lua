@@ -234,6 +234,41 @@ function EHR.MPExamination.IsInRange(localPlayer, targetPlayer)
     return distance >= 0 and distance <= EHR.MPExamination.EXAMINE_RANGE
 end
 
+function EHR.MPExamination.CanRequestMedicalCheck(localPlayer, targetPlayer)
+    if not localPlayer or not targetPlayer then return false end
+    if localPlayer == targetPlayer then return true end
+
+    if ISHealthPanel and ISHealthPanel.canPerformMedicalCheck then
+        local ok, canCheck = pcall(function()
+            return ISHealthPanel.canPerformMedicalCheck(targetPlayer, localPlayer)
+        end)
+        if ok then return canCheck == true end
+    end
+
+    return EHR.MPExamination.IsInRange(localPlayer, targetPlayer)
+end
+
+function EHR.MPExamination.RequestMedicalCheck(localPlayer, targetPlayer)
+    if not localPlayer or not targetPlayer then return false end
+    if localPlayer == targetPlayer then
+        EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
+        return true
+    end
+
+    if not EHR.MPExamination.CanRequestMedicalCheck(localPlayer, targetPlayer) then
+        return false
+    end
+
+    if requestMedicalCheck then
+        requestMedicalCheck(targetPlayer, localPlayer)
+        return true
+    end
+
+    -- Fallback for unusual local/debug contexts without the vanilla request hook.
+    EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
+    return true
+end
+
 --[[
     Get a unique identifier for a player
     @param player - The player
@@ -252,6 +287,107 @@ function EHR.MPExamination.GetPlayerID(player)
     -- Fall back to player number
     local playerNum = player:getPlayerNum()
     return "player_" .. tostring(playerNum)
+end
+
+local function getPlayerUsername(player)
+    local username = nil
+    if player and player.getUsername then
+        pcall(function() username = player:getUsername() end)
+    end
+    if username and username ~= "" then return tostring(username) end
+    return nil
+end
+
+local function getPlayerOnlineID(player)
+    local onlineID = nil
+    if player and player.getOnlineID then
+        pcall(function() onlineID = player:getOnlineID() end)
+    end
+    if onlineID ~= nil then return tostring(onlineID) end
+    return nil
+end
+
+local function getPlayerDisplayName(player)
+    local displayName = nil
+    if player and player.getDisplayName then
+        pcall(function() displayName = player:getDisplayName() end)
+    end
+    if (not displayName or displayName == "") and player and player.getDisguisedDisplayName then
+        pcall(function() displayName = player:getDisguisedDisplayName() end)
+    end
+    if displayName and displayName ~= "" then return tostring(displayName) end
+    return nil
+end
+
+local function getExamRequestKey(player)
+    local username = getPlayerUsername(player)
+    if username then return username end
+
+    local onlineID = getPlayerOnlineID(player)
+    if onlineID then return "online_" .. onlineID end
+
+    return EHR.MPExamination.GetPlayerID(player)
+end
+
+local function addCandidate(candidates, seen, player)
+    if not player then return end
+    local key = EHR.MPExamination.GetPlayerID(player)
+    if not key or seen[key] then return end
+    seen[key] = true
+    table.insert(candidates, player)
+end
+
+local function collectPlayersFromSquare(candidates, seen, square)
+    if not square or not square.getMovingObjects then return end
+    local moving = nil
+    pcall(function() moving = square:getMovingObjects() end)
+    if not moving then return end
+
+    for i = 0, moving:size() - 1 do
+        local obj = moving:get(i)
+        if obj and instanceof(obj, "IsoPlayer") then
+            addCandidate(candidates, seen, obj)
+        end
+    end
+end
+
+function EHR.MPExamination.GetContextPlayerCandidates(localPlayer, worldObjects)
+    local candidates = {}
+    local seen = {}
+
+    if worldObjects then
+        for _, obj in ipairs(worldObjects) do
+            if obj then
+                if instanceof(obj, "IsoPlayer") then
+                    addCandidate(candidates, seen, obj)
+                end
+
+                if obj.getSquare then
+                    local square = nil
+                    pcall(function() square = obj:getSquare() end)
+                    collectPlayersFromSquare(candidates, seen, square)
+                end
+            end
+        end
+    end
+
+    -- B42 sometimes does not include the remote IsoPlayer in worldObjects on
+    -- clients. Add nearby online players as a fallback so MP examination is
+    -- symmetrical for host/client and client/client interactions.
+    local onlinePlayers = nil
+    if getOnlinePlayers then
+        pcall(function() onlinePlayers = getOnlinePlayers() end)
+    end
+    if onlinePlayers then
+        for i = 0, onlinePlayers:size() - 1 do
+            local p = onlinePlayers:get(i)
+            if p and p ~= localPlayer and EHR.MPExamination.IsInRange(localPlayer, p) then
+                addCandidate(candidates, seen, p)
+            end
+        end
+    end
+
+    return candidates
 end
 
 -- ============================================
@@ -286,8 +422,7 @@ function EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
     if not targetID then return end
 
     -- Get target player name
-    local targetName = "Unknown"
-    pcall(function() targetName = targetPlayer:getUsername() or ("Player " .. targetPlayer:getPlayerNum()) end)
+    local targetName = getExamRequestKey(targetPlayer) or "Unknown"
 
     local cachedData = nil
     local cached = EHR.MPExamination.ExamDataCache[targetName]
@@ -310,29 +445,31 @@ end
     @param localPlayer - The player requesting the examination
     @param targetPlayer - The player to examine
 ]]--
-function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent)
+function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent, force)
     if not localPlayer or not targetPlayer then return end
 
-    local targetName = nil
-    pcall(function() targetName = targetPlayer:getUsername() end)
+    local targetName = getPlayerUsername(targetPlayer)
+    local targetOnlineID = getPlayerOnlineID(targetPlayer)
+    local targetDisplayName = getPlayerDisplayName(targetPlayer)
+    local requestKey = getExamRequestKey(targetPlayer)
 
-    if not targetName or targetName == "" then
-        EHR.Log("MPExamination: Cannot request exam data - target has no username")
+    if not requestKey then
+        EHR.Log("MPExamination: Cannot request exam data - target has no stable identifier")
         return
     end
 
     -- Check if we already have a pending request
-    if EHR.MPExamination.PendingRequests[targetName] then
-        local pending = EHR.MPExamination.PendingRequests[targetName]
+    if not force and EHR.MPExamination.PendingRequests[requestKey] then
+        local pending = EHR.MPExamination.PendingRequests[requestKey]
         local elapsed = getTimestampMs() - pending.timestamp
         if elapsed < 5000 then  -- Wait at least 5 seconds before re-requesting
-            EHR.Log("MPExamination: Request already pending for " .. targetName)
+            EHR.Log("MPExamination: Request already pending for " .. requestKey)
             return
         end
     end
 
     -- Store pending request
-    EHR.MPExamination.PendingRequests[targetName] = {
+    EHR.MPExamination.PendingRequests[requestKey] = {
         localPlayer = localPlayer,
         targetPlayer = targetPlayer,
         timestamp = getTimestampMs(),
@@ -341,9 +478,12 @@ function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent)
     -- Send request to server
     sendClientCommand(localPlayer, "EHR", "RequestExamData", {
         targetUsername = targetName,
+        targetOnlineID = targetOnlineID,
+        targetDisplayName = targetDisplayName,
+        targetKey = requestKey,
     })
 
-    EHR.Log("MPExamination: Requested exam data for " .. targetName)
+    EHR.Log("MPExamination: Requested exam data for " .. requestKey)
 
     -- Show loading feedback to player
     if not silent then
@@ -364,13 +504,30 @@ function EHR.MPExamination.OnExamDataReceived(targetUsername, data)
         data = data,
         timestamp = getTimestampMs(),
     }
-
-    if EHR.UI and EHR.UI.UpdateRemoteHealthPanelData then
-        EHR.UI.UpdateRemoteHealthPanelData(targetUsername, data)
+    if data and data.targetActualUsername and data.targetActualUsername ~= targetUsername then
+        EHR.MPExamination.ExamDataCache[data.targetActualUsername] = {
+            data = data,
+            timestamp = getTimestampMs(),
+        }
     end
 
     -- Get pending request
     local pending = EHR.MPExamination.PendingRequests[targetUsername]
+    if not pending and data and data.targetActualUsername then
+        pending = EHR.MPExamination.PendingRequests[data.targetActualUsername]
+    end
+
+    if EHR.UI and EHR.UI.UpdateRemoteHealthPanelData then
+        local updated = EHR.UI.UpdateRemoteHealthPanelData(targetUsername, data)
+        if not updated and pending and pending.targetPlayer then
+            local panel = EHR.UI.GetRemoteHealthPanelForPatient and EHR.UI.GetRemoteHealthPanelForPatient(pending.targetPlayer) or nil
+            if panel then
+                panel.remoteExamData = data
+                panel.cachedData = {}
+            end
+        end
+    end
+
     if not pending then
         EHR.Log("MPExamination: No pending request for " .. targetUsername)
         return
@@ -593,56 +750,56 @@ function EHR.MPExamination.OnFillWorldObjectContextMenu(playerNum, context, worl
     local localPlayer = getSpecificPlayer(playerNum)
     if not localPlayer then return end
 
-    -- Look for players in the clicked objects
-    for _, obj in ipairs(worldObjects) do
-        if instanceof(obj, "IsoPlayer") or instanceof(obj, "IsoGameCharacter") then
-            local targetPlayer = obj
-            local isSelf = (targetPlayer == localPlayer)
+    local candidates = EHR.MPExamination.GetContextPlayerCandidates(localPlayer, worldObjects)
+    if test and #candidates > 0 then
+        ISWorldObjectContextMenu.setTest()
+        return
+    end
 
-            -- Allow self to open monitor
-            if isSelf then
-                local optionText = getText("UI_EHR_Context_OpenMonitor") or "Open Medical Monitor"
-                local option = context:addOption(optionText, localPlayer, function(player)
-                    if EHR.UI and EHR.UI.ToggleHealthPanel then
-                        EHR.UI.ToggleHealthPanel(player)
-                    elseif EHR.UI and EHR.UI.ToggleMonitor then
-                        EHR.UI.ToggleMonitor(player)
-                    end
-                end)
+    -- Look for players in the clicked objects, clicked square, or nearby MP fallback.
+    for _, targetPlayer in ipairs(candidates) do
+        local isSelf = (targetPlayer == localPlayer)
+
+        -- Allow self to open monitor
+        if isSelf then
+            local optionText = getText("UI_EHR_Context_OpenMonitor") or "Open Medical Monitor"
+            local option = context:addOption(optionText, localPlayer, function(player)
+                if EHR.UI and EHR.UI.ToggleHealthPanel then
+                    EHR.UI.ToggleHealthPanel(player)
+                elseif EHR.UI and EHR.UI.ToggleMonitor then
+                    EHR.UI.ToggleMonitor(player)
+                end
+            end)
+            local tooltip = ISWorldObjectContextMenu.addToolTip()
+            tooltip:setName(optionText)
+            tooltip.description = getText("UI_EHR_ExamineButton_tt") or "Examine your current health condition"
+            option.toolTip = tooltip
+        else
+            local targetName = getPlayerDisplayName(targetPlayer) or getPlayerUsername(targetPlayer) or getExamRequestKey(targetPlayer) or "Unknown"
+            local canRequest = EHR.MPExamination.CanRequestMedicalCheck(localPlayer, targetPlayer)
+
+            -- Add context menu option
+            local optionText = getText("UI_EHR_Context_ExamineHealth") or "Examine Health"
+            optionText = optionText .. " (" .. targetName .. ")"
+
+            local option = context:addOption(optionText, localPlayer, EHR.MPExamination.OnExamineClick, targetPlayer)
+
+            -- Gray out if the vanilla consent flow cannot be started from here.
+            if not canRequest then
+                option.notAvailable = true
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
-                tooltip:setName(optionText)
-                tooltip.description = getText("UI_EHR_ExamineButton_tt") or "Examine your current health condition"
+                tooltip:setName(getText("UI_EHR_Context_TooFar") or "Too Far Away")
+                tooltip.description = string.format(
+                    getText("UI_EHR_Context_TooFarDesc") or "You need to be within %d tiles to examine this player.",
+                    EHR.MPExamination.EXAMINE_RANGE
+                )
                 option.toolTip = tooltip
             else
-                local targetName = "Unknown"
-                pcall(function() targetName = targetPlayer:getUsername() or ("Player " .. targetPlayer:getPlayerNum()) end)
-
-                local distance = EHR.MPExamination.GetDistance(localPlayer, targetPlayer)
-                local inRange = distance >= 0 and distance <= EHR.MPExamination.EXAMINE_RANGE
-
-                -- Add context menu option
-                local optionText = getText("UI_EHR_Context_ExamineHealth") or "Examine Health"
-                optionText = optionText .. " (" .. targetName .. ")"
-
-                local option = context:addOption(optionText, localPlayer, EHR.MPExamination.OnExamineClick, targetPlayer)
-
-                -- Gray out if out of range
-                if not inRange then
-                    option.notAvailable = true
-                    local tooltip = ISWorldObjectContextMenu.addToolTip()
-                    tooltip:setName(getText("UI_EHR_Context_TooFar") or "Too Far Away")
-                    tooltip.description = string.format(
-                        getText("UI_EHR_Context_TooFarDesc") or "You need to be within %d tiles to examine this player.",
-                        EHR.MPExamination.EXAMINE_RANGE
-                    )
-                    option.toolTip = tooltip
-                else
-                    -- Add tooltip with health hint
-                    local tooltip = ISWorldObjectContextMenu.addToolTip()
-                    tooltip:setName(getText("UI_EHR_Context_ExamineHealth") or "Examine Health")
-                    tooltip.description = getText("UI_EHR_Context_ExamineHealthDesc") or "View this player's health status, diseases, and medications."
-                    option.toolTip = tooltip
-                end
+                -- Add tooltip with health hint
+                local tooltip = ISWorldObjectContextMenu.addToolTip()
+                tooltip:setName(getText("UI_EHR_Context_ExamineHealth") or "Examine Health")
+                tooltip.description = getText("UI_EHR_Context_ExamineHealthDesc") or "View this player's health status, diseases, and medications."
+                option.toolTip = tooltip
             end
         end
     end
@@ -652,7 +809,7 @@ end
     Context menu callback - examine the clicked player
 ]]--
 function EHR.MPExamination.OnExamineClick(localPlayer, targetPlayer)
-    EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
+    EHR.MPExamination.RequestMedicalCheck(localPlayer, targetPlayer)
 end
 
 -- ============================================

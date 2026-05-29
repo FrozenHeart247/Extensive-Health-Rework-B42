@@ -117,6 +117,183 @@ local function clearDebugVanillaWoundInfections(player)
     end
 end
 
+local function syncDebugBodyPart(bodyPart)
+    if syncBodyPart and bodyPart then
+        pcall(function() syncBodyPart(bodyPart, 0xFFFFFFFFFFF) end)
+    end
+end
+
+local function syncDebugVisuals(player)
+    if not player then return end
+    if syncVisuals then
+        pcall(function() syncVisuals(player) end)
+    end
+    if sendHumanVisual then
+        pcall(function() sendHumanVisual(player) end)
+    end
+    if player.resetModelNextFrame then
+        pcall(function() player:resetModelNextFrame() end)
+    end
+end
+
+local function getDebugBloodBodyPart(bodyPart)
+    if not bodyPart or not BloodBodyPartType or not BodyPartType then return nil end
+    local ok, result = pcall(function()
+        return BloodBodyPartType.FromIndex(BodyPartType.ToIndex(bodyPart:getType()))
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function clearDebugBodyPartStiffness(player, bodyPart)
+    if not player or not bodyPart then return end
+    pcall(function() bodyPart:setStiffness(0) end)
+    pcall(function()
+        if player.getFitness and BodyPartType and BodyPartType.ToString then
+            player:getFitness():removeStiffnessValue(BodyPartType.ToString(bodyPart:getType()))
+        end
+    end)
+end
+
+local function setDebugBandaged(player, bodyPart, bandaged, dirty)
+    if not player or not bodyPart then return false end
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return false end
+
+    if bandaged then
+        local bandageType = dirty and "Base.RippedSheetsDirty" or "Base.Bandage"
+        local bandageLife = dirty and 0 or 10
+        pcall(function()
+            bodyDamage:SetBandaged(bodyPart:getIndex(), true, bandageLife, false, bandageType)
+        end)
+    else
+        pcall(function()
+            bodyDamage:SetBandaged(bodyPart:getIndex(), false, 0, false, nil)
+        end)
+    end
+    return true
+end
+
+local function setDebugBleeding(bodyPart, time)
+    if not bodyPart then return end
+    pcall(function()
+        bodyPart:setBleedingTime(math.max(tonumber(time) or 0, tonumber(bodyPart:getBleedingTime()) or 0))
+    end)
+end
+
+local function clearDebugVanillaBodyPart(player, bodyPart)
+    if not bodyPart then return end
+    pcall(function() bodyPart:RestoreToFullHealth() end)
+    pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+    pcall(function() bodyPart:setInfectedWound(false) end)
+    pcall(function() bodyPart:SetBitten(false) end)
+    pcall(function() bodyPart:SetInfected(false) end)
+    pcall(function() bodyPart:SetFakeInfected(false) end)
+    setDebugBandaged(player, bodyPart, false, false)
+    clearDebugBodyPartStiffness(player, bodyPart)
+    syncDebugBodyPart(bodyPart)
+end
+
+local function applyDebugVanillaInjury(player, partName, injuryId)
+    local bodyPart = getDebugBodyPart(player, partName)
+    if not player or not bodyPart or not injuryId then return false end
+
+    if injuryId == "bleeding" then
+        pcall(function() bodyPart:setBleedingTime(10) end)
+    elseif injuryId == "scratch" then
+        pcall(function() bodyPart:setScratched(true, false) end)
+        setDebugBleeding(bodyPart, 4)
+    elseif injuryId == "cut" then
+        pcall(function() bodyPart:setCut(true) end)
+        setDebugBleeding(bodyPart, 8)
+    elseif injuryId == "deep_wound" then
+        pcall(function() bodyPart:generateDeepWound() end)
+    elseif injuryId == "glass" then
+        pcall(function() bodyPart:generateDeepShardWound() end)
+    elseif injuryId == "bite" then
+        pcall(function() bodyPart:SetBitten(true) end)
+        pcall(function() bodyPart:SetInfected(true) end)
+        pcall(function() bodyPart:SetFakeInfected(false) end)
+        setDebugBleeding(bodyPart, 8)
+    elseif injuryId == "burn" then
+        pcall(function() bodyPart:setBurnTime(50) end)
+    elseif injuryId == "bullet" then
+        pcall(function() bodyPart:setHaveBullet(true, 0) end)
+    elseif injuryId == "fracture" then
+        pcall(function() bodyPart:setFractureTime(21) end)
+    elseif injuryId == "strain" then
+        pcall(function() bodyPart:setStiffness(100) end)
+    elseif injuryId == "infect" then
+        pcall(function() bodyPart:setInfectedWound(true) end)
+        pcall(function() bodyPart:setWoundInfectionLevel(10) end)
+    elseif injuryId == "bandage" then
+        setDebugBandaged(player, bodyPart, true, false)
+    elseif injuryId == "dirty_bandage" then
+        setDebugBandaged(player, bodyPart, true, true)
+    elseif injuryId == "remove_bandage" then
+        setDebugBandaged(player, bodyPart, false, false)
+    elseif injuryId == "clear_part" then
+        clearDebugVanillaBodyPart(player, bodyPart)
+        return true
+    else
+        return false
+    end
+
+    syncDebugBodyPart(bodyPart)
+    return true
+end
+
+local function applyDebugVanillaVisual(player, partName, visualId)
+    local bodyPart = getDebugBodyPart(player, partName)
+    local visualPart = getDebugBloodBodyPart(bodyPart)
+    if not player or not visualPart or not visualId then return false end
+
+    if visualId == "add_blood" then
+        pcall(function() player:addBlood(visualPart, false, true, false) end)
+    elseif visualId == "remove_blood" then
+        pcall(function()
+            if player.getVisual then player:getVisual():setBlood(visualPart, 0) end
+        end)
+    elseif visualId == "add_dirt" then
+        pcall(function() player:addDirt(visualPart, nil, false) end)
+    elseif visualId == "remove_dirt" then
+        pcall(function()
+            if player.getVisual then player:getVisual():setDirt(visualPart, 0) end
+        end)
+    elseif visualId == "add_hole" then
+        pcall(function() player:addHole(visualPart) end)
+    elseif visualId == "add_patch" then
+        pcall(function() player:addBasicPatch(visualPart) end)
+    elseif visualId == "clear_visual" then
+        pcall(function()
+            if player.getVisual then
+                player:getVisual():setBlood(visualPart, 0)
+                player:getVisual():setDirt(visualPart, 0)
+            end
+        end)
+    else
+        return false
+    end
+
+    syncDebugVisuals(player)
+    return true
+end
+
+local function clearAllDebugVanillaInjuries(player)
+    if not player then return end
+    for _, partName in ipairs(DEBUG_WOUND_BODY_PARTS) do
+        clearDebugVanillaBodyPart(player, getDebugBodyPart(player, partName))
+    end
+end
+
+local function clearAllDebugVanillaVisuals(player)
+    if not player then return end
+    for _, partName in ipairs(DEBUG_WOUND_BODY_PARTS) do
+        applyDebugVanillaVisual(player, partName, "clear_visual")
+    end
+    syncDebugVisuals(player)
+end
+
 -- ============================================
 -- HELPER: Generate blood type (server-authoritative)
 -- Uses same distribution as client for consistency
@@ -1580,6 +1757,46 @@ function EHR.ServerCommands.ClearAllInfections(player, args)
     log("[EHR Server] ClearAllInfections command executed")
 end
 
+function EHR.ServerCommands.ApplyVanillaInjury(player, args)
+    if not player or not args then return end
+
+    local partName = tostring(args.partId or "")
+    local injuryId = tostring(args.injuryId or "")
+    if partName == "" or injuryId == "" then return end
+
+    local ok = applyDebugVanillaInjury(player, partName, injuryId)
+    syncModDataToClient(player)
+    log("[EHR Server] ApplyVanillaInjury " .. tostring(partName) .. " " .. tostring(injuryId) .. " -> " .. tostring(ok))
+end
+
+function EHR.ServerCommands.ClearVanillaInjuries(player, args)
+    if not player then return end
+
+    clearAllDebugVanillaInjuries(player)
+    syncModDataToClient(player)
+    log("[EHR Server] ClearVanillaInjuries command executed")
+end
+
+function EHR.ServerCommands.ApplyVanillaVisual(player, args)
+    if not player or not args then return end
+
+    local partName = tostring(args.partId or "")
+    local visualId = tostring(args.visualId or "")
+    if partName == "" or visualId == "" then return end
+
+    local ok = applyDebugVanillaVisual(player, partName, visualId)
+    syncModDataToClient(player)
+    log("[EHR Server] ApplyVanillaVisual " .. tostring(partName) .. " " .. tostring(visualId) .. " -> " .. tostring(ok))
+end
+
+function EHR.ServerCommands.ClearVanillaVisuals(player, args)
+    if not player then return end
+
+    clearAllDebugVanillaVisuals(player)
+    syncModDataToClient(player)
+    log("[EHR Server] ClearVanillaVisuals command executed")
+end
+
 -- ============================================
 -- MEDICATION COMMANDS
 -- ============================================
@@ -1628,17 +1845,39 @@ function EHR.ServerCommands.ClearSideEffects(player, args)
 
     local data = player:getModData()
 
-    if data.EHR_Medication and data.EHR_Medication.activeSideEffects then
-        for id, _ in pairs(data.EHR_Medication.activeSideEffects) do
-            data.EHR_Medication.activeSideEffects[id] = nil
+    if EHR.Medication and EHR.Medication.ClearAllSideEffectState then
+        pcall(function()
+            EHR.Medication.ClearAllSideEffectState(player, true)
+        end)
+    else
+        if data.EHR_Medication and data.EHR_Medication.activeSideEffects then
+            for id, _ in pairs(data.EHR_Medication.activeSideEffects) do
+                data.EHR_Medication.activeSideEffects[id] = nil
+            end
         end
-    end
+        if data.EHR_Medication and data.EHR_Medication.activeGeneralEffects then
+            data.EHR_Medication.activeGeneralEffects.staminaLock = nil
+            data.EHR_Medication.activeGeneralEffects.fatigueBlock = nil
+            data.EHR_Medication.activeGeneralEffects.combatStimulants = nil
+            data.EHR_Medication.activeGeneralEffects.mpFatigueRecovery = nil
+        end
 
-    -- Also clear legacy data
-    if data.EHR_SideEffects then
-        for id, _ in pairs(data.EHR_SideEffects) do
-            data.EHR_SideEffects[id] = nil
+        -- Also clear legacy data
+        if data.EHR_SideEffects then
+            for id, _ in pairs(data.EHR_SideEffects) do
+                data.EHR_SideEffects[id] = nil
+            end
         end
+
+        data.EHR_TendonWeakness = nil
+        data.EHR_KidneyStress = nil
+        data.EHR_Insomnia = nil
+        data.EHR_Immunosuppressed = nil
+        data.EHR_LiverStress = nil
+        data.EHR_CaffeineAwake = nil
+        data.EHR_CombatStimulantsActive = nil
+        data.EHR_CombatStimSpeedActive = nil
+        data.EHR_CombatStimWeaponId = nil
     end
 
     syncModDataToClient(player)
@@ -1687,18 +1926,24 @@ function EHR.ServerCommands.AddSideEffect(player, args)
     local effectId = args.effectId
     log("[EHR Server] AddSideEffect command received: " .. tostring(effectId))
 
-    local data = player:getModData()
-    data.EHR_Medication = data.EHR_Medication or {}
-    data.EHR_Medication.activeSideEffects = data.EHR_Medication.activeSideEffects or {}
+    if EHR.Medication and EHR.Medication.ApplySideEffect then
+        pcall(function()
+            EHR.Medication.ApplySideEffect(player, effectId, { force = true })
+        end)
+    else
+        local data = player:getModData()
+        data.EHR_Medication = data.EHR_Medication or {}
+        data.EHR_Medication.activeSideEffects = data.EHR_Medication.activeSideEffects or {}
 
-    local gameTime = getGameTime()
-    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local gameTime = getGameTime()
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
 
-    data.EHR_Medication.activeSideEffects[effectId] = {
-        startTime = currentHour,
-        duration = 6,
-        severity = 0.5,
-    }
+        data.EHR_Medication.activeSideEffects[effectId] = {
+            startTime = currentHour,
+            duration = 6,
+            severity = 0.5,
+        }
+    end
 
     syncModDataToClient(player)
     log("[EHR Server] AddSideEffect command executed")
@@ -2243,6 +2488,14 @@ local function OnClientCommand(module, command, player, args)
         EHR.ServerCommands.SetWoundStage(player, args)
     elseif command == "ClearAllInfections" then
         EHR.ServerCommands.ClearAllInfections(player, args)
+    elseif command == "ApplyVanillaInjury" then
+        EHR.ServerCommands.ApplyVanillaInjury(player, args)
+    elseif command == "ClearVanillaInjuries" then
+        EHR.ServerCommands.ClearVanillaInjuries(player, args)
+    elseif command == "ApplyVanillaVisual" then
+        EHR.ServerCommands.ApplyVanillaVisual(player, args)
+    elseif command == "ClearVanillaVisuals" then
+        EHR.ServerCommands.ClearVanillaVisuals(player, args)
 
     -- Medication commands
     elseif command == "ClearAllMedications" then
@@ -2440,7 +2693,21 @@ end
 -- ============================================
 
 local PROGRESSION_INTERVAL_TICKS = 300  -- ~10 seconds
+local MEDICATION_INTERVAL_TICKS = 30    -- ~1 second; keeps delayed side effects responsive in MP
 local progressionTickCounter = 0
+local medicationTickCounter = 0
+
+local function processPlayerMedication(player)
+    if not player or not player:isAlive() then return end
+    if EHR.Medication and EHR.Medication.Update then
+        local ok, err = pcall(function()
+            EHR.Medication.Update(player)
+        end)
+        if not ok then
+            log("[EHR Server] Medication progression failed: " .. tostring(err))
+        end
+    end
+end
 
 local function processPlayerProgression(player)
     if not player or not player:isAlive() then return end
@@ -2564,6 +2831,7 @@ local function processPlayerProgression(player)
     -- Blood regeneration is handled by EHR.Blood.UpdateBloodVolume through
     -- EHR.Blood.ApplyBloodRegeneration. Keeping a second server-only regen here
     -- bypassed sandbox delay/healing checks and made MP players recover too fast.
+    processPlayerMedication(player)
 end
 
 local function OnServerTick()
@@ -2572,6 +2840,18 @@ local function OnServerTick()
     if syncTickCounter >= SYNC_INTERVAL_TICKS then
         syncTickCounter = 0
         syncAllPlayers()
+    end
+
+    medicationTickCounter = medicationTickCounter + 1
+    if medicationTickCounter >= MEDICATION_INTERVAL_TICKS then
+        medicationTickCounter = 0
+
+        local players = getOnlinePlayers()
+        if players then
+            for i = 0, players:size() - 1 do
+                processPlayerMedication(players:get(i))
+            end
+        end
     end
 
     -- Disease/Sepsis/Wound progression

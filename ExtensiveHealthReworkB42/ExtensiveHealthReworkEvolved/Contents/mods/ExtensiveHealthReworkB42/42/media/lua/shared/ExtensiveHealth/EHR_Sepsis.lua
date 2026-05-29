@@ -889,6 +889,9 @@ function EHR.Sepsis.Cure(player)
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
     end
+    if EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+        EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
+    end
 
     -- Build immunity to wound infections
     if EHR.Disease and EHR.Disease.GetDiseaseData then

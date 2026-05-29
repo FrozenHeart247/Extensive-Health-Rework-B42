@@ -1358,6 +1358,9 @@ function EHR.Disease.UpdateProgression(player, data)
     if #toRemove > 0 and EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, false)
     end
+    if #toRemove > 0 and EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+        EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
+    end
 end
 
 --[[
@@ -4746,6 +4749,9 @@ function EHR.Disease.Cure(player, diseaseId)
         if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
             EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
         end
+        if EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+            EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
+        end
 
         EHR.Log("Cured disease: " .. tostring(diseaseId))
 
@@ -4883,6 +4889,9 @@ function EHR.Disease.CureAll(player)
 
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+    end
+    if count > 0 and EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+        EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
     end
 
 

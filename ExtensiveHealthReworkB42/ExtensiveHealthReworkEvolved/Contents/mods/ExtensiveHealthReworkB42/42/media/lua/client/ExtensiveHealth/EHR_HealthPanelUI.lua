@@ -3378,7 +3378,7 @@ function EHR_HealthPanelUI:drawRightPanel()
     else
         for _, effect in ipairs(sideEffects) do
             local name = effect.displayName or effect.effectId or "Side effect"
-            local remaining = formatHours(effect.hoursRemaining or 0)
+            local remaining = formatShortHours(effect.hoursRemaining or 0)
             self:drawText(self:truncateText(name, w - 120, UIFont.Small), x + 18, contentY, c.yellow.r, c.yellow.g, c.yellow.b, c.yellow.a, UIFont.Small)
             self:drawTextRight(remaining, x + w - 18, contentY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
             contentY = contentY + 22

@@ -20,7 +20,9 @@ EHR.Insomnia.Config = {
     STAGE_1_HOURS = 24,
     STAGE_2_HOURS = 48,
     STIMULANT_CRASH_CHANCE = 0.10,
-    STIMULANT_RISK_COOLDOWN_HOURS = 0.25,
+    -- Keep the per-crash roll at 10%, but avoid stacking several stimulant
+    -- crash rolls into a near-guaranteed insomnia proc in one play session.
+    STIMULANT_RISK_COOLDOWN_HOURS = 12,
 }
 
 local function worldHour()

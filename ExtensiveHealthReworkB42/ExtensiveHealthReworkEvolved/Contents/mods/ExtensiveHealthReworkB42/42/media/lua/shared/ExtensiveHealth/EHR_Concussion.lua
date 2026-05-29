@@ -510,6 +510,18 @@ local function getPlayerZ(player)
     return tonumber(z) or 0
 end
 
+local function getFallTrackingZ(z)
+    z = tonumber(z) or 0
+    if z < 0 then return 0 end
+    return z
+end
+
+local function isBasementZTransition(currentZ, lastZ)
+    currentZ = tonumber(currentZ) or 0
+    lastZ = tonumber(lastZ)
+    return currentZ < 0 or (lastZ ~= nil and lastZ < 0)
+end
+
 local function getPlayerXY(player)
     local x, y = 0, 0
     pcall(function()
@@ -679,6 +691,7 @@ function EHR.Concussion.UpdateTracking(player)
     normalizeOldCooldown(player, now, cfg)
 
     local z = getPlayerZ(player)
+    local fallZ = getFallTrackingZ(z)
     local x, y = getPlayerXY(player)
     local snapshot = getBodySnapshot(player)
     local health = snapshot.overallHealth
@@ -690,9 +703,26 @@ function EHR.Concussion.UpdateTracking(player)
     state.pendingFall = nil
 
     if not vehicle then
-        state.highestZ = math.max(tonumber(state.highestZ) or z, tonumber(state.lastZ) or z, z)
-        local drop = math.max((tonumber(state.highestZ) or z) - z, (tonumber(state.lastZ) or z) - z)
-        if drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
+        local lastFallZ = tonumber(state.lastFallZ)
+        if lastFallZ == nil then
+            lastFallZ = getFallTrackingZ(state.lastZ)
+        end
+
+        state.highestZ = math.max(tonumber(state.highestZ) or fallZ, lastFallZ or fallZ, fallZ)
+        local drop = math.max((tonumber(state.highestZ) or fallZ) - fallZ, (lastFallZ or fallZ) - fallZ)
+        local basementTransition = isBasementZTransition(z, state.lastZ)
+
+        if basementTransition then
+            if EHR.DEBUG and drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
+                EHR.Log(string.format(
+                    "Concussion ignored basement Z transition: rawZ %.2f -> %.2f, trackedDrop %.2f",
+                    tonumber(state.lastZ) or z,
+                    z,
+                    drop
+                ))
+            end
+            state.highestZ = fallZ
+        elseif drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
             local stairTransition = isStairTransition(player, state, x, y, z, cfg)
             if not stairTransition then
                 if EHR.DEBUG then
@@ -710,13 +740,13 @@ function EHR.Concussion.UpdateTracking(player)
                     tostring(stairTransition)
                 ))
             end
-            state.highestZ = z
-        elseif z > (tonumber(state.highestZ) or z) then
-            state.highestZ = z
+            state.highestZ = fallZ
+        elseif fallZ > (tonumber(state.highestZ) or fallZ) then
+            state.highestZ = fallZ
         end
     else
         state.pendingFall = nil
-        state.highestZ = z
+        state.highestZ = fallZ
     end
 
     if vehicle then
@@ -751,6 +781,7 @@ function EHR.Concussion.UpdateTracking(player)
     end
 
     state.lastZ = z
+    state.lastFallZ = fallZ
     state.lastX = x
     state.lastY = y
     state.lastHealth = health

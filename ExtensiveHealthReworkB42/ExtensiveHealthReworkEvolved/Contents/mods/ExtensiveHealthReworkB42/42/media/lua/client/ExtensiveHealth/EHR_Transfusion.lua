@@ -884,6 +884,7 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         if spoilageState == "rotten" then
             local option = context:addOption(transfusionText("UseBloodBagRotten", "Use Blood Bag (ROTTEN)"), player, nil)
             option.notAvailable = true
+            if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
             local tooltip = ISWorldObjectContextMenu.addToolTip()
             tooltip:setName(transfusionText("Unusable", "UNUSABLE"))
             tooltip.description = "<RGB:1,0,0> " .. transfusionText("BloodSpoiledDesc", "This blood bag has completely spoiled and cannot be used.") .. " <LINE> " .. transfusionText("DisposeSafely", "Dispose of it safely.")
@@ -905,6 +906,7 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         end
 
         local option = context:addOption(transfusionText("UseBloodBag", "Use Blood Bag") .. compatText, player, EHR.Transfusion.OnUseTransfusion, item)
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
         -- Build tooltip
         local tooltip = ISWorldObjectContextMenu.addToolTip()
@@ -939,6 +941,7 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         if spoilageState == "rotten" then
             local option = context:addOption(transfusionText("UseSalineContaminated", "Use Saline IV (CONTAMINATED)"), player, nil)
             option.notAvailable = true
+            if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
             local tooltip = ISWorldObjectContextMenu.addToolTip()
             tooltip:setName(transfusionText("Unusable", "UNUSABLE"))
             tooltip.description = "<RGB:1,0,0> " .. transfusionText("SalineContaminatedDesc", "This saline bag has become contaminated and cannot be used.")
@@ -946,6 +949,7 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
             return
         end
         local option = context:addOption(transfusionText("UseSaline", "Use Saline IV"), player, EHR.Transfusion.OnUseTransfusion, item)
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
         -- Calculate current saline ratio for tooltip
         local data = EHR.GetPlayerData(player)
@@ -987,6 +991,7 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
 
         local optionText = transfusionText("DrawBloodOption", "Draw Blood")
         local option = context:addOption(optionText, player, EHR.Transfusion.OnDrawBlood, item)
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
         -- Build tooltip
         local tooltip = ISWorldObjectContextMenu.addToolTip()

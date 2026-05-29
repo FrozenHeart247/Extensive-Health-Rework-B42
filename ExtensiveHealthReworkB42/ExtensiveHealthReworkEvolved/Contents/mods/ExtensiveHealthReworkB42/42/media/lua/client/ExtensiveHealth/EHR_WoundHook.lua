@@ -414,6 +414,7 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
                     EHR.WoundHook.OnAdministerIVAntibiotics,
                     item
                 )
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 -- Add tooltip
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
@@ -425,6 +426,7 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
             elseif hasTreatableCondition then
                 local option = context:addOption(woundHookText("AdministerIVRequiresKit", "Administer IV Antibiotics (Requires IV Kit)"), player)
                 option.notAvailable = true
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
                 tooltip:setName(woundHookText("IVAntibiotics", "IV Antibiotics"))
@@ -433,6 +435,7 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
             else
                 local option = context:addOption(woundHookText("AdministerIVNoInfection", "Administer IV Antibiotics (No Infection)"), player)
                 option.notAvailable = true
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
                 tooltip:setName(woundHookText("IVAntibiotics", "IV Antibiotics"))
@@ -460,6 +463,7 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
                         tooltip:setName(woundHookText("Antibiotics", "Antibiotics"))
                         tooltip.description = woundHookText("AntibioticsHelpWound", "Will help treat your wound infection.")
                         opt.toolTip = tooltip
+                        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(opt, item) end
                         break
                     end
                 end

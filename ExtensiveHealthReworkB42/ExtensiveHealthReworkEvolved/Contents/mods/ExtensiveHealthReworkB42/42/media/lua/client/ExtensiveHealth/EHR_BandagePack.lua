@@ -319,22 +319,25 @@ function EHR.BandagePack.OnFillInventoryObjectContextMenu(playerNum, context, it
             if EHR.BandagePack.IsCleanBandage(item) then
                 local pack = EHR.BandagePack.FindPackWithSpace(inventory)
                 local label = pack and bandagePackText("AddToPack", "Add to Clean Bandages Pack") or bandagePackText("CreatePack", "Create Clean Bandages Pack")
-                context:addOption(label, player, function(plr, bandageItem, targetPack)
+                local option = context:addOption(label, player, function(plr, bandageItem, targetPack)
                     EHR.BandagePack.AddBandageToPack(plr, bandageItem, targetPack)
                 end, item, pack)
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, pack or item) end
             elseif EHR.BandagePack.IsPack(item) then
                 if getRemainingDoses(item) > 0 then
-                    context:addOption(bandagePackText("Unpack", "Unpack Clean Bandage"), player, function(plr, packItem)
+                    local option = context:addOption(bandagePackText("Unpack", "Unpack Clean Bandage"), player, function(plr, packItem)
                         EHR.BandagePack.UnpackBandage(plr, packItem)
                     end, item)
+                    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
                 end
 
                 if getRemainingDoses(item) < getMaxDoses(item) then
                     local bandage = EHR.BandagePack.FindCleanBandage(inventory)
                     if bandage then
-                        context:addOption(bandagePackText("AddSingle", "Add Clean Bandage to Pack"), player, function(plr, bandageItem, packItem)
+                        local option = context:addOption(bandagePackText("AddSingle", "Add Clean Bandage to Pack"), player, function(plr, bandageItem, packItem)
                             EHR.BandagePack.AddBandageToPack(plr, bandageItem, packItem)
                         end, bandage, item)
+                        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, bandage) end
                     end
                 end
             end

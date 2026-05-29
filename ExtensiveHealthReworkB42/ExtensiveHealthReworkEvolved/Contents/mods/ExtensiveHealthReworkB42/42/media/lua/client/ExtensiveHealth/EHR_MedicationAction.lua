@@ -226,6 +226,7 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
                 local option = context:addOption(optionName, playerObj, function(plr)
                     EHR.MedicationAction.QueueUseMedication(plr, item, medData)
                 end)
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 -- Always add tooltip with medication info
                 local tooltip = ISWorldObjectContextMenu.addToolTip()

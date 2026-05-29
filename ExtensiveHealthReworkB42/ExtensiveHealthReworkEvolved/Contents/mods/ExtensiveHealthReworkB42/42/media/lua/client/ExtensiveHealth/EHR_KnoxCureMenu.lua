@@ -115,6 +115,7 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     if data and data.geneTherapyImmune then
         local option = context:addOption("Gene Therapy (Already Immune)", nil, nil)
         option.notAvailable = true
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         option.toolTip = ISWorldObjectContextMenu.addToolTip()
         option.toolTip:setName("Already Immune")
         option.toolTip.description = "You survived Gene Therapy and are permanently immune to the Knox Virus."
@@ -127,6 +128,7 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     -- Create option
     local optionText = "Use Gene Therapy Injector"
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseGeneTherapy, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
@@ -181,6 +183,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
     if data and data.geneTherapyImmune then
         local option = context:addOption("Take Phalanx (Already Immune)", nil, nil)
         option.notAvailable = true
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         return
     end
 
@@ -200,6 +203,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
     end
 
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUsePhalanx, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Disable if ineffective or not infected
     if resetTo >= 100 then
@@ -249,6 +253,7 @@ function EHR.KnoxCureMenu.AddAntibodyTestOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     local option = context:addOption("Use Antibody Test", player, EHR.KnoxCureMenu.OnUseAntibodyTest, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
@@ -290,6 +295,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     if data and data.geneTherapyImmune then
         local option = context:addOption("Use Immunobooster (Already Immune)", nil, nil)
         option.notAvailable = true
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         return
     end
 
@@ -318,6 +324,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     end
 
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseImmunobooster, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Disable if not usable
     if isActive or isOnCooldown or isInfected or hasBites then

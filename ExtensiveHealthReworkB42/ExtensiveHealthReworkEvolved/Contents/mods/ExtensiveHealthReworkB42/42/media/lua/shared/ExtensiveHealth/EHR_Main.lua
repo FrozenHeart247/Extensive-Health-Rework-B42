@@ -313,6 +313,46 @@ function EHR.Log(message)
     end
 end
 
+function EHR.GetItemIconTexture(item)
+    if not item then return nil end
+
+    local texture = nil
+    local ok, value
+
+    if item.getTex then
+        ok, value = pcall(function() return item:getTex() end)
+        if ok and value then texture = value end
+    end
+
+    if not texture and item.getTexture then
+        ok, value = pcall(function() return item:getTexture() end)
+        if ok and value then texture = value end
+    end
+
+    if not texture and item.getNormalTexture then
+        ok, value = pcall(function() return item:getNormalTexture() end)
+        if ok and value then texture = value end
+    end
+
+    if texture and texture.splitIcon then
+        ok, value = pcall(function() return texture:splitIcon() end)
+        if ok and value then return value end
+    end
+
+    return texture
+end
+
+function EHR.SetContextOptionIcon(option, item)
+    if not option or not item or option.iconTexture then return option end
+
+    local texture = EHR.GetItemIconTexture and EHR.GetItemIconTexture(item) or nil
+    if texture then
+        option.iconTexture = texture
+    end
+
+    return option
+end
+
 --[[
     Initialize player data
     Called when player is created

@@ -5079,6 +5079,7 @@ local function OnMedicationContextMenu(player, context, items)
                 local option = context:addOption(optionName, playerObj, function(plr)
                     EHR.Medication.UseMedication(plr, item)
                 end)
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 if not canUse then
                     option.notAvailable = true

@@ -844,6 +844,21 @@ function EHR.ServerCommands.DrinkWaterRisk(player, args)
     syncModDataToClient(player)
 end
 
+function EHR.ServerCommands.EnvironmentalSnapshot(player, args)
+    if not player then return end
+    if not EHR.Environmental or not EHR.Environmental.StoreClientSnapshot then
+        log("[EHR Server] EnvironmentalSnapshot rejected: environmental module unavailable")
+        return
+    end
+
+    local ok, result = pcall(function()
+        return EHR.Environmental.StoreClientSnapshot(player, args or {})
+    end)
+    if not ok then
+        log("[EHR Server] EnvironmentalSnapshot failed: " .. tostring(result))
+    end
+end
+
 function EHR.ServerCommands.FoodDiseaseRisk(player, args)
     if not player then return end
     if not EHR.Disease or not EHR.Disease.ApplyFoodDiseaseRisk then
@@ -2259,11 +2274,14 @@ end
 -- ============================================
 
 local function OnClientCommand(module, command, player, args)
-    -- DEBUG: Log ALL incoming commands (even non-EHR ones for diagnostics)
-    log("[EHR Server DEBUG] ========== OnClientCommand ==========")
-    log("[EHR Server DEBUG] module = '" .. tostring(module) .. "'")
-    log("[EHR Server DEBUG] command = '" .. tostring(command) .. "'")
-    log("[EHR Server DEBUG] player = " .. tostring(player and player:getUsername() or "nil"))
+    local isEHRCommand = module == "EHR" or module == "EHR_Flyers"
+    local quietCommand = module == "EHR" and command == "EnvironmentalSnapshot"
+    if isEHRCommand and not quietCommand then
+        log("[EHR Server DEBUG] ========== OnClientCommand ==========")
+        log("[EHR Server DEBUG] module = '" .. tostring(module) .. "'")
+        log("[EHR Server DEBUG] command = '" .. tostring(command) .. "'")
+        log("[EHR Server DEBUG] player = " .. tostring(player and player:getUsername() or "nil"))
+    end
 
     -- ============================================
     -- MP ITEM SYNC COMMANDS (any player can use)
@@ -2274,6 +2292,9 @@ local function OnClientCommand(module, command, player, args)
             return
         elseif command == "DrinkWaterRisk" then
             EHR.ServerCommands.DrinkWaterRisk(player, args)
+            return
+        elseif command == "EnvironmentalSnapshot" then
+            EHR.ServerCommands.EnvironmentalSnapshot(player, args)
             return
         elseif command == "FoodDiseaseRisk" then
             EHR.ServerCommands.FoodDiseaseRisk(player, args)

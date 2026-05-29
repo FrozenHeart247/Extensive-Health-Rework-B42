@@ -474,6 +474,7 @@ function EHR_HealthPanelUI:new(x, y, player)
     o.tabBounds = {}
     o.embeddedTabs = {}
     o.cachedData = {}
+    o.progressSmoothing = {}
     o.vanillaHealthAdapter = nil
     o.isRemoteHealthPanel = false
     o.remoteDoctor = nil
@@ -1699,6 +1700,48 @@ function EHR_HealthPanelUI:getDiseaseProgress(disease)
     return 0
 end
 
+function EHR_HealthPanelUI:getProgressSmoothingKey(diseaseId, disease)
+    local playerKey = tostring(self.playerNum or 0)
+    if self.player then
+        local ok, onlineId = pcall(function()
+            return self.player:getOnlineID()
+        end)
+        if ok and onlineId ~= nil then
+            playerKey = tostring(onlineId)
+        end
+    end
+
+    local diseaseKey = tostring(diseaseId or "")
+    if diseaseKey == "" and type(disease) == "table" then
+        diseaseKey = tostring(disease.iconKey or disease.displayName or disease.name or "unknown")
+    end
+
+    return playerKey .. ":" .. diseaseKey
+end
+
+function EHR_HealthPanelUI:getSmoothedDiseaseProgress(diseaseId, disease, targetProgress)
+    targetProgress = clamp(tonumber(targetProgress) or 0, 0, 100)
+    self.progressSmoothing = self.progressSmoothing or {}
+
+    local key = self:getProgressSmoothingKey(diseaseId, disease)
+    local state = self.progressSmoothing[key]
+    if not state then
+        self.progressSmoothing[key] = { value = targetProgress }
+        return targetProgress
+    end
+
+    local current = tonumber(state.value) or targetProgress
+    local delta = targetProgress - current
+    if math.abs(delta) <= 0.15 then
+        current = targetProgress
+    else
+        current = current + delta * 0.12
+    end
+
+    state.value = clamp(current, 0, 100)
+    return state.value
+end
+
 function EHR_HealthPanelUI:isDiseaseTreated(diseaseId)
     local disease = self.cachedData and self.cachedData.diseases and self.cachedData.diseases[diseaseId]
     if type(disease) == "table" and disease.treating == true then
@@ -1767,11 +1810,19 @@ function EHR_HealthPanelUI:getCadavericExposureDisplay(exposure, config)
         return "High"
     elseif exposure >= highThreshold * 0.60 then
         return "Medium"
-    elseif exposure >= highThreshold * 0.30 then
+    elseif exposure >= (tonumber(config and config.ASPERGILLOSIS_DISPLAY_MIN_EXPOSURE) or 1) then
         return "Low"
     end
 
     return "None"
+end
+
+function EHR_HealthPanelUI:getCadavericExposureProgress(exposure, config)
+    exposure = tonumber(exposure) or 0
+    local highThreshold = tonumber(config and config.ASPERGILLOSIS_EXPOSURE_THRESHOLD) or 120
+    if highThreshold <= 0 then return 0 end
+
+    return clamp(exposure / highThreshold, 0, 1)
 end
 
 function EHR_HealthPanelUI:getCorpseExposureColor(exposureLevel)
@@ -1857,7 +1908,7 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
                     exposureLevel = exposureLevel,
                     exposureColor = self:getCorpseExposureColor(exposureLevel),
                     severity = stage,
-                    progress = highThreshold > 0 and clamp(exposure / highThreshold, 0, 1) or 0,
+                    progress = self:getCadavericExposureProgress(exposure, config),
                     stage = stage,
                     isCorpseExposure = true,
                     iconKey = "cadaveric_aspergillosis",
@@ -3147,6 +3198,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     local stage = type(disease) == "table" and (tonumber(disease.stage) or 1) or 1
     local severity = type(disease) == "table" and (tonumber(disease.severity) or 0.5) or 0.5
     local progress = self:getDiseaseProgress(disease)
+    local visualProgress = self:getSmoothedDiseaseProgress(diseaseId, disease, progress)
     local treated = self:isDiseaseTreated(diseaseId)
     local status = displayInfo.statusText or (treated and safeText("UI_EHR_Status_Treating", "TREATING") or safeText("UI_EHR_Status_Untreated", "UNTREATED"))
     local statusColor = displayInfo.statusColor or (displayInfo.statusText and c.red or (treated and c.green or c.orange))
@@ -3195,7 +3247,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
     end
     local progressText = displayInfo.progressText
     if progressText == nil then
-        progressText = displayInfo.showProgress and string.format("%d%%", math.floor(progress + 0.5)) or "??%"
+        progressText = displayInfo.showProgress and string.format("%d%%", math.floor(visualProgress + 0.5)) or "??%"
     end
 
     self:drawText(self:truncateText(name, textW, UIFont.Medium), textX, y + 16, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
@@ -3211,7 +3263,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
         local barX = textX
         local barY = y + 99
         local barW = w - textOffset - 14
-        local filled = displayInfo.showProgress and math.floor(barW * clamp(progress / 100, 0, 1)) or 0
+        local filled = displayInfo.showProgress and math.floor(barW * clamp(visualProgress / 100, 0, 1)) or 0
         self:drawRect(barX, barY, barW, 6, 1, 0.05, 0.05, 0.05)
         if filled > 0 then
             self:drawRect(barX, barY, filled, 6, c.green.a, c.green.r, c.green.g, c.green.b)

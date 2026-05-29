@@ -99,10 +99,12 @@ end
 -- ============================================
 
 local function OnServerCommand(module, command, args)
-    -- Debug: Log all incoming server commands
-    log("[EHR Client] OnServerCommand received:")
-    log("[EHR Client]   module = " .. tostring(module))
-    log("[EHR Client]   command = " .. tostring(command))
+    local isEHRCommand = module == "EHR_Dialogue" or module == "EHR_Flyers" or module == "EHR_Sync"
+    if isEHRCommand then
+        log("[EHR Client] OnServerCommand received:")
+        log("[EHR Client]   module = " .. tostring(module))
+        log("[EHR Client]   command = " .. tostring(command))
+    end
 
     if module == "EHR_Dialogue" then
         if handleDialogueCommand(command, args) then return end

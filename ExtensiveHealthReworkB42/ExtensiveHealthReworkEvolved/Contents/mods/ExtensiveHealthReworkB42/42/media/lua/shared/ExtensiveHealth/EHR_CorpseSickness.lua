@@ -99,6 +99,7 @@ EHR.CorpseSickness.Config = {
     ASPERGILLOSIS_BASE_CHANCE = 0.35,
     ASPERGILLOSIS_MAX_CHANCE = 0.85,
     ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN = true,
+    ASPERGILLOSIS_DISPLAY_MIN_EXPOSURE = 1,
 
     -- Dialogue lines for smell warning
     SMELL_DIALOGUES = {
@@ -1142,11 +1143,41 @@ function EHR.CorpseSickness.UpdateExposure(player)
     data.lastCorpseCount = corpseInfo.count
 
     local envMultiplier = EHR.CorpseSickness.GetEnvironmentMultiplier(player)
+    local _, hasFungalWeather = EHR.CorpseSickness.GetFungalEnvironment(player)
     local protection = EHR.CorpseSickness.GetProtectionLevel(player)
     local isFullyProtected = protection >= 1.0
 
     local hasActiveFoodDisease = EHR.CorpseSickness.HasActiveFoodDisease(player)
     local hasRecentFoodRisk = EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
+
+    -- Damp/cold corpse fields are handled by cadaveric aspergillosis. Do not
+    -- also build acute putrefaction exposure from the same corpses/weather.
+    if isAspergillosisEnabled() and hasFungalWeather and (corpseInfo.count or 0) > 0 then
+        local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
+        data.currentExposure = math.max(0, (data.currentExposure or 0) - decay)
+
+        local bridgeDecay = (config.VANILLA_BRIDGE_DECAY_PER_HOUR or config.EXPOSURE_DECAY_PER_HOUR) * deltaHours
+        data.vanillaCorpseExposure = math.max(0, (data.vanillaCorpseExposure or 0) - bridgeDecay)
+        data.lastVanillaCorpseSignalHour = 0
+        data.timeInArea = 0
+
+        local effectiveExposureLevel = math.max(data.currentExposure or 0, data.vanillaCorpseExposure or 0)
+        EHR.CorpseSickness.DecayVanillaSickness(player, effectiveExposureLevel, deltaHours)
+        EHR.CorpseSickness.ClampVanillaSickness(player, effectiveExposureLevel)
+
+        if effectiveExposureLevel <= (config.VANILLA_SICKNESS_CLEAR_EXPOSURE or 1) then
+            EHR.CorpseSickness.ClearTinyVanillaSickness(player, config.VANILLA_SICKNESS_CLEAR_THRESHOLD or 0.005)
+        end
+
+        if not hasActiveFoodDisease and not hasRecentFoodRisk then
+            data.suppressFoodSicknessUntil = currentHour + (config.FOOD_SICKNESS_SUPPRESS_DURATION or 0.5)
+            EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+        end
+
+        local target = EHR.CorpseSickness.GetVanillaSicknessTarget(effectiveExposureLevel)
+        data.lastVanillaSickness = math.min(vanillaSickness, target + (config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005))
+        return
+    end
 
     local rawVanillaCorpseSignal = corpseInfo.count > 0
         and vanillaSickness > 0.01

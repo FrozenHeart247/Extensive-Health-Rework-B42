@@ -38,6 +38,9 @@ EHR_HealthPanelUI = ISPanel:derive("EHR_HealthPanelUI")
 EHR_HealthBodyPartPanel = ISBodyPartPanel:derive("EHR_HealthBodyPartPanel")
 EHR_RemoteMedicalAction = ISBaseTimedAction:derive("EHR_RemoteMedicalAction")
 
+local antibodiesWindowModule = nil
+local antibodiesWindowChecked = false
+
 EHR_HealthPanelUI.EXPANDED_WIDTH = 990
 EHR_HealthPanelUI.COLLAPSED_WIDTH = 500
 EHR_HealthPanelUI.HEIGHT = 780
@@ -239,6 +242,35 @@ local function safeText(key, fallback)
         return fallback
     end
     return text
+end
+
+local function getAntibodiesWindowModule()
+    if antibodiesWindowChecked then
+        return antibodiesWindowModule
+    end
+
+    antibodiesWindowChecked = true
+
+    if getActivatedMods then
+        local ok, activeMods = pcall(getActivatedMods)
+        if ok and activeMods and activeMods.contains and not activeMods:contains("lgd_antibodies") then
+            return nil
+        end
+    end
+
+    if require then
+        local ok, module = pcall(require, "ui/antibodies_window")
+        if ok and type(module) == "table" and type(module.show) == "function" then
+            if not module.toString then
+                function module:toString()
+                    return "AntibodiesWindow"
+                end
+            end
+            antibodiesWindowModule = module
+        end
+    end
+
+    return antibodiesWindowModule
 end
 
 local function safeFormat(key, fallback, ...)
@@ -496,6 +528,13 @@ function EHR.UI.ShouldHeartButtonOpenEHR()
     return false
 end
 
+function EHR.UI.ShouldOpenHealthPanelCompact()
+    if EHR.Keybinds and EHR.Keybinds.ShouldOpenHealthPanelCompact then
+        return EHR.Keybinds.ShouldOpenHealthPanelCompact()
+    end
+    return true
+end
+
 function EHR.UI.ToggleVanillaHealthPanel(player)
     player = player or (getSpecificPlayer and getSpecificPlayer(0)) or (getPlayer and getPlayer())
     if not player then return end
@@ -657,6 +696,14 @@ function EHR_HealthPanelUI:initialise()
     ISPanel.initialise(self)
 end
 
+function EHR_HealthPanelUI:toString()
+    return "EHR_HealthPanelUI"
+end
+
+function EHR_HealthBodyPartPanel:toString()
+    return "EHR_HealthBodyPartPanel"
+end
+
 function EHR_HealthPanelUI:getPatientBodyDamage()
     if not self.player or not self.player.getBodyDamage then return nil end
 
@@ -809,9 +856,62 @@ function EHR_HealthPanelUI:createChildren()
     self.expandButton.borderColor = { r = 0.72, g = 0.24, b = 0.20, a = 1 }
     self:addChild(self.expandButton)
 
+    self.antibodiesButton = ISButton:new(self.width - 90, 6, 24, 22, "", self, EHR_HealthPanelUI.onOpenAntibodiesPanel)
+    self.antibodiesButton:initialise()
+    self.antibodiesButton:instantiate()
+    self.antibodiesButton.toString = function()
+        return "EHR_AntibodiesButton"
+    end
+    self.antibodiesButton.borderColor = { r = 0.72, g = 0.24, b = 0.20, a = 1 }
+    self.antibodiesButton.backgroundColor = { r = 0.045, g = 0.025, b = 0.025, a = 0.72 }
+    self.antibodiesButton.backgroundColorMouseOver = { r = 0.20, g = 0.055, b = 0.045, a = 0.95 }
+    self.antibodiesButton:setTooltip(safeText("UI_EHR_AntibodiesPanel", "Antibodies panel"))
+    local antibodiesIcon = getTexture and getTexture("media/textures/Item_AntibodyCompTest.png") or nil
+    if antibodiesIcon then
+        self.antibodiesButton:setImage(antibodiesIcon)
+        self.antibodiesButton:forceImageSize(18, 18)
+    else
+        self.antibodiesButton:setTitle("AB")
+    end
+    self.antibodiesButton:setVisible(false)
+    self:addChild(self.antibodiesButton)
+
     self:ensureBodyPartPanel()
     self:createEmbeddedVanillaTabs()
     self:syncTabVisibility()
+end
+
+function EHR_HealthPanelUI:getAntibodiesPatient()
+    local patient = self.remotePatient or self.player
+    if patient and self.remotePatientOnlineID and getPlayerByOnlineID then
+        local ok, refreshed = pcall(function()
+            return getPlayerByOnlineID(self.remotePatientOnlineID)
+        end)
+        if ok and refreshed then
+            patient = refreshed
+        end
+    end
+    return patient
+end
+
+function EHR_HealthPanelUI:shouldShowAntibodiesButton()
+    local doctor = self.remoteDoctor or self.player
+    local patient = self:getAntibodiesPatient()
+    if not doctor or not patient then return false end
+    return getAntibodiesWindowModule() ~= nil
+end
+
+function EHR_HealthPanelUI:onOpenAntibodiesPanel()
+    local antibodiesWindow = getAntibodiesWindowModule()
+    if not antibodiesWindow or not antibodiesWindow.show then return end
+
+    local doctor = self.remoteDoctor or self.player
+    local patient = self:getAntibodiesPatient()
+    if not doctor or not patient then return end
+
+    pcall(function()
+        antibodiesWindow.show(doctor, patient)
+    end)
 end
 
 function EHR_HealthPanelUI:ensureBodyPartPanel()
@@ -1386,6 +1486,9 @@ function EHR_HealthPanelUI:syncTabVisibility()
     if self.expandButton then
         self.expandButton:setVisible(isEHR)
     end
+    if self.antibodiesButton then
+        self.antibodiesButton:setVisible(self:shouldShowAntibodiesButton())
+    end
     if self.embeddedTabs then
         for id, view in pairs(self.embeddedTabs) do
             local shouldShow = self.activeTab == id
@@ -1426,6 +1529,10 @@ function EHR_HealthPanelUI:repositionControls()
         self.expandButton:setX(self.width - 60)
         self.expandButton:setY(math.floor((self.HEADER_HEIGHT - self.expandButton.height) / 2))
         self.expandButton:setTitle(self.rightExpanded and "-" or "+")
+    end
+    if self.antibodiesButton then
+        self.antibodiesButton:setX(self.width - 90)
+        self.antibodiesButton:setY(math.floor((self.HEADER_HEIGHT - self.antibodiesButton.height) / 2))
     end
 end
 
@@ -2748,7 +2855,11 @@ function EHR_HealthPanelUI:drawHeader()
     self:drawRect(0, self.HEADER_HEIGHT - 1, self.width, 1, 0.85, c.border.r, c.border.g, c.border.b)
     self:drawRectBorder(0, 0, self.width, self.height, c.border.a, c.border.r, c.border.g, c.border.b)
     self:drawDockedText(self:truncateText("EHR MEDICAL STATUS", math.max(90, self.width - 190), UIFont.Medium), 14, 0, math.max(90, self.width - 190), self.HEADER_HEIGHT, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
-    self:drawDockedTextRight("[" .. tostring(summary.bloodType) .. "]", self.width - (self.activeTab == "ehr" and 86 or 50), 0, self.HEADER_HEIGHT, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Medium)
+    local rightReserve = self.activeTab == "ehr" and 86 or 50
+    if self.antibodiesButton and self.antibodiesButton:isVisible() then
+        rightReserve = rightReserve + 30
+    end
+    self:drawDockedTextRight("[" .. tostring(summary.bloodType) .. "]", self.width - rightReserve, 0, self.HEADER_HEIGHT, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Medium)
 end
 
 function EHR_HealthPanelUI:drawTabBar()
@@ -2907,6 +3018,9 @@ function EHR_HealthPanelUI:getVanillaHealthAdapter()
             blockingMessage = nil,
         }
 
+        self.vanillaHealthAdapter.toString = function()
+            return "EHR_VanillaHealthAdapter"
+        end
         self.vanillaHealthAdapter.getAbsoluteX = function(adapter)
             return adapter.owner and adapter.owner:getAbsoluteX() or 0
         end
@@ -3543,6 +3657,7 @@ function EHR_HealthPanelUI:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPar
 
     local playerNum = self.playerNum or (self.remoteDoctor and self.remoteDoctor.getPlayerNum and self.remoteDoctor:getPlayerNum()) or 0
     local context = ISContextMenu.get(playerNum, x + self:getAbsoluteX(), y + self:getAbsoluteY())
+    context.origin = self.bodyPartPanel or self
 
     self:addRemotePoulticeOptions(context, actionBodyPart, snapshot)
     self:addRemoteBandageOptions(context, actionBodyPart, snapshot)
@@ -3555,6 +3670,11 @@ function EHR_HealthPanelUI:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPar
 
     if context:isEmpty() then
         context:setVisible(false)
+    elseif JoypadState and JoypadState.players and JoypadState.players[playerNum + 1] then
+        JoypadState.players[playerNum + 1].focus = context
+        if updateJoypadFocus then
+            updateJoypadFocus(JoypadState.players[playerNum + 1])
+        end
     end
     return true
 end
@@ -4201,7 +4321,8 @@ function EHR_HealthPanelUI:drawSelectedBodyPartDetails(x, y, w, h, partName, sta
 
     self:drawRect(x, y, w, h, 0.56, 0.025, 0.025, 0.028)
     self:drawRectBorder(x, y, w, h, 0.62, c.borderDim.r, c.borderDim.g, c.borderDim.b)
-    self:drawDockedText(self:truncateText(title, w - 16, font), x + 8, y - 5, w - 16, 22, c.green.r, c.green.g, c.green.b, c.green.a, font, -1)
+    local titleY = (partName == nil or partName == "None") and y or (y - 5)
+    self:drawDockedText(self:truncateText(title, w - 16, font), x + 8, titleY, w - 16, 22, c.green.r, c.green.g, c.green.b, c.green.a, font, -1)
     self:drawRect(x + 8, y + 22, w - 16, 1, 0.45, c.border.r, c.border.g, c.border.b)
 
     local rowY = y + 33
@@ -4931,6 +5052,17 @@ function EHR_HealthPanelUI:onToggleRight()
     self:keepOnScreen()
 end
 
+function EHR_HealthPanelUI:applyDefaultOpenMode()
+    local compact = true
+    if EHR.UI and EHR.UI.ShouldOpenHealthPanelCompact then
+        compact = EHR.UI.ShouldOpenHealthPanelCompact()
+    end
+
+    self.rightExpanded = not compact
+    self:setWidth(compact and EHR_HealthPanelUI.COLLAPSED_WIDTH or EHR_HealthPanelUI.EXPANDED_WIDTH)
+    self:repositionControls()
+end
+
 function EHR.UI.ShowHealthPanel(player)
     player = player or (getSpecificPlayer and getSpecificPlayer(0)) or (getPlayer and getPlayer())
     if not player then return end
@@ -4941,7 +5073,8 @@ function EHR.UI.ShowHealthPanel(player)
         local core = getCore and getCore()
         local screenW = core and core:getScreenWidth() or 1280
         local screenH = core and core:getScreenHeight() or 720
-        local x = math.floor((screenW - EHR_HealthPanelUI.EXPANDED_WIDTH) / 2)
+        local initialW = EHR.UI.ShouldOpenHealthPanelCompact() and EHR_HealthPanelUI.COLLAPSED_WIDTH or EHR_HealthPanelUI.EXPANDED_WIDTH
+        local x = math.floor((screenW - initialW) / 2)
         local y = math.floor((screenH - EHR_HealthPanelUI.HEIGHT) / 2)
 
         local panel = EHR_HealthPanelUI:new(math.max(0, x), math.max(0, y), player)
@@ -4954,6 +5087,7 @@ function EHR.UI.ShowHealthPanel(player)
     EHR.UI.HealthPanelInstance:bindPlayer(player)
     EHR.UI.HealthPanelInstance.activeTab = "ehr"
     EHR.UI.HealthPanelInstance.contentScrollY = 0
+    EHR.UI.HealthPanelInstance:applyDefaultOpenMode()
     EHR.UI.HealthPanelInstance:syncTabVisibility()
     EHR.UI.HealthPanelInstance:setVisible(true)
     EHR.UI.HealthPanelInstance:bringToTop()
@@ -5142,7 +5276,8 @@ function EHR.UI.ShowRemoteHealthPanel(doctor, patient, examData)
             count = count + 1
         end
 
-        local x = math.floor((screenW - EHR_HealthPanelUI.EXPANDED_WIDTH) / 2) + (count % 3) * 24
+        local initialW = EHR.UI.ShouldOpenHealthPanelCompact() and EHR_HealthPanelUI.COLLAPSED_WIDTH or EHR_HealthPanelUI.EXPANDED_WIDTH
+        local x = math.floor((screenW - initialW) / 2) + (count % 3) * 24
         local y = math.floor((screenH - EHR_HealthPanelUI.HEIGHT) / 2) + (count % 3) * 32
 
         panel = EHR_HealthPanelUI:new(math.max(0, x), math.max(0, y), patient)
@@ -5165,12 +5300,9 @@ function EHR.UI.ShowRemoteHealthPanel(doctor, patient, examData)
     if doctor.startReceivingBodyDamageUpdates then
         pcall(function() doctor:startReceivingBodyDamageUpdates(patient) end)
     end
-    panel.rightExpanded = true
     panel.activeTab = "ehr"
     panel.contentScrollY = 0
-    if panel.width < EHR_HealthPanelUI.EXPANDED_WIDTH then
-        panel:setWidth(EHR_HealthPanelUI.EXPANDED_WIDTH)
-    end
+    panel:applyDefaultOpenMode()
     panel:repositionControls()
     panel:syncTabVisibility()
     panel:setVisible(true)

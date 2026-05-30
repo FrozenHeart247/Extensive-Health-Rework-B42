@@ -29,6 +29,7 @@ EHR.Keybinds.IDs = {
     TOGGLE_DEBUG = "ToggleDebugMenu",
     TOGGLE_JOURNAL = "ToggleMedicalJournal",
     PRIMARY_HEALTH_PANEL = "PrimaryHealthPanel",
+    OPEN_HEALTH_PANEL_COMPACT = "OpenHealthPanelCompact",
 }
 
 -- Default keycodes (Keyboard.KEY_*)
@@ -146,6 +147,14 @@ function EHR.Keybinds.Initialize(forceRefresh)
         "UI_EHR_PrimaryHealthPanel_tt",
         "When enabled, the EHR hotkey opens the EHR panel and the heart button opens vanilla health. Disable to swap them."
     )
+    ensureTickBox(
+        EHR.Keybinds.IDs.OPEN_HEALTH_PANEL_COMPACT,
+        "UI_EHR_OpenHealthPanelCompact",
+        "Open EHR panels compact",
+        true,
+        "UI_EHR_OpenHealthPanelCompact_tt",
+        "When enabled, EHR health panels open in compact mode. Disable to open them expanded."
+    )
 
     EHR.Keybinds.initialized = true
     EHR.Log("Keybinds: Initialization complete")
@@ -240,6 +249,10 @@ end
 
 function EHR.Keybinds.IsEHRPrimaryHealthPanel()
     return EHR.Keybinds.GetOptionBoolean(EHR.Keybinds.IDs.PRIMARY_HEALTH_PANEL, true)
+end
+
+function EHR.Keybinds.ShouldOpenHealthPanelCompact()
+    return EHR.Keybinds.GetOptionBoolean(EHR.Keybinds.IDs.OPEN_HEALTH_PANEL_COMPACT, true)
 end
 
 function EHR.Keybinds.ShouldHotkeyOpenEHR()

@@ -24,6 +24,22 @@ pcall(function() require "XpSystem/ISUI/ISHealthPanel" end)
 EHR = EHR or {}
 EHR.MPExamination = {}
 
+local examinePlayerIcon = nil
+local examinePlayerIconLoaded = false
+
+local function getExaminePlayerIcon()
+    if examinePlayerIconLoaded then
+        return examinePlayerIcon
+    end
+
+    examinePlayerIconLoaded = true
+    if getTexture then
+        examinePlayerIcon = getTexture("media/textures/EHR_ExaminePlayer.png")
+    end
+
+    return examinePlayerIcon
+end
+
 local function EHR_GetMedicalCheckIntentPlayerKey(player)
     if not player then return nil end
 
@@ -851,6 +867,10 @@ function EHR.MPExamination.OnFillWorldObjectContextMenu(playerNum, context, worl
             optionText = optionText .. " (" .. targetName .. ")"
 
             local option = context:addOption(optionText, localPlayer, EHR.MPExamination.OnExamineClick, targetPlayer)
+            local icon = getExaminePlayerIcon()
+            if icon then
+                option.iconTexture = icon
+            end
 
             -- Gray out if the vanilla consent flow cannot be started from here.
             if not canRequest then

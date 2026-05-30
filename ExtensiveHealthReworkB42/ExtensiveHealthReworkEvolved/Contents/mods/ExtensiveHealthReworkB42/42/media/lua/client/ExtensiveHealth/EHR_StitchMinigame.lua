@@ -10,6 +10,7 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.StitchMinigame = EHR.StitchMinigame or {}
+EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
 
 local C = {
     bg = { r = 0.018, g = 0.016, b = 0.016, a = 0.97 },
@@ -85,6 +86,11 @@ end
 
 local function isBodyPartStillValid(bodyPart)
     if not bodyPart then return false end
+    local remoteValidUntil = EHR.StitchMinigame.RemoteValidBodyParts and EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] or nil
+    if remoteValidUntil and getTimestampMs and getTimestampMs() <= remoteValidUntil then
+        return true
+    end
+
     local okDeep, deep = pcall(function()
         if bodyPart.deepWounded then
             return bodyPart:deepWounded()
@@ -94,6 +100,12 @@ local function isBodyPartStillValid(bodyPart)
     local okGlass, glass = pcall(function() return bodyPart:haveGlass() end)
     local okStitched, stitched = pcall(function() return bodyPart:stitched() end)
     return okDeep and deep == true and (not okGlass or glass ~= true) and (not okStitched or stitched ~= true)
+end
+
+function EHR.StitchMinigame.AllowRemoteBodyPart(bodyPart, milliseconds)
+    if not bodyPart or not getTimestampMs then return end
+    EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
+    EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] = getTimestampMs() + (tonumber(milliseconds) or 180000)
 end
 
 function EHR.StitchMinigame.IsEnabled()

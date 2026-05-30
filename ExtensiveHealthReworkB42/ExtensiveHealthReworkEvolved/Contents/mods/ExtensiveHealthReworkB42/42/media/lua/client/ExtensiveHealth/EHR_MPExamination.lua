@@ -24,10 +24,69 @@ pcall(function() require "XpSystem/ISUI/ISHealthPanel" end)
 EHR = EHR or {}
 EHR.MPExamination = {}
 
+local function EHR_GetMedicalCheckIntentPlayerKey(player)
+    if not player then return nil end
+
+    local username = nil
+    if player.getUsername then
+        pcall(function() username = player:getUsername() end)
+    end
+    if username and username ~= "" then
+        return "user_" .. tostring(username)
+    end
+
+    local onlineID = nil
+    if player.getOnlineID then
+        pcall(function() onlineID = player:getOnlineID() end)
+    end
+    if onlineID ~= nil then
+        return "online_" .. tostring(onlineID)
+    end
+
+    local playerNum = nil
+    if player.getPlayerNum then
+        pcall(function() playerNum = player:getPlayerNum() end)
+    end
+    if playerNum ~= nil then
+        return "player_" .. tostring(playerNum)
+    end
+
+    return tostring(player)
+end
+
+local function EHR_GetMedicalCheckIntentKey(doctor, patient)
+    local doctorKey = EHR_GetMedicalCheckIntentPlayerKey(doctor)
+    local patientKey = EHR_GetMedicalCheckIntentPlayerKey(patient)
+    if not doctorKey or not patientKey then return nil end
+    return doctorKey .. "->" .. patientKey
+end
+
+local function EHR_MarkEHRMedicalCheckIntent(doctor, patient)
+    local key = EHR_GetMedicalCheckIntentKey(doctor, patient)
+    if not key then return end
+
+    EHR.MPExamination.PendingEHRMedicalChecks = EHR.MPExamination.PendingEHRMedicalChecks or {}
+    EHR.MPExamination.PendingEHRMedicalChecks[key] = getTimestampMs and getTimestampMs() or 0
+end
+
+local function EHR_ConsumeEHRMedicalCheckIntent(doctor, patient)
+    local key = EHR_GetMedicalCheckIntentKey(doctor, patient)
+    if not key then return false end
+
+    local pending = EHR.MPExamination.PendingEHRMedicalChecks
+    local startedAt = pending and pending[key] or nil
+    if not startedAt then return false end
+
+    pending[key] = nil
+    if getTimestampMs and tonumber(startedAt) then
+        return (getTimestampMs() - startedAt) <= 30000
+    end
+    return true
+end
+
 -- Vanilla B42 can re-wrap an already open remote health panel when "Check Health"
--- is performed again. The old wrapper is left behind as an empty black window.
--- Prefer the EHR health panel for remote patients and keep this cleanup for
--- any stale vanilla windows created before EHR takes over.
+-- is performed again. EHR only takes over checks started from its own context
+-- menu entry; regular vanilla Medical Check stays vanilla.
 local function EHR_PrepareRemoteHealthWindow(window, patient)
     if not window or window.ehrRemoteHealthPrepared then return end
     window.ehrRemoteHealthPrepared = true
@@ -87,7 +146,7 @@ local function EHR_PatchVanillaMedicalCheck()
     ISMedicalCheckAction.perform = function(actionSelf)
         local doctor = actionSelf and actionSelf.character
         local patient = actionSelf and actionSelf.otherPlayer
-        if doctor and patient and EHR and EHR.UI and EHR.UI.ShowRemoteHealthPanel then
+        if doctor and patient and EHR_ConsumeEHRMedicalCheckIntent(doctor, patient) and EHR and EHR.UI and EHR.UI.ShowRemoteHealthPanel then
             EHR_ClearVanillaRemoteHealthWindow(patient)
 
             local panel = EHR.UI.ShowRemoteHealthPanel(doctor, patient)
@@ -260,6 +319,7 @@ function EHR.MPExamination.RequestMedicalCheck(localPlayer, targetPlayer)
     end
 
     if requestMedicalCheck then
+        EHR_MarkEHRMedicalCheckIntent(localPlayer, targetPlayer)
         requestMedicalCheck(targetPlayer, localPlayer)
         return true
     end
@@ -473,6 +533,7 @@ function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent, fo
         localPlayer = localPlayer,
         targetPlayer = targetPlayer,
         timestamp = getTimestampMs(),
+        silent = silent == true,
     }
 
     -- Send request to server
@@ -535,6 +596,13 @@ function EHR.MPExamination.OnExamDataReceived(targetUsername, data)
 
     -- Clear pending request
     EHR.MPExamination.PendingRequests[targetUsername] = nil
+    if data and data.targetActualUsername then
+        EHR.MPExamination.PendingRequests[data.targetActualUsername] = nil
+    end
+
+    if pending.silent then
+        return
+    end
 
     -- Open the monitor
     EHR.MPExamination.OpenMonitorForPlayer(pending.localPlayer, pending.targetPlayer, data)

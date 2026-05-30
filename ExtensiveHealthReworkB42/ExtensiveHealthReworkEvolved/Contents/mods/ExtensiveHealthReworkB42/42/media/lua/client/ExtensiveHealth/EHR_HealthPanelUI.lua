@@ -15,6 +15,18 @@ require "XpSystem/ISUI/ISCharacterInfo"
 require "XpSystem/ISUI/ISCharacterProtection"
 require "XpSystem/ISUI/ISClothingInsPanel"
 pcall(function() require "ISUI/ISEquippedItem" end)
+pcall(function() require "TimedActions/ISBaseTimedAction" end)
+pcall(function() require "TimedActions/ISInventoryTransferUtil" end)
+pcall(function() require "TimedActions/ISApplyBandage" end)
+pcall(function() require "TimedActions/ISCleanBurn" end)
+pcall(function() require "TimedActions/ISComfreyCataplasm" end)
+pcall(function() require "TimedActions/ISDisinfect" end)
+pcall(function() require "TimedActions/ISGarlicCataplasm" end)
+pcall(function() require "TimedActions/ISPlantainCataplasm" end)
+pcall(function() require "TimedActions/ISRemoveBullet" end)
+pcall(function() require "TimedActions/ISRemoveGlass" end)
+pcall(function() require "TimedActions/ISSplint" end)
+pcall(function() require "TimedActions/ISStitch" end)
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
@@ -24,6 +36,7 @@ EHR.UI = EHR.UI or {}
 
 EHR_HealthPanelUI = ISPanel:derive("EHR_HealthPanelUI")
 EHR_HealthBodyPartPanel = ISBodyPartPanel:derive("EHR_HealthBodyPartPanel")
+EHR_RemoteMedicalAction = ISBaseTimedAction:derive("EHR_RemoteMedicalAction")
 
 EHR_HealthPanelUI.EXPANDED_WIDTH = 990
 EHR_HealthPanelUI.COLLAPSED_WIDTH = 500
@@ -339,6 +352,38 @@ local function bodyPartMatchesSnapshot(bodyPart, snapshot)
     end
 
     return true
+end
+
+function EHR_RemoteMedicalAction:isValid()
+    return self.character ~= nil and self.panel ~= nil and self.factory ~= nil
+end
+
+function EHR_RemoteMedicalAction:start()
+end
+
+function EHR_RemoteMedicalAction:update()
+    self:forceComplete()
+end
+
+function EHR_RemoteMedicalAction:stop()
+    ISBaseTimedAction.stop(self)
+end
+
+function EHR_RemoteMedicalAction:perform()
+    if self.panel and self.factory then
+        self.factory(self.panel, self)
+    end
+    ISBaseTimedAction.perform(self)
+end
+
+function EHR_RemoteMedicalAction:new(character, panel, factory)
+    local o = ISBaseTimedAction.new(self, character)
+    o.stopOnWalk = false
+    o.stopOnRun = true
+    o.maxTime = -1
+    o.panel = panel
+    o.factory = factory
+    return o
 end
 
 local function copyBodyPartStatuses(statuses)
@@ -909,7 +954,6 @@ function EHR_HealthPanelUI:getTabDefinitions()
     if self.isRemoteHealthPanel then
         return {
             { id = "ehr", label = safeText("UI_EHR_Tab_EHR_Compact", "EHR") },
-            { id = "health", label = vanillaText.health or safeText("UI_EHR_Tab_Health", "Health") },
         }
     end
     if self.width < 560 then
@@ -1248,20 +1292,10 @@ function EHR_HealthPanelUI:createEmbeddedVanillaTabs()
     self.embeddedTabs = self.embeddedTabs or {}
 
     if not self.player then return end
+    if self.isRemoteHealthPanel then return end
 
     local bounds = self:getTabContentBounds()
-    local specs = nil
-    if self.isRemoteHealthPanel then
-        specs = {
-            {
-                id = "health",
-                factory = function()
-                    return ISHealthPanel:new(self.player, 0, 0, bounds.w, bounds.h)
-                end,
-            },
-        }
-    else
-        specs = {
+    local specs = {
         {
             id = "info",
             factory = function()
@@ -1292,8 +1326,7 @@ function EHR_HealthPanelUI:createEmbeddedVanillaTabs()
                 return ISClothingInsPanel:new(self.player, 0, 0, bounds.w, bounds.h)
             end,
         },
-        }
-    end
+    }
 
     for _, spec in ipairs(specs) do
         local oldHealthInstance = ISHealthPanel and ISHealthPanel.instance or nil
@@ -2959,6 +2992,772 @@ function EHR_HealthPanelUI:resolveBodyPartForAction(bodyPart, bodyPartType)
     return bodyPart
 end
 
+function EHR_HealthPanelUI:getBodyPartForActionType(bodyPart, bodyPartType)
+    if not bodyPartType then
+        bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    end
+
+    local bodyDamage = self:getPatientBodyDamage()
+    if bodyDamage and bodyDamage.getBodyPart and bodyPartType then
+        local ok, currentBodyPart = pcall(function()
+            return bodyDamage:getBodyPart(bodyPartType)
+        end)
+        if ok and currentBodyPart then
+            return currentBodyPart
+        end
+    end
+
+    return bodyPart
+end
+
+function EHR_HealthPanelUI:collectDoctorInventoryItems(predicate)
+    local items = {}
+    local doctor = self.remoteDoctor or (self.isRemoteHealthPanel and self.remoteDoctor) or self.player
+    if not doctor or not predicate then return items end
+
+    local function scanContainer(container, seen)
+        if not container or seen[container] then return end
+        seen[container] = true
+        local containerItems = container.getItems and container:getItems() or nil
+        if not containerItems or not containerItems.size then return end
+
+        for i = 0, containerItems:size() - 1 do
+            local item = containerItems:get(i)
+            if item then
+                if item.IsInventoryContainer and item:IsInventoryContainer() and item.getInventory then
+                    scanContainer(item:getInventory(), seen)
+                elseif predicate(item) then
+                    table.insert(items, item)
+                end
+            end
+        end
+    end
+
+    if ISInventoryPaneContextMenu and ISInventoryPaneContextMenu.getContainers then
+        local ok, containers = pcall(function()
+            return ISInventoryPaneContextMenu.getContainers(doctor)
+        end)
+        if ok and containers and containers.size then
+            local seen = {}
+            for i = 0, containers:size() - 1 do
+                scanContainer(containers:get(i), seen)
+            end
+            return items
+        end
+    end
+
+    scanContainer(doctor.getInventory and doctor:getInventory() or nil, {})
+    return items
+end
+
+function EHR_HealthPanelUI:firstItemOfType(items, itemType)
+    if type(items) ~= "table" then return nil end
+    for _, item in ipairs(items) do
+        if item and item.getFullType and item:getFullType() == itemType then
+            return item
+        end
+    end
+    return nil
+end
+
+function EHR_HealthPanelUI:firstItemByTypeOrTag(items, itemType, tagName)
+    if type(items) ~= "table" then return nil end
+    for _, item in ipairs(items) do
+        if item and item.getType and item:getType() == itemType then
+            return item
+        end
+        if item and tagName and item.hasTag and ItemTag and ItemTag.get and ResourceLocation and ResourceLocation.of then
+            local ok, hasTag = pcall(function()
+                return item:hasTag(ItemTag.get(ResourceLocation.of(tagName)))
+            end)
+            if ok and hasTag then
+                return item
+            end
+        end
+    end
+    return nil
+end
+
+function EHR_HealthPanelUI:itemHasTag(item, tagName)
+    if not item or not tagName or not item.hasTag then return false end
+
+    if ItemTag then
+        local constants = {
+            RemoveBullet = ItemTag.REMOVE_BULLET,
+            RemoveGlass = ItemTag.REMOVE_GLASS,
+            SewingNeedle = ItemTag.SEWING_NEEDLE,
+            Thread = ItemTag.THREAD,
+        }
+        local constant = constants[tagName]
+        if constant then
+            local ok, hasTag = pcall(function()
+                return item:hasTag(constant)
+            end)
+            if ok and hasTag then return true end
+        end
+    end
+
+    if ItemTag and ItemTag.get and ResourceLocation and ResourceLocation.of then
+        local ok, hasTag = pcall(function()
+            return item:hasTag(ItemTag.get(ResourceLocation.of(tagName)))
+        end)
+        return ok and hasTag == true
+    end
+    return false
+end
+
+function EHR_HealthPanelUI:itemIsDisinfectant(item)
+    if not item then return false end
+
+    if item.hasComponent and ComponentType and item:hasComponent(ComponentType.FluidContainer) then
+        local ok, result = pcall(function()
+            local fluidContainer = item:getFluidContainer()
+            if not fluidContainer then return false end
+            local amount = tonumber(fluidContainer:getAmount()) or 0
+            if amount <= 0.15 then return false end
+            local alcohol = 0
+            if fluidContainer.getProperties and fluidContainer:getProperties() then
+                alcohol = tonumber(fluidContainer:getProperties():getAlcohol()) or 0
+            end
+            return (alcohol / amount + 0.001) >= 0.4
+        end)
+        if ok and result then return true end
+    end
+
+    local okDrainable, drainable = pcall(function()
+        return item:IsDrainable()
+    end)
+    if okDrainable and drainable and item.getAlcoholPower then
+        local okAlcohol, alcoholPower = pcall(function()
+            return item:getAlcoholPower()
+        end)
+        return okAlcohol and tonumber(alcoholPower) == 4.0
+    end
+    return false
+end
+
+function EHR_HealthPanelUI:itemIsRemoveGlassTool(item)
+    if not item or not item.getType then return false end
+    local itemType = item:getType()
+    return itemType == "Tweezers"
+            or itemType == "SutureNeedleHolder"
+            or self:itemHasTag(item, "RemoveGlass")
+end
+
+function EHR_HealthPanelUI:itemIsRemoveBulletTool(item)
+    if not item or not item.getType then return false end
+    local itemType = item:getType()
+    return itemType == "Tweezers"
+            or itemType == "SutureNeedleHolder"
+            or self:itemHasTag(item, "RemoveBullet")
+end
+
+function EHR_HealthPanelUI:itemIsBurnCleaner(item)
+    return item and item.getBandagePower and (tonumber(item:getBandagePower()) or 0) >= 2
+end
+
+function EHR_HealthPanelUI:itemIsSplint(item)
+    return item and item.getType and item:getType() == "Splint"
+end
+
+function EHR_HealthPanelUI:itemIsSplintBoard(item)
+    if not item or not item.getType then return false end
+    local itemType = item:getType()
+    return itemType == "Plank"
+            or itemType == "TreeBranch2"
+            or itemType == "WoodenStick2"
+            or itemType == "TreeBranch"
+            or itemType == "WoodenStick"
+end
+
+function EHR_HealthPanelUI:itemIsRippedSheet(item)
+    return item and item.getType and item:getType() == "RippedSheets"
+end
+
+function EHR_HealthPanelUI:itemIsPoultice(item, itemType)
+    return item and item.getType and item:getType() == itemType
+end
+
+function EHR_HealthPanelUI:getMedicalItemRef(item)
+    if not item then return nil end
+
+    local ref = { item = item }
+    pcall(function()
+        if item.getID then
+            ref.id = item:getID()
+        end
+    end)
+    pcall(function()
+        if item.getFullType then
+            ref.fullType = item:getFullType()
+        end
+    end)
+    pcall(function()
+        if item.getType then
+            ref.type = item:getType()
+        end
+    end)
+    return ref
+end
+
+function EHR_HealthPanelUI:findDoctorInventoryItem(ref, predicate)
+    if type(ref) ~= "table" then return nil end
+    local doctor = self.remoteDoctor or self.player
+    local inventory = doctor and doctor.getInventory and doctor:getInventory() or nil
+    if not inventory then return nil end
+
+    local function matches(item)
+        if not item then return false end
+        if predicate then
+            local ok, result = pcall(predicate, item)
+            if not ok or not result then return false end
+        end
+        return true
+    end
+
+    if ref.id ~= nil and inventory.getItemById then
+        local item = inventory:getItemById(ref.id)
+        if matches(item) then
+            return item
+        end
+    end
+
+    local items = inventory.getItems and inventory:getItems() or nil
+    if items and items.size then
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if item then
+                local sameType = false
+                if ref.fullType and item.getFullType and item:getFullType() == ref.fullType then
+                    sameType = true
+                elseif ref.type and item.getType and item:getType() == ref.type then
+                    sameType = true
+                end
+                if sameType and matches(item) then
+                    return item
+                end
+            end
+        end
+    end
+
+    if ref.item and ref.item.getContainer and ref.item:getContainer() == inventory and matches(ref.item) then
+        return ref.item
+    end
+    return nil
+end
+
+function EHR_HealthPanelUI:queueActualMedicalAction(previousAction, action, bodyPart)
+    if not action then return false end
+
+    if previousAction then
+        ISTimedActionQueue.addAfter(previousAction, action)
+    else
+        ISTimedActionQueue.add(action)
+    end
+
+    local adapter = self:getVanillaHealthAdapter()
+    if adapter then
+        adapter.actions = adapter.actions or {}
+        adapter.actions[action] = bodyPart
+    end
+
+    if self.queueRemoteExamRefreshBurst then
+        self:queueRemoteExamRefreshBurst()
+    end
+    return true
+end
+
+function EHR_HealthPanelUI:queueRemoteMedicalAction(factory, bodyPart, itemA, itemB)
+    if not factory then return false end
+
+    local doctor = self.remoteDoctor or self.player
+    local previousAction = nil
+
+    local function moveItem(item)
+        if not item or not doctor or not doctor.getInventory or not item.getContainer then return end
+        local inventory = doctor:getInventory()
+        if item:getContainer() ~= inventory and ISInventoryTransferUtil and ISInventoryTransferUtil.newInventoryTransferAction then
+            local transfer = ISInventoryTransferUtil.newInventoryTransferAction(doctor, item, item:getContainer(), inventory)
+            if previousAction then
+                ISTimedActionQueue.addAfter(previousAction, transfer)
+            else
+                ISTimedActionQueue.add(transfer)
+            end
+            previousAction = transfer
+        end
+    end
+
+    moveItem(itemA)
+    moveItem(itemB)
+
+    local deferredAction = EHR_RemoteMedicalAction:new(doctor, self, factory)
+    if previousAction then
+        ISTimedActionQueue.addAfter(previousAction, deferredAction)
+    else
+        ISTimedActionQueue.add(deferredAction)
+    end
+
+    local adapter = self:getVanillaHealthAdapter()
+    if adapter then
+        adapter.actions = adapter.actions or {}
+        if previousAction then
+            adapter.actions[previousAction] = bodyPart
+        end
+        adapter.actions[deferredAction] = bodyPart
+    end
+
+    if self.queueRemoteExamRefreshBurst then
+        self:queueRemoteExamRefreshBurst()
+    end
+    return true
+end
+
+function EHR_HealthPanelUI:addRemoteBandageOptions(context, bodyPart, snapshot)
+    if snapshot.bandaged == true then
+        context:addOption(getText("ContextMenu_Remove_Bandage"), self, self.onRemoteRemoveBandage, bodyPart)
+        return
+    end
+
+    if snapshotHasActionableStatus(snapshot) then
+        local bandages = self:collectDoctorInventoryItems(function(item)
+            return item.getBandagePower and (tonumber(item:getBandagePower()) or 0) > 0
+        end)
+        if #bandages > 0 then
+            local option = context:addOption(getText("ContextMenu_Bandage"), nil)
+            local subMenu = context:getNew(context)
+            context:addSubMenu(option, subMenu)
+            for _, item in ipairs(bandages) do
+                local subOption = subMenu:addOption(item:getName(), self, self.onRemoteApplyBandage, bodyPart, item)
+                subOption.itemForTexture = item
+            end
+        end
+    end
+end
+
+function EHR_HealthPanelUI:addRemoteStitchOptions(context, bodyPart, snapshot)
+    if snapshot.stitched == true then
+        context:addOption(getText("ContextMenu_Remove_Stitch"), self, self.onRemoteRemoveStitch, bodyPart)
+        return
+    end
+
+    if snapshot.deepWounded ~= true or snapshot.haveGlass == true or snapshot.bandaged == true then
+        return
+    end
+
+    local stitchItems = self:collectDoctorInventoryItems(function(item)
+        if not item or not item.getType then return false end
+        local itemType = item:getType()
+        if itemType == "Needle" or itemType == "Thread" or itemType == "SutureNeedle" then
+            return true
+        end
+        if item.hasTag and ItemTag and ResourceLocation and ItemTag.get and ResourceLocation.of then
+            local okNeedle, hasNeedle = pcall(function()
+                return item:hasTag(ItemTag.get(ResourceLocation.of("SewingNeedle")))
+            end)
+            local okThread, hasThread = pcall(function()
+                return item:hasTag(ItemTag.get(ResourceLocation.of("Thread")))
+            end)
+            return (okNeedle and hasNeedle) or (okThread and hasThread)
+        end
+        return false
+    end)
+
+    local sutureNeedle = self:firstItemByTypeOrTag(stitchItems, "SutureNeedle")
+    local needle = self:firstItemByTypeOrTag(stitchItems, "Needle", "SewingNeedle")
+    local thread = self:firstItemByTypeOrTag(stitchItems, "Thread", "Thread")
+    if not sutureNeedle and not (needle and thread) then return end
+
+    local option = context:addOption(getText("ContextMenu_Stitch"), nil)
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+
+    if sutureNeedle then
+        local subOption = subMenu:addOption(sutureNeedle:getName(), self, self.onRemoteApplyStitch, bodyPart, sutureNeedle, nil)
+        subOption.itemForTexture = sutureNeedle
+    end
+    if needle and thread then
+        local text = needle:getName() .. " + " .. thread:getName()
+        local subOption = subMenu:addOption(text, self, self.onRemoteApplyStitch, bodyPart, thread, needle)
+        subOption.itemForTexture = needle
+    end
+end
+
+function EHR_HealthPanelUI:addRemoteGlassOptions(context, bodyPart, snapshot)
+    if snapshot.haveGlass ~= true or snapshot.bandaged == true then return end
+
+    local tools = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsRemoveGlassTool(item)
+    end)
+
+    local option = context:addOption(getText("ContextMenu_Remove_Glass"), nil)
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+    for _, item in ipairs(tools) do
+        local subOption = subMenu:addOption(item:getName(), self, self.onRemoteRemoveGlass, bodyPart, item)
+        subOption.itemForTexture = item
+    end
+    subMenu:addOption(getText("ContextMenu_Hand"), self, self.onRemoteRemoveGlass, bodyPart, "Hands")
+end
+
+function EHR_HealthPanelUI:addRemotePoulticeOptions(context, bodyPart, snapshot)
+    if snapshot.bandaged == true or not snapshotHasActionableStatus(snapshot) then return end
+
+    local definitions = {
+        { itemType = "PlantainCataplasm", label = "ContextMenu_PlantainCataplasm", factorMethod = "getPlantainFactor", actionClass = ISPlantainCataplasm },
+        { itemType = "ComfreyCataplasm", label = "ContextMenu_ComfreyCataplasm", factorMethod = "getComfreyFactor", actionClass = ISComfreyCataplasm },
+        { itemType = "WildGarlicCataplasm", label = "ContextMenu_GarlicCataplasm", factorMethod = "getGarlicFactor", actionClass = ISGarlicCataplasm },
+    }
+
+    for _, definition in ipairs(definitions) do
+        if definition.actionClass and (tonumber(callBodyPartMethod(bodyPart, definition.factorMethod, 0)) or 0) <= 0 then
+            local items = self:collectDoctorInventoryItems(function(item)
+                return self:itemIsPoultice(item, definition.itemType)
+            end)
+            if #items > 0 then
+                local option = context:addOption(getText(definition.label), nil)
+                local subMenu = context:getNew(context)
+                context:addSubMenu(option, subMenu)
+                for _, item in ipairs(items) do
+                    local subOption = subMenu:addOption(item:getName(), self, self.onRemoteApplyPoultice, bodyPart, item, definition.actionClass)
+                    subOption.itemForTexture = item
+                end
+            end
+        end
+    end
+end
+
+function EHR_HealthPanelUI:addRemoteDisinfectOptions(context, bodyPart, snapshot)
+    if snapshot.bandaged == true or not snapshotHasActionableStatus(snapshot) or not ISDisinfect then return end
+
+    local items = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsDisinfectant(item)
+    end)
+    if #items <= 0 then return end
+
+    local option = context:addOption(getText("ContextMenu_Disinfect"), nil)
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+    for _, item in ipairs(items) do
+        local subOption = subMenu:addOption(item:getName(), self, self.onRemoteDisinfect, bodyPart, item)
+        subOption.itemForTexture = item
+    end
+end
+
+function EHR_HealthPanelUI:addRemoteCleanBurnOptions(context, bodyPart, snapshot)
+    if snapshot.bandaged == true or snapshot.needBurnWash ~= true or not ISCleanBurn then return end
+
+    local items = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsBurnCleaner(item)
+    end)
+    if #items <= 0 then return end
+
+    local option = context:addOption(getText("ContextMenu_Clean_Burn"), nil)
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+    for _, item in ipairs(items) do
+        local subOption = subMenu:addOption(item:getName(), self, self.onRemoteCleanBurn, bodyPart, item)
+        subOption.itemForTexture = item
+    end
+end
+
+function EHR_HealthPanelUI:addRemoteBulletOptions(context, bodyPart, snapshot)
+    if snapshot.bandaged == true or snapshot.haveBullet ~= true or not ISRemoveBullet then return end
+
+    local tools = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsRemoveBulletTool(item)
+    end)
+    if #tools <= 0 then return end
+
+    local option = context:addOption(getText("ContextMenu_Remove_Bullet"), nil)
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+    for _, item in ipairs(tools) do
+        local subOption = subMenu:addOption(item:getName(), self, self.onRemoteRemoveBullet, bodyPart, item)
+        subOption.itemForTexture = item
+    end
+end
+
+function EHR_HealthPanelUI:addRemoteSplintOptions(context, bodyPart, snapshot)
+    if not ISSplint then return end
+
+    local splintFactor = tonumber(snapshot.splintFactor) or tonumber(callBodyPartMethod(bodyPart, "getSplintFactor", 0)) or 0
+    if splintFactor > 0 then
+        local option = context:addOption(getText("ContextMenu_Remove_Splint"), self, self.onRemoteRemoveSplint, bodyPart)
+        local splintType = callBodyPartMethod(bodyPart, "getSplintItem", "")
+        if splintType and splintType ~= "" and instanceItem then
+            option.itemForTexture = instanceItem(splintType)
+        end
+        return
+    end
+
+    local hasInjury = snapshot.hasInjury == true or callBodyPartMethod(bodyPart, "HasInjury", false) == true
+    local stitched = snapshot.stitched == true or callBodyPartMethod(bodyPart, "stitched", false) == true
+    if snapshot.bandaged == true
+            or not hasInjury
+            or stitched
+            or (tonumber(snapshot.fractureTime) or tonumber(callBodyPartMethod(bodyPart, "getFractureTime", 0)) or 0) <= 0 then
+        return
+    end
+
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    if BodyPartType and (bodyPartType == BodyPartType.Head or bodyPartType == BodyPartType.Torso_Upper or bodyPartType == BodyPartType.Torso_Lower) then
+        return
+    end
+
+    local splints = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsSplint(item)
+    end)
+    local boards = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsSplintBoard(item)
+    end)
+    local rippedSheets = self:collectDoctorInventoryItems(function(item)
+        return self:itemIsRippedSheet(item)
+    end)
+    if #splints <= 0 and (#boards <= 0 or #rippedSheets <= 0) then return end
+
+    local option = context:addOption(getText("ContextMenu_Splint"), nil)
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+
+    for _, item in ipairs(splints) do
+        local subOption = subMenu:addOption(item:getName(), self, self.onRemoteApplySplint, bodyPart, nil, item)
+        subOption.itemForTexture = item
+    end
+    if #rippedSheets > 0 then
+        local rippedSheet = rippedSheets[1]
+        for _, board in ipairs(boards) do
+            local text = board:getName() .. " + " .. rippedSheet:getName()
+            local subOption = subMenu:addOption(text, self, self.onRemoteApplySplint, bodyPart, rippedSheet, board)
+            subOption.itemForTexture = board
+        end
+    end
+end
+
+function EHR_HealthPanelUI:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPartType)
+    if not self.isRemoteHealthPanel then return false end
+    local snapshot = self:getRemoteBodyPartSnapshotByType(bodyPartType) or self:getRemoteBodyPartSnapshot(bodyPart)
+    if not snapshotHasActionableStatus(snapshot) then return false end
+
+    local actionBodyPart = self:getBodyPartForActionType(bodyPart, bodyPartType)
+    if not actionBodyPart then return false end
+
+    local playerNum = self.playerNum or (self.remoteDoctor and self.remoteDoctor.getPlayerNum and self.remoteDoctor:getPlayerNum()) or 0
+    local context = ISContextMenu.get(playerNum, x + self:getAbsoluteX(), y + self:getAbsoluteY())
+
+    self:addRemotePoulticeOptions(context, actionBodyPart, snapshot)
+    self:addRemoteBandageOptions(context, actionBodyPart, snapshot)
+    self:addRemoteDisinfectOptions(context, actionBodyPart, snapshot)
+    self:addRemoteGlassOptions(context, actionBodyPart, snapshot)
+    self:addRemoteStitchOptions(context, actionBodyPart, snapshot)
+    self:addRemoteSplintOptions(context, actionBodyPart, snapshot)
+    self:addRemoteBulletOptions(context, actionBodyPart, snapshot)
+    self:addRemoteCleanBurnOptions(context, actionBodyPart, snapshot)
+
+    if context:isEmpty() then
+        context:setVisible(false)
+    end
+    return true
+end
+
+function EHR_HealthPanelUI:onRemoteApplyBandage(bodyPart, item)
+    if not ISApplyBandage or not item then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local itemRef = self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local bandage = panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return candidate.getBandagePower and (tonumber(candidate:getBandagePower()) or 0) > 0
+        end)
+        if not actionBodyPart or not bandage then return end
+        local action = ISApplyBandage:new(panel.remoteDoctor, panel.remotePatient or panel.player, bandage, actionBodyPart, true)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, item)
+end
+
+function EHR_HealthPanelUI:onRemoteRemoveBandage(bodyPart)
+    if not ISApplyBandage then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        if not actionBodyPart then return end
+        local action = ISApplyBandage:new(panel.remoteDoctor, panel.remotePatient or panel.player, nil, actionBodyPart, false)
+        if action then
+            action.wasBandaged = true
+        end
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart)
+end
+
+function EHR_HealthPanelUI:onRemoteApplyStitch(bodyPart, stitchItem, carriedNeedle)
+    if not ISStitch or not stitchItem then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local stitchRef = self:getMedicalItemRef(stitchItem)
+    local needleRef = self:getMedicalItemRef(carriedNeedle)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local stitch = panel:findDoctorInventoryItem(stitchRef, function(candidate)
+            if not candidate or not candidate.getType then return false end
+            local itemType = candidate:getType()
+            return itemType == "Thread" or itemType == "SutureNeedle"
+                    or (candidate.hasTag and ItemTag and ResourceLocation and candidate:hasTag(ItemTag.get(ResourceLocation.of("Thread"))))
+        end)
+        if needleRef and not panel:findDoctorInventoryItem(needleRef, function(candidate)
+            if not candidate or not candidate.getType then return false end
+            local itemType = candidate:getType()
+            return itemType == "Needle"
+                    or (candidate.hasTag and ItemTag and ResourceLocation and candidate:hasTag(ItemTag.get(ResourceLocation.of("SewingNeedle"))))
+        end) then
+            return
+        end
+        if not actionBodyPart or not stitch then return end
+        if EHR.StitchMinigame and EHR.StitchMinigame.AllowRemoteBodyPart then
+            EHR.StitchMinigame.AllowRemoteBodyPart(actionBodyPart)
+        end
+        local action = ISStitch:new(panel.remoteDoctor, panel.remotePatient or panel.player, stitch, actionBodyPart, true)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, stitchItem, carriedNeedle)
+end
+
+function EHR_HealthPanelUI:onRemoteRemoveStitch(bodyPart)
+    if not ISStitch then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        if not actionBodyPart then return end
+        local action = ISStitch:new(panel.remoteDoctor, panel.remotePatient or panel.player, nil, actionBodyPart, false)
+        if action then
+            action.isValid = function(actionSelf)
+                if ISHealthPanel and ISHealthPanel.DidPatientMove
+                        and ISHealthPanel.DidPatientMove(actionSelf.character, actionSelf.otherPlayer, actionSelf.bandagedPlayerX, actionSelf.bandagedPlayerY) then
+                    return false
+                end
+                return true
+            end
+        end
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart)
+end
+
+function EHR_HealthPanelUI:onRemoteApplyPoultice(bodyPart, item, actionClass)
+    if not item or not actionClass then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local itemRef = self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local poultice = panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return candidate and candidate.getType and candidate:getType() == itemRef.type
+        end)
+        if not actionBodyPart or not poultice then return end
+        local action = actionClass:new(panel.remoteDoctor, panel.remotePatient or panel.player, poultice, actionBodyPart)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, item)
+end
+
+function EHR_HealthPanelUI:onRemoteDisinfect(bodyPart, item)
+    if not ISDisinfect or not item then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local itemRef = self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local disinfectant = panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return panel:itemIsDisinfectant(candidate)
+        end)
+        if not actionBodyPart or not disinfectant then return end
+        local action = ISDisinfect:new(panel.remoteDoctor, panel.remotePatient or panel.player, disinfectant, actionBodyPart)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, item)
+end
+
+function EHR_HealthPanelUI:onRemoteCleanBurn(bodyPart, item)
+    if not ISCleanBurn or not item then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local itemRef = self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local cleaner = panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return panel:itemIsBurnCleaner(candidate)
+        end)
+        if not actionBodyPart or not cleaner then return end
+        local action = ISCleanBurn:new(panel.remoteDoctor, panel.remotePatient or panel.player, cleaner, actionBodyPart)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, item)
+end
+
+function EHR_HealthPanelUI:onRemoteRemoveBullet(bodyPart, item)
+    if not ISRemoveBullet or not item then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local itemRef = self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local tool = panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return panel:itemIsRemoveBulletTool(candidate)
+        end)
+        if not actionBodyPart or not tool then return end
+        local action = ISRemoveBullet:new(panel.remoteDoctor, panel.remotePatient or panel.player, actionBodyPart)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, item)
+end
+
+function EHR_HealthPanelUI:onRemoteApplySplint(bodyPart, rippedSheet, boardOrSplint)
+    if not ISSplint or not boardOrSplint then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local rippedRef = self:getMedicalItemRef(rippedSheet)
+    local boardRef = self:getMedicalItemRef(boardOrSplint)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        if not actionBodyPart then return end
+
+        local action = nil
+        if rippedRef then
+            local sheet = panel:findDoctorInventoryItem(rippedRef, function(candidate)
+                return panel:itemIsRippedSheet(candidate)
+            end)
+            local board = panel:findDoctorInventoryItem(boardRef, function(candidate)
+                return panel:itemIsSplintBoard(candidate)
+            end)
+            if not sheet or not board then return end
+            action = ISSplint:new(panel.remoteDoctor, panel.remotePatient or panel.player, sheet, board, actionBodyPart, true)
+        else
+            local splint = panel:findDoctorInventoryItem(boardRef, function(candidate)
+                return panel:itemIsSplint(candidate)
+            end)
+            if not splint then return end
+            action = ISSplint:new(panel.remoteDoctor, panel.remotePatient or panel.player, nil, splint, actionBodyPart, true)
+        end
+
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, rippedSheet, boardOrSplint)
+end
+
+function EHR_HealthPanelUI:onRemoteRemoveSplint(bodyPart)
+    if not ISSplint then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        if not actionBodyPart then return end
+        local action = ISSplint:new(panel.remoteDoctor, panel.remotePatient or panel.player, nil, nil, actionBodyPart, false)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart)
+end
+
+function EHR_HealthPanelUI:onRemoteRemoveGlass(bodyPart, item)
+    if not ISRemoveGlass then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local useHands = item == nil or item == "Hands"
+    local itemRef = useHands and nil or self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        if not actionBodyPart then return end
+        if itemRef and not panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return panel:itemIsRemoveGlassTool(candidate)
+        end) then
+            return
+        end
+        local action = ISRemoveGlass:new(panel.remoteDoctor, panel.remotePatient or panel.player, actionBodyPart, useHands)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, useHands and nil or item)
+end
+
 function EHR_HealthPanelUI:queueRemoteBodyContextRetry(bodyPartType, x, y)
     if not self.isRemoteHealthPanel or not Events or not Events.OnTick or not bodyPartType then
         return false
@@ -3006,6 +3805,9 @@ function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     if not adapter or not adapter.character then return end
     if self.isRemoteHealthPanel then
         self:markRemoteBodyDamageDirty(120)
+        if self:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPartType) then
+            return
+        end
     else
         self:ensureRemoteBodyDamageUpdates()
     end

@@ -1901,4 +1901,9 @@ UI_UA = {
     UI_EHR_StitchMinigame_Steady = "Steady hand reduces pain and infection risk.",
     UI_EHR_StitchMinigame_FailLine = "I cannot keep the needle steady.",
     UI_EHR_StitchMinigame_UnknownPart = "Unknown body part",
+    UI_EHR_Examine_DiseasesIdentified = "I can identify: %s.",
+    UI_EHR_CadavericAspergillosisExposure = "Cadaveric Aspergillosis Exposure",
+    UI_EHR_OpenHealthPanelCompact = "Open EHR panels compact",
+    UI_EHR_OpenHealthPanelCompact_tt = "When enabled, EHR health panels open in compact mode. Disable to open them expanded.",
+    UI_EHR_AntibodiesPanel = "Antibodies panel",
 }

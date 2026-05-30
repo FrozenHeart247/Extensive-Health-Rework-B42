@@ -537,4 +537,12 @@ Tooltip_CH = {
     Tooltip_EHR_ImmunoboosterShot_SideEffect_2 = "耐力恢復減少",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_3 = "偶爾顫抖",
     Tooltip_DualOrexinReceptor = "處方睡眠藥物。 <LINE> 在失眠發作期間允許睡眠。 <LINE> 透過8劑療程治癒失眠。 <LINE> 治療時間：96小時。",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Category = "Prescription",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Description = "Homemade activated charcoal preparation.",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_TreatmentTime = "Food poisoning: 6 hours; toxin poisoning: 12 hours",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_1 = "Absorbs toxins",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_2 = "CURES ingested poison/toxin illness",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3 = "Crafted with charcoal and lemon",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1 = "Food Poisoning",
+    Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2 = "Toxin Poisoning",
 }

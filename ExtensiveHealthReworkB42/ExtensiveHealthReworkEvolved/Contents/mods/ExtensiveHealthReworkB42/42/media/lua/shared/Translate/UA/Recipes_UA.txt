@@ -1,3 +1,4 @@
 Recipes_UA = {
     MakePlantBasedAntibiotics = "Приготувати рослинні антибіотики",
+    MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
 }

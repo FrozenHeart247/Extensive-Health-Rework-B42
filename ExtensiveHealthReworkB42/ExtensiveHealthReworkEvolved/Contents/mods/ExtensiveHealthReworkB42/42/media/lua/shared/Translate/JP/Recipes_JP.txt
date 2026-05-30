@@ -1,3 +1,4 @@
 Recipes_JP = {
     MakePlantBasedAntibiotics = "植物性抗生物質を調合",
+    MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
 }

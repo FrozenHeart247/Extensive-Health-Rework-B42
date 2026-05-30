@@ -536,5 +536,13 @@
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_1": "Náuseas leves",
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_2": "Regeneración de resistencia reducida",
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_3": "Temblores ocasionales",
-    "Tooltip_DualOrexinReceptor": "Medicamento de sueño con receta. <LINE> Permite dormir durante el insomnio activo. <LINE> CURA el insomnio con un curso de 8 dosis. <LINE> Tiempo de tratamiento: 96 horas."
+    "Tooltip_DualOrexinReceptor": "Medicamento de sueño con receta. <LINE> Permite dormir durante el insomnio activo. <LINE> CURA el insomnio con un curso de 8 dosis. <LINE> Tiempo de tratamiento: 96 horas.",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Category": "Prescription",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Description": "Homemade activated charcoal preparation.",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_TreatmentTime": "Food poisoning: 6 hours; toxin poisoning: 12 hours",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_1": "Absorbs toxins",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_2": "CURES ingested poison/toxin illness",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning"
 }

@@ -536,5 +536,13 @@
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_1": "轻度恶心",
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_2": "耐力恢复减少",
     "Tooltip_EHR_ImmunoboosterShot_SideEffect_3": "偶尔颤抖",
-    "Tooltip_DualOrexinReceptor": "处方睡眠药物。 <LINE> 在失眠发作期间允许睡眠。 <LINE> 通过8剂疗程治愈失眠。 <LINE> 治疗时间：96小时。"
+    "Tooltip_DualOrexinReceptor": "处方睡眠药物。 <LINE> 在失眠发作期间允许睡眠。 <LINE> 通过8剂疗程治愈失眠。 <LINE> 治疗时间：96小时。",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Category": "Prescription",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Description": "Homemade activated charcoal preparation.",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_TreatmentTime": "Food poisoning: 6 hours; toxin poisoning: 12 hours",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_1": "Absorbs toxins",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_2": "CURES ingested poison/toxin illness",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
+    "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning"
 }

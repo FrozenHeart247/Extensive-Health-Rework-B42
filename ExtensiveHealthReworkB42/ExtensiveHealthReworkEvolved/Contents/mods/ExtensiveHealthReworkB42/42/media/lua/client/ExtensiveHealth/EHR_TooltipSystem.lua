@@ -264,13 +264,6 @@ function ISToolTipInv:render()
         local itemFullType = item.getFullType and item:getFullType() or nil
         local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
 
-        -- Debug: Log what we're checking (only once per item type)
-        if not EHR.Tooltips._debuggedTypes then EHR.Tooltips._debuggedTypes = {} end
-        if itemFullType and not EHR.Tooltips._debuggedTypes[itemFullType] then
-            EHR.Tooltips._debuggedTypes[itemFullType] = true
-            print("[EHR Tooltip] Checking item: " .. tostring(itemFullType) .. " | Has EHR data: " .. tostring(ehrData ~= nil))
-        end
-
         if ehrData then
             -- Wrap in pcall to catch any rendering errors
             local success, err = pcall(function()
@@ -568,7 +561,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Spoilage time for perishable items (blood bags, saline, etc.)
     if EHR.DEBUG then
-        print("[EHR Tooltip DEBUG] data.perishable = " .. tostring(data.perishable))
+        EHR.Log("[Tooltip DEBUG] data.perishable = " .. tostring(data.perishable))
     end
     if data.perishable then
         local age = 0
@@ -607,7 +600,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
         -- DEBUG: Log the values we got (only in debug mode)
         if EHR.DEBUG then
-            print("[EHR Tooltip DEBUG] Perishable item - age: " .. tostring(age) .. ", offAge: " .. tostring(offAge) .. ", offAgeMax: " .. tostring(offAgeMax))
+            EHR.Log("[Tooltip DEBUG] Perishable item - age: " .. tostring(age) .. ", offAge: " .. tostring(offAge) .. ", offAgeMax: " .. tostring(offAgeMax))
             table.insert(lines, {text = "DEBUG: age=" .. tostring(age) .. " offAge=" .. tostring(offAge) .. " offAgeMax=" .. tostring(offAgeMax), color = {r=1, g=1, b=0}})
             totalHeight = totalHeight + fontHeight + lineSpacing
         end

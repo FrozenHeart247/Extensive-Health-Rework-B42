@@ -446,4 +446,6 @@ if Events and Events.OnPlayerDeath then
     end)
 end
 
-print("[EHR] MiniHealthPanel compatibility module loaded v1.0.0")
+if EHR and EHR.Log then
+    EHR.Log("MiniHealthPanel compatibility module loaded v1.0.0")
+end

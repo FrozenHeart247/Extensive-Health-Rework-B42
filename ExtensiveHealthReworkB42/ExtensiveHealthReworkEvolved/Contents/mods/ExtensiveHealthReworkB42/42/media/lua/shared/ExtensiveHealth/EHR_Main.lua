@@ -311,10 +311,39 @@ function EHR.IsDebugMode()
     return EHR.DEBUG
 end
 
--- Simple logging function
+function EHR.IsVerboseLoggingEnabled()
+    if EHR.VerboseLogging == true or EHR.DEBUG_LOGGING == true then
+        return true
+    end
+
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local sandbox = SandboxVars.ExtensiveHealthRework
+        if sandbox.VerboseLogging ~= nil then
+            return sandbox.VerboseLogging == true
+        end
+        if sandbox.DebugLogging ~= nil then
+            return sandbox.DebugLogging == true
+        end
+    end
+
+    return false
+end
+
+function EHR.ShouldLog(message)
+    if EHR.IsVerboseLoggingEnabled() then
+        return true
+    end
+
+    local text = string.lower(tostring(message or ""))
+    return string.find(text, "error", 1, true) ~= nil
+        or string.find(text, "warning", 1, true) ~= nil
+        or string.find(text, "failed", 1, true) ~= nil
+end
+
+-- Quiet by default. Debug menu access should not spam the console every tick.
 function EHR.Log(message)
-    if EHR.IsDebugMode() then
-        print("[EHR] " .. message)
+    if EHR.ShouldLog(message) then
+        print("[EHR] " .. tostring(message))
     end
 end
 

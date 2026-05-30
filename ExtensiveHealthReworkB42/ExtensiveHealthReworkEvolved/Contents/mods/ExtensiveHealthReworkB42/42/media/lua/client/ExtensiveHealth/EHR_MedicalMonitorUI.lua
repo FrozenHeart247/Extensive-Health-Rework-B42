@@ -892,24 +892,6 @@ function EHR_MedicalMonitorUI:updateCachedData()
 
     if diseaseData then
         
-        -- DEBUG: Log what we found
-        if not EHR.UI._diseaseLogTimer then EHR.UI._diseaseLogTimer = 0 end
-        EHR.UI._diseaseLogTimer = EHR.UI._diseaseLogTimer + 1
-        if EHR.UI._diseaseLogTimer >= 120 then  -- Log every ~2 seconds
-            EHR.UI._diseaseLogTimer = 0
-            if diseaseData then
-                local count = 0
-                if diseaseData.active then
-                    for id, _ in pairs(diseaseData.active) do
-                        count = count + 1
-                    end
-                end
-                print("[EHR Monitor] Disease data found: " .. count .. " active diseases")
-            else
-                print("[EHR Monitor] No disease data found for player")
-            end
-        end
-        
         if diseaseData and diseaseData.active then
             local currentHour = getGameTime():getWorldAgeHours()
             -- Copy each disease entry and calculate progress
@@ -2985,8 +2967,7 @@ local function suppressVanillaTemperatureClient()
             -- If we had to force, thermoregulator might have re-enabled
             clientSuppression.thermoregulatorDisabled = false
 
-            -- Log when safety net triggers
-            print("[EHR] Client safety net: " .. tostring(current) .. " -> " .. tostring(targetTemp))
+            EHR.Log("Client safety net: " .. tostring(current) .. " -> " .. tostring(targetTemp))
         end
     end
 end

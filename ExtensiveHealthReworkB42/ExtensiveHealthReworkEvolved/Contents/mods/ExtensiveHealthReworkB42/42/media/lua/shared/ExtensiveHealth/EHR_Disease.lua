@@ -50,7 +50,7 @@ function EHR.Disease.MarkDebugSet(player)
     if not player then return end
     local username = player:getUsername() or tostring(player:getPlayerNum())
     EHR.Disease.DebugGracePeriod[username] = EHR_DiseaseGetDebugClockSeconds()
-    print("[EHR Disease] Debug grace period started for " .. username)
+    EHR.Log("Disease debug grace period started for " .. username)
 end
 
 function EHR.Disease.IsInDebugGracePeriod(player)
@@ -871,7 +871,7 @@ function EHR.Disease.InitializePlayer(player)
 
     -- MP FIX: Don't overwrite during debug grace period
     if EHR.Disease.IsInDebugGracePeriod(player) then
-        print("[EHR Disease] In debug grace period, skipping initialization")
+        EHR.Log("Disease debug grace period active, skipping initialization")
         -- If debug data exists with active diseases, mark as initialized
         if modData.EHR_Disease and modData.EHR_Disease.active then
             local hasActive = false
@@ -4519,7 +4519,7 @@ function EHR.Disease.CheckFoodRisk(player, item)
     -- Raw or undercooked meat causes trichinosis risk, not generic food poisoning.
     local trichinosisRisk, trichinosisReason = EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     if trichinosisRisk > 0 then
-        print(string.format("[EHR] Food risk: %s -> trichinosis (%s, %.0f%%)",
+        EHR.Log(string.format("Food risk: %s -> trichinosis (%s, %.0f%%)",
             tostring(itemName or "unknown"), tostring(trichinosisReason or "uncooked meat"), trichinosisRisk * 100))
         addRisk("trichinosis", trichinosisReason, trichinosisRisk)
     end
@@ -5682,7 +5682,7 @@ local function processPlayerTick(player)
             EHR.Disease._graceLogCounter = EHR.Disease._graceLogCounter + 1
             if EHR.Disease._graceLogCounter >= 60 then
                 EHR.Disease._graceLogCounter = 0
-                print("[EHR Disease] Grace period: " .. diseaseCount .. " active diseases preserved")
+                EHR.Log("Disease grace period: " .. diseaseCount .. " active diseases preserved")
             end
         end
     end

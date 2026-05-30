@@ -36,7 +36,7 @@ function EHR.Sepsis.MarkDebugSet(player)
     if not player then return end
     local username = player:getUsername() or tostring(player:getPlayerNum())
     EHR.Sepsis.DebugGracePeriod[username] = os.time()
-    print("[EHR Sepsis] Debug grace period started for " .. username)
+    EHR.Log("Sepsis debug grace period started for " .. username)
 end
 
 -- Check if we're in grace period (shouldn't overwrite debug data)
@@ -443,7 +443,7 @@ function EHR.Sepsis.InitializePlayer(player)
     -- MP FIX: Don't overwrite during debug grace period
     -- Debug menu sets data and we need to protect it from server sync overwrites
     if EHR.Sepsis.IsInDebugGracePeriod(player) then
-        print("[EHR Sepsis] In debug grace period, skipping initialization")
+        EHR.Log("Sepsis debug grace period active, skipping initialization")
         -- If debug data exists, mark as initialized to prevent future calls
         if modData.EHR_Sepsis and modData.EHR_Sepsis.stage and modData.EHR_Sepsis.stage > 0 then
             modData.EHR_Sepsis_Initialized = true
@@ -1036,7 +1036,7 @@ local function processPlayerTick(player)
     if DEBUG_SEPSIS_TICK and lastKnownSepsisStage[playerID] and lastKnownSepsisStage[playerID] > 0 then
         if state.debug >= 60 then
             state.debug = 0
-            print("[EHR SEPSIS DEBUG] Tick check: rawExists=" .. tostring(rawSepsisExists) .. ", rawStage=" .. tostring(rawStage) .. ", lastKnown=" .. tostring(lastKnownSepsisStage[playerID]))
+            EHR.Log("[SEPSIS DEBUG] Tick check: rawExists=" .. tostring(rawSepsisExists) .. ", rawStage=" .. tostring(rawStage) .. ", lastKnown=" .. tostring(lastKnownSepsisStage[playerID]))
         end
     end
 
@@ -1047,7 +1047,7 @@ local function processPlayerTick(player)
             -- Debug data exists, track it
             lastKnownSepsisStage[playerID] = modData.EHR_Sepsis.stage
             modData.EHR_Sepsis_Initialized = true
-            print("[EHR SEPSIS] Grace period active, preserving debug sepsis stage=" .. modData.EHR_Sepsis.stage)
+            EHR.Log("[SEPSIS] Grace period active, preserving debug sepsis stage=" .. modData.EHR_Sepsis.stage)
         end
         return  -- Skip normal processing during grace period
     end

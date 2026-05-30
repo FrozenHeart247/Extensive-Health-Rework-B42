@@ -428,7 +428,7 @@ function EHR.Concussion.Start(player, source, force)
         EHR.SafeTransmitModData(player)
     end
 
-    print("[EHR] Concussion triggered by " .. tostring(source or "trauma"))
+    EHR.Log("Concussion triggered by " .. tostring(source or "trauma"))
     return true
 end
 

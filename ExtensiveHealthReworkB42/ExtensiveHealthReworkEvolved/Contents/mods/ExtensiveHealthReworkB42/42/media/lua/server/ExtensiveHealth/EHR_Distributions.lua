@@ -32,7 +32,7 @@ local function isEHRDebug()
 end
 
 local function log(msg)
-    if isEHRDebug() then
+    if EHR and EHR.ShouldLog and EHR.ShouldLog(msg) then
         print(msg)
     end
 end

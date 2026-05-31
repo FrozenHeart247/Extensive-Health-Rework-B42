@@ -16,6 +16,7 @@ pcall(function() require "ExtensiveHealth/EHR_Blood" end)
 pcall(function() require "ExtensiveHealth/EHR_Disease" end)
 pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
+pcall(function() require "ExtensiveHealth/EHR_Sepsis" end)
 pcall(function() require "ExtensiveHealth/EHR_EnvironmentalDiseases" end)
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
@@ -639,6 +640,50 @@ local function syncModDataToClient(player)
     end
 end
 
+local function findOnlinePlayerByArgs(args, fallbackPlayer)
+    if not args then return fallbackPlayer end
+
+    local targetUsername = args.targetUsername and tostring(args.targetUsername) or nil
+    local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
+    local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
+
+    if not targetUsername and not targetOnlineID and not targetDisplayName then
+        return fallbackPlayer
+    end
+
+    local onlinePlayers = getOnlinePlayers and getOnlinePlayers() or nil
+    if not onlinePlayers then return fallbackPlayer end
+
+    for i = 0, onlinePlayers:size() - 1 do
+        local candidate = onlinePlayers:get(i)
+        local username = nil
+        local onlineID = nil
+        local displayName = nil
+
+        if candidate then
+            pcall(function()
+                if candidate.getUsername then username = candidate:getUsername() end
+            end)
+            pcall(function()
+                if candidate.getOnlineID then onlineID = tostring(candidate:getOnlineID()) end
+            end)
+            pcall(function()
+                if candidate.getDisplayName then displayName = tostring(candidate:getDisplayName()) end
+            end)
+        end
+
+        if candidate and (
+            (targetUsername and username == targetUsername) or
+            (targetOnlineID and onlineID == targetOnlineID) or
+            (targetDisplayName and displayName == targetDisplayName)
+        ) then
+            return candidate
+        end
+    end
+
+    return nil
+end
+
 local function findItemInContainer(container, itemID, visited)
     if not container or itemID == nil then return nil, nil end
     visited = visited or {}
@@ -1036,6 +1081,85 @@ function EHR.ServerCommands.FoodDiseaseRisk(player, args)
     if applied > 0 then
         syncModDataToClient(player)
     end
+end
+
+local function setCellulitisSource(targetPlayer, args)
+    if not targetPlayer or not EHR.Disease or not EHR.Disease.GetDiseaseData then return end
+
+    local diseaseData = EHR.Disease.GetDiseaseData(targetPlayer)
+    local cellulitis = diseaseData and diseaseData.active and diseaseData.active.cellulitis or nil
+    if not cellulitis then return end
+
+    cellulitis.source = "rough_stitch"
+    cellulitis.sourceBodyPart = args and args.sourceBodyPart or cellulitis.sourceBodyPart
+    cellulitis.stitchQuality = tonumber(args and args.quality) or cellulitis.stitchQuality
+    cellulitis.stitchMisses = tonumber(args and args.misses) or cellulitis.stitchMisses
+end
+
+function EHR.ServerCommands.StitchCellulitisRisk(player, args)
+    if not player or not args then return end
+
+    local targetPlayer = findOnlinePlayerByArgs(args, player)
+    if not targetPlayer then
+        log("[EHR Server] StitchCellulitisRisk rejected: target player not found")
+        return
+    end
+
+    if not EHR.Disease or not EHR.Disease.Contract then
+        log("[EHR Server] StitchCellulitisRisk rejected: disease module unavailable")
+        return
+    end
+
+    local chance = math.max(0, math.min(1, tonumber(args.chance) or 0))
+    if chance <= 0 then return end
+
+    local roll = ZombRand and (ZombRand(100) / 100) or 1
+    if roll >= chance then return end
+
+    if EHR.Disease.InitializePlayer then
+        pcall(function() EHR.Disease.InitializePlayer(targetPlayer) end)
+    end
+
+    local diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(targetPlayer) or nil
+    if not (diseaseData and diseaseData.active and diseaseData.active.cellulitis) then
+        EHR.Disease.Contract(targetPlayer, "cellulitis")
+    end
+
+    setCellulitisSource(targetPlayer, args)
+    syncModDataToClient(targetPlayer)
+end
+
+local function triggerCellulitisSepsisHandoff(targetPlayer, args)
+    if not targetPlayer then return false end
+
+    local sourceBodyPart = args and args.sourceBodyPart or "cellulitis"
+    if EHR.Sepsis and EHR.Sepsis.Trigger then
+        EHR.Sepsis.Trigger(targetPlayer, sourceBodyPart)
+    else
+        if EHR.Disease and EHR.Disease.Contract then
+            EHR.Disease.Contract(targetPlayer, "sepsis")
+        end
+    end
+
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(targetPlayer) or nil
+    if diseaseData and diseaseData.active then
+        diseaseData.active.cellulitis = nil
+    end
+
+    syncModDataToClient(targetPlayer)
+    return true
+end
+
+function EHR.ServerCommands.CellulitisSepsisHandoff(player, args)
+    if not player then return end
+
+    local targetPlayer = findOnlinePlayerByArgs(args, player)
+    if not targetPlayer then
+        log("[EHR Server] CellulitisSepsisHandoff rejected: target player not found")
+        return
+    end
+
+    triggerCellulitisSepsisHandoff(targetPlayer, args or {})
 end
 
 function EHR.ServerCommands.FoodToxinRisk(player, args)
@@ -2436,6 +2560,12 @@ local function OnClientCommand(module, command, player, args)
         elseif command == "FoodDiseaseRisk" then
             EHR.ServerCommands.FoodDiseaseRisk(player, args)
             return
+        elseif command == "StitchCellulitisRisk" then
+            EHR.ServerCommands.StitchCellulitisRisk(player, args)
+            return
+        elseif command == "CellulitisSepsisHandoff" then
+            EHR.ServerCommands.CellulitisSepsisHandoff(player, args)
+            return
         elseif command == "FoodToxinRisk" then
             EHR.ServerCommands.FoodToxinRisk(player, args)
             return
@@ -3024,6 +3154,21 @@ local function processPlayerProgression(player)
                 if newStage ~= disease.stage then
                     disease.stage = newStage
                     log("[EHR Server] Player " .. player:getUsername() .. " " .. diseaseId .. " progressed to stage " .. newStage)
+                end
+
+                if diseaseId == "cellulitis" and disease.stage >= 4 and not disease.cellulitisSepsisTriggered then
+                    local hasTreatment = EHR.Disease
+                        and EHR.Disease.HasActiveCurativeTreatment
+                        and EHR.Disease.HasActiveCurativeTreatment(player, "cellulitis")
+
+                    if hasTreatment then
+                        disease.cellulitisSepsisBlockedByTreatment = true
+                    else
+                        disease.cellulitisSepsisTriggered = true
+                        triggerCellulitisSepsisHandoff(player, {
+                            sourceBodyPart = disease.sourceBodyPart or "cellulitis",
+                        })
+                    end
                 end
             end
         end

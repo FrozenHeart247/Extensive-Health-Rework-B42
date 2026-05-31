@@ -22,6 +22,7 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Dialogue"
 require "ExtensiveHealth/EHR_LifestyleCompat"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Sepsis" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
@@ -522,13 +523,13 @@ EHR.Disease.Diseases = {
             [1] = "The skin around the wound looks red...",
             [2] = "The redness is spreading...",
             [3] = "*hot to touch* The cellulitis is getting severe!",
-            [4] = "The swelling is going down...",
+            [4] = "The infection is spreading through me...",
         },
         dialogue = {
             [1] = {"Skin looks inflamed...", "A bit swollen..."},
             [2] = {"The redness is spreading fast...", "It's hot to touch...", "Need antibiotics..."},
             [3] = {"*swollen limb*", "Can barely move this limb...", "It could turn to sepsis..."},
-            [4] = {"Swelling reducing...", "Treatment is working..."},
+            [4] = {"This is moving through my whole body...", "I need stronger treatment now...", "This infection is going septic..."},
         },
     },
 
@@ -1195,6 +1196,42 @@ function EHR.Disease.ApplyHealingBonuses(player, data)
     end
 end
 
+function EHR.Disease.TriggerCellulitisSepsis(player, disease)
+    if not player or not disease then return false end
+
+    if EHR.Disease.HasActiveCurativeTreatment and EHR.Disease.HasActiveCurativeTreatment(player, "cellulitis") then
+        disease.cellulitisSepsisBlockedByTreatment = true
+        return false
+    end
+
+    local sourceBodyPart = disease.sourceBodyPart or "cellulitis"
+
+    if isClient and isClient() and sendClientCommand then
+        if not disease.cellulitisSepsisRequested then
+            disease.cellulitisSepsisRequested = true
+            sendClientCommand(player, "EHR", "CellulitisSepsisHandoff", {
+                sourceBodyPart = sourceBodyPart,
+            })
+        end
+        return false
+    end
+
+    disease.cellulitisSepsisTriggered = true
+    disease._ehrTransitionToSepsis = true
+
+    if EHR.Sepsis and EHR.Sepsis.Trigger then
+        EHR.Sepsis.Trigger(player, sourceBodyPart)
+    elseif EHR.Disease.Contract then
+        EHR.Disease.Contract(player, "sepsis")
+    end
+
+    if EHR.Dialogue and EHR.Dialogue.SayStageChange then
+        EHR.Dialogue.SayStageChange(player, "The skin infection is spreading through my body...")
+    end
+
+    return true
+end
+
 --[[
     Update disease progression - called every DISEASE_TICK_INTERVAL
 ]]--
@@ -1334,6 +1371,13 @@ function EHR.Disease.UpdateProgression(player, data)
                             EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[disease.stage])
                         end
                     end
+                end
+            end
+
+            if diseaseId == "cellulitis" and disease.stage >= 4 and not disease.cellulitisSepsisTriggered then
+                if EHR.Disease.TriggerCellulitisSepsis and EHR.Disease.TriggerCellulitisSepsis(player, disease) then
+                    disease._ehrSkipEffects = true
+                    table.insert(toRemove, diseaseId)
                 end
             end
 
@@ -1591,6 +1635,11 @@ local EHR_DiseaseBodyFeverTargets = {
         [2] = { temp = 38.0, step = 0.035 },
         [3] = { temp = 40.0, step = 0.060 },
         [4] = { temp = 40.0, step = 0.060 },
+    },
+    cellulitis = {
+        [2] = { temp = 37.8, step = 0.026 },
+        [3] = { temp = 38.6, step = 0.042 },
+        [4] = { temp = 39.2, step = 0.050 },
     },
     tuberculosis = {
         [2] = { temp = 37.7, step = 0.016 },
@@ -2541,6 +2590,94 @@ local function EHR_DiseaseReduceMuscleStrainToward(player, targetStiffness, step
     end
 end
 
+local function EHR_DiseaseNormalizePartName(name)
+    return tostring(name or ""):lower():gsub("[%s_%-]", "")
+end
+
+local function EHR_DiseaseIsCellulitisSourcePart(sourceBodyPart, partType, part)
+    local source = EHR_DiseaseNormalizePartName(sourceBodyPart)
+    if source ~= "" and source ~= "debug" and source ~= "cellulitis" then
+        return EHR_DiseaseNormalizePartName(EHR_DiseaseGetBodyPartName(partType, part)) == source
+    end
+
+    return EHR_DiseaseIsMusclePart(partType, part)
+end
+
+local function EHR_DiseaseApplyCellulitisEffects(player, disease, stage, severity, stats, trySymptom)
+    -- Kept out of ApplyEffects to avoid Kahlua's 200-local compiler limit.
+    local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "cellulitis")
+    local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "cellulitis", disease)
+    local painRelief = math.max(
+        EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "pain"),
+        EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "inflammation") * 0.85
+    )
+    local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "fever")
+    local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "weakness")
+    local treatmentMult = curativeTreatment and 0.38 or 1.0
+
+    local painTarget = 8
+    local sicknessTarget = 0.08
+    local fatigueTarget = 0.10
+    local enduranceDrain = 0.001
+    local enduranceFloor = 0.90
+    local dialogueChance = 0.001
+    local dialogueCooldown = 1.2
+
+    if stage == 2 then
+        painTarget = 16
+        sicknessTarget = 0.18
+        fatigueTarget = 0.18
+        enduranceDrain = 0.0025
+        enduranceFloor = 0.82
+        dialogueChance = 0.0025
+        dialogueCooldown = 0.9
+    elseif stage == 3 then
+        painTarget = 32
+        sicknessTarget = 0.34
+        fatigueTarget = 0.34
+        enduranceDrain = 0.006
+        enduranceFloor = 0.68
+        dialogueChance = 0.0040
+        dialogueCooldown = 0.65
+    elseif stage >= 4 then
+        painTarget = 38
+        sicknessTarget = 0.42
+        fatigueTarget = 0.44
+        enduranceDrain = 0.007
+        enduranceFloor = 0.62
+        dialogueChance = 0.0045
+        dialogueCooldown = 0.55
+    end
+
+    local painMult = math.max(curativeTreatment and 0.16 or 0.35, symptomMult * treatmentMult * (1 - (painRelief * 1.45)))
+    local weaknessMult = math.max(curativeTreatment and 0.20 or 0.38, symptomMult * treatmentMult * (1 - (weaknessRelief * 1.2)))
+    local feverMult = math.max(curativeTreatment and 0.18 or 0.35, symptomMult * treatmentMult * (1 - (feverRelief * 1.45)))
+
+    local sourceBodyPart = disease.sourceBodyPart
+    EHR_DiseaseMoveTargetedPainToward(player, painTarget * painMult * math.max(0.65, severity), 0.85 * severity, curativeTreatment and 4.0 or 1.35, function(partType, part)
+        return EHR_DiseaseIsCellulitisSourcePart(sourceBodyPart, partType, part)
+    end)
+
+    if CharacterStat then
+        EHR_DiseaseDrainEndurance(stats, enduranceDrain * severity * weaknessMult, enduranceFloor)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat.SICKNESS, sicknessTarget * math.max(0.55, symptomMult), 0.0028 * severity, 1)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat.FATIGUE, fatigueTarget * weaknessMult, 0.0014 * severity, 1)
+    end
+
+    if stage >= 2 then
+        EHR_DiseaseApplyBodyFever(player, "cellulitis", disease, severity, feverMult, curativeTreatment)
+    end
+
+    trySymptom("cellulitis_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+        local lines = stage >= 4
+            and {"The infection is spreading...", "I feel hot and weak...", "This wound is poisoning me..."}
+            or stage == 3
+                and {"The skin is hot to touch...", "The swelling is getting worse...", "I need antibiotics..."}
+                or {"The stitched skin is red...", "That wound feels inflamed...", "The area feels swollen..."}
+        EHR_DiseaseSay(player, lines)
+    end)
+end
+
 local function EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, stats, trySymptom)
     -- Kept out of ApplyEffects to avoid Kahlua's 200-local compiler limit.
     local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "hyperkeratotic_scabies")
@@ -2935,6 +3072,9 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
 
     elseif diseaseId == "hyperkeratotic_scabies" then
         EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, stats, trySymptom)
+
+    elseif diseaseId == "cellulitis" then
+        EHR_DiseaseApplyCellulitisEffects(player, disease, stage, severity, stats, trySymptom)
 
     elseif diseaseId == "tetanus" then
         -- Lockjaw and spasms from contaminated deep wounds. Stage 1 is incubation and has no active effects.

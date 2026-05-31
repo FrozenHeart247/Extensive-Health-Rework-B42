@@ -6,11 +6,13 @@ require "ISUI/ISButton"
 require "TimedActions/ISBaseTimedAction"
 require "TimedActions/ISStitch"
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Disease" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.StitchMinigame = EHR.StitchMinigame or {}
 EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
+EHR.StitchMinigame.CELLULITIS_ROUGH_RISK = 0.40
 
 local C = {
     bg = { r = 0.018, g = 0.016, b = 0.016, a = 0.97 },
@@ -84,6 +86,91 @@ local function bodyPartName(bodyPart)
     return tostring(partType or L("UnknownPart", "Unknown body part"))
 end
 
+local function bodyPartKey(bodyPart)
+    if not bodyPart then return nil end
+
+    local ok, partType = pcall(function() return bodyPart:getType() end)
+    if ok and BodyPartType and BodyPartType.ToString then
+        local okName, name = pcall(function() return BodyPartType.ToString(partType) end)
+        if okName and name then return tostring(name) end
+    end
+
+    if ok and partType ~= nil then
+        return tostring(partType)
+    end
+
+    return bodyPartName(bodyPart)
+end
+
+local function playerIdentifiers(player)
+    local data = {}
+    if not player then return data end
+
+    pcall(function()
+        if player.getUsername then data.targetUsername = player:getUsername() end
+    end)
+    pcall(function()
+        if player.getOnlineID then data.targetOnlineID = tostring(player:getOnlineID()) end
+    end)
+    pcall(function()
+        if player.getDisplayName then data.targetDisplayName = tostring(player:getDisplayName()) end
+    end)
+
+    return data
+end
+
+local function markCellulitisSource(player, sourceBodyPart, quality, misses)
+    if not player or not EHR or not EHR.Disease then return end
+
+    local diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or nil
+    local cellulitis = diseaseData and diseaseData.active and diseaseData.active.cellulitis or nil
+    if not cellulitis then return end
+
+    cellulitis.source = "rough_stitch"
+    cellulitis.sourceBodyPart = sourceBodyPart
+    cellulitis.stitchQuality = quality
+    cellulitis.stitchMisses = misses
+end
+
+function EHR.StitchMinigame.TryCellulitisRisk(action, chance)
+    if not action or not action.bodyPart then return false end
+
+    chance = tonumber(chance) or 0
+    if chance <= 0 then return false end
+
+    local patient = action.otherPlayer or action.character
+    if not patient then return false end
+
+    local sourceBodyPart = bodyPartKey(action.bodyPart)
+    local quality = tonumber(action._ehrStitchMinigameQuality) or 0.75
+    local misses = tonumber(action._ehrStitchMinigameMisses) or 0
+
+    if isClient and isClient() and sendClientCommand then
+        local args = playerIdentifiers(patient)
+        args.sourceBodyPart = sourceBodyPart
+        args.chance = chance
+        args.quality = quality
+        args.misses = misses
+        sendClientCommand(action.character or getPlayer(), "EHR", "StitchCellulitisRisk", args)
+        return true
+    end
+
+    if not ZombRand or ZombRand(100) >= math.floor(chance * 100) then
+        return false
+    end
+
+    if EHR.Disease and EHR.Disease.InitializePlayer then
+        pcall(function() EHR.Disease.InitializePlayer(patient) end)
+    end
+    if EHR.Disease and EHR.Disease.Contract then
+        pcall(function() EHR.Disease.Contract(patient, "cellulitis") end)
+        markCellulitisSource(patient, sourceBodyPart, quality, misses)
+        return true
+    end
+
+    return false
+end
+
 local function isBodyPartStillValid(bodyPart)
     if not bodyPart then return false end
     local remoteValidUntil = EHR.StitchMinigame.RemoteValidBodyParts and EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] or nil
@@ -105,6 +192,7 @@ end
 function EHR.StitchMinigame.AllowRemoteBodyPart(bodyPart, milliseconds)
     if not bodyPart or not getTimestampMs then return end
     EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
+EHR.StitchMinigame.CELLULITIS_ROUGH_RISK = 0.40
     EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] = getTimestampMs() + (tonumber(milliseconds) or 180000)
 end
 
@@ -173,8 +261,10 @@ function EHR.StitchMinigame.ApplyQuality(action)
                 bodyPart:setInfectedWound(true)
             end
         end)
+        EHR.StitchMinigame.TryCellulitisRisk(action, EHR.StitchMinigame.CELLULITIS_ROUGH_RISK)
     elseif quality < 0.72 then
         extraPain = 5
+        EHR.StitchMinigame.TryCellulitisRisk(action, EHR.StitchMinigame.CELLULITIS_ROUGH_RISK)
     end
 
     if extraPain > 0 then
@@ -365,8 +455,29 @@ function EHR_StitchMinigameUI:close()
     self:removeFromUIManager()
 end
 
+function EHR_StitchMinigameUI:applyDirtyAttemptRisk(reason)
+    if self._ehrDirtyAttemptRiskApplied then return end
+
+    local started = (tonumber(self.misses) or 0) > 0 or (tonumber(self.currentIndex) or 1) > 1
+    if not started then return end
+
+    local quality = self:quality()
+    if quality >= 0.72 then return end
+
+    self._ehrDirtyAttemptRiskApplied = true
+    EHR.StitchMinigame.TryCellulitisRisk({
+        character = self.character,
+        otherPlayer = self.otherPlayer,
+        bodyPart = self.bodyPart,
+        _ehrStitchMinigameQuality = quality,
+        _ehrStitchMinigameMisses = self.misses,
+        _ehrStitchMinigameAbortReason = reason,
+    }, EHR.StitchMinigame.CELLULITIS_ROUGH_RISK)
+end
+
 function EHR_StitchMinigameUI:onCancel()
     self.finished = true
+    self:applyDirtyAttemptRisk("cancel")
     self:close()
 end
 
@@ -384,6 +495,7 @@ end
 function EHR_StitchMinigameUI:finishFailure()
     if self.finished then return end
     self.finished = true
+    self:applyDirtyAttemptRisk("failure")
     pcall(function()
         self.bodyPart:setAdditionalPain(self.bodyPart:getAdditionalPain() + 10)
         syncBodyPart(self.bodyPart, 0x00570188)
@@ -407,6 +519,7 @@ function EHR_StitchMinigameUI:update()
     end
     if self.character and self.character.getX and
             (math.abs(self.character:getX() - self.doctorStartX) > 0.15 or math.abs(self.character:getY() - self.doctorStartY) > 0.15) then
+        self:applyDirtyAttemptRisk("doctor_moved")
         self:close()
         return
     end
@@ -416,6 +529,7 @@ function EHR_StitchMinigameUI:update()
             moved = ISHealthPanel.DidPatientMove(self.character, self.otherPlayer, self.patientStartX, self.patientStartY)
         end)
         if moved then
+            self:applyDirtyAttemptRisk("patient_moved")
             self:close()
         end
     end

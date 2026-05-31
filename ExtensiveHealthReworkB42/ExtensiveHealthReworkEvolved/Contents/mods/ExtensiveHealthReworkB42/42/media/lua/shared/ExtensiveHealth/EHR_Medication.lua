@@ -310,7 +310,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.AntiInflammatory"] = {
         tier = 1,
-        treats = {"wound_infection", "trichinosis", "tetanus", "ahtr"},
+        treats = {"wound_infection", "cellulitis", "trichinosis", "tetanus", "ahtr"},
         displayName = "Anti-Inflammatory Pills",
         usageMessage = "You take anti-inflammatory pills. Swelling begins to reduce.",
         symptomReduction = {

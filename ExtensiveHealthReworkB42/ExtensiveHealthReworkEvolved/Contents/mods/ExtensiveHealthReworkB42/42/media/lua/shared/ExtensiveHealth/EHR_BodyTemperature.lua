@@ -350,19 +350,35 @@ function EHR.BodyTemp.ReadVanillaBodyTemperature(player)
     return EHR.BodyTemp.Config.normalTemp or 37.0
 end
 
+local function EHR_BodyTempWriteRealisticTemperatureCore(player, bodyTemp)
+    if not player or not bodyTemp then return false end
+    if not (EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive()) then
+        return false
+    end
+
+    local modData = nil
+    pcall(function() modData = player:getModData() end)
+    local rec = modData and modData.RC_TempSimBodyTemp or nil
+    if type(rec) ~= "table" then return false end
+
+    rec.core = bodyTemp
+    rec._lastBodyTempStatsApplied = bodyTemp
+    rec._bodyTempDirty = true
+    rec._ehrDiseaseFeverCore = bodyTemp
+    return true
+end
+
 function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     if not player then return false end
     bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
     if not bodyTemp then return false end
 
-    -- Realistic Temperature is an external temperature authority and rewrites
-    -- CharacterStat.TEMPERATURE frequently. Keep EHR fever in EHR_Temperature,
-    -- but do not fight that mod for the vanilla stat.
-    if EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive() then
-        return false
-    end
+    -- Disease fever is owned by EHR even when an external temperature mod is
+    -- active. Environmental body temperature still follows vanilla/compat mods,
+    -- but fever must be mirrored to vanilla fields so moodles, the temperature
+    -- tab, and other systems can actually see it.
 
-    local wrote = false
+    local wrote = EHR_BodyTempWriteRealisticTemperatureCore(player, bodyTemp)
     local bodyDamage = nil
     pcall(function() bodyDamage = player:getBodyDamage() end)
     if bodyDamage and bodyDamage.setTemperature then
@@ -379,6 +395,25 @@ function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     end
 
     return wrote
+end
+
+function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+    if not player then return false end
+    if not (EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)) then
+        return false
+    end
+
+    local tempData = EHR.BodyTemp.GetTemperatureData and EHR.BodyTemp.GetTemperatureData(player) or nil
+    local bodyTemp = tempData and tonumber(tempData.bodyTemp) or nil
+    local normalTemp = EHR.BodyTemp.Config.normalTemp or 37.0
+
+    -- This bridge should preserve an already-calculated EHR fever value, not
+    -- jump straight to the target. The gradual ramp is handled by
+    -- MoveDiseaseFeverToward/UpdateBodyTemperature.
+    bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
+    if not bodyTemp or bodyTemp <= normalTemp + 0.05 then return false end
+
+    return EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
 end
 
 function EHR.BodyTemp.IsHypothermiaEnabled()
@@ -516,6 +551,11 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [2] = 38.0,
         [3] = 40.0,
         [4] = 40.0,
+    },
+    cellulitis = {
+        [2] = 37.8,
+        [3] = 38.6,
+        [4] = 39.2,
     },
     pneumonia = {
         [1] = 38.0,
@@ -1926,6 +1966,9 @@ local function processPlayerTick(player)
 
     -- Legacy no-op: vanilla is authoritative for environmental temperature.
     EHR.BodyTemp.SuppressVanillaTemperature(player)
+    if EHR.BodyTemp.MaintainDiseaseFeverBridge then
+        EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+    end
 
     -- Throttled updates for our system
     local state = getTickState(player)
@@ -1983,6 +2026,9 @@ function EHR.BodyTemp.OnTick()
         local player = getSpecificPlayer(0)
         if player and EHR.BodyTemp.IsEnabled() then
             EHR.BodyTemp.SuppressVanillaTemperature(player)
+            if EHR.BodyTemp.MaintainDiseaseFeverBridge then
+                EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+            end
         end
         return
     end

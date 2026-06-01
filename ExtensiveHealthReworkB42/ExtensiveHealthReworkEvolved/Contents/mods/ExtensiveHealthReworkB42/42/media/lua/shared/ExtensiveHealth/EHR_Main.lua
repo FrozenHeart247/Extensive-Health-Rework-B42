@@ -617,6 +617,8 @@ function EHR.SyncEHRModDataToClient(player)
         EHR_MedicalJournal = data.EHR_MedicalJournal,
         EHR_Temperature = data.EHR_Temperature,
         EHR_KnownDiseases = data.EHR_KnownDiseases,
+        EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
+        EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
         EHR_CorpseSickness = data.EHR_CorpseSickness,
         EHR_KnoxCure = data.EHR_KnoxCure,
     })

@@ -86,8 +86,28 @@ local function callBodyPartBoolean(part, methodName)
     return ok and value == true
 end
 
+local function callBodyPartNumber(part, methodName, defaultValue)
+    if not part or not methodName or not part[methodName] then return defaultValue or 0 end
+    local ok, value = pcall(function() return part[methodName](part) end)
+    if not ok then return defaultValue or 0 end
+    return tonumber(value) or defaultValue or 0
+end
+
+function EHR.Blood.IsBodyPartBandaged(part)
+    if not part then return false end
+    if callBodyPartBoolean(part, "bandaged") then return true end
+    if callBodyPartBoolean(part, "isBandaged") then return true end
+    return callBodyPartNumber(part, "getBandageLife", 0) > 0
+end
+
 function EHR.Blood.IsBodyPartBleeding(part)
     if not part then return false end
+
+    -- Vanilla can keep bleeding timers/flags alive after a bandage is applied.
+    -- For EHR blood volume, a bandaged wound is no longer actively losing blood.
+    if EHR.Blood.IsBodyPartBandaged(part) then
+        return false
+    end
 
     if callBodyPartBoolean(part, "bleeding") then
         return true

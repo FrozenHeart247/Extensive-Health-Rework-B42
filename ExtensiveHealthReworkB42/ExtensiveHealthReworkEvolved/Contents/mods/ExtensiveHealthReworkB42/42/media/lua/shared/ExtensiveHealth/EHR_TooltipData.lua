@@ -157,7 +157,7 @@ EHR.Tooltips.Data = {
         category = "Medical Supply",
         description = "Sealed pack of clean bandages.",
         effects = {
-            "Applies as a normal clean bandage",
+            "Unpack to get a clean bandage",
             "Holds up to 5 bandages",
             "Can be refilled with clean bandages",
         },

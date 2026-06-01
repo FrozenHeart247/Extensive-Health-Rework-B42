@@ -13,6 +13,9 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 EHR = EHR or {}
 EHR.DiseaseFlyers = EHR.DiseaseFlyers or {}
 
+EHR.DiseaseFlyers.KNOX_KNOWLEDGE_ID = "knox_infection"
+EHR.DiseaseFlyers.KNOX_UNLOCK_SOURCE = "kentucky_herald_july16"
+
 EHR.DiseaseFlyers.Config = {
     KNOWLEDGE_XP = 50,
     FLYER_ITEMS = {
@@ -178,6 +181,28 @@ end
 
 EHR.DiseaseFlyers.NormalizeDiseaseId = normalizeDiseaseId
 
+local function isKnoxDiseaseId(diseaseId)
+    return normalizeDiseaseId(diseaseId) == EHR.DiseaseFlyers.KNOX_KNOWLEDGE_ID
+end
+
+EHR.DiseaseFlyers.IsKnoxDiseaseId = isKnoxDiseaseId
+
+function EHR.DiseaseFlyers.HasKnoxHeraldKnowledge(player)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if not modData or type(modData.EHR_KnownDiseases) ~= "table" then
+        return false
+    end
+
+    if modData.EHR_KnownDiseases[EHR.DiseaseFlyers.KNOX_KNOWLEDGE_ID] ~= true then
+        return false
+    end
+
+    return modData.EHR_KnoxHeraldRead == true
+        or modData.EHR_KnoxKnowledgeSource == EHR.DiseaseFlyers.KNOX_UNLOCK_SOURCE
+end
+
 local function flyerText(key, fallback, ...)
     local text = nil
     if getText then
@@ -211,6 +236,10 @@ end
 function EHR.DiseaseFlyers.KnowsDisease(player, diseaseId)
     if not player or not diseaseId then return false end
     diseaseId = normalizeDiseaseId(diseaseId)
+    if isKnoxDiseaseId(diseaseId) then
+        return EHR.DiseaseFlyers.HasKnoxHeraldKnowledge(player)
+    end
+
     local known = EHR.DiseaseFlyers.GetKnownDiseases(player)
     return known[diseaseId] == true
 end
@@ -265,19 +294,32 @@ function EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
     return awarded
 end
 
-function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
+function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId, options)
     if not player or not diseaseId then return false end
+    options = options or {}
     diseaseId = normalizeDiseaseId(diseaseId)
 
     local modData = player:getModData()
     if not modData then return false end
 
+    local isKnox = isKnoxDiseaseId(diseaseId)
+    local allowKnox = options.allowKnox == true or options.source == EHR.DiseaseFlyers.KNOX_UNLOCK_SOURCE
+    if isKnox and not allowKnox then
+        EHR.Log("Knox disease knowledge blocked: requires Kentucky Herald July 16.")
+        return false
+    end
+
     modData.EHR_KnownDiseases = modData.EHR_KnownDiseases or {}
-    if modData.EHR_KnownDiseases[diseaseId] then
+    if modData.EHR_KnownDiseases[diseaseId] and (not isKnox or EHR.DiseaseFlyers.HasKnoxHeraldKnowledge(player)) then
         return false
     end
 
     modData.EHR_KnownDiseases[diseaseId] = true
+    if isKnox then
+        modData.EHR_KnoxHeraldRead = true
+        modData.EHR_KnoxKnowledgeSource = EHR.DiseaseFlyers.KNOX_UNLOCK_SOURCE
+    end
+
     modData.EHR_MedicalJournal = modData.EHR_MedicalJournal or { entries = {}, discoveries = {} }
     modData.EHR_MedicalJournal.discoveries = modData.EHR_MedicalJournal.discoveries or {}
     modData.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
@@ -288,7 +330,7 @@ function EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId)
     end
 
     local name = EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
-    if player.Say then
+    if player.Say and not options.silent then
         EHR.Locale.Say(player, flyerText("UI_EHR_FlyerLearned", "Disease knowledge acquired: %1", name))
     end
 
@@ -314,6 +356,10 @@ function EHR.DiseaseFlyers.HasMedicalKnowledge(player, knowledgeId, requiredFirs
     local normalized = normalizeDiseaseId(knowledgeId)
     if EHR.DiseaseFlyers.KnowsDisease(player, normalized) then
         return true
+    end
+
+    if isKnoxDiseaseId(normalized) then
+        return false
     end
 
     local requiredLevel = requiredFirstAidLevel or 8
@@ -360,7 +406,7 @@ function EHR.DiseaseFlyers.GetUnknownDiseaseDisplay(diseaseId)
         tetanus = { displayName = "Severe Neuromuscular Illness", description = "Your muscles feel tight and painful." },
         wound_infection = { displayName = "Unknown Wound Illness", description = "An injury looks and feels unhealthy." },
         cellulitis = { displayName = "Unknown Skin Infection", description = "Your skin feels inflamed and infected." },
-        knox_infection = { displayName = "Unknown Infection", description = "Something is very wrong after the injury." },
+        knox_infection = { displayName = "Unknown Infection", description = "" },
     }
 
     local unknownName = getText and getText("UI_EHR_DiseaseUnknown") or nil
@@ -378,6 +424,7 @@ function EHR.DiseaseFlyers.OnFlyerRead(player, item)
 
     local diseaseId = EHR.DiseaseFlyers.Config.FLYER_ITEMS[itemId]
     if not diseaseId then return end
+    local isKnox = isKnoxDiseaseId(diseaseId)
 
     EHR.Log("OnFlyerRead triggered for: " .. tostring(itemId) .. " -> disease: " .. tostring(diseaseId))
 
@@ -387,9 +434,13 @@ function EHR.DiseaseFlyers.OnFlyerRead(player, item)
             EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
         end
         if not newlyLearned and player.Say then
-            EHR.Locale.Say(player, flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
+            if isKnox and not EHR.DiseaseFlyers.KnowsDisease(player, diseaseId) then
+                EHR.Locale.Say(player, "This flyer is too vague. I need a real source.")
+            else
+                EHR.Locale.Say(player, flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
+            end
         end
-        if sendClientCommand then
+        if sendClientCommand and not isKnox then
             sendClientCommand(player, "EHR_Flyers", "UnlockDisease", { diseaseId = normalizeDiseaseId(diseaseId) })
         end
         return
@@ -400,7 +451,11 @@ function EHR.DiseaseFlyers.OnFlyerRead(player, item)
         EHR.DiseaseFlyers.AwardKnowledgeXP(player, diseaseId)
     end
     if not newlyLearned and player.Say then
-        EHR.Locale.Say(player, flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
+        if isKnox and not EHR.DiseaseFlyers.KnowsDisease(player, diseaseId) then
+            EHR.Locale.Say(player, "This flyer is too vague. I need a real source.")
+        else
+            EHR.Locale.Say(player, flyerText("UI_EHR_FlyerAlreadyKnown", "You already know about this disease."))
+        end
     end
 end
 

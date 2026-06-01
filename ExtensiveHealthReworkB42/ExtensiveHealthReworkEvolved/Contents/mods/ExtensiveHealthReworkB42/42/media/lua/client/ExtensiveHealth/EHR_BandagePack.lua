@@ -530,48 +530,26 @@ function EHR.BandagePack.CreateApplyAction(doctor, patient, pack, bodyPart)
 end
 
 function EHR.BandagePack.ApplyPackBandageForPlayer(doctor, patient, pack, bodyPart)
-    if not doctor or not EHR.BandagePack.IsPack(pack) or getRemainingDoses(pack) <= 0 then
-        return false
-    end
-
-    local isRemotePatient = patient and patient ~= doctor
-    if not (isClient and isClient() and isRemotePatient) and not bodyPartCanReceiveCleanBandage(bodyPart) then
-        return false
-    end
-
-    if isClient and isClient() then
-        if not pack.getID or not sendClientCommand then return false end
-        local args = {
-            packID = pack:getID(),
-            bodyPartIndex = bodyPart and bodyPart.getIndex and bodyPart:getIndex() or nil,
-        }
-        if patient and patient ~= doctor then
-            pcall(function()
-                if patient.getOnlineID then args.targetOnlineID = patient:getOnlineID() end
-            end)
-            pcall(function()
-                if patient.getUsername then args.targetUsername = patient:getUsername() end
-            end)
-            pcall(function()
-                if patient.getDisplayName then args.targetDisplayName = patient:getDisplayName() end
-            end)
-        end
-        if args.bodyPartIndex == nil then return false end
-        sendClientCommand(doctor, "EHR", "ApplyBandagePack", args)
-        return true
-    end
-
-    return EHR.BandagePack.ApplyCleanBandageFromPack(doctor, patient or doctor, pack, bodyPart, true)
+    return false
 end
 
 function EHR.BandagePack.ApplyPackBandage(playerNum, pack, bodyPart)
-    local player = getSpecificPlayer and getSpecificPlayer(playerNum or 0) or nil
-    return EHR.BandagePack.ApplyPackBandageForPlayer(player, player, pack, bodyPart)
+    return false
 end
 
 function EHR.BandagePack.AddBandageToPack(player, bandage, pack)
     if not player or not EHR.BandagePack.IsCleanBandage(bandage) then
         return false
+    end
+
+    if isClient and isClient() then
+        local bandageID = getItemID(bandage)
+        if bandageID == nil then return false end
+        sendClientCommand(player, "EHR", "AddCleanBandageToPack", {
+            bandageID = bandageID,
+            packID = pack and getItemID(pack) or nil,
+        })
+        return true
     end
 
     local inventory = player:getInventory()

@@ -156,7 +156,6 @@ local fallbackDiseaseKnowledgeIds = {
     tetanus = true,
     wound_infection = true,
     cellulitis = true,
-    knox_infection = true,
 }
 
 function EHR.Professions.GrantAllDiseaseKnowledge(player)
@@ -185,8 +184,13 @@ function EHR.Professions.GrantAllDiseaseKnowledge(player)
     end
 
     for diseaseId, _ in pairs(knowledgeIds) do
-        modData.EHR_KnownDiseases[diseaseId] = true
-        modData.EHR_MedicalJournal.discoveries[diseaseId] = modData.EHR_MedicalJournal.discoveries[diseaseId] or now
+        local isKnox = EHR.DiseaseFlyers
+            and EHR.DiseaseFlyers.IsKnoxDiseaseId
+            and EHR.DiseaseFlyers.IsKnoxDiseaseId(diseaseId)
+        if not isKnox then
+            modData.EHR_KnownDiseases[diseaseId] = true
+            modData.EHR_MedicalJournal.discoveries[diseaseId] = modData.EHR_MedicalJournal.discoveries[diseaseId] or now
+        end
     end
 
     modData.EHR_MedicalJournal.lastUpdated = now

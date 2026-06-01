@@ -1530,23 +1530,23 @@ EHR.Disease.Diseases["Knox_Infection"] = {
     },
     -- Stage entry dialogue
     stageEntryDialogue = {
-        [1] = "I... I've been bitten. This can't be happening...",
-        [2] = "*shivers* Getting feverish... it's the virus, isn't it?",
-        [3] = "*confused* Can't think straight... time's running out...",
+        [1] = "I feel off... maybe I just need to rest.",
+        [2] = "*shivers* Fever's getting worse...",
+        [3] = "*confused* Can't think straight... something is very wrong...",
         [4] = "*resigned* This is it... I can feel myself slipping away...",
     },
     -- Random dialogue
     dialogue = {
         [1] = {
-            "Maybe it won't take... maybe I'll be okay...",
-            "I need to find a cure... there has to be something...",
-            "*checks bite mark* It's getting red...",
+            "My skin feels cold...",
+            "Why am I sweating?",
+            "Just breathe. It might pass.",
         },
         [2] = {
             "The fever... it's getting worse...",
-            "I don't have much time...",
+            "I can't get warm...",
             "*shivers uncontrollably*",
-            "Need to find Phalanx... or Gene Therapy...",
+            "Something is spreading through me...",
         },
         [3] = {
             "*mumbles incoherently*",

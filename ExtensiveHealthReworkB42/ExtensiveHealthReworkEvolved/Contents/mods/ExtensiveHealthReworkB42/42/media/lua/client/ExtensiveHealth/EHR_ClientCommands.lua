@@ -80,6 +80,12 @@ local function handleFlyerCommand(command, args)
 
     data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
     data.EHR_KnownDiseases[diseaseId] = true
+    if args.EHR_KnoxHeraldRead ~= nil then
+        data.EHR_KnoxHeraldRead = args.EHR_KnoxHeraldRead == true
+    end
+    if args.EHR_KnoxKnowledgeSource ~= nil then
+        data.EHR_KnoxKnowledgeSource = args.EHR_KnoxKnowledgeSource
+    end
 
     if type(args.EHR_MedicalJournal) == "table" then
         data.EHR_MedicalJournal = args.EHR_MedicalJournal
@@ -285,6 +291,13 @@ local function OnServerCommand(module, command, args)
                 end
                 data.EHR_KnownDiseases = mergedKnown
                 log("[EHR Client] Updated EHR_KnownDiseases")
+            end
+
+            if args.EHR_KnoxHeraldRead ~= nil then
+                data.EHR_KnoxHeraldRead = args.EHR_KnoxHeraldRead == true
+            end
+            if args.EHR_KnoxKnowledgeSource ~= nil then
+                data.EHR_KnoxKnowledgeSource = args.EHR_KnoxKnowledgeSource
             end
 
             if args.EHR_CorpseSickness ~= nil then

@@ -448,10 +448,16 @@ function EHR_MedicalJournalUI:getFirstAidLevel()
 end
 
 function EHR_MedicalJournalUI:knowsDisease(diseaseId)
+    local id = normalizeDiseaseId(diseaseId)
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.IsKnoxDiseaseId and EHR.DiseaseFlyers.IsKnoxDiseaseId(id) then
+        return EHR.DiseaseFlyers.KnowsDisease
+            and EHR.DiseaseFlyers.KnowsDisease(self.player, id) == true
+    end
+
     local level = self:getFirstAidLevel()
     if level >= 8 then return true end
     if EHR.DiseaseFlyers and EHR.DiseaseFlyers.CanIdentifyDisease then
-        return EHR.DiseaseFlyers.CanIdentifyDisease(self.player, diseaseId) == true
+        return EHR.DiseaseFlyers.CanIdentifyDisease(self.player, id) == true
     end
     return false
 end

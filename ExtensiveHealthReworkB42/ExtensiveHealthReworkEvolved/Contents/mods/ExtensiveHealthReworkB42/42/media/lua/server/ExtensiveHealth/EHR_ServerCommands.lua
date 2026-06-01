@@ -632,6 +632,8 @@ local function syncModDataToClient(player)
             EHR_MedicalJournal = data.EHR_MedicalJournal,
             EHR_Temperature = data.EHR_Temperature,  -- MP FIX: Include body temperature in sync
             EHR_KnownDiseases = data.EHR_KnownDiseases,
+            EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
+            EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
             EHR_CorpseSickness = data.EHR_CorpseSickness,
             EHR_KnoxCure = data.EHR_KnoxCure,
         }
@@ -848,6 +850,100 @@ function consumeSterilizedBandagePackDose(pack, packContainer)
     end
     return true
 end
+
+local function setSterilizedBandagePackRemaining(pack, remaining)
+    if not pack then return false end
+    local _, maxDoses, useDelta = getSterilizedBandagePackDoseInfo(pack)
+    remaining = math.max(0, math.min(maxDoses, math.floor((tonumber(remaining) or 0) + 0.0001)))
+
+    local usedDelta = remaining * useDelta
+    if remaining >= maxDoses then
+        usedDelta = 1.0
+    end
+    usedDelta = math.max(0, math.min(1.0, usedDelta))
+
+    if pack.setUsedDelta then
+        local ok = pcall(function() pack:setUsedDelta(usedDelta) end)
+        if ok then
+            syncInventoryItem(pack)
+            return true
+        end
+    end
+    return false
+end
+
+local function findSterilizedBandagePackWithSpace(container, visited)
+    if not container then return nil, nil end
+    visited = visited or {}
+    if visited[container] then return nil, nil end
+    visited[container] = true
+
+    local items = container.getItems and container:getItems() or nil
+    if not items or not items.size then return nil, nil end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            if item.getFullType and item:getFullType() == "ExtensiveHealth.SterilizedBandages" then
+                local remaining, maxDoses = getSterilizedBandagePackDoseInfo(item)
+                if remaining < maxDoses then
+                    return item, container
+                end
+            end
+
+            local nestedContainer = nil
+            if item.getInventory then
+                local okNested, nested = pcall(function() return item:getInventory() end)
+                if okNested then nestedContainer = nested end
+            end
+            if nestedContainer then
+                local found, owner = findSterilizedBandagePackWithSpace(nestedContainer, visited)
+                if found then return found, owner end
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+function EHR.ServerCommands.AddCleanBandageToPack(player, args)
+    if not player or not args or args.bandageID == nil then return false end
+
+    local bandage, bandageContainer = findInventoryItemByID(player, args.bandageID)
+    if not bandage or not bandage.getFullType or bandage:getFullType() ~= "Base.Bandage" then
+        return false
+    end
+
+    local inventory = player:getInventory()
+    if not inventory then return false end
+
+    local explicitPack = args.packID ~= nil
+    local pack, packContainer = nil, nil
+    if explicitPack then
+        pack, packContainer = findInventoryItemByID(player, args.packID)
+        if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then
+            return false
+        end
+    else
+        pack, packContainer = findSterilizedBandagePackWithSpace(inventory, {})
+    end
+
+    if not pack then
+        local okAdd, newPack = pcall(function() return inventory:AddItem("ExtensiveHealth.SterilizedBandages") end)
+        if not okAdd or not newPack then return false end
+        pack = newPack
+        packContainer = inventory
+        setSterilizedBandagePackRemaining(pack, 0)
+        syncInventoryItemAdded(inventory, pack)
+    end
+
+    local remaining, maxDoses = getSterilizedBandagePackDoseInfo(pack)
+    if remaining >= maxDoses then return false end
+    if not removeInventoryItem(bandage, bandageContainer) then return false end
+
+    setSterilizedBandagePackRemaining(pack, remaining + 1)
+    return true
+end
 local function getOnlinePlayerByIDSafe(onlineID)
     if onlineID == nil then return nil end
     local numericID = tonumber(onlineID)
@@ -894,55 +990,7 @@ local function serverBodyPartCanReceiveCleanBandage(bodyPart)
 end
 
 function EHR.ServerCommands.ApplyBandagePack(player, args)
-    if not player or not args or args.packID == nil or args.bodyPartIndex == nil then return false end
-    local pack, packContainer = findInventoryItemByID(player, args.packID)
-    if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then return false end
-
-    local target = player
-    if args.targetOnlineID ~= nil or args.targetUsername ~= nil or args.targetDisplayName ~= nil then
-        target = findOnlinePlayerByArgs(args, player) or getOnlinePlayerByIDSafe(args.targetOnlineID) or player
-    end
-    local bodyPart = getBodyPartByIndex(target, args.bodyPartIndex)
-    if not serverBodyPartCanReceiveCleanBandage(bodyPart) then return false end
-
-    local remaining = getSterilizedBandagePackDoseInfo(pack)
-    if remaining <= 0 then return false end
-
-    local bodyDamage = target:getBodyDamage()
-    if not bodyDamage then return false end
-
-    local doctorLevel = 0
-    if player.getPerkLevel and Perks and Perks.Doctor then
-        local okLevel, level = pcall(function() return player:getPerkLevel(Perks.Doctor) end)
-        if okLevel then doctorLevel = tonumber(level) or 0 end
-    end
-    if player.isTimedActionInstant and player:isTimedActionInstant() then doctorLevel = 10 end
-
-    local randomBonus = (doctorLevel + 1) * 0.75
-    if ZombRandFloat then
-        local okRand, value = pcall(function()
-            return ZombRandFloat((doctorLevel + 1) * 0.5, (doctorLevel + 1) * 1.0)
-        end)
-        if okRand and value then randomBonus = value end
-    end
-    local bandageLife = randomBonus + 4.0
-
-    if callBodyPartMethod(bodyPart, "isGetBandageXp", false) == true and addXp and Perks and Perks.Doctor then
-        pcall(function() addXp(player, Perks.Doctor, 5) end)
-    end
-
-    pcall(function()
-        bodyDamage:SetBandaged(bodyPart:getIndex(), true, bandageLife, false, "Base.Bandage")
-    end)
-    consumeSterilizedBandagePackDose(pack, packContainer)
-
-    if syncBodyPart then
-        pcall(function() syncBodyPart(bodyPart, 0xc001966b8e) end)
-    end
-    if EHR_TriggerPlayerSync then
-        pcall(function() EHR_TriggerPlayerSync(target) end)
-    end
-    return true
+    return false
 end
 local function serverSay(player, text)
     if not player or not text then return end
@@ -1588,12 +1636,34 @@ function EHR.ServerCommands.UnlockDiseaseKnowledge(player, args)
     local data = player:getModData()
     if not data then return end
 
-    data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
-    data.EHR_KnownDiseases[diseaseId] = true
-    data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
-    data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
-    data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
-    data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+    local isKnox = EHR.DiseaseFlyers
+        and EHR.DiseaseFlyers.IsKnoxDiseaseId
+        and EHR.DiseaseFlyers.IsKnoxDiseaseId(diseaseId)
+    local knoxSource = EHR.DiseaseFlyers and EHR.DiseaseFlyers.KNOX_UNLOCK_SOURCE or "kentucky_herald_july16"
+    local allowKnox = args.allowKnox == true or args.source == knoxSource
+    if isKnox and not allowKnox then
+        log("[EHR Server] Knox disease knowledge rejected: Kentucky Herald July 16 required.")
+        return
+    end
+
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.UnlockDiseaseKnowledge then
+        EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId, {
+            allowKnox = allowKnox,
+            source = args.source,
+            silent = true,
+        })
+    else
+        data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
+        data.EHR_KnownDiseases[diseaseId] = true
+        if isKnox then
+            data.EHR_KnoxHeraldRead = true
+            data.EHR_KnoxKnowledgeSource = knoxSource
+        end
+        data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
+        data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
+        data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
+        data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+    end
 
     syncModDataToClient(player)
     if sendServerCommand then
@@ -1601,6 +1671,8 @@ function EHR.ServerCommands.UnlockDiseaseKnowledge(player, args)
             diseaseId = diseaseId,
             EHR_KnownDiseases = data.EHR_KnownDiseases,
             EHR_MedicalJournal = data.EHR_MedicalJournal,
+            EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
+            EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
         })
     end
     log("[EHR Server] Disease knowledge unlocked: " .. tostring(diseaseId))
@@ -1751,6 +1823,96 @@ function EHR.ServerCommands.FullHeal(player, args)
 
     syncModDataToClient(player)
     log("[EHR Server] FullHeal command executed")
+end
+
+local function sendAdminCommandFeedback(player, text)
+    if not player or not text or not sendServerCommand then return end
+    pcall(function()
+        sendServerCommand(player, "EHR_Dialogue", "Say", { text = tostring(text) })
+    end)
+end
+
+local function normalizePlayerLookupName(value)
+    value = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if value:sub(1, 1) == "\"" and value:sub(-1) == "\"" then
+        value = value:sub(2, -2)
+    end
+    return value:lower()
+end
+
+local function findOnlinePlayerByName(value)
+    local wanted = normalizePlayerLookupName(value)
+    if wanted == "" then return nil end
+
+    local exact = nil
+    local partial = nil
+    local partialCount = 0
+    local onlinePlayers = getOnlinePlayers()
+    if not onlinePlayers then return nil end
+
+    for i = 0, onlinePlayers:size() - 1 do
+        local candidate = onlinePlayers:get(i)
+        if candidate then
+            local names = {}
+            pcall(function() names[#names + 1] = candidate:getUsername() end)
+            pcall(function()
+                if candidate.getDisplayName then
+                    names[#names + 1] = candidate:getDisplayName()
+                end
+            end)
+            pcall(function()
+                if candidate.getDescriptor and candidate:getDescriptor() then
+                    names[#names + 1] = candidate:getDescriptor():getForename()
+                    names[#names + 1] = candidate:getDescriptor():getSurname()
+                end
+            end)
+
+            for _, name in ipairs(names) do
+                local lookup = normalizePlayerLookupName(name)
+                if lookup ~= "" then
+                    if lookup == wanted then
+                        exact = candidate
+                        break
+                    end
+                    if lookup:find(wanted, 1, true) then
+                        partial = candidate
+                        partialCount = partialCount + 1
+                    end
+                end
+            end
+            if exact then break end
+        end
+    end
+
+    if exact then return exact end
+    if partialCount == 1 then return partial end
+    return nil
+end
+
+function EHR.ServerCommands.FullHealTarget(requester, args)
+    if not requester then return end
+
+    local targetName = args and (args.targetUsername or args.target or args.username or args.player) or nil
+    local target = nil
+    if targetName and tostring(targetName):gsub("%s+", "") ~= "" then
+        target = findOnlinePlayerByName(targetName)
+    else
+        target = requester
+    end
+
+    if not target then
+        sendAdminCommandFeedback(requester, "EHR: player not found: " .. tostring(targetName or ""))
+        return
+    end
+
+    EHR.ServerCommands.FullHeal(target, {})
+
+    local healedName = "player"
+    pcall(function() healedName = target:getUsername() or healedName end)
+    sendAdminCommandFeedback(requester, "EHR: full heal applied to " .. tostring(healedName))
+    if target ~= requester then
+        sendAdminCommandFeedback(target, "EHR: an admin restored your health.")
+    end
 end
 
 --[[
@@ -2769,6 +2931,9 @@ local function OnClientCommand(module, command, player, args)
         elseif command == "UnpackCleanBandage" then
             EHR.ServerCommands.UnpackCleanBandage(player, args)
             return
+        elseif command == "AddCleanBandageToPack" then
+            EHR.ServerCommands.AddCleanBandageToPack(player, args)
+            return
         elseif command == "ApplyBandagePack" then
             EHR.ServerCommands.ApplyBandagePack(player, args)
             return
@@ -2892,6 +3057,27 @@ local function OnClientCommand(module, command, player, args)
             local actualUsername = targetUsername
             pcall(function() actualUsername = targetPlayer:getUsername() or actualUsername end)
 
+            local knoxStatus = {
+                infected = false,
+                progress = 0,
+            }
+            if EHR.KnoxCure then
+                if EHR.KnoxCure.IsInfected then
+                    local ok, infected = pcall(function()
+                        return EHR.KnoxCure.IsInfected(targetPlayer)
+                    end)
+                    knoxStatus.infected = ok and infected == true
+                end
+                if EHR.KnoxCure.GetInfectionProgress then
+                    local ok, progress = pcall(function()
+                        return EHR.KnoxCure.GetInfectionProgress(targetPlayer)
+                    end)
+                    if ok then
+                        knoxStatus.progress = math.max(0, math.min(1, tonumber(progress) or 0))
+                    end
+                end
+            end
+
             local examData = {
                 targetUsername = requestKey,
                 targetActualUsername = actualUsername,
@@ -2907,6 +3093,7 @@ local function OnClientCommand(module, command, player, args)
                 EHR_Temperature = targetData.EHR_Temperature,
                 EHR_CorpseSickness = targetData.EHR_CorpseSickness,
                 EHR_KnoxCure = targetData.EHR_KnoxCure,
+                EHR_KnoxStatus = knoxStatus,
                 EHR_Initialized = targetData.EHR_Initialized,
             }
 
@@ -2955,6 +3142,8 @@ local function OnClientCommand(module, command, player, args)
         EHR.ServerCommands.KillPlayer(player, args)
     elseif command == "FullHeal" then
         EHR.ServerCommands.FullHeal(player, args)
+    elseif command == "FullHealTarget" then
+        EHR.ServerCommands.FullHealTarget(player, args)
     elseif command == "ResetAll" then
         EHR.ServerCommands.ResetAll(player, args)
 

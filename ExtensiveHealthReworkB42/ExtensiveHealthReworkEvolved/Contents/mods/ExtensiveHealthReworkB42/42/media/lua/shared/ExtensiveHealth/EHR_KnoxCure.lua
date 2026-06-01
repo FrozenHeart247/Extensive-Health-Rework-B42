@@ -1,4 +1,6 @@
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_Dialogue" end)
+pcall(function() require "ExtensiveHealth/EHR_DiseaseDefinitions" end)
 --[[
     Extensive Health Rework B42
     Knox Infection Cure Module
@@ -69,6 +71,163 @@ EHR.KnoxCure.Config = {
     geneTherapyHealthReduction = 0.10,  -- 10% max health reduction
     geneTherapyMigraineChance = 0.001,  -- Per tick chance of migraine
 }
+
+local KNOX_DIALOGUE_FALLBACK = {
+    stageCount = 4,
+    stageDurations = {
+        [1] = 0.20,
+        [2] = 0.30,
+        [3] = 0.30,
+        [4] = 0.20,
+    },
+    stageEntryDialogue = {
+        [1] = "I feel off... maybe I just need to rest.",
+        [2] = "*shivers* Fever's getting worse...",
+        [3] = "*confused* Can't think straight... something is very wrong...",
+        [4] = "*resigned* This is it... I can feel myself slipping away...",
+    },
+    dialogue = {
+        [1] = {
+            "My skin feels cold...",
+            "Why am I sweating?",
+            "Just breathe. It might pass.",
+        },
+        [2] = {
+            "The fever... it's getting worse...",
+            "I can't get warm...",
+            "*shivers uncontrollably*",
+            "Something is spreading through me...",
+        },
+        [3] = {
+            "*mumbles incoherently*",
+            "Who... who are you? Where am I?",
+            "The hunger... it's... different...",
+            "*aggressive outburst* Stay away from me!",
+        },
+        [4] = {
+            "*barely conscious*",
+            "Tell them... tell them I tried...",
+            "I'm sorry... I'm so sorry...",
+        },
+    },
+}
+
+local function getKnoxDialogueDefinition()
+    local diseases = EHR and EHR.Disease and EHR.Disease.Diseases or nil
+    if type(diseases) == "table" then
+        return diseases.Knox_Infection or diseases.knox_infection or KNOX_DIALOGUE_FALLBACK
+    end
+    return KNOX_DIALOGUE_FALLBACK
+end
+
+local function getKnoxDialogueStage(player)
+    local definition = getKnoxDialogueDefinition()
+    local stageCount = tonumber(definition.stageCount) or 4
+    local progress = 0
+    if EHR.KnoxCure and EHR.KnoxCure.GetInfectionProgress then
+        progress = tonumber(EHR.KnoxCure.GetInfectionProgress(player)) or 0
+    end
+    progress = math.max(0, math.min(1, progress))
+    if progress <= 0 then
+        return 1
+    end
+
+    local durations = definition.stageDurations or KNOX_DIALOGUE_FALLBACK.stageDurations
+    local cumulative = 0
+    for stage = 1, stageCount do
+        local duration = tonumber(durations and durations[stage]) or (1 / stageCount)
+        cumulative = cumulative + duration
+        if progress <= cumulative then
+            return stage
+        end
+    end
+
+    return stageCount
+end
+
+local function randomKnoxDelay(baseHours, spreadHours)
+    local spread = math.max(0, tonumber(spreadHours) or 0)
+    local roll = 0
+    if spread > 0 and ZombRand then
+        roll = ZombRand(math.floor(spread * 60) + 1) / 60
+    end
+    return (tonumber(baseHours) or 0) + roll
+end
+
+local function pickKnoxDialogueLine(lines)
+    if type(lines) ~= "table" or #lines == 0 then
+        return nil
+    end
+
+    local index = 1
+    if ZombRand then
+        index = ZombRand(#lines) + 1
+    else
+        index = math.random(#lines)
+    end
+    return lines[index]
+end
+
+local function sayKnoxDialogue(player, text, isStageChange)
+    if not player or not text or text == "" then return false end
+
+    if EHR.Dialogue then
+        if isStageChange and EHR.Dialogue.SayStageChange then
+            return EHR.Dialogue.SayStageChange(player, text)
+        end
+        if EHR.Dialogue.SayPeriodic then
+            return EHR.Dialogue.SayPeriodic(player, text, 1)
+        end
+    end
+
+    if EHR.Locale and EHR.Locale.Say then
+        return EHR.Locale.Say(player, text)
+    end
+
+    if player.Say then
+        player:Say(text)
+        return true
+    end
+
+    return false
+end
+
+local function handleKnoxInfectionDialogue(player, data, isInfected, currentHour)
+    if not player or not data then return end
+
+    if not isInfected then
+        data.knoxDialogueActive = false
+        data.knoxLastDialogueStage = nil
+        data.knoxNextRandomDialogueHour = nil
+        return
+    end
+
+    local stage = getKnoxDialogueStage(player)
+    local definition = getKnoxDialogueDefinition()
+    local entryLines = definition.stageEntryDialogue or KNOX_DIALOGUE_FALLBACK.stageEntryDialogue
+    local randomLines = definition.dialogue or KNOX_DIALOGUE_FALLBACK.dialogue
+
+    if data.knoxDialogueActive ~= true then
+        sayKnoxDialogue(player, entryLines and (entryLines[stage] or entryLines[1]), true)
+        data.knoxDialogueActive = true
+        data.knoxLastDialogueStage = stage
+        data.knoxNextRandomDialogueHour = currentHour + randomKnoxDelay(2.0, 2.0)
+        return
+    end
+
+    if data.knoxLastDialogueStage ~= stage then
+        sayKnoxDialogue(player, entryLines and entryLines[stage], true)
+        data.knoxLastDialogueStage = stage
+        data.knoxNextRandomDialogueHour = currentHour + randomKnoxDelay(1.5, 1.5)
+        return
+    end
+
+    if not data.knoxNextRandomDialogueHour or currentHour >= data.knoxNextRandomDialogueHour then
+        local line = pickKnoxDialogueLine(randomLines and (randomLines[stage] or randomLines[1]))
+        sayKnoxDialogue(player, line, false)
+        data.knoxNextRandomDialogueHour = currentHour + randomKnoxDelay(3.0, 3.0)
+    end
+end
 
 local function getEHRKnoxSandboxBool(name, default)
     if SandboxVars and SandboxVars.ExtensiveHealthRework then
@@ -1352,9 +1511,10 @@ local function processPlayerTick(player)
 
     -- Keeps EHR in sync with external Knox cure mods that clear vanilla infection
     -- state without touching EHR's cached disease/monitor data.
-    EHR.KnoxCure.IsInfected(player)
-
+    local isInfected = EHR.KnoxCure.IsInfected(player)
     local currentHour = getGameTime():getWorldAgeHours()
+    handleKnoxInfectionDialogue(player, data, isInfected == true, currentHour)
+
     local stats = player:getStats()
 
     -- Gene Therapy survivor: random migraines

@@ -54,6 +54,8 @@ EHR_HealthPanelUI.BLOOD_PANEL_HEIGHT = 122
 EHR_HealthPanelUI.LEFT_WIDTH = 390
 EHR_HealthPanelUI.SCROLL_STEP = 32
 EHR_HealthPanelUI.TEXT_DOCK_Y_BIAS = -2
+EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE = 4.0
+EHR_HealthPanelUI.REMOTE_EXAM_MOVE_TOLERANCE = 0.75
 
 EHR_HealthPanelUI.Colors = {
     background = { r = 0.025, g = 0.025, b = 0.028, a = 0.97 },
@@ -681,6 +683,13 @@ function EHR_HealthPanelUI:new(x, y, player)
     o.remoteBodyPartStatusCache = {}
     o.remoteActionBodyPartCache = {}
     o.remoteExamRefreshBurst = nil
+    o.lastRemoteExamDistanceCheckMs = 0
+    o.remoteExamDoctorX = nil
+    o.remoteExamDoctorY = nil
+    o.remoteExamDoctorZ = nil
+    o.remoteExamPatientX = nil
+    o.remoteExamPatientY = nil
+    o.remoteExamPatientZ = nil
     o.lastRemoteBodyDamageEnsureMs = 0
     o.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
     o.borderColor = { r = 0, g = 0, b = 0, a = 0 }
@@ -1031,6 +1040,15 @@ function EHR_HealthPanelUI:bindRemotePatient(doctor, patient, force)
     self.remoteBodyPartStatusCache = {}
     self.remoteActionBodyPartCache = {}
     self.remoteExamRefreshBurst = nil
+    self.lastRemoteExamDistanceCheckMs = 0
+    pcall(function()
+        self.remoteExamDoctorX = doctor:getX()
+        self.remoteExamDoctorY = doctor:getY()
+        self.remoteExamDoctorZ = doctor:getZ()
+        self.remoteExamPatientX = patient:getX()
+        self.remoteExamPatientY = patient:getY()
+        self.remoteExamPatientZ = patient:getZ()
+    end)
     pcall(function()
         if patient.getOnlineID then
             self.remotePatientOnlineID = patient:getOnlineID()
@@ -1047,6 +1065,76 @@ function EHR_HealthPanelUI:bindRemotePatient(doctor, patient, force)
         EHR.Log("HealthPanelUI: rebound to remote patient for doctor " .. tostring(playerNum))
     end
 
+    return true
+end
+
+function EHR_HealthPanelUI:remoteExamShouldClose()
+    if not self.isRemoteHealthPanel then return false end
+
+    local doctor = self.remoteDoctor
+    local patient = self.remotePatient or self.player
+    if not doctor or not patient then return true end
+
+    local okDead, isDead = pcall(function()
+        return (doctor.isDead and doctor:isDead()) or (patient.isDead and patient:isDead())
+    end)
+    if okDead and isDead then return true end
+
+    if ISHealthPanel and ISHealthPanel.IsCharactersInSameCar then
+        local okSameCar, sameCar = pcall(function()
+            return ISHealthPanel.IsCharactersInSameCar(doctor, patient)
+        end)
+        if okSameCar and sameCar then return false end
+    end
+
+    local okPos, doctorX, doctorY, doctorZ, patientX, patientY, patientZ = pcall(function()
+        return doctor:getX() or 0,
+                doctor:getY() or 0,
+                doctor:getZ() or 0,
+                patient:getX() or 0,
+                patient:getY() or 0,
+                patient:getZ() or 0
+    end)
+    if not okPos then return true end
+    local dx = doctorX - patientX
+    local dy = doctorY - patientY
+    local dz = doctorZ - patientZ
+    if math.abs(dz or 0) > 0.1 then return true end
+
+    local moveTolerance = tonumber(EHR_HealthPanelUI.REMOTE_EXAM_MOVE_TOLERANCE) or 0.75
+    if self.remoteExamDoctorX and self.remoteExamDoctorY and self.remoteExamDoctorZ
+            and (math.abs(doctorX - self.remoteExamDoctorX) > moveTolerance
+            or math.abs(doctorY - self.remoteExamDoctorY) > moveTolerance
+            or math.abs(doctorZ - self.remoteExamDoctorZ) > 0.1) then
+        return true
+    end
+    if self.remoteExamPatientX and self.remoteExamPatientY and self.remoteExamPatientZ
+            and (math.abs(patientX - self.remoteExamPatientX) > moveTolerance
+            or math.abs(patientY - self.remoteExamPatientY) > moveTolerance
+            or math.abs(patientZ - self.remoteExamPatientZ) > 0.1) then
+        return true
+    end
+
+    local maxDistance = tonumber(EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE) or 4.0
+    return (dx * dx + dy * dy) > (maxDistance * maxDistance)
+end
+
+function EHR_HealthPanelUI:closeRemoteExamIfOutOfRange()
+    if not self.isRemoteHealthPanel then return false end
+
+    local now = getTimestampMs and getTimestampMs() or 0
+    if now > 0 and (now - (self.lastRemoteExamDistanceCheckMs or 0)) < 300 then
+        return false
+    end
+    self.lastRemoteExamDistanceCheckMs = now
+
+    if not self:remoteExamShouldClose() then return false end
+
+    if EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
+        EHR.UI.DestroyRemoteHealthPanel(self.ehrRemoteKey or self.remotePatient or self.player)
+    else
+        self:setVisible(false)
+    end
     return true
 end
 
@@ -2013,6 +2101,28 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
     local realName = (definition and definition.name) or tostring(diseaseId or "Unknown Disease")
 
     if type(disease) == "table" and disease.isKnox then
+        local canIdentifyKnox = self:hasDiseaseKnowledge("knox_infection")
+        if not canIdentifyKnox then
+            local unknownInfo = self:getUnknownDiseaseInfo("knox_infection")
+            local unknownName = unknownInfo.displayName or safeText("UI_EHR_DiseaseUnknown", "Unknown Illness")
+            return {
+                displayName = unknownName,
+                realName = unknownName,
+                sortName = unknownName,
+                normalizedId = "knox_infection",
+                iconKey = "unknown",
+                canIdentify = false,
+                showStageSeverity = false,
+                showProgress = false,
+                showTreatmentStatus = false,
+                detailText = unknownInfo.description or safeText("UI_EHR_DiseaseUnknownDesc", "You feel unwell."),
+                progressText = "",
+                hideProgressBar = true,
+                skillTier = skillTier,
+                skillLevel = skillLevel,
+            }
+        end
+
         local displayName = disease.displayName or realName
         return {
             displayName = displayName,
@@ -2426,21 +2536,36 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
         }
     end
 
-    if EHR.KnoxCure and EHR.KnoxCure.IsInfected and self.player then
+    local knoxInfected = false
+    local knoxProgress = 0
+    if self.isRemoteHealthPanel and type(data.EHR_KnoxStatus) == "table" then
+        knoxInfected = data.EHR_KnoxStatus.infected == true
+        knoxProgress = math.max(0, math.min(1, tonumber(data.EHR_KnoxStatus.progress) or 0))
+    elseif EHR.KnoxCure and EHR.KnoxCure.IsInfected and self.player then
         local ok, isInfected = pcall(function()
             return EHR.KnoxCure.IsInfected(self.player)
         end)
-        if ok and isInfected then
-            activeDiseases["knox_infection"] = {
-                displayName = safeText("UI_EHR_KnoxInfection", "Knox Virus Infection"),
-                severity = 0,
-                progress = 0,
-                stage = 0,
-                isKnox = true,
-                iconKey = "knox_infection",
-                noCure = true,
-            }
+        knoxInfected = ok and isInfected == true
+        if knoxInfected and EHR.KnoxCure.GetInfectionProgress then
+            local progressOk, progress = pcall(function()
+                return EHR.KnoxCure.GetInfectionProgress(self.player)
+            end)
+            if progressOk then
+                knoxProgress = math.max(0, math.min(1, tonumber(progress) or 0))
+            end
         end
+    end
+
+    if knoxInfected then
+        activeDiseases["knox_infection"] = {
+            displayName = safeText("UI_EHR_KnoxInfection", "Knox Virus Infection"),
+            severity = 0,
+            progress = knoxProgress,
+            stage = 0,
+            isKnox = true,
+            iconKey = "knox_infection",
+            noCure = true,
+        }
     end
 
     local woundData = data.EHR_WoundInfection
@@ -3221,6 +3346,27 @@ function EHR_HealthPanelUI:itemHasTag(item, tagName)
     return false
 end
 
+function EHR_HealthPanelUI:itemIsBandage(item)
+    if not item then return false end
+
+    if item.isCanBandage then
+        local ok, canBandage = pcall(function()
+            return item:isCanBandage()
+        end)
+        if ok and canBandage == true then
+            return true
+        end
+    end
+
+    if item.getBandagePower then
+        local ok, bandagePower = pcall(function()
+            return item:getBandagePower()
+        end)
+        return ok and (tonumber(bandagePower) or 0) > 0
+    end
+    return false
+end
+
 function EHR_HealthPanelUI:itemIsDisinfectant(item)
     if not item then return false end
 
@@ -3435,19 +3581,14 @@ function EHR_HealthPanelUI:addRemoteBandageOptions(context, bodyPart, snapshot)
 
     if snapshotHasActionableStatus(snapshot) then
         local bandages = self:collectDoctorInventoryItems(function(item)
-            if EHR and EHR.BandagePack and EHR.BandagePack.IsPack and EHR.BandagePack.IsPack(item) then
-                return EHR.BandagePack.GetRemainingDoses and EHR.BandagePack.GetRemainingDoses(item) > 0
-            end
-            return item.getBandagePower and (tonumber(item:getBandagePower()) or 0) > 0
+            return self:itemIsBandage(item)
         end)
         if #bandages > 0 then
             local option = context:addOption(getText("ContextMenu_Bandage"), nil)
             local subMenu = context:getNew(context)
             context:addSubMenu(option, subMenu)
             for _, item in ipairs(bandages) do
-                local isPack = EHR and EHR.BandagePack and EHR.BandagePack.IsPack and EHR.BandagePack.IsPack(item)
-                local handler = isPack and self.onRemoteApplyBandagePack or self.onRemoteApplyBandage
-                local subOption = subMenu:addOption(item:getName(), self, handler, bodyPart, item)
+                local subOption = subMenu:addOption(item:getName(), self, self.onRemoteApplyBandage, bodyPart, item)
                 subOption.itemForTexture = item
             end
         end
@@ -3693,7 +3834,7 @@ function EHR_HealthPanelUI:onRemoteApplyBandage(bodyPart, item)
     self:queueRemoteMedicalAction(function(panel, previousAction)
         local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
         local bandage = panel:findDoctorInventoryItem(itemRef, function(candidate)
-            return candidate.getBandagePower and (tonumber(candidate:getBandagePower()) or 0) > 0
+            return panel:itemIsBandage(candidate)
         end)
         if not actionBodyPart or not bandage then return end
         local action = ISApplyBandage:new(panel.remoteDoctor, panel.remotePatient or panel.player, bandage, actionBodyPart, true)
@@ -3946,36 +4087,11 @@ function EHR_HealthPanelUI:getCleanBandagePackOptionText()
 end
 
 function EHR_HealthPanelUI:addLocalBandagePackOptions(context, bodyPart)
-    if not context or not bodyPart or not EHR or not EHR.BandagePack or not EHR.BandagePack.IsPack then return false end
-    if callBodyPartMethod(bodyPart, "bandaged", false) == true or not bodyPartHasActionableStatus(bodyPart) then return false end
-
-    local packs = self:collectDoctorInventoryItems(function(item)
-        return EHR.BandagePack.IsPack(item)
-                and EHR.BandagePack.GetRemainingDoses
-                and EHR.BandagePack.GetRemainingDoses(item) > 0
-    end)
-    if #packs <= 0 then return false end
-
-    local option = context:addOption(self:getCleanBandagePackOptionText(), nil)
-    option.itemForTexture = packs[1]
-    local subMenu = context:getNew(context)
-    context:addSubMenu(option, subMenu)
-    for _, pack in ipairs(packs) do
-        local packOption = subMenu:addOption(pack:getName(), self, self.onLocalApplyBandagePack, bodyPart, pack)
-        packOption.itemForTexture = pack
-    end
-    return true
+    return false
 end
 
 function EHR_HealthPanelUI:onLocalApplyBandagePack(bodyPart, pack)
-    if not EHR or not EHR.BandagePack then return end
-    local patient = self.player
-    local doctor = self.player
-    if EHR.BandagePack.ApplyPackBandageForPlayer then
-        EHR.BandagePack.ApplyPackBandageForPlayer(doctor, patient, pack, bodyPart)
-    elseif EHR.BandagePack.ApplyPackBandage then
-        EHR.BandagePack.ApplyPackBandage(self.playerNum or 0, pack, bodyPart)
-    end
+    return false
 end
 function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     if not bodyPart or not ISHealthPanel or not ISHealthPanel.doBodyPartContextMenu then return end
@@ -4000,15 +4116,6 @@ function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     end
 
     ISHealthPanel.doBodyPartContextMenu(adapter, actionBodyPart or bodyPart, x, y)
-
-    if not self.isRemoteHealthPanel and getPlayerContextMenu and self.addLocalBandagePackOptions then
-        local playerNum = self.playerNum or (self.player and self.player.getPlayerNum and self.player:getPlayerNum()) or 0
-        local context = getPlayerContextMenu(playerNum)
-        if context and self:addLocalBandagePackOptions(context, actionBodyPart or bodyPart) then
-            context.origin = self.bodyPartPanel or self
-            context:setVisible(true)
-        end
-    end
 end
 
 function EHR_HealthPanelUI:dropItemsOnBodyPart(bodyPart, items, bodyPartType)
@@ -4952,6 +5059,7 @@ end
 
 function EHR_HealthPanelUI:prerender()
     ISPanel.prerender(self)
+    if self:closeRemoteExamIfOutOfRange() then return end
     self:ensureUsableSize()
     self:processRemoteBodyDamageRefresh()
     self:refreshRemoteExamDataIfNeeded()

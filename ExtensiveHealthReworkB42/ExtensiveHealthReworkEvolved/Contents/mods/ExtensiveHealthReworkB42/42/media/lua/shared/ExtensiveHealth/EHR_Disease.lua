@@ -98,6 +98,7 @@ end
 local SANDBOX_DISEASE_KEYS = {
     ahtr = "AHTREnabled",
     cadaveric_aspergillosis = "CadavericAspergillosisEnabled",
+    corpse_sickness = "CorpseSicknessEnabled",
 }
 
 function EHR.Disease.GetSandboxKeyForDisease(diseaseId)

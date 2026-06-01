@@ -123,7 +123,7 @@ EHR.CorpseSickness.Config = {
 
 EHR.CorpseSickness.FirstSeenCorpses = EHR.CorpseSickness.FirstSeenCorpses or {}
 
-local function isEnabled()
+local function isPutrefactionEnabled()
     local options = SandboxVars and SandboxVars.ExtensiveHealthRework
     if not options then return true end
 
@@ -131,11 +131,21 @@ local function isEnabled()
         return options.CorpseSicknessEnabled
     end
 
-    local putrefaction = options.PutrefactionSicknessEnabled
+    if options.PutrefactionSicknessEnabled ~= nil then
+        return options.PutrefactionSicknessEnabled
+    end
+
+    return true
+end
+
+local function isEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end
+
     local cadaveric = options.CadavericAspergillosisEnabled
     if cadaveric == nil then cadaveric = options.AspergilliosisEnabled end
 
-    return (putrefaction ~= false) or (cadaveric ~= false)
+    return isPutrefactionEnabled() or (cadaveric ~= false)
 end
 
 local function getSpeedMultiplier()
@@ -1083,6 +1093,16 @@ function EHR.CorpseSickness.UpdateExposure(player)
     if not data then return end
 
     EHR.CorpseSickness.UpdateAspergillosisExposure(player)
+
+    if not isPutrefactionEnabled() then
+        data.currentExposure = 0
+        data.vanillaCorpseExposure = 0
+        data.lastVanillaCorpseSignalHour = 0
+        data.timeInArea = 0
+        EHR.CorpseSickness.ClampVanillaSickness(player, 0)
+        EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+        return
+    end
 
     if EHR.CorpseSickness.IsImmune(player) then
         data.currentExposure = 0

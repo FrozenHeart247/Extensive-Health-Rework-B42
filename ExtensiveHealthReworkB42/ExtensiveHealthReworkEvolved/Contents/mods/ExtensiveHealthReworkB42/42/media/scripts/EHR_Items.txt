@@ -258,8 +258,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_SterilizedBandages,
         UseDelta = 0.2,
         UseWhileEquipped = false,
-        BandagePower = 4.0,
-        CanBandage = true,
         ConsolidateOption = ContextMenu_Merge,
         Medical = true,
         WorldStaticModel = MedicalParcel_Green,

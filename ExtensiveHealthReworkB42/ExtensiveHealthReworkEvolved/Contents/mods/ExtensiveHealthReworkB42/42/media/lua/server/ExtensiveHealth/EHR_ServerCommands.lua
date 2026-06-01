@@ -764,6 +764,186 @@ local function syncInventoryItemAdded(container, item)
     syncInventoryItem(item)
 end
 
+local getSterilizedBandagePackDoseInfo
+local consumeSterilizedBandagePackDose
+
+function EHR.ServerCommands.UnpackCleanBandage(player, args)
+    if not player or not args or args.packID == nil then return false end
+    local pack, packContainer = findInventoryItemByID(player, args.packID)
+    if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then return false end
+
+    local inventory = player:getInventory()
+    if not inventory then return false end
+
+    local remaining = getSterilizedBandagePackDoseInfo(pack)
+    if remaining <= 0 then return false end
+
+    local okAdd, bandage = pcall(function() return inventory:AddItem("Base.Bandage") end)
+    if not okAdd or not bandage then return false end
+    syncInventoryItemAdded(inventory, bandage)
+
+    consumeSterilizedBandagePackDose(pack, packContainer)
+    return true
+end
+function getSterilizedBandagePackDoseInfo(pack)
+    local maxDoses = 5
+    local useDelta = 0.2
+    if EHR and EHR.Medication and EHR.Medication.GetItemDoseInfo then
+        local ok, info = pcall(function() return EHR.Medication.GetItemDoseInfo(pack) end)
+        if ok and info then
+            return tonumber(info.remainingDoses) or 0, tonumber(info.maxDoses) or maxDoses, tonumber(info.useDelta) or useDelta
+        end
+    end
+
+    if pack and pack.getUseDelta then
+        local okDelta, delta = pcall(function() return pack:getUseDelta() end)
+        if okDelta and tonumber(delta) and tonumber(delta) > 0 then
+            useDelta = tonumber(delta)
+            maxDoses = math.max(1, math.floor((1.0 / useDelta) + 0.5))
+        end
+    end
+
+    local currentUsesFloat = 1.0
+    if pack and pack.getCurrentUsesFloat then
+        local okCurrent, value = pcall(function() return pack:getCurrentUsesFloat() end)
+        if okCurrent and value ~= nil then currentUsesFloat = tonumber(value) or currentUsesFloat end
+    elseif pack and pack.getUsedDelta then
+        local okUsed, value = pcall(function() return pack:getUsedDelta() end)
+        if okUsed and value ~= nil then currentUsesFloat = tonumber(value) or currentUsesFloat end
+    end
+
+    currentUsesFloat = math.max(0, math.min(1.0, currentUsesFloat))
+    local remaining = math.floor((currentUsesFloat / useDelta) + 0.0001)
+    remaining = math.max(0, math.min(maxDoses, remaining))
+    return remaining, maxDoses, useDelta
+end
+
+function consumeSterilizedBandagePackDose(pack, packContainer)
+    local remaining = getSterilizedBandagePackDoseInfo(pack)
+    if remaining <= 0 then return false end
+
+    if pack and pack.UseAndSync then
+        local ok = pcall(function() pack:UseAndSync() end)
+        if ok then
+            syncInventoryItem(pack)
+            return true
+        end
+    end
+
+    if pack and pack.Use then
+        local ok = pcall(function() pack:Use() end)
+        if ok then
+            syncInventoryItem(pack)
+            return true
+        end
+    end
+
+    local _, _, useDelta = getSterilizedBandagePackDoseInfo(pack)
+    if remaining > 1 and pack.setUsedDelta then
+        local newUsed = math.max(0, math.min(1, (remaining - 1) * useDelta))
+        pcall(function() pack:setUsedDelta(newUsed) end)
+        syncInventoryItem(pack)
+    else
+        removeInventoryItem(pack, packContainer)
+    end
+    return true
+end
+local function getOnlinePlayerByIDSafe(onlineID)
+    if onlineID == nil then return nil end
+    local numericID = tonumber(onlineID)
+    if getPlayerByOnlineID then
+        local ok, playerByID = pcall(function() return getPlayerByOnlineID(numericID or onlineID) end)
+        if ok and playerByID then return playerByID end
+    end
+    if getOnlinePlayers then
+        local okPlayers, players = pcall(getOnlinePlayers)
+        if okPlayers and players and players.size then
+            for i = 0, players:size() - 1 do
+                local candidate = players:get(i)
+                if candidate and candidate.getOnlineID then
+                    local okID, candidateID = pcall(function() return candidate:getOnlineID() end)
+                    if okID and tonumber(candidateID) == numericID then return candidate end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function getBodyPartByIndex(player, bodyPartIndex)
+    if not player or bodyPartIndex == nil then return nil end
+    local bodyDamage = player:getBodyDamage()
+    local bodyParts = bodyDamage and bodyDamage.getBodyParts and bodyDamage:getBodyParts() or nil
+    local index = tonumber(bodyPartIndex)
+    if not bodyParts or not index then return nil end
+    local ok, bodyPart = pcall(function() return bodyParts:get(index) end)
+    return ok and bodyPart or nil
+end
+
+local function serverBodyPartCanReceiveCleanBandage(bodyPart)
+    if not bodyPart then return false end
+    if callBodyPartMethod(bodyPart, "bandaged", false) == true then return false end
+    if callBodyPartMethod(bodyPart, "HasInjury", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "bleeding", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "scratched", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "deepWounded", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "bitten", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "isCut", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "isBurnt", false) == true then return true end
+    return (tonumber(callBodyPartMethod(bodyPart, "getBurnTime", 0)) or 0) > 0
+end
+
+function EHR.ServerCommands.ApplyBandagePack(player, args)
+    if not player or not args or args.packID == nil or args.bodyPartIndex == nil then return false end
+    local pack, packContainer = findInventoryItemByID(player, args.packID)
+    if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then return false end
+
+    local target = player
+    if args.targetOnlineID ~= nil then
+        target = getOnlinePlayerByIDSafe(args.targetOnlineID) or player
+    end
+    local bodyPart = getBodyPartByIndex(target, args.bodyPartIndex)
+    if not serverBodyPartCanReceiveCleanBandage(bodyPart) then return false end
+
+    local remaining = getSterilizedBandagePackDoseInfo(pack)
+    if remaining <= 0 then return false end
+
+    local bodyDamage = target:getBodyDamage()
+    if not bodyDamage then return false end
+
+    local doctorLevel = 0
+    if player.getPerkLevel and Perks and Perks.Doctor then
+        local okLevel, level = pcall(function() return player:getPerkLevel(Perks.Doctor) end)
+        if okLevel then doctorLevel = tonumber(level) or 0 end
+    end
+    if player.isTimedActionInstant and player:isTimedActionInstant() then doctorLevel = 10 end
+
+    local randomBonus = (doctorLevel + 1) * 0.75
+    if ZombRandFloat then
+        local okRand, value = pcall(function()
+            return ZombRandFloat((doctorLevel + 1) * 0.5, (doctorLevel + 1) * 1.0)
+        end)
+        if okRand and value then randomBonus = value end
+    end
+    local bandageLife = randomBonus + 4.0
+
+    if callBodyPartMethod(bodyPart, "isGetBandageXp", false) == true and addXp and Perks and Perks.Doctor then
+        pcall(function() addXp(player, Perks.Doctor, 5) end)
+    end
+
+    pcall(function()
+        bodyDamage:SetBandaged(bodyPart:getIndex(), true, bandageLife, false, "Base.Bandage")
+    end)
+    consumeSterilizedBandagePackDose(pack, packContainer)
+
+    if syncBodyPart then
+        pcall(function() syncBodyPart(bodyPart, 0xc001966b8e) end)
+    end
+    if EHR_TriggerPlayerSync then
+        pcall(function() EHR_TriggerPlayerSync(target) end)
+    end
+    return true
+end
 local function serverSay(player, text)
     if not player or not text then return end
     if EHR and EHR.Locale and EHR.Locale.Say then
@@ -2586,6 +2766,12 @@ local function OnClientCommand(module, command, player, args)
                 log("[EHR] Server: Synced item removal for " .. player:getUsername())
                 return
             end
+        elseif command == "UnpackCleanBandage" then
+            EHR.ServerCommands.UnpackCleanBandage(player, args)
+            return
+        elseif command == "ApplyBandagePack" then
+            EHR.ServerCommands.ApplyBandagePack(player, args)
+            return
         elseif command == "UpdateItemDelta" and args and args.itemID and args.usedDelta then
             -- Sync drainable item usedDelta from client
             local item = findInventoryItemByID(player, args.itemID)

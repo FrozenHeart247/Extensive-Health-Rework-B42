@@ -30,6 +30,7 @@ pcall(function() require "TimedActions/ISStitch" end)
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_BandagePack" end)
 
 EHR = EHR or {}
 EHR.UI = EHR.UI or {}
@@ -3434,6 +3435,9 @@ function EHR_HealthPanelUI:addRemoteBandageOptions(context, bodyPart, snapshot)
 
     if snapshotHasActionableStatus(snapshot) then
         local bandages = self:collectDoctorInventoryItems(function(item)
+            if EHR and EHR.BandagePack and EHR.BandagePack.IsPack and EHR.BandagePack.IsPack(item) then
+                return EHR.BandagePack.GetRemainingDoses and EHR.BandagePack.GetRemainingDoses(item) > 0
+            end
             return item.getBandagePower and (tonumber(item:getBandagePower()) or 0) > 0
         end)
         if #bandages > 0 then
@@ -3441,13 +3445,14 @@ function EHR_HealthPanelUI:addRemoteBandageOptions(context, bodyPart, snapshot)
             local subMenu = context:getNew(context)
             context:addSubMenu(option, subMenu)
             for _, item in ipairs(bandages) do
-                local subOption = subMenu:addOption(item:getName(), self, self.onRemoteApplyBandage, bodyPart, item)
+                local isPack = EHR and EHR.BandagePack and EHR.BandagePack.IsPack and EHR.BandagePack.IsPack(item)
+                local handler = isPack and self.onRemoteApplyBandagePack or self.onRemoteApplyBandage
+                local subOption = subMenu:addOption(item:getName(), self, handler, bodyPart, item)
                 subOption.itemForTexture = item
             end
         end
     end
 end
-
 function EHR_HealthPanelUI:addRemoteStitchOptions(context, bodyPart, snapshot)
     if snapshot.stitched == true then
         context:addOption(getText("ContextMenu_Remove_Stitch"), self, self.onRemoteRemoveStitch, bodyPart)
@@ -3696,6 +3701,22 @@ function EHR_HealthPanelUI:onRemoteApplyBandage(bodyPart, item)
     end, bodyPart, item)
 end
 
+function EHR_HealthPanelUI:onRemoteApplyBandagePack(bodyPart, item)
+    if not EHR or not EHR.BandagePack or not item then return end
+    local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
+    local itemRef = self:getMedicalItemRef(item)
+    self:queueRemoteMedicalAction(function(panel, previousAction)
+        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        local pack = panel:findDoctorInventoryItem(itemRef, function(candidate)
+            return EHR.BandagePack.IsPack and EHR.BandagePack.IsPack(candidate)
+                    and EHR.BandagePack.GetRemainingDoses and EHR.BandagePack.GetRemainingDoses(candidate) > 0
+        end)
+        if not actionBodyPart or not pack or not EHR.BandagePack.CreateApplyAction then return end
+        local action = EHR.BandagePack.CreateApplyAction(panel.remoteDoctor, panel.remotePatient or panel.player, pack, actionBodyPart)
+        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
+    end, bodyPart, item)
+end
+
 function EHR_HealthPanelUI:onRemoteRemoveBandage(bodyPart)
     if not ISApplyBandage then return end
     local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
@@ -3921,6 +3942,45 @@ function EHR_HealthPanelUI:queueRemoteBodyContextRetry(bodyPartType, x, y)
     return true
 end
 
+function EHR_HealthPanelUI:getCleanBandagePackOptionText()
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_BandagePack_ApplyFromPack", "Apply Clean Bandage from Pack")
+    end
+    return "Apply Clean Bandage from Pack"
+end
+
+function EHR_HealthPanelUI:addLocalBandagePackOptions(context, bodyPart)
+    if not context or not bodyPart or not EHR or not EHR.BandagePack or not EHR.BandagePack.IsPack then return false end
+    if callBodyPartMethod(bodyPart, "bandaged", false) == true or not bodyPartHasActionableStatus(bodyPart) then return false end
+
+    local packs = self:collectDoctorInventoryItems(function(item)
+        return EHR.BandagePack.IsPack(item)
+                and EHR.BandagePack.GetRemainingDoses
+                and EHR.BandagePack.GetRemainingDoses(item) > 0
+    end)
+    if #packs <= 0 then return false end
+
+    local option = context:addOption(self:getCleanBandagePackOptionText(), nil)
+    option.itemForTexture = packs[1]
+    local subMenu = context:getNew(context)
+    context:addSubMenu(option, subMenu)
+    for _, pack in ipairs(packs) do
+        local packOption = subMenu:addOption(pack:getName(), self, self.onLocalApplyBandagePack, bodyPart, pack)
+        packOption.itemForTexture = pack
+    end
+    return true
+end
+
+function EHR_HealthPanelUI:onLocalApplyBandagePack(bodyPart, pack)
+    if not EHR or not EHR.BandagePack then return end
+    local patient = self.player
+    local doctor = self.player
+    if EHR.BandagePack.ApplyPackBandageForPlayer then
+        EHR.BandagePack.ApplyPackBandageForPlayer(doctor, patient, pack, bodyPart)
+    elseif EHR.BandagePack.ApplyPackBandage then
+        EHR.BandagePack.ApplyPackBandage(self.playerNum or 0, pack, bodyPart)
+    end
+end
 function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     if not bodyPart or not ISHealthPanel or not ISHealthPanel.doBodyPartContextMenu then return end
     local adapter = self:getVanillaHealthAdapter()
@@ -3944,6 +4004,15 @@ function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     end
 
     ISHealthPanel.doBodyPartContextMenu(adapter, actionBodyPart or bodyPart, x, y)
+
+    if not self.isRemoteHealthPanel and getPlayerContextMenu and self.addLocalBandagePackOptions then
+        local playerNum = self.playerNum or (self.player and self.player.getPlayerNum and self.player:getPlayerNum()) or 0
+        local context = getPlayerContextMenu(playerNum)
+        if context and self:addLocalBandagePackOptions(context, actionBodyPart or bodyPart) then
+            context.origin = self.bodyPartPanel or self
+            context:setVisible(true)
+        end
+    end
 end
 
 function EHR_HealthPanelUI:dropItemsOnBodyPart(bodyPart, items, bodyPartType)
@@ -5462,3 +5531,4 @@ if Events then
 end
 
 EHR.Log("HealthPanelUI prototype loaded")
+

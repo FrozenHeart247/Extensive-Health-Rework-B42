@@ -361,6 +361,14 @@ local function EHR_BodyTempWriteRealisticTemperatureCore(player, bodyTemp)
     local rec = modData and modData.RC_TempSimBodyTemp or nil
     if type(rec) ~= "table" then return false end
 
+    if EHR.RealisticTemperatureCompat
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever(player)
+            and rec._ehrRtBaseCore == nil
+            and type(rec.core) == "number" then
+        rec._ehrRtBaseCore = rec.core
+    end
+
     rec.core = bodyTemp
     rec._lastBodyTempStatsApplied = bodyTemp
     rec._bodyTempDirty = true
@@ -399,6 +407,12 @@ end
 
 function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
     if not player then return false end
+    if EHR.RealisticTemperatureCompat
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever(player) then
+        return false
+    end
+
     if not (EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)) then
         return false
     end
@@ -564,7 +578,7 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [4] = 40.0,
     },
     common_cold = {
-        [2] = 37.5,
+        [2] = 37.6,
         [3] = 38.0,
     },
     tuberculosis = {

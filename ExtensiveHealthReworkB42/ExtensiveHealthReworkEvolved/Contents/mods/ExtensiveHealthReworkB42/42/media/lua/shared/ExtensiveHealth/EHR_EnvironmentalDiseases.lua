@@ -1475,7 +1475,6 @@ local function EHR_EnvironmentalSetVanillaCold(player, strength)
     if not okBody or not bodyDamage then return end
 
     strength = tonumber(strength) or 0
-
     if bodyDamage.setCatchACold then
         pcall(function()
             bodyDamage:setCatchACold(0.0)
@@ -1664,7 +1663,7 @@ end
 
 local EHR_EnvironmentalDiseaseFeverTargets = {
     common_cold = {
-        [2] = { temp = 37.5, step = 0.018 },
+        [2] = { temp = 37.6, step = 0.018 },
         [3] = { temp = 38.0, step = 0.025 },
     },
     pneumonia = {

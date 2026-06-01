@@ -3671,8 +3671,10 @@ function EHR_HealthPanelUI:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPar
     if context:isEmpty() then
         context:setVisible(false)
     elseif JoypadState and JoypadState.players and JoypadState.players[playerNum + 1] then
-        JoypadState.players[playerNum + 1].focus = context
-        if updateJoypadFocus then
+        if setJoypadFocus then
+            setJoypadFocus(playerNum, context)
+        elseif updateJoypadFocus then
+            JoypadState.players[playerNum + 1].focus = context
             updateJoypadFocus(JoypadState.players[playerNum + 1])
         end
     end

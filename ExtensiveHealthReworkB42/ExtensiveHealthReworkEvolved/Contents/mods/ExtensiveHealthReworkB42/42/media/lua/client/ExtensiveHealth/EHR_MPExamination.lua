@@ -177,8 +177,10 @@ local function EHR_PatchVanillaMedicalCheck()
 
                 local playerNum = doctor:getPlayerNum()
                 if JoypadState and JoypadState.players and JoypadState.players[playerNum + 1] then
-                    JoypadState.players[playerNum + 1].focus = panel
-                    if updateJoypadFocus then
+                    if setJoypadFocus then
+                        setJoypadFocus(playerNum, panel)
+                    elseif updateJoypadFocus then
+                        JoypadState.players[playerNum + 1].focus = panel
                         updateJoypadFocus(JoypadState.players[playerNum + 1])
                     end
                 end
@@ -219,8 +221,10 @@ local function EHR_PatchVanillaMedicalCheck()
 
                 local playerNum = doctor:getPlayerNum()
                 if JoypadState and JoypadState.players and JoypadState.players[playerNum + 1] then
-                    JoypadState.players[playerNum + 1].focus = panel
-                    if updateJoypadFocus then
+                    if setJoypadFocus then
+                        setJoypadFocus(playerNum, panel)
+                    elseif updateJoypadFocus then
+                        JoypadState.players[playerNum + 1].focus = panel
                         updateJoypadFocus(JoypadState.players[playerNum + 1])
                     end
                 end

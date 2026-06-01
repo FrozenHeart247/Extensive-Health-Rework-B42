@@ -490,6 +490,9 @@ EHR.Medication.Database = {
         icon = "TopicalPermethrin",
         usageMessage = "You apply topical permethrin. The mites should start dying off.",
         isTopical = true,
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The current permethrin dose is still active. More now will be wasted.",
         cureTimeHours = 72,
         treatmentTimeText = "72 hours (6-dose course)",
         symptomReduction = {
@@ -619,6 +622,9 @@ EHR.Medication.Database = {
         displayName = "Antibiotic Ointment",
         usageMessage = "You apply antibiotic ointment to the infected area.",
         isTopical = true,
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The current ointment dose is still active. More now will be wasted.",
         cureTimeHours = 72,
     },
 
@@ -1026,6 +1032,43 @@ local function EHRMedicationCapStat(stats, stat, cap)
         if current > cap then
             stats:set(stat, cap)
         end
+    end)
+end
+
+local function EHRMedicationApplyTimedThirst(player, effectData, initialAmount, perHour, ceiling)
+    if not player or not effectData then return end
+
+    local stats = EHRMedicationGetStats(player)
+    if not stats or not CharacterStat or not CharacterStat.THIRST then return end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    ceiling = math.max(0, math.min(1, tonumber(ceiling) or 1))
+
+    if not effectData.initialThirstApplied then
+        local amount = math.max(0, tonumber(initialAmount) or 0)
+        if amount > 0 then
+            pcall(function()
+                local currentThirst = stats:get(CharacterStat.THIRST) or 0
+                stats:set(CharacterStat.THIRST, math.min(ceiling, currentThirst + amount))
+            end)
+        end
+        effectData.initialThirstApplied = true
+        effectData.lastThirstHour = currentHour
+        return
+    end
+
+    local lastHour = tonumber(effectData.lastThirstHour) or currentHour
+    local deltaHours = math.max(0, math.min(0.25, currentHour - lastHour))
+    if deltaHours <= 0 then return end
+
+    effectData.lastThirstHour = currentHour
+    local rate = math.max(0, tonumber(perHour) or 0)
+    if rate <= 0 then return end
+
+    pcall(function()
+        local currentThirst = stats:get(CharacterStat.THIRST) or 0
+        stats:set(CharacterStat.THIRST, math.min(ceiling, currentThirst + (rate * deltaHours)))
     end)
 end
 
@@ -1592,12 +1635,12 @@ EHR.Medication.SideEffects = {
         displayName = "Dehydration",
         duration = 8,
         severity = 2,
-        effects = function(player)
+        effects = function(player, effectData)
             local stats = EHRMedicationGetStats(player)
             if stats and CharacterStat then
-                EHRMedicationRaiseStat(stats, CharacterStat.THIRST, 0.72)
                 EHRMedicationCapStat(stats, CharacterStat.ENDURANCE, 0.78)
             end
+            EHRMedicationApplyTimedThirst(player, effectData or {}, 0.14, 0.14, 0.76)
         end,
     },
 
@@ -1889,9 +1932,16 @@ EHR.Medication.SideEffects = {
 
                 raiseStat(CharacterStat.SICKNESS, sicknessTarget)
                 raiseStat(CharacterStat.FOOD_SICKNESS, math.min(0.50, sicknessTarget))
-                raiseStat(CharacterStat.THIRST, thirstTarget)
                 capStat(CharacterStat.ENDURANCE, enduranceCap)
             end
+
+            EHRMedicationApplyTimedThirst(
+                player,
+                effectData,
+                0.08 + (0.03 * intensity),
+                0.10 + (0.03 * intensity),
+                thirstTarget
+            )
 
             local bodyDamage = nil
             pcall(function() bodyDamage = player:getBodyDamage() end)
@@ -2004,6 +2054,28 @@ EHR.Medication.DosingSchedules = {
     ["TheyKnew.ZomboxycyclinePill"] = { doseInterval = 8, dosesRequired = 1 },  -- Single pill from bottle
 }
 
+-- Only these systemic medicines can trigger the severe off-schedule overdose layer.
+-- Topical/support items still track dose schedules, but repeating them early no longer
+-- applies the dangerous generic overdose package.
+EHR.Medication.OverdoseRiskMedications = {
+    ["Base.PillsAntiDep"] = true,
+
+    ["ExtensiveHealth.AntiviralCapsules"] = true,
+    ["ExtensiveHealth.PrescriptionAntibiotics"] = true,
+    ["ExtensiveHealth.AntifungalTablets"] = true,
+    ["ExtensiveHealth.AntiparasiticPills"] = true,
+    ["ExtensiveHealth.Furosemide"] = true,
+    ["ExtensiveHealth.Antipsychotics"] = true,
+    ["ExtensiveHealth.DualOrexinReceptor"] = true,
+    ["ExtensiveHealth.TBAntibiotics"] = true,
+    ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,
+    ["ExtensiveHealth.PlantBasedAntibiotics"] = true,
+    ["ExtensiveHealth.RifampicinComboPack"] = true,
+
+    ["TheyKnew.Zomboxolone"] = true,
+    ["TheyKnew.Zomboxycycline"] = true,
+}
+
 -- Default dosing for medications not in the schedule
 EHR.Medication.DefaultDosing = { doseInterval = 6, dosesRequired = 1 }
 
@@ -2057,8 +2129,22 @@ function EHR.Medication.GetDoseTiming(medData, itemFullType, tierEffects)
     return EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
 end
 
+function EHR.Medication.CanCauseMedicationOverdose(medData, itemFullType)
+    if not medData then return false end
+    if medData.overdoseRisk ~= nil then
+        return medData.overdoseRisk == true
+    end
+    if medData.isTopical == true or medData.preventionOnly == true then
+        return false
+    end
+
+    local riskTable = EHR.Medication.OverdoseRiskMedications or {}
+    return riskTable[itemFullType] == true
+end
+
 function EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
     if not player or not medData then return nil end
+    if not EHR.Medication.CanCauseMedicationOverdose(medData, itemFullType) then return nil end
 
     local medTracking = EHR.Medication.GetMedicationData(player)
     if not medTracking or not medTracking.activeDoses then return nil end
@@ -2642,6 +2728,19 @@ local function EHR_MedicationHasActiveGeneralEffect(player, effectKey)
     return currentHour < endTime
 end
 
+function EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData, itemFullType)
+    if not player or not medData or medData.consumeWhileDoseActive ~= true then return false end
+    if not EHR.Medication.GetDoseStatus then return false end
+
+    local ok, status = pcall(EHR.Medication.GetDoseStatus, player, itemFullType)
+    if not ok or not status then return false end
+
+    local doseDue = not status.treatmentComplete
+        and (status.isOverdue == true or (tonumber(status.hoursUntilNextDose) or 0) <= 0)
+
+    return status.isDoseActive == true and not doseDue
+end
+
 function EHR.Medication.CanUseMedication(player, item)
     if not player or not item then return false, "Invalid parameters" end
 
@@ -2677,6 +2776,9 @@ function EHR.Medication.CanUseMedication(player, item)
         local doseDue = ok and status and not status.treatmentComplete
             and (status.isOverdue == true or (tonumber(status.hoursUntilNextDose) or 0) <= 0)
         if ok and status and status.isDoseActive and not doseDue then
+            if medData.consumeWhileDoseActive == true then
+                return true, nil
+            end
             return false, medData.activeDoseMessage or "The current dose is still active"
         end
     end
@@ -2739,6 +2841,33 @@ function EHR.Medication.UseMedication(player, item)
     local medTracking = EHR.Medication.GetMedicationData(player)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(player)
     local earlyDoseOverdose = EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
+    local inventory = player:getInventory()
+
+    if EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData, itemFullType) then
+        if medData.activeDoseMessage and player.isLocalPlayer and player:isLocalPlayer() then
+            EHR.Locale.Say(player, medData.activeDoseMessage)
+        end
+
+        local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(player, item, inventory)
+        if consumed and consumeMode == "dose" then
+            if remainingDoses == nil and useDelta and useDelta > 0 then
+                remainingDoses = math.floor((newUsed / useDelta) + 0.0001)
+            end
+            EHR.Log("Consumed early dose without treatment progress: " .. itemFullType ..
+                    " (" .. tostring(remainingDoses) .. " doses remaining)")
+        elseif consumed and consumeMode == "removed" then
+            EHR.Log("Consumed early final dose without treatment progress: " .. itemFullType)
+        else
+            EHR.Log("WARNING: Failed to consume early wasted medication item: " .. itemFullType)
+            return false
+        end
+
+        if isClient() then
+            sendClientCommand(player, "EHR", "RequestSync", {})
+        end
+
+        return true
+    end
 
     -- Display usage message
     if medData.usageMessage and player.isLocalPlayer and player:isLocalPlayer() then
@@ -2747,7 +2876,6 @@ function EHR.Medication.UseMedication(player, item)
 
     -- Consume required supplies (with MP sync)
     -- These are now drainable items with multiple uses
-    local inventory = player:getInventory()
     if medData.requiresIVKit then
         local ivKit = inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
         if ivKit then
@@ -5153,6 +5281,14 @@ local function OnEatItemHandler(character, item)
 
             if shouldTrack then
                 EHR.Log("Vanilla medication consumed via native handler: " .. itemFullType)
+
+                if EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(character, medData, itemFullType) then
+                    if medData.activeDoseMessage and character:isLocalPlayer() then
+                        EHR.Locale.Say(character, medData.activeDoseMessage)
+                    end
+                    EHR.Log("Vanilla medication consumed too early without treatment progress: " .. itemFullType)
+                    return
+                end
 
                 -- Check if treating any disease
                 local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(character)

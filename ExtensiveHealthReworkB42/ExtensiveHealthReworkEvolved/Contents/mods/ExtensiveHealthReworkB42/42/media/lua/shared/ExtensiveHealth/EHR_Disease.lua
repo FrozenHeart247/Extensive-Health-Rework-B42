@@ -4350,6 +4350,8 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     nameLower = nameLower or ""
     local foodTypeLower = string.lower(tostring(EHR_DiseaseSafeItemMethod(item, "getFoodType") or EHR_DiseaseSafeItemMethod(item, "getEatType") or ""))
     local dangerousUncooked = EHR_DiseaseGetItemFlag(item, {"isDangerousUncooked", "getDangerousUncooked"})
+    local isCookable = EHR_DiseaseGetItemFlag(item, {"isCookable", "getIsCookable"})
+    local hiddenUncooked = EHR_DiseaseScriptItemHasTag(item, "base:hideuncooked")
 
     local cookedPatterns = {"cooked", "grilled", "roasted", "fried", "boiled", "burnt", "burned", "charred"}
     for _, pattern in ipairs(cookedPatterns) do
@@ -4395,9 +4397,44 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
         or string.find(nameLower, "raw", 1, true) ~= nil
         or string.find(nameLower, "uncooked", 1, true) ~= nil
         or string.find(nameLower, "undercooked", 1, true) ~= nil
+        or string.find(nameLower, "dead", 1, true) ~= nil
+    local rawByCookState = isCookable == true and hiddenUncooked ~= true
+    local rawMeatCandidate = rawByNameOrFlag == true or rawByCookState == true
 
     if looksPrepared and not rawByNameOrFlag then
         return 0, nil
+    end
+
+    local preservedReadyPatterns = {
+        "jerky",
+        "dehydrated",
+        "dried",
+        "cured",
+        "smoked",
+        "salted",
+        "corned",
+        "canned",
+        "tinned",
+        "tin can",
+        "pepperoni",
+        "salami",
+        "ham ",
+        " ham",
+        ".ham",
+        "hamslice",
+        "ham slice",
+        "hotdog",
+        "hot dog",
+        "meat stick",
+        "meatstick",
+        "pork rinds",
+        "porkrinds",
+        "spam",
+    }
+    for _, pattern in ipairs(preservedReadyPatterns) do
+        if string.find(nameLower, pattern, 1, true) then
+            return 0, nil
+        end
     end
 
     if EHR.Food and EHR.Food.CheckTrichinosisRisk then
@@ -4415,7 +4452,10 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     }
     for _, pattern in ipairs(highRiskPatterns) do
         if string.find(nameLower, pattern) then
-            return EHR.Disease.FoodRisks.rawWildGameHigh or 0.40, "uncooked wild game"
+            if rawMeatCandidate then
+                return EHR.Disease.FoodRisks.rawWildGameHigh or 0.40, "uncooked wild game"
+            end
+            return 0, nil
         end
     end
 
@@ -4429,11 +4469,14 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     }
     for _, pattern in ipairs(mediumRiskPatterns) do
         if string.find(nameLower, pattern) then
-            return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
+            if rawMeatCandidate then
+                return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
+            end
+            return 0, nil
         end
     end
 
-    if foodTypeLower == "game" then
+    if foodTypeLower == "game" and rawMeatCandidate then
         return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
     end
 
@@ -4444,7 +4487,10 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     }
     for _, pattern in ipairs(lowRiskPatterns) do
         if string.find(nameLower, pattern) then
-            return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+            if rawMeatCandidate then
+                return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+            end
+            return 0, nil
         end
     end
 

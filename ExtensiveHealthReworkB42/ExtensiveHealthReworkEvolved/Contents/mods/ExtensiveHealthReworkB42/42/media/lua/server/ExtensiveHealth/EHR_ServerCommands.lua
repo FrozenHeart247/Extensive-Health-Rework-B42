@@ -899,8 +899,8 @@ function EHR.ServerCommands.ApplyBandagePack(player, args)
     if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then return false end
 
     local target = player
-    if args.targetOnlineID ~= nil then
-        target = getOnlinePlayerByIDSafe(args.targetOnlineID) or player
+    if args.targetOnlineID ~= nil or args.targetUsername ~= nil or args.targetDisplayName ~= nil then
+        target = findOnlinePlayerByArgs(args, player) or getOnlinePlayerByIDSafe(args.targetOnlineID) or player
     end
     local bodyPart = getBodyPartByIndex(target, args.bodyPartIndex)
     if not serverBodyPartCanReceiveCleanBandage(bodyPart) then return false end

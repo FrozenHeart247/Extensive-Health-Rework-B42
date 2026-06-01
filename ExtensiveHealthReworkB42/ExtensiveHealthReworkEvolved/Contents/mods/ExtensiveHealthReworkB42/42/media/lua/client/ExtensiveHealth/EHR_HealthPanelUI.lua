@@ -3702,19 +3702,15 @@ function EHR_HealthPanelUI:onRemoteApplyBandage(bodyPart, item)
 end
 
 function EHR_HealthPanelUI:onRemoteApplyBandagePack(bodyPart, item)
-    if not EHR or not EHR.BandagePack or not item then return end
+    if not EHR or not EHR.BandagePack or not item or not EHR.BandagePack.ApplyPackBandageForPlayer then return end
     local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
-    local itemRef = self:getMedicalItemRef(item)
-    self:queueRemoteMedicalAction(function(panel, previousAction)
-        local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
-        local pack = panel:findDoctorInventoryItem(itemRef, function(candidate)
-            return EHR.BandagePack.IsPack and EHR.BandagePack.IsPack(candidate)
-                    and EHR.BandagePack.GetRemainingDoses and EHR.BandagePack.GetRemainingDoses(candidate) > 0
-        end)
-        if not actionBodyPart or not pack or not EHR.BandagePack.CreateApplyAction then return end
-        local action = EHR.BandagePack.CreateApplyAction(panel.remoteDoctor, panel.remotePatient or panel.player, pack, actionBodyPart)
-        panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
-    end, bodyPart, item)
+    local actionBodyPart = self:getBodyPartForActionType(bodyPart, bodyPartType) or bodyPart
+    local doctor = self.remoteDoctor or self.player
+    local patient = self.remotePatient or self.player
+    if EHR.BandagePack.ApplyPackBandageForPlayer(doctor, patient, item, actionBodyPart) then
+        if self.markRemoteBodyDamageDirty then self:markRemoteBodyDamageDirty(120) end
+        if self.requestRemoteRefresh then pcall(function() self:requestRemoteRefresh() end) end
+    end
 end
 
 function EHR_HealthPanelUI:onRemoteRemoveBandage(bodyPart)

@@ -524,16 +524,44 @@ if EHR_ApplyBandagePackAction then
 end
 
 function EHR.BandagePack.CreateApplyAction(doctor, patient, pack, bodyPart)
-    if not EHR_ApplyBandagePackAction or not doctor or not EHR.BandagePack.IsPack(pack) or getRemainingDoses(pack) <= 0 or not bodyPartCanReceiveCleanBandage(bodyPart) then
-        return nil
-    end
-    return EHR_ApplyBandagePackAction:new(doctor, patient or doctor, pack, bodyPart)
+    -- Kept for compatibility with older call sites. Pack application no longer uses a custom
+    -- timed action because it can leave Project Zomboid's medical action state stuck.
+    return nil
 end
+
 function EHR.BandagePack.ApplyPackBandageForPlayer(doctor, patient, pack, bodyPart)
-    local action = EHR.BandagePack.CreateApplyAction(doctor, patient or doctor, pack, bodyPart)
-    if not action or not ISTimedActionQueue then return false end
-    ISTimedActionQueue.add(action)
-    return true
+    if not doctor or not EHR.BandagePack.IsPack(pack) or getRemainingDoses(pack) <= 0 then
+        return false
+    end
+
+    local isRemotePatient = patient and patient ~= doctor
+    if not (isClient and isClient() and isRemotePatient) and not bodyPartCanReceiveCleanBandage(bodyPart) then
+        return false
+    end
+
+    if isClient and isClient() then
+        if not pack.getID or not sendClientCommand then return false end
+        local args = {
+            packID = pack:getID(),
+            bodyPartIndex = bodyPart and bodyPart.getIndex and bodyPart:getIndex() or nil,
+        }
+        if patient and patient ~= doctor then
+            pcall(function()
+                if patient.getOnlineID then args.targetOnlineID = patient:getOnlineID() end
+            end)
+            pcall(function()
+                if patient.getUsername then args.targetUsername = patient:getUsername() end
+            end)
+            pcall(function()
+                if patient.getDisplayName then args.targetDisplayName = patient:getDisplayName() end
+            end)
+        end
+        if args.bodyPartIndex == nil then return false end
+        sendClientCommand(doctor, "EHR", "ApplyBandagePack", args)
+        return true
+    end
+
+    return EHR.BandagePack.ApplyCleanBandageFromPack(doctor, patient or doctor, pack, bodyPart, true)
 end
 
 function EHR.BandagePack.ApplyPackBandage(playerNum, pack, bodyPart)

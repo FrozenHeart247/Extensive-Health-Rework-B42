@@ -499,6 +499,7 @@
     "Tooltip_EHR_GeneTherapyKit_Description": "Експериментальна генна терапія вірусу Нокса.",
     "Tooltip_EHR_GeneTherapyKit_Warning": "Шанси сумісності приховані без тесту на антитіла",
     "Tooltip_EHR_GeneTherapyKit_SuccessText": "УСПІХ: постійний імунітет",
+    "Tooltip_EHR_GeneTherapyKit_SuccessText_PatientZeroDisabled": "УСПІХ: поточну інфекцію Knox вилікувано",
     "Tooltip_EHR_GeneTherapyKit_FailureText": "НЕВДАЧА: миттєва смерть",
     "Tooltip_EHR_GeneTherapyKit_Effect_1": "НАДЗВИЧАЙНО РІДКІСНИЙ - предмет військових досліджень",
     "Tooltip_EHR_GeneTherapyKit_Effect_2": "Успіх залежить від сумісності групи крові",

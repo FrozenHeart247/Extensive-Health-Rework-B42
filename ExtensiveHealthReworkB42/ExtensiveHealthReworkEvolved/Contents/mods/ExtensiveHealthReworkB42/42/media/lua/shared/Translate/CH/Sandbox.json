@@ -135,6 +135,8 @@
     "Sandbox_EHR_AllowFullPharmacyPackages_tooltip": "允許藥房和藥局偶爾產生完整的藥物包裝。其他地點的上限仍低於滿額。",
     "Sandbox_EHR_HouseholdPrescriptionLoot": "家庭處方戰利品",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "允許罕見的處方藥殘留物在房屋、臥室、書桌和類似的非醫療場所產生。",
+    "Sandbox_EHR_PatientZeroTraitDisabled": "停用零號病人特質",
+    "Sandbox_EHR_PatientZeroTraitDisabled_tooltip": "啟用後，零號病人在角色建立時隱藏，基因治療只會治癒目前的 Knox 感染，不會給予永久免疫。",
     "Sandbox_EHR_DebugMode": "偵錯模式",
     "Sandbox_EHR_DebugMode_tooltip": "啟用 EHR 偵錯選單存取（按 G）。也啟用控制台日誌記錄。不需要 Steam -debug 標誌。在多人遊戲中，還需要管理員權限。",
     "Sandbox_EHR_RealisticTemperatureCompatibility": "真實溫度相容性",

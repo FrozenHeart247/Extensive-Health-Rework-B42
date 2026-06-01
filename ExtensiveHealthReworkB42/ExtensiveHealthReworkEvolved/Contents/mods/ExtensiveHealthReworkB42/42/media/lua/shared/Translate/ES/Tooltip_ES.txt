@@ -499,6 +499,7 @@ Tooltip_ES = {
     Tooltip_EHR_GeneTherapyKit_Description = "Terapia génica experimental para el virus Knox.",
     Tooltip_EHR_GeneTherapyKit_Warning = "Las probabilidades de compatibilidad están ocultas sin una prueba de anticuerpos",
     Tooltip_EHR_GeneTherapyKit_SuccessText = "ÉXITO: Inmunidad permanente",
+    Tooltip_EHR_GeneTherapyKit_SuccessText_PatientZeroDisabled = "EXITO: infeccion Knox actual curada",
     Tooltip_EHR_GeneTherapyKit_FailureText = "FALLO: Muerte instantánea",
     Tooltip_EHR_GeneTherapyKit_Effect_1 = "EXTREMADAMENTE RARO - Artículo de investigación militar",
     Tooltip_EHR_GeneTherapyKit_Effect_2 = "El éxito depende de la compatibilidad del tipo de sangre",

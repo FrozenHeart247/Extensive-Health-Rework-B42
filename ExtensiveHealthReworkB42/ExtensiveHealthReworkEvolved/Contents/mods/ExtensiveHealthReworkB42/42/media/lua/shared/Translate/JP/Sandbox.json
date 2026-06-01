@@ -135,6 +135,8 @@
     "Sandbox_EHR_AllowFullPharmacyPackages_tooltip": "薬局やドラッグストアが完全な医薬品パッケージを時折生成できるようにします。他の場所では依然として上限が満杯を下回っています。",
     "Sandbox_EHR_HouseholdPrescriptionLoot": "家庭用処方箋の戦利品",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "稀に処方薬の残り物が家、寝室、机、および同様の非医療場所に出現することを許可します。",
+    "Sandbox_EHR_PatientZeroTraitDisabled": "Patient Zero 特性を無効化",
+    "Sandbox_EHR_PatientZeroTraitDisabled_tooltip": "有効にすると、キャラクター作成時に Patient Zero が非表示になり、Gene Therapy は現在の Knox 感染だけを治療し、永続免疫を付与しません。",
     "Sandbox_EHR_DebugMode": "デバッグモード",
     "Sandbox_EHR_DebugMode_tooltip": "EHR デバッグ メニューへのアクセスを有効にします (G キーを押します)。コンソールログも有効にします。 Steam -debug フラグは必要ありません。マルチプレイヤーでは管理者権限も必要です。",
     "Sandbox_EHR_RealisticTemperatureCompatibility": "Realistic Temperature 互換性",

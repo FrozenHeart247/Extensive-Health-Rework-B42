@@ -499,6 +499,7 @@
     "Tooltip_EHR_GeneTherapyKit_Description": "Terapia genética experimental para o vírus Knox.",
     "Tooltip_EHR_GeneTherapyKit_Warning": "As probabilidades de compatibilidade ficam ocultas sem um teste de anticorpos",
     "Tooltip_EHR_GeneTherapyKit_SuccessText": "SUCESSO: Imunidade permanente",
+    "Tooltip_EHR_GeneTherapyKit_SuccessText_PatientZeroDisabled": "SUCESSO: infeccao Knox atual curada",
     "Tooltip_EHR_GeneTherapyKit_FailureText": "FALHA: Morte instantânea",
     "Tooltip_EHR_GeneTherapyKit_Effect_1": "EXTREMAMENTE RARO - Item de pesquisa militar",
     "Tooltip_EHR_GeneTherapyKit_Effect_2": "O sucesso depende da compatibilidade do tipo sanguíneo",

@@ -135,6 +135,8 @@
     "Sandbox_EHR_AllowFullPharmacyPackages_tooltip": "Allows pharmacies and drugstores to occasionally spawn full medication packages. Other locations are still capped below full.",
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Household Prescription Loot",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Allows rare prescription medication leftovers to spawn in houses, bedrooms, desks, and similar non-medical locations.",
+    "Sandbox_EHR_PatientZeroTraitDisabled": "Disable Patient Zero Trait",
+    "Sandbox_EHR_PatientZeroTraitDisabled_tooltip": "When enabled, Patient Zero is hidden during character creation and Gene Therapy only cures the current Knox infection without granting permanent Knox immunity.",
     "Sandbox_EHR_DebugMode": "Debug Mode",
     "Sandbox_EHR_DebugMode_tooltip": "Enable EHR Debug Menu access (press G). Also enables console logging. Does NOT require Steam -debug flag. In multiplayer, admin privileges are also required.",
     "Sandbox_EHR_RealisticTemperatureCompatibility": "Realistic Temperature Compatibility",

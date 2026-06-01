@@ -499,6 +499,7 @@
     "Tooltip_EHR_GeneTherapyKit_Description": "ノックスウイルスに対する実験的遺伝子治療。",
     "Tooltip_EHR_GeneTherapyKit_Warning": "抗体検査なしでは互換性の確率は非表示になります",
     "Tooltip_EHR_GeneTherapyKit_SuccessText": "成功: 永久免疫",
+    "Tooltip_EHR_GeneTherapyKit_SuccessText_PatientZeroDisabled": "成功: 現在の Knox 感染を治療",
     "Tooltip_EHR_GeneTherapyKit_FailureText": "失敗：即死",
     "Tooltip_EHR_GeneTherapyKit_Effect_1": "非常に珍しい - 軍事研究品",
     "Tooltip_EHR_GeneTherapyKit_Effect_2": "成功は血液型の相性次第",

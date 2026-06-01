@@ -70,6 +70,37 @@ EHR.KnoxCure.Config = {
     geneTherapyMigraineChance = 0.001,  -- Per tick chance of migraine
 }
 
+local function getEHRKnoxSandboxBool(name, default)
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local value = SandboxVars.ExtensiveHealthRework[name]
+        if value ~= nil then return value == true end
+    end
+
+    if getSandboxOptions then
+        local ok, options = pcall(getSandboxOptions)
+        if ok and options and options.getOptionByName then
+            local optOk, option = pcall(function()
+                return options:getOptionByName("ExtensiveHealthRework." .. tostring(name))
+            end)
+            if optOk and option and option.getValue then
+                local valueOk, value = pcall(function() return option:getValue() end)
+                if valueOk and value ~= nil then return value == true end
+            end
+        end
+    end
+
+    return default == true
+end
+
+function EHR.KnoxCure.IsPatientZeroTraitEnabled()
+    return getEHRKnoxSandboxBool("PatientZeroTraitDisabled", false) ~= true
+end
+
+function EHR.KnoxCure.HasPermanentKnoxImmunity(player, data)
+    if not EHR.KnoxCure.IsPatientZeroTraitEnabled() then return false end
+    data = data or (player and EHR.KnoxCure.GetData and EHR.KnoxCure.GetData(player))
+    return data ~= nil and data.geneTherapyImmune == true
+end
 local function consumeKnoxItem(player, item)
     if not player or not item then return false end
 
@@ -413,6 +444,12 @@ end
 function EHR.KnoxCure.GrantImmunityTrait(player, data)
     if not player then return false end
 
+    if not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
+        data = data or (EHR.KnoxCure.GetData and EHR.KnoxCure.GetData(player))
+        if data then data.immunityTraitGranted = false end
+        return false
+    end
+
     data = data or EHR.KnoxCure.GetData(player)
 
     local traitToken = nil
@@ -685,7 +722,7 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
     if not data then return "error" end
 
     -- Check if already a Gene Therapy survivor (immune)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Dialogue.SayStageChange(player, "I'm already immune to the virus...")
         return "already_immune"
     end
@@ -711,12 +748,18 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
         -- SUCCESS - Cured!
         EHR.KnoxCure.CureInfection(player)
 
-        -- Mark as Gene Therapy survivor
+        -- Mark as Gene Therapy survivor. Permanent Patient Zero immunity can be disabled by sandbox.
+        local grantPermanentImmunity = EHR.KnoxCure.IsPatientZeroTraitEnabled()
         data.geneTherapySurvivor = true
-        data.geneTherapyImmune = true
+        data.geneTherapyImmune = grantPermanentImmunity
+        data.immunityTraitGranted = false
 
         -- Visible permanent marker on the character sheet
-        EHR.KnoxCure.GrantImmunityTrait(player, data)
+        if grantPermanentImmunity then
+            EHR.KnoxCure.GrantImmunityTrait(player, data)
+        else
+            EHR.Log("KnoxCure: Gene Therapy cured current infection without Patient Zero immunity (sandbox disabled)")
+        end
 
         -- Apply permanent side effects (reduced max health)
         EHR.KnoxCure.ApplyGeneTherapySideEffects(player)
@@ -724,7 +767,11 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
         -- Dialogue
         EHR.Dialogue.SayStageChange(player, "*gasps* It... it worked! I can feel it working!")
 
-        EHR.Log("KnoxCure: Gene Therapy SUCCESS - player cured and now immune")
+        if grantPermanentImmunity then
+            EHR.Log("KnoxCure: Gene Therapy SUCCESS - player cured and now immune")
+        else
+            EHR.Log("KnoxCure: Gene Therapy SUCCESS - current infection cured; Patient Zero disabled")
+        end
         return "cured"
     else
         -- FAILURE - Incompatible, death
@@ -802,7 +849,7 @@ function EHR.KnoxCure.UsePhalanx(player, item)
     if not data then return "error" end
 
     -- Check if immune (Gene Therapy survivor)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Dialogue.SayStageChange(player, "I don't need this anymore... I'm immune.")
         return "immune"
     end
@@ -1031,7 +1078,7 @@ function EHR.KnoxCure.UseImmunobooster(player, item)
     if not data then return "error" end
 
     -- Check if already immune (Gene Therapy survivor)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Dialogue.SayStageChange(player, "I'm already permanently immune...")
         return "already_immune"
     end
@@ -1116,7 +1163,7 @@ function EHR.KnoxCure.TryBlockInfection(player)
     if not data then return false end
 
     -- Check for permanent immunity (Gene Therapy survivor)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Log("KnoxCure: Infection blocked - Gene Therapy immunity")
         return true
     end
@@ -1204,7 +1251,8 @@ local function SuppressVanillaInfection(player, data)
     if not bodyDamage or not stats then return end
 
     -- Check if player should be immune
-    local isImmune = data.geneTherapyImmune or EHR.KnoxCure.IsImmunoboosterActive(player)
+    local hasPermanentImmunity = EHR.KnoxCure.HasPermanentKnoxImmunity(player, data)
+    local isImmune = hasPermanentImmunity or EHR.KnoxCure.IsImmunoboosterActive(player)
     if not isImmune then
         suppressionLoggedThisSession = false  -- Reset when no longer immune
         data.knoxImmuneBlockedExposure = nil
@@ -1273,7 +1321,7 @@ local function SuppressVanillaInfection(player, data)
 
     -- Log ONCE when we first start blocking infection (prevents spam)
     if wasInfected and not suppressionLoggedThisSession then
-        local immuneSource = data.geneTherapyImmune and "Gene Therapy immunity" or "Immunobooster"
+        local immuneSource = hasPermanentImmunity and "Gene Therapy immunity" or "Immunobooster"
         EHR.Log("KnoxCure: Blocking vanilla infection - " .. immuneSource .. " (this message will not repeat)")
         suppressionLoggedThisSession = true
     end
@@ -1292,7 +1340,7 @@ local function processPlayerTick(player)
     -- =====================================
     SuppressVanillaInfection(player, data)
 
-    if data.geneTherapyImmune and not data.immunityTraitGranted then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) and not data.immunityTraitGranted then
         EHR.KnoxCure.GrantImmunityTrait(player, data)
     end
 

@@ -135,6 +135,8 @@
     "Sandbox_EHR_AllowFullPharmacyPackages_tooltip": "Permite que farmacias y droguerias generen a veces paquetes completos. Otros lugares siguen limitados por debajo del maximo.",
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Medicamentos con receta en casas",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Permite restos raros de medicamentos con receta en casas, dormitorios, escritorios y lugares no medicos similares.",
+    "Sandbox_EHR_PatientZeroTraitDisabled": "Desactivar rasgo Paciente cero",
+    "Sandbox_EHR_PatientZeroTraitDisabled_tooltip": "Si esta activado, Paciente cero se oculta durante la creacion del personaje y la terapia genica solo cura la infeccion Knox actual sin otorgar inmunidad permanente.",
     "Sandbox_EHR_DebugMode": "Modo debug",
     "Sandbox_EHR_DebugMode_tooltip": "Activa el menu debug EHR (tecla G). Tambien activa logs. En multi, admin requerido.",
     "Sandbox_EHR_RealisticTemperatureCompatibility": "Compatibilidad con Realistic Temperature",

@@ -499,6 +499,7 @@
     "Tooltip_EHR_GeneTherapyKit_Description": "諾克斯病毒的實驗性基因治療。",
     "Tooltip_EHR_GeneTherapyKit_Warning": "不進行抗體測試，相容性幾率就會被隱藏",
     "Tooltip_EHR_GeneTherapyKit_SuccessText": "成功：永久免疫力",
+    "Tooltip_EHR_GeneTherapyKit_SuccessText_PatientZeroDisabled": "成功：目前 Knox 感染已治癒",
     "Tooltip_EHR_GeneTherapyKit_FailureText": "失敗：立即死亡",
     "Tooltip_EHR_GeneTherapyKit_Effect_1": "極為罕見 - 軍事研究項目",
     "Tooltip_EHR_GeneTherapyKit_Effect_2": "成功取決於血型相容性",

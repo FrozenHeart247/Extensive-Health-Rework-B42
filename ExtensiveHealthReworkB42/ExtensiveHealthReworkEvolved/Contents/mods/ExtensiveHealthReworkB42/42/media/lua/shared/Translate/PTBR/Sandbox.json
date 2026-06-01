@@ -135,6 +135,8 @@
     "Sandbox_EHR_AllowFullPharmacyPackages_tooltip": "Permite que farmacias e drogarias ocasionalmente gerem embalagens completas. Outros locais ainda ficam abaixo do cheio.",
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Receitas em casas",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Permite sobras raras de medicamentos prescritos em casas, quartos, mesas e locais nao medicos similares.",
+    "Sandbox_EHR_PatientZeroTraitDisabled": "Desativar traco Paciente Zero",
+    "Sandbox_EHR_PatientZeroTraitDisabled_tooltip": "Quando ativado, Paciente Zero fica oculto na criacao do personagem e a terapia genica cura apenas a infeccao Knox atual sem conceder imunidade permanente.",
     "Sandbox_EHR_DebugMode": "Modo de Depuração (Debug)",
     "Sandbox_EHR_DebugMode_tooltip": "HabilitarEHRAcesso ao menu de depuração (pressione G). Também habilita o log do console. NÃO requer sinalizador Steam -debug. No modo multijogador, também são necessários privilégios de administrador.",
     "Sandbox_EHR_RealisticTemperatureCompatibility": "Compatibilidade com Realistic Temperature",

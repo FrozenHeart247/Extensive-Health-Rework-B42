@@ -84,6 +84,16 @@ local function hasCharacterTrait(player, registryKey)
     return false
 end
 
+local function isPatientZeroTraitEnabled()
+    if EHR.KnoxCure and EHR.KnoxCure.IsPatientZeroTraitEnabled then
+        return EHR.KnoxCure.IsPatientZeroTraitEnabled()
+    end
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if options and options.PatientZeroTraitDisabled ~= nil then
+        return options.PatientZeroTraitDisabled ~= true
+    end
+    return true
+end
 local function isEHRMedicalProfession(player)
     if not player then return false, nil end
 
@@ -213,6 +223,18 @@ function EHR.Professions.ApplyPatientZeroTrait(player)
     local hasPatientZero = hasCharacterTrait(player, "patientzero")
     local data = getKnoxData(player)
     if not data then return false end
+
+    if not isPatientZeroTraitEnabled() then
+        if data.patientZeroTraitSource == true then
+            data.geneTherapyImmune = false
+            data.immunityTraitGranted = false
+            data.patientZeroTraitSource = false
+            if EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
+            end
+        end
+        return false
+    end
 
     if hasPatientZero then
         if data.geneTherapyImmune ~= true or data.patientZeroTraitSource ~= true then

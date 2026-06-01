@@ -20,6 +20,7 @@ end
 pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 
 EHR = EHR or {}
 EHR.Tooltips = EHR.Tooltips or {}
@@ -45,6 +46,16 @@ end
 
 local function tooltipListValue(itemFullType, prefix, index, fallback)
     return tooltipText(itemFullType, prefix .. "_" .. tostring(index), fallback)
+end
+
+local function tooltipSuccessText(itemFullType, data)
+    if tostring(itemFullType or "") == "ExtensiveHealth.GeneTherapyKit"
+            and EHR.KnoxCure
+            and EHR.KnoxCure.IsPatientZeroTraitEnabled
+            and not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
+        return tooltipText(itemFullType, "SuccessText_PatientZeroDisabled", "SUCCESS: Current Knox infection cured")
+    end
+    return tooltipText(itemFullType, "SuccessText", data.successText)
 end
 
 -- ============================================
@@ -229,7 +240,7 @@ function EHR.Tooltips.BuildTooltipText(data, itemFullType)
 
     -- Success/Failure text (for Gene Therapy etc)
     if data.successText then
-        table.insert(lines, "<RGB:0.3,1.0,0.3> + " .. tooltipText(itemFullType, "SuccessText", data.successText))
+        table.insert(lines, "<RGB:0.3,1.0,0.3> + " .. tooltipSuccessText(itemFullType, data))
     end
     if data.failureText then
         table.insert(lines, "<RGB:1.0,0.3,0.3> - " .. tooltipText(itemFullType, "FailureText", data.failureText))
@@ -553,7 +564,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Success/Failure text (for Gene Therapy etc)
     if data.successText then
-        addWrappedLines("+ " .. tooltipText(itemFullType, "SuccessText", data.successText), {r=0.3, g=1.0, b=0.3})
+        addWrappedLines("+ " .. tooltipSuccessText(itemFullType, data), {r=0.3, g=1.0, b=0.3})
     end
     if data.failureText then
         addWrappedLines("- " .. tooltipText(itemFullType, "FailureText", data.failureText), {r=1.0, g=0.3, b=0.3})

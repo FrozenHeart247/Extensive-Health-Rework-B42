@@ -112,7 +112,7 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     -- Check if already immune
-    if data and data.geneTherapyImmune then
+    if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         local option = context:addOption("Gene Therapy (Already Immune)", nil, nil)
         option.notAvailable = true
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
@@ -145,7 +145,11 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
         option.notAvailable = true
     end
 
-    desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity"
+    if EHR.KnoxCure.IsPatientZeroTraitEnabled and not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
+        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: current Knox infection cured. Patient Zero immunity is disabled by sandbox."
+    else
+        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity"
+    end
 
     option.toolTip.description = desc
 end
@@ -180,7 +184,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     -- Check if immune
-    if data and data.geneTherapyImmune then
+    if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         local option = context:addOption("Take Phalanx (Already Immune)", nil, nil)
         option.notAvailable = true
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
@@ -292,7 +296,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     -- Check if already immune
-    if data and data.geneTherapyImmune then
+    if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         local option = context:addOption("Use Immunobooster (Already Immune)", nil, nil)
         option.notAvailable = true
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end

@@ -135,6 +135,8 @@
     "Sandbox_EHR_AllowFullPharmacyPackages_tooltip": "Consente alle farmacie e alle farmacie di generare occasionalmente pacchetti di farmaci completi. Altre località sono ancora limitate al di sotto del pieno.",
     "Sandbox_EHR_HouseholdPrescriptionLoot": "Bottino per prescrizioni domestiche",
     "Sandbox_EHR_HouseholdPrescriptionLoot_tooltip": "Consente ai rari avanzi di farmaci soggetti a prescrizione di deporre le uova nelle case, nelle camere da letto, nelle scrivanie e in luoghi simili non medici.",
+    "Sandbox_EHR_PatientZeroTraitDisabled": "Disattiva tratto Paziente Zero",
+    "Sandbox_EHR_PatientZeroTraitDisabled_tooltip": "Se attivo, Paziente Zero viene nascosto durante la creazione del personaggio e la terapia genica cura solo l infezione Knox attuale senza garantire immunita permanente.",
     "Sandbox_EHR_DebugMode": "Modalita debug",
     "Sandbox_EHR_DebugMode_tooltip": "Abilita menu debug EHR (tasto G). Attiva anche i log. In multiplayer serve admin.",
     "Sandbox_EHR_RealisticTemperatureCompatibility": "Compatibilita Realistic Temperature",

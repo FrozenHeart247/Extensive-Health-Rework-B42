@@ -508,6 +508,7 @@
     "Tooltip_EHR_GeneTherapyKit_Description": "Experimental gene therapy for Knox Virus.",
     "Tooltip_EHR_GeneTherapyKit_Warning": "Compatibility odds are hidden without an Antibody Test",
     "Tooltip_EHR_GeneTherapyKit_SuccessText": "SUCCESS: Permanent immunity",
+    "Tooltip_EHR_GeneTherapyKit_SuccessText_PatientZeroDisabled": "SUCCESS: Current Knox infection cured",
     "Tooltip_EHR_GeneTherapyKit_FailureText": "FAILURE: Instant death",
     "Tooltip_EHR_GeneTherapyKit_Effect_1": "EXTREMELY RARE - Military research item",
     "Tooltip_EHR_GeneTherapyKit_Effect_2": "Success depends on blood type compatibility",

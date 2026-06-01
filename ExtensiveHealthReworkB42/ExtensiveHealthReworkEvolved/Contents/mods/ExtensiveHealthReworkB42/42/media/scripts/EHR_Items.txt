@@ -202,7 +202,7 @@ module ExtensiveHealth
         Icon = BloodBagEmpty,
         Weight = 0.2,
         Tooltip = Tooltip_EmptyBloodBag,
-        WorldStaticModel = MedicalParcel_White,
+        WorldStaticModel = MedicalParcel_Green,
         Medical = true,
     }
 
@@ -742,6 +742,7 @@ module ExtensiveHealth
         Icon = IVFluids,
         Weight = 0.6,
         Tooltip = Tooltip_IVFluids,
+        WorldStaticModel = MedicalParcel_Green,
         WorldStaticScale = 0.06,
         Medical = true,
     }

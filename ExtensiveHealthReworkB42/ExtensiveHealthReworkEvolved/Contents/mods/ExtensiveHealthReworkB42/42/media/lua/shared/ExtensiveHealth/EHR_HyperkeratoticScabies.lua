@@ -12,6 +12,8 @@ EHR.HyperkeratoticScabies = EHR.HyperkeratoticScabies or {}
 EHR.HyperkeratoticScabies.Config = EHR.HyperkeratoticScabies.Config or {
     CHECK_INTERVAL_HOURS = 1.0,
     GROUND_CHANCE = 0.10,
+    BLOCK_WINTER_MONTHS = true,
+    BLOCK_SNOW = true,
 }
 
 local function worldHour()
@@ -99,6 +101,44 @@ local function getFloorTextureName(square)
     return textureName and tostring(textureName) or nil
 end
 
+local function getCurrentMonth()
+    local gameTime = getGameTime and getGameTime() or nil
+    if not gameTime or not gameTime.getMonth then return nil end
+
+    local ok, month = pcall(function() return gameTime:getMonth() end)
+    if not ok or month == nil then return nil end
+
+    return (tonumber(month) or 0) + 1
+end
+
+local function isWinterMonth()
+    local month = getCurrentMonth()
+    return month == 12 or month == 1 or month == 2
+end
+
+local function hasSnowCover(square)
+    local textureName = getFloorTextureName(square)
+    if textureName then
+        local lower = string.lower(textureName)
+        if lower:find("snow", 1, true) then return true end
+    end
+
+    local climate = getClimateManager and getClimateManager() or nil
+    if climate and climate.getSnowStrength then
+        local ok, snow = pcall(function() return climate:getSnowStrength() end)
+        if ok and (tonumber(snow) or 0) > 0.10 then return true end
+    end
+
+    return false
+end
+
+function EHR.HyperkeratoticScabies.IsSeasonBlocked(square)
+    local config = EHR.HyperkeratoticScabies.Config or {}
+    if config.BLOCK_WINTER_MONTHS ~= false and isWinterMonth() then return true end
+    if config.BLOCK_SNOW ~= false and hasSnowCover(square) then return true end
+    return false
+end
+
 function EHR.HyperkeratoticScabies.IsNaturalGround(square)
     local textureName = getFloorTextureName(square)
     if not textureName then return false end
@@ -157,16 +197,148 @@ local function chooseBodyPart(player)
     return selected.type, selected.part, selected.index
 end
 
+local function callBool(target, methods)
+    if not target then return false end
+    for _, methodName in ipairs(methods) do
+        local method = target[methodName]
+        if type(method) == "function" then
+            local ok, result = pcall(function() return method(target) end)
+            if ok and result == true then return true end
+        end
+    end
+    return false
+end
+
+local function callNumber(target, methodName, fallback)
+    if not target then return fallback end
+    local method = target[methodName]
+    if type(method) ~= "function" then return fallback end
+
+    local ok, result = pcall(function() return method(target) end)
+    if ok and result ~= nil then
+        return tonumber(result) or fallback
+    end
+    return fallback
+end
+
+local function callSet(target, methodName, value)
+    if not target then return false end
+    local method = target[methodName]
+    if type(method) ~= "function" then return false end
+
+    local ok = pcall(function() method(target, value) end)
+    return ok == true
+end
+
+local function getZombieStat(player, stat)
+    if not player or not stat then return 0 end
+    local stats = player:getStats()
+    if not stats or not stats.get then return 0 end
+
+    local ok, value = pcall(function() return stats:get(stat) end)
+    if ok then return tonumber(value) or 0 end
+    return 0
+end
+
+local function setZombieStat(player, stat, value)
+    if not player or not stat then return false end
+    local stats = player:getStats()
+    if not stats or not stats.set then return false end
+
+    local ok = pcall(function() stats:set(stat, value) end)
+    return ok == true
+end
+
+local function forEachBodyPart(bodyDamage, callback)
+    if not bodyDamage or not BodyPartType or not BodyPartType.FromIndex then return false end
+
+    local maxIndex = nil
+    if BodyPartType.ToIndex and BodyPartType.MAX then
+        local ok, value = pcall(function() return BodyPartType.ToIndex(BodyPartType.MAX) - 1 end)
+        if ok then maxIndex = value end
+    end
+    if not maxIndex or maxIndex < 0 then return false end
+
+    local changed = false
+    for i = 0, maxIndex do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+        if part and callback(part, i) then changed = true end
+    end
+    return changed
+end
+
+local function hasBodyPartKnoxPayload(bodyDamage)
+    return forEachBodyPart(bodyDamage, function(part)
+        return callBool(part, { "IsInfected", "isInfected" })
+    end)
+end
+
+local function hasKnoxDiseaseEntry(player)
+    local modData = player and player.getModData and player:getModData() or nil
+    local diseaseData = modData and modData.EHR_Disease
+    local active = diseaseData and diseaseData.active
+    return type(active) == "table" and (active.Knox_Infection ~= nil or active.knox_infection ~= nil)
+end
+
+local function captureKnoxState(player)
+    local bodyDamage = player and player.getBodyDamage and player:getBodyDamage() or nil
+    if not bodyDamage then return { infected = false } end
+
+    local infected = callBool(bodyDamage, { "IsInfected", "isInfected" })
+    infected = infected or hasBodyPartKnoxPayload(bodyDamage)
+    infected = infected or callNumber(bodyDamage, "getInfectionTime", -1) >= 0
+    infected = infected or callNumber(bodyDamage, "getInfectionMortalityDuration", -1) > 0
+    if CharacterStat then
+        infected = infected or getZombieStat(player, CharacterStat.ZOMBIE_INFECTION) > 0
+        infected = infected or getZombieStat(player, CharacterStat.ZOMBIE_FEVER) > 0
+    end
+    infected = infected or hasKnoxDiseaseEntry(player)
+
+    return { infected = infected == true }
+end
+
+local function clearKnoxIfCreatedByScabies(player, snapshot)
+    if not player or (snapshot and snapshot.infected == true) then return end
+
+    local bodyDamage = player:getBodyDamage()
+    if bodyDamage then
+        callSet(bodyDamage, "setInfected", false)
+        callSet(bodyDamage, "setInfectionTime", -1.0)
+        callSet(bodyDamage, "setInfectionMortalityDuration", -1.0)
+        forEachBodyPart(bodyDamage, function(part)
+            local changed = false
+            changed = callSet(part, "SetInfected", false) or changed
+            changed = callSet(part, "SetFakeInfected", false) or changed
+            return changed
+        end)
+    end
+
+    if CharacterStat then
+        setZombieStat(player, CharacterStat.ZOMBIE_INFECTION, 0)
+        setZombieStat(player, CharacterStat.ZOMBIE_FEVER, 0)
+    end
+
+    local modData = player:getModData()
+    local diseaseData = modData and modData.EHR_Disease
+    local active = diseaseData and diseaseData.active
+    if type(active) == "table" then
+        active.Knox_Infection = nil
+        active.knox_infection = nil
+    end
+end
+
 local function setPartScratch(player, part, partType)
     if not part then return false end
 
+    local knoxSnapshot = captureKnoxState(player)
     local changed = false
     local okScratch = false
     if part.setScratched then
-        okScratch = pcall(function() part:setScratched(true, false) end)
+        okScratch = pcall(function() part:setScratched(true, true) end)
     end
     if not okScratch and part.SetScratched then
-        okScratch = pcall(function() part:SetScratched(true, false) end)
+        okScratch = pcall(function() part:SetScratched(true, true) end)
     end
     changed = okScratch or changed
 
@@ -195,6 +367,7 @@ local function setPartScratch(player, part, partType)
     if changed and bodyDamage and bodyDamage.DamageUpdate then
         pcall(function() bodyDamage:DamageUpdate() end)
     end
+    clearKnoxIfCreatedByScabies(player, knoxSnapshot)
 
     return changed
 end
@@ -283,6 +456,7 @@ function EHR.HyperkeratoticScabies.UpdatePlayer(player)
     local square = nil
     pcall(function() square = player:getCurrentSquare() end)
     if not EHR.HyperkeratoticScabies.IsNaturalGround(square) then return end
+    if EHR.HyperkeratoticScabies.IsSeasonBlocked(square) then return end
 
     local now = worldHour()
     local lastCheck = tonumber(modData.EHR_HyperkeratoticScabies.lastGroundCheckHour) or -999999

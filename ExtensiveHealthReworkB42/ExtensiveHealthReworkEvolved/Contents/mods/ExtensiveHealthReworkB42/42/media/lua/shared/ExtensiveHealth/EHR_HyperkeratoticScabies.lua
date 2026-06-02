@@ -84,21 +84,21 @@ local function playerBool(player, methodName)
     return ok and value == true
 end
 
-local function blocksGroundSittingExposure(player)
+local function blocksGroundSittingExposure(player, allowSneaking)
     if not player then return true end
     local inVehicle = false
     pcall(function() inVehicle = player.getVehicle and player:getVehicle() ~= nil end)
     if inVehicle then return true end
 
-    return playerBool(player, "isSneaking")
-        or playerBool(player, "isRunning")
+    if allowSneaking ~= true and playerBool(player, "isSneaking") then return true end
+
+    return playerBool(player, "isRunning")
         or playerBool(player, "isSprinting")
         or playerBool(player, "isPlayerMoving")
 end
 
-local function isSittingOnGround(player)
+local function hasSitOnGroundState(player)
     if not player then return false end
-    if blocksGroundSittingExposure(player) then return false end
 
     local okSit, sitting = pcall(function()
         if player.isSitOnGround then return player:isSitOnGround() end
@@ -114,6 +114,11 @@ local function isSittingOnGround(player)
     end
 
     return false
+end
+
+local function isSittingOnGround(player)
+    if not hasSitOnGroundState(player) then return false end
+    return not blocksGroundSittingExposure(player, true)
 end
 
 local function resetGroundExposureState(modData)

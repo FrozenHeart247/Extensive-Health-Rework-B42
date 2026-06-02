@@ -54,11 +54,52 @@ local function clearFlyerReadProgress(character, item, itemId)
     end
 end
 
+local function isMedicalWildPlantsFlyer(item)
+    if not item or not item.getFullType then return false end
+    return item:getFullType() == "ExtensiveHealth.MedicalWildPlants"
+end
+
+local function unlockMedicalWildPlants(character, item)
+    if not character or not item then return false end
+    local data = character:getModData()
+    if not data then return false end
+
+    local newlyLearned = data.EHR_MedicalWildPlantsKnown ~= true
+    data.EHR_MedicalWildPlantsKnown = true
+    data.EHR_MedicalWildPlantsReadHour = getGameTime():getWorldAgeHours()
+
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(character)
+    end
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(character, "EHR_HerbalSearch", "UnlockKnowledge", {})
+    end
+
+    if newlyLearned then
+        if EHR and EHR.SkillXP and EHR.SkillXP.AwardXP then
+            pcall(function() EHR.SkillXP.AwardXP(character, 50, "medical_wild_plants_flyer", nil) end)
+        end
+        if EHR and EHR.Locale and EHR.Locale.Say then
+            EHR.Locale.Say(character, EHR.Locale.Text("UI_EHR_HerbalSearch_KnowledgeLearned", "Medical wild plant knowledge acquired."))
+        elseif character.Say then
+            character:Say("Medical wild plant knowledge acquired.")
+        end
+    else
+        if EHR and EHR.Locale and EHR.Locale.Say then
+            EHR.Locale.Say(character, EHR.Locale.Text("UI_EHR_HerbalSearch_KnowledgeAlreadyKnown", "I already know how to identify medicinal wild plants."))
+        elseif character.Say then
+            character:Say("I already know how to identify medicinal wild plants.")
+        end
+    end
+
+    return newlyLearned
+end
+
 local function isFlyerItem(item)
     if not item or not item.getFullType then
         return false
     end
-    return EHR.DiseaseFlyers.Config.FLYER_ITEMS[item:getFullType()] ~= nil
+    return EHR.DiseaseFlyers.Config.FLYER_ITEMS[item:getFullType()] ~= nil or isMedicalWildPlantsFlyer(item)
 end
 
 local function restoreOldReadBookHooks()
@@ -206,6 +247,12 @@ local function handleFlyerRead(character, item, source)
 
     local itemId = item:getFullType()
     log("EHR flyer read via " .. tostring(source) .. " - item: " .. tostring(itemId))
+
+    if isMedicalWildPlantsFlyer(item) then
+        unlockMedicalWildPlants(character, item)
+        clearFlyerReadProgress(character, item, itemId)
+        return
+    end
 
     local diseaseId = EHR.DiseaseFlyers.Config.FLYER_ITEMS[itemId]
     if not diseaseId then

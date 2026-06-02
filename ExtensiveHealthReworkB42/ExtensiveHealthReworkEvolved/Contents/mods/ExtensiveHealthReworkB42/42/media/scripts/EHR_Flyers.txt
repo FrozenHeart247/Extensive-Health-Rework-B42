@@ -333,4 +333,18 @@ module ExtensiveHealth
         StressChange = -5,
         UnhappyChange = -5,
     }
+    item MedicalWildPlants
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Medical Guide: Wild Medicinal Plants,
+        Weight = 0.1,
+        Icon = MedicalWildPlants,
+        Tooltip = Tooltip_MedicalWildPlants,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 12,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
 }

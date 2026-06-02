@@ -86,4 +86,5 @@ ItemName_JP = {
     ExtensiveHealth.TetanusImmunoglobulin = "破傷風免疫グロブリン",
     ExtensiveHealth.TopicalPermethrin = "局所ペルメトリン",
     ExtensiveHealth.DualOrexinReceptor = "デュアルオレキシン受容体薬",
+    ExtensiveHealth.MedicalWildPlants = "Medical Guide: Wild Medicinal Plants",
 }

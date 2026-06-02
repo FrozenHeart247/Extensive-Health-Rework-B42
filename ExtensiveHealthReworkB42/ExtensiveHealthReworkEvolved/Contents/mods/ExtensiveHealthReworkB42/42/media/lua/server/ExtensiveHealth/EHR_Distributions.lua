@@ -389,6 +389,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.DiseaseFlyer_Cellulitis"] = 1.2,
         ["ExtensiveHealth.DiseaseFlyer_AHTR"] = 0.5,
         ["ExtensiveHealth.DiseaseFlyer_BloodType"] = 1.5,
+        ["ExtensiveHealth.MedicalWildPlants"] = 1.2,
     }
 
     for item, chance in pairs(flyerRarity) do

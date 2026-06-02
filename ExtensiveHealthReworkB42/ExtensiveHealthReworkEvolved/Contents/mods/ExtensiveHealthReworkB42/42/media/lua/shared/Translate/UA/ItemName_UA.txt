@@ -86,4 +86,5 @@ ItemName_UA = {
     ExtensiveHealth.TetanusImmunoglobulin = "Імуноглобулін проти правця",
     ExtensiveHealth.TopicalPermethrin = "Місцевий перметрин",
     ExtensiveHealth.DualOrexinReceptor = "Подвійний антагоніст орексину",
+    ExtensiveHealth.MedicalWildPlants = "Medical Guide: Wild Medicinal Plants",
 }

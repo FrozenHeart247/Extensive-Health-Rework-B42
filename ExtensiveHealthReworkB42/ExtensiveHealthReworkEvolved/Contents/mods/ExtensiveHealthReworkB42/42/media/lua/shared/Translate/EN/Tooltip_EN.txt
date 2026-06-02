@@ -546,4 +546,5 @@ Tooltip_EN = {
     Tooltip_EHR_ImmunoboosterShot_SideEffect_1 = "Mild nausea",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_2 = "Reduced stamina regen",
     Tooltip_EHR_ImmunoboosterShot_SideEffect_3 = "Occasional tremors",
+    Tooltip_MedicalWildPlants = "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
 }

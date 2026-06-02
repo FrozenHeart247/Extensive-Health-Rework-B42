@@ -6,8 +6,8 @@
     Provides gradual pre-disease effects (shivering, sweating) and smooth
     transitions to hypothermia/heat exhaustion diseases.
 
-    Normal body temperature: 37.0°C (98.6°F)
-    Hypothermia risk: < 34.0°C
+    Normal body temperature: 36.6°C (97.9°F)
+    Hypothermia starts: <= 35.0°C
     Heat exhaustion risk: > 40.5°C
 
     v1.0.0 - Initial implementation
@@ -24,9 +24,9 @@ EHR.BodyTemp = {}
 
 EHR.BodyTemp.Config = {
     -- Normal body temperature (Celsius)
-    normalTemp = 37.0,
+    normalTemp = 36.6,
 
-    -- Comfort zone (air temperature range where body maintains 37°C easily)
+    -- Comfort zone (air temperature range where body maintains 36.6°C easily)
     -- Within this range, body temperature stays stable without effort
     comfortZoneMin = 10.0,   -- Below this, start feeling cold (lowered from 12.0)
     comfortZoneMax = 28.0,   -- Above this, start feeling hot
@@ -37,7 +37,7 @@ EHR.BodyTemp.Config = {
     coldStage1 = 36.0,   -- Chilly (lowered from 36.5 - 36.4°C is normal!)
     coldStage2 = 35.5,   -- Cold (lowered from 36.0)
     coldStage3 = 35.0,   -- Very Cold
-    coldStage4 = 34.0,   -- Hypothermia Risk
+    coldStage4 = 34.0,   -- Severe Cold
 
     -- Hypothermia disease thresholds (Celsius)
     hypothermiaStage1 = 35.0,
@@ -64,7 +64,7 @@ EHR.BodyTemp.Config = {
     heatPressureFactor = 0.09, -- Heat-side target shift. Kept conservative; heat stroke uses world exposure too.
 
     -- Disease trigger timing (game hours at dangerous temp)
-    hypothermiaTriggerTime = 0.5,    -- 30 game minutes at < 34°C to trigger hypothermia
+    hypothermiaTriggerTime = 0.5,    -- Legacy chance timer; hypothermia now stages from <= 35°C
     heatExhaustionTriggerTime = 0.5, -- 30 game minutes at > 40.5°C
 
     -- Effect intervals (game hours)
@@ -263,7 +263,8 @@ local function EHR_BodyTempNormalizeCelsius(value)
     end
 
     if value >= -1.5 and value <= 2.0 then
-        return 37.0 + ((value - 0.5) * 8.0)
+        local normalTemp = EHR.BodyTemp.Config and EHR.BodyTemp.Config.normalTemp or 36.6
+        return normalTemp + ((value - 0.5) * 8.0)
     end
 
     return nil
@@ -277,7 +278,8 @@ local function EHR_BodyTempCelsiusToNativeStat(stats, celsius)
     local ok, current = pcall(function() return stats:get(CharacterStat.TEMPERATURE) end)
     current = ok and tonumber(current) or nil
     if current and current >= -1.5 and current <= 2.0 then
-        return ((celsius - 37.0) / 8.0) + 0.5
+        local normalTemp = EHR.BodyTemp.Config and EHR.BodyTemp.Config.normalTemp or 36.6
+        return ((celsius - normalTemp) / 8.0) + 0.5
     end
 
     return celsius
@@ -313,7 +315,7 @@ function EHR.BodyTemp.ReadVanillaBodyTemperature(player)
         return EHR_BodyTempNormalizeCelsius(tempData.bodyTemp)
     end
 
-    return EHR.BodyTemp.Config.normalTemp or 37.0
+    return EHR.BodyTemp.Config.normalTemp or 36.6
 end
 
 function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
@@ -340,6 +342,34 @@ function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     return wrote
 end
 
+<<<<<<< Updated upstream
+=======
+function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+    if not player then return false end
+    if EHR.RealisticTemperatureCompat
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever(player) then
+        return false
+    end
+
+    if not (EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)) then
+        return false
+    end
+
+    local tempData = EHR.BodyTemp.GetTemperatureData and EHR.BodyTemp.GetTemperatureData(player) or nil
+    local bodyTemp = tempData and tonumber(tempData.bodyTemp) or nil
+    local normalTemp = EHR.BodyTemp.Config.normalTemp or 36.6
+
+    -- This bridge should preserve an already-calculated EHR fever value, not
+    -- jump straight to the target. The gradual ramp is handled by
+    -- MoveDiseaseFeverToward/UpdateBodyTemperature.
+    bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
+    if not bodyTemp or bodyTemp <= normalTemp + 0.05 then return false end
+
+    return EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
+end
+
+>>>>>>> Stashed changes
 function EHR.BodyTemp.IsHypothermiaEnabled()
     if SandboxVars and SandboxVars.ExtensiveHealthRework then
         local enabled = SandboxVars.ExtensiveHealthRework.HypothermiaEnabled
@@ -538,7 +568,7 @@ local function EHR_BodyTempApplyMedicationFeverRelief(player, diseaseId, target)
     if relief <= 0 then return target end
 
     local strongFeverReducer = relief >= 0.60
-    local feverFloor = strongFeverReducer and 37.0 or 37.4
+    local feverFloor = strongFeverReducer and (cfg.normalTemp or 36.6) or 37.4
     local feverDrop = strongFeverReducer and 4.0 or math.min(1.2, relief * 1.8)
     return math.max(feverFloor, target - feverDrop)
 end
@@ -625,7 +655,7 @@ function EHR.BodyTemp.MoveDiseaseFeverToward(player, target, step)
         tempData.bodyTemp = nextTemp
         tempData.targetTemp = target
         tempData.diseaseTargetTemp = target
-        tempData.diseaseFeverActive = target > ((cfg.normalTemp or 37.0) + 0.2)
+        tempData.diseaseFeverActive = target > ((cfg.normalTemp or 36.6) + 0.2)
 
         local gameTime = getGameTime and getGameTime() or nil
         tempData.diseaseTargetTempUntil = gameTime and (gameTime:getWorldAgeHours() + 1.0) or nil
@@ -651,7 +681,7 @@ function EHR.BodyTemp.ResetDiseaseFever(player, snapToNormal)
     end
     if not tempData then return false end
 
-    local normalTemp = EHR.BodyTemp.Config.normalTemp or 37.0
+    local normalTemp = EHR.BodyTemp.Config.normalTemp or 36.6
     local vanillaTemp = EHR.BodyTemp.ReadVanillaBodyTemperature and EHR.BodyTemp.ReadVanillaBodyTemperature(player) or normalTemp
     tempData.diseaseTargetTemp = nil
     tempData.diseaseTargetTempUntil = nil
@@ -755,7 +785,7 @@ function EHR.BodyTemp.IsDiseaseFeverActive(player, tempData)
     if not player then return false end
 
     local cfg = EHR.BodyTemp.Config
-    local normalTemp = cfg.normalTemp or 37.0
+    local normalTemp = cfg.normalTemp or 36.6
     local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
 
     if tempData and tempData.diseaseTargetTemp and hasFeverSource then
@@ -960,7 +990,7 @@ function EHR.BodyTemp.CalculateTargetTempLegacy(player)
     if not player then return EHR.BodyTemp.Config.normalTemp end
 
     local cfg = EHR.BodyTemp.Config
-    local BASE_TEMP = cfg.normalTemp  -- 37.0°C
+    local BASE_TEMP = cfg.normalTemp  -- 36.6°C
 
     -- Get environmental factors
     local airTemp = 15  -- Default moderate
@@ -1111,7 +1141,7 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
     if not player then return EHR.BodyTemp.Config.normalTemp end
 
     local cfg = EHR.BodyTemp.Config
-    local normalTemp = cfg.normalTemp or 37.0
+    local normalTemp = cfg.normalTemp or 36.6
     local ambientTemp = nil
     local usedCharacterAir = false
 
@@ -1308,7 +1338,7 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
 
         tempData.bodyTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, tempData.bodyTemp))
         tempData.targetTemp = diseaseTarget
-        tempData.diseaseFeverActive = tempData.bodyTemp > ((cfg.normalTemp or 37.0) + 0.2)
+        tempData.diseaseFeverActive = tempData.bodyTemp > ((cfg.normalTemp or 36.6) + 0.2)
 
         if EHR.BodyTemp.WriteDiseaseBodyTemperature then
             EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
@@ -1506,7 +1536,7 @@ function EHR.BodyTemp.TryTriggerHypothermia(player, tempData)
     -- - Wetness (wetter = higher)
     local cfg = EHR.BodyTemp.Config
     local timeRatio = tempData.timeAtDangerousTemp / cfg.hypothermiaTriggerTime
-    local tempSeverity = (cfg.coldStage4 - tempData.bodyTemp) / 6  -- 0-1 based on how far below 34°C
+    local tempSeverity = ((cfg.hypothermiaStage1 or 35.0) - tempData.bodyTemp) / 6  -- 0-1 based on how far below 35°C
 
     local wetness = 0
     if EHR.Environmental and EHR.Environmental.GetWetness then
@@ -1599,7 +1629,7 @@ local vanillaSuppression = {
     lastPlayer = nil,                  -- Track player to reset on player change
     suppressTickCounter = 0,           -- Counter for throttled safety checks
     SAFETY_CHECK_INTERVAL = 30,        -- Only check every 30 ticks (~1 second)
-    NORMAL_BODY_TEMP = 37.0,           -- Target temperature (Celsius)
+    NORMAL_BODY_TEMP = 36.6,           -- Target temperature (Celsius)
     TOLERANCE = 1.0,                   -- Only force if off by more than 1°C
 }
 

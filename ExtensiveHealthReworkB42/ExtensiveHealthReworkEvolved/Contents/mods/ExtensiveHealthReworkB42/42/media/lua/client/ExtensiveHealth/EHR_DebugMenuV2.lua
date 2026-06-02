@@ -2,10 +2,10 @@
     Extensive Health Rework B42
     Debug Menu v2.0
 
-    Comprehensive debug panel with 8 tabs matching Medical Monitor UI style.
+    Comprehensive debug panel with tabs matching Medical Monitor UI style.
     Replaces old EHR_DebugMenu.lua and context menu debug options.
 
-    Tabs: Overview | Diseases | Blood | Wounds | Medications | Stats | Scenarios | Log
+    Tabs: Overview | Diseases | Blood | Wounds | Injuries | Medications | Stats | Scenarios | Log
 
     v2.0.0 - 2026-01-08
 ]]--
@@ -43,9 +43,10 @@ EHR.DebugV2.Tabs = {
     { id = "diseases", name = "Diseases" },
     { id = "blood", name = "Blood" },
     { id = "wounds", name = "Wounds" },
+    { id = "injuries", name = "Injuries" },
     { id = "medications", name = "Meds" },
     { id = "stats", name = "Stats" },
-    { id = "scenarios", name = "Scenarios" },
+    { id = "scenarios", name = "Scen" },
     { id = "log", name = "Log" },
 }
 
@@ -90,8 +91,8 @@ local DEBUG_WOUND_VANILLA_LEVELS = {
 }
 
 local function debugTransmitPlayerModData(player)
-    if player and player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 end
 
@@ -124,6 +125,228 @@ local function debugGetBodyPart(player, partId)
     end)
 
     return okPart and part or nil
+end
+
+local function debugBodyPartDisplayName(partId)
+    partId = tostring(partId or "")
+    return partId:gsub("_", " ")
+end
+
+local function debugSyncBodyPart(bodyPart)
+    if syncBodyPart and bodyPart then
+        pcall(function() syncBodyPart(bodyPart, 0xFFFFFFFFFFF) end)
+    end
+end
+
+local function debugSyncVisuals(player)
+    if not player then return end
+    if syncVisuals then
+        pcall(function() syncVisuals(player) end)
+    end
+    if sendHumanVisual then
+        pcall(function() sendHumanVisual(player) end)
+    end
+    if player.resetModelNextFrame then
+        pcall(function() player:resetModelNextFrame() end)
+    end
+end
+
+local function debugGetBloodBodyPart(bodyPart)
+    if not bodyPart or not BloodBodyPartType or not BodyPartType then return nil end
+    local ok, result = pcall(function()
+        return BloodBodyPartType.FromIndex(BodyPartType.ToIndex(bodyPart:getType()))
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function debugClearBodyPartStiffness(player, bodyPart)
+    if not player or not bodyPart then return end
+    pcall(function() bodyPart:setStiffness(0) end)
+    pcall(function()
+        if player.getFitness and BodyPartType and BodyPartType.ToString then
+            player:getFitness():removeStiffnessValue(BodyPartType.ToString(bodyPart:getType()))
+        end
+    end)
+end
+
+local function debugSetBandaged(player, bodyPart, bandaged, dirty)
+    if not player or not bodyPart then return false end
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return false end
+
+    if bandaged then
+        local bandageType = dirty and "Base.RippedSheetsDirty" or "Base.Bandage"
+        local bandageLife = dirty and 0 or 10
+        pcall(function()
+            bodyDamage:SetBandaged(bodyPart:getIndex(), true, bandageLife, false, bandageType)
+        end)
+    else
+        pcall(function()
+            bodyDamage:SetBandaged(bodyPart:getIndex(), false, 0, false, nil)
+        end)
+    end
+    return true
+end
+
+local function debugSetBleeding(bodyPart, time)
+    if not bodyPart then return end
+    pcall(function()
+        bodyPart:setBleedingTime(math.max(tonumber(time) or 0, tonumber(bodyPart:getBleedingTime()) or 0))
+    end)
+end
+
+local function debugClearVanillaBodyPart(player, bodyPart)
+    if not bodyPart then return end
+    pcall(function() bodyPart:RestoreToFullHealth() end)
+    pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+    pcall(function() bodyPart:setInfectedWound(false) end)
+    pcall(function() bodyPart:SetBitten(false) end)
+    pcall(function() bodyPart:SetInfected(false) end)
+    pcall(function() bodyPart:SetFakeInfected(false) end)
+    debugSetBandaged(player, bodyPart, false, false)
+    debugClearBodyPartStiffness(player, bodyPart)
+    debugSyncBodyPart(bodyPart)
+end
+
+local function debugApplyVanillaInjury(player, partId, injuryId)
+    local bodyPart = debugGetBodyPart(player, partId)
+    if not player or not bodyPart or not injuryId then return false end
+
+    if injuryId == "bleeding" then
+        pcall(function() bodyPart:setBleedingTime(10) end)
+    elseif injuryId == "scratch" then
+        pcall(function() bodyPart:setScratched(true, false) end)
+        debugSetBleeding(bodyPart, 4)
+    elseif injuryId == "cut" then
+        pcall(function() bodyPart:setCut(true) end)
+        debugSetBleeding(bodyPart, 8)
+    elseif injuryId == "deep_wound" then
+        pcall(function() bodyPart:generateDeepWound() end)
+    elseif injuryId == "glass" then
+        pcall(function() bodyPart:generateDeepShardWound() end)
+    elseif injuryId == "bite" then
+        pcall(function() bodyPart:SetBitten(true) end)
+        pcall(function() bodyPart:SetInfected(true) end)
+        pcall(function() bodyPart:SetFakeInfected(false) end)
+        debugSetBleeding(bodyPart, 8)
+    elseif injuryId == "burn" then
+        pcall(function() bodyPart:setBurnTime(50) end)
+    elseif injuryId == "bullet" then
+        pcall(function() bodyPart:setHaveBullet(true, 0) end)
+    elseif injuryId == "fracture" then
+        pcall(function() bodyPart:setFractureTime(21) end)
+    elseif injuryId == "strain" then
+        pcall(function() bodyPart:setStiffness(100) end)
+    elseif injuryId == "infect" then
+        pcall(function() bodyPart:setInfectedWound(true) end)
+        pcall(function() bodyPart:setWoundInfectionLevel(10) end)
+    elseif injuryId == "bandage" then
+        debugSetBandaged(player, bodyPart, true, false)
+    elseif injuryId == "dirty_bandage" then
+        debugSetBandaged(player, bodyPart, true, true)
+    elseif injuryId == "remove_bandage" then
+        debugSetBandaged(player, bodyPart, false, false)
+    elseif injuryId == "clear_part" then
+        debugClearVanillaBodyPart(player, bodyPart)
+        debugTransmitPlayerModData(player)
+        return true
+    else
+        return false
+    end
+
+    debugSyncBodyPart(bodyPart)
+    debugTransmitPlayerModData(player)
+    return true
+end
+
+local function debugApplyVanillaVisual(player, partId, visualId)
+    local bodyPart = debugGetBodyPart(player, partId)
+    local visualPart = debugGetBloodBodyPart(bodyPart)
+    if not player or not visualPart or not visualId then return false end
+
+    if visualId == "add_blood" then
+        pcall(function() player:addBlood(visualPart, false, true, false) end)
+    elseif visualId == "remove_blood" then
+        pcall(function()
+            if player.getVisual then player:getVisual():setBlood(visualPart, 0) end
+        end)
+    elseif visualId == "add_dirt" then
+        pcall(function() player:addDirt(visualPart, nil, false) end)
+    elseif visualId == "remove_dirt" then
+        pcall(function()
+            if player.getVisual then player:getVisual():setDirt(visualPart, 0) end
+        end)
+    elseif visualId == "add_hole" then
+        pcall(function() player:addHole(visualPart) end)
+    elseif visualId == "add_patch" then
+        pcall(function() player:addBasicPatch(visualPart) end)
+    elseif visualId == "clear_visual" then
+        pcall(function()
+            if player.getVisual then
+                player:getVisual():setBlood(visualPart, 0)
+                player:getVisual():setDirt(visualPart, 0)
+            end
+        end)
+    else
+        return false
+    end
+
+    debugSyncVisuals(player)
+    return true
+end
+
+local function debugClearAllVanillaInjuries(player)
+    if not player or not EHR or not EHR.DebugV2 or not EHR.DebugV2.BodyParts then return end
+    for _, partId in ipairs(EHR.DebugV2.BodyParts) do
+        debugClearVanillaBodyPart(player, debugGetBodyPart(player, partId))
+    end
+    debugTransmitPlayerModData(player)
+end
+
+local function debugClearAllVanillaVisuals(player)
+    if not player or not EHR or not EHR.DebugV2 or not EHR.DebugV2.BodyParts then return end
+    for _, partId in ipairs(EHR.DebugV2.BodyParts) do
+        debugApplyVanillaVisual(player, partId, "clear_visual")
+    end
+    debugSyncVisuals(player)
+end
+
+local function debugSafeBodyPartFlag(bodyPart, methodName)
+    if not bodyPart or not methodName or not bodyPart[methodName] then return false end
+    local ok, result = pcall(function() return bodyPart[methodName](bodyPart) end)
+    return ok and result == true
+end
+
+local function debugSafeBodyPartNumber(bodyPart, methodName)
+    if not bodyPart or not methodName or not bodyPart[methodName] then return 0 end
+    local ok, result = pcall(function() return bodyPart[methodName](bodyPart) end)
+    if ok then return tonumber(result) or 0 end
+    return 0
+end
+
+local function debugGetInjurySummary(bodyPart)
+    if not bodyPart then return "Unavailable" end
+
+    local status = {}
+    if debugSafeBodyPartFlag(bodyPart, "bandaged") then
+        local life = debugSafeBodyPartNumber(bodyPart, "getBandageLife")
+        table.insert(status, life > 0 and "Bandaged" or "Dirty bandage")
+    end
+    if debugSafeBodyPartFlag(bodyPart, "bitten") then table.insert(status, "Bite") end
+    if debugSafeBodyPartNumber(bodyPart, "getScratchTime") > 0 or debugSafeBodyPartFlag(bodyPart, "scratched") then table.insert(status, "Scratch") end
+    if debugSafeBodyPartFlag(bodyPart, "isCut") then table.insert(status, "Laceration") end
+    if debugSafeBodyPartFlag(bodyPart, "deepWounded") or debugSafeBodyPartFlag(bodyPart, "isDeepWounded") then table.insert(status, "Deep wound") end
+    if debugSafeBodyPartFlag(bodyPart, "haveGlass") then table.insert(status, "Glass") end
+    if debugSafeBodyPartFlag(bodyPart, "haveBullet") then table.insert(status, "Bullet") end
+    if debugSafeBodyPartNumber(bodyPart, "getBurnTime") > 0 then table.insert(status, "Burn") end
+    if debugSafeBodyPartNumber(bodyPart, "getFractureTime") > 0 then table.insert(status, "Fracture") end
+    if debugSafeBodyPartNumber(bodyPart, "getBleedingTime") > 0 or debugSafeBodyPartFlag(bodyPart, "bleeding") then table.insert(status, "Bleeding") end
+    if debugSafeBodyPartFlag(bodyPart, "isInfectedWound") or debugSafeBodyPartNumber(bodyPart, "getWoundInfectionLevel") > 0 then table.insert(status, "Infected") end
+    if debugSafeBodyPartNumber(bodyPart, "getStiffness") > 0 then table.insert(status, "Strain") end
+
+    if #status == 0 then return "OK" end
+    return table.concat(status, ", ")
 end
 
 local function debugSetVanillaWoundInfection(player, partId, stage)
@@ -522,6 +745,7 @@ function EHR_DebugMenuV2:createChildren()
     self:createDiseasesPanel()
     self:createBloodPanel()
     self:createWoundsPanel()
+    self:createInjuriesPanel()
     self:createMedicationsPanel()
     self:createStatsPanel()
     self:createScenariosPanel()
@@ -959,11 +1183,13 @@ EHR.DebugV2.DiseaseList = {
     "heat_stroke",
     "trichinosis",
     "hyperkeratotic_scabies",
+    "cellulitis",
     "gastroenteritis",
     "cadaveric_aspergillosis",
     "tetanus",
     "concussion",
     "delirium",
+    "insomnia",
     "tuberculosis",
 }
 
@@ -1659,11 +1885,19 @@ EHR.DebugV2.InfectionStages = {
 }
 
 EHR.DebugV2.SelectedWoundPartIndex = EHR.DebugV2.SelectedWoundPartIndex or 1
+EHR.DebugV2.SelectedInjuryPartIndex = EHR.DebugV2.SelectedInjuryPartIndex or 1
 
 local function getSelectedWoundPartId()
     local parts = EHR.DebugV2.BodyParts
     local index = math.max(1, math.min(#parts, EHR.DebugV2.SelectedWoundPartIndex or 1))
     EHR.DebugV2.SelectedWoundPartIndex = index
+    return parts[index]
+end
+
+local function getSelectedInjuryPartId()
+    local parts = EHR.DebugV2.BodyParts
+    local index = math.max(1, math.min(#parts, EHR.DebugV2.SelectedInjuryPartIndex or 1))
+    EHR.DebugV2.SelectedInjuryPartIndex = index
     return parts[index]
 end
 
@@ -2016,6 +2250,285 @@ function EHR_DebugMenuV2:onClearSepsis()
 end
 
 -- ============================================
+-- TAB CONTENT: INJURIES
+-- ============================================
+
+EHR.DebugV2.InjuryActions = {
+    { id = "scratch", text = "Scratch", color = "warning" },
+    { id = "cut", text = "Laceration", color = "warning" },
+    { id = "deep_wound", text = "Deep Wound", color = "danger" },
+    { id = "glass", text = "Glass", color = "danger" },
+    { id = "bite", text = "Bite", color = "critical" },
+    { id = "bleeding", text = "Bleed", color = "danger" },
+    { id = "burn", text = "Burn", color = "danger" },
+    { id = "bullet", text = "Bullet", color = "critical" },
+    { id = "fracture", text = "Fracture", color = "danger" },
+    { id = "strain", text = "Strain", color = "warning" },
+    { id = "infect", text = "Infect", color = "critical" },
+    { id = "bandage", text = "Bandage", color = "safe" },
+    { id = "dirty_bandage", text = "Dirty Bandage", color = "warning" },
+    { id = "remove_bandage", text = "Remove Bandage", color = "buttonBg" },
+}
+
+EHR.DebugV2.VisualActions = {
+    { id = "add_blood", text = "Blood +", color = "danger" },
+    { id = "remove_blood", text = "Blood -", color = "buttonBg" },
+    { id = "add_dirt", text = "Dirt +", color = "warning" },
+    { id = "remove_dirt", text = "Dirt -", color = "buttonBg" },
+    { id = "add_hole", text = "Hole", color = "danger" },
+    { id = "add_patch", text = "Patch", color = "safe" },
+    { id = "clear_visual", text = "Clear Visual", color = "safe" },
+}
+
+function EHR_DebugMenuV2:createInjuriesPanel()
+    local panel = ISPanel:new(0, 0, self.contentArea.width, self.contentArea.height)
+    panel:initialise()
+    panel.backgroundColor = {r=0, g=0, b=0, a=0}
+    self.contentArea:addChild(panel)
+    self.contentPanels["injuries"] = panel
+
+    local c = EHR.DebugV2.Colors
+    local y = PADDING
+    local btnWidth = 102
+
+    local randomBtn = ISButton:new(PADDING, y, btnWidth, BUTTON_HEIGHT, "Random Injury", self, EHR_DebugMenuV2.onRandomVanillaInjury)
+    randomBtn:initialise()
+    randomBtn:instantiate()
+    randomBtn.backgroundColor = c.warning
+    panel:addChild(randomBtn)
+
+    local clearPartBtn = ISButton:new(PADDING + btnWidth + 8, y, btnWidth, BUTTON_HEIGHT, "Clear Part", self, EHR_DebugMenuV2.onClearSelectedVanillaInjury)
+    clearPartBtn:initialise()
+    clearPartBtn:instantiate()
+    clearPartBtn.backgroundColor = c.safe
+    panel:addChild(clearPartBtn)
+
+    local clearAllBtn = ISButton:new(PADDING + (btnWidth + 8) * 2, y, btnWidth, BUTTON_HEIGHT, "Clear All", self, EHR_DebugMenuV2.onClearAllVanillaInjuries)
+    clearAllBtn:initialise()
+    clearAllBtn:instantiate()
+    clearAllBtn.backgroundColor = c.safe
+    panel:addChild(clearAllBtn)
+
+    local clearVisualsBtn = ISButton:new(PADDING + (btnWidth + 8) * 3, y, btnWidth, BUTTON_HEIGHT, "Clear Visuals", self, EHR_DebugMenuV2.onClearAllVanillaVisuals)
+    clearVisualsBtn:initialise()
+    clearVisualsBtn:instantiate()
+    clearVisualsBtn.backgroundColor = c.safe
+    panel:addChild(clearVisualsBtn)
+
+    y = y + BUTTON_HEIGHT + 8
+
+    local prevPartBtn = ISButton:new(PADDING, y, 48, BUTTON_HEIGHT, "Prev", self, EHR_DebugMenuV2.onCycleSelectedInjuryPart)
+    prevPartBtn.internal = -1
+    prevPartBtn:initialise()
+    prevPartBtn:instantiate()
+    panel:addChild(prevPartBtn)
+
+    local nextPartBtn = ISButton:new(PADDING + 54, y, 48, BUTTON_HEIGHT, "Next", self, EHR_DebugMenuV2.onCycleSelectedInjuryPart)
+    nextPartBtn.internal = 1
+    nextPartBtn:initialise()
+    nextPartBtn:instantiate()
+    panel:addChild(nextPartBtn)
+
+    y = y + BUTTON_HEIGHT + 8
+
+    local actionX = PADDING
+    local actionY = y
+    local actionWidth = 132
+    local gap = 6
+    for i, action in ipairs(EHR.DebugV2.InjuryActions) do
+        local col = (i - 1) % 4
+        local row = math.floor((i - 1) / 4)
+        local btn = ISButton:new(actionX + col * (actionWidth + gap), actionY + row * (BUTTON_HEIGHT + gap),
+            actionWidth, BUTTON_HEIGHT, action.text, self, EHR_DebugMenuV2.onApplyVanillaInjury)
+        btn.internal = action.id
+        btn:initialise()
+        btn:instantiate()
+        btn.backgroundColor = c[action.color] or c.buttonBg
+        panel:addChild(btn)
+    end
+
+    local rows = math.ceil(#EHR.DebugV2.InjuryActions / 4)
+    local visualY = actionY + rows * (BUTTON_HEIGHT + gap) + 8
+    for i, action in ipairs(EHR.DebugV2.VisualActions) do
+        local col = (i - 1) % 4
+        local row = math.floor((i - 1) / 4)
+        local btn = ISButton:new(actionX + col * (actionWidth + gap), visualY + row * (BUTTON_HEIGHT + gap),
+            actionWidth, BUTTON_HEIGHT, action.text, self, EHR_DebugMenuV2.onApplyVanillaVisual)
+        btn.internal = action.id
+        btn:initialise()
+        btn:instantiate()
+        btn.backgroundColor = c[action.color] or c.buttonBg
+        panel:addChild(btn)
+    end
+
+    local visualRows = math.ceil(#EHR.DebugV2.VisualActions / 4)
+    panel.statusY = visualY + visualRows * (BUTTON_HEIGHT + gap) + 14
+    panel.menuRef = self
+
+    panel.render = function(self)
+        ISPanel.render(self)
+        self:renderInjuriesStatus()
+    end
+
+    panel.renderInjuriesStatus = function(self)
+        local menu = self.menuRef
+        if not menu or not menu.player then return end
+
+        local c = EHR.DebugV2.Colors
+        local x = PADDING
+        local y = self.statusY or 150
+        local selectedPart = getSelectedInjuryPartId()
+        local selectedBodyPart = debugGetBodyPart(menu.player, selectedPart)
+        local selectedSummary = debugGetInjurySummary(selectedBodyPart)
+        local selectedColor = selectedSummary == "OK" and c.safe or c.warning
+
+        self:drawText("SELECTED BODY PART", x, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
+        y = y + 24
+        self:drawText(debugBodyPartDisplayName(selectedPart) .. ": " .. selectedSummary,
+            x + 10, y, selectedColor.r, selectedColor.g, selectedColor.b, selectedColor.a, FONT)
+        y = y + 32
+
+        self:drawText("VANILLA INJURIES", x, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
+        y = y + 24
+
+        local colWidth = 270
+        local col = 0
+        for _, partId in ipairs(EHR.DebugV2.BodyParts) do
+            local bodyPart = debugGetBodyPart(menu.player, partId)
+            local summary = debugGetInjurySummary(bodyPart)
+            local color = summary == "OK" and c.safe or c.warning
+            if summary:len() > 30 then
+                summary = summary:sub(1, 27) .. "..."
+            end
+
+            local drawX = x + 10 + (col * colWidth)
+            self:drawText(debugBodyPartDisplayName(partId) .. ": " .. summary,
+                drawX, y, color.r, color.g, color.b, color.a, FONT)
+
+            if col == 0 then
+                col = 1
+            else
+                col = 0
+                y = y + 18
+            end
+        end
+    end
+end
+
+function EHR_DebugMenuV2:onCycleSelectedInjuryPart(button)
+    local delta = button and tonumber(button.internal) or 1
+    local count = #EHR.DebugV2.BodyParts
+    local index = (EHR.DebugV2.SelectedInjuryPartIndex or 1) + delta
+    if index < 1 then index = count end
+    if index > count then index = 1 end
+    EHR.DebugV2.SelectedInjuryPartIndex = index
+end
+
+function EHR_DebugMenuV2:onApplyVanillaInjury(button)
+    if not self.player then return end
+    local injuryId = button and tostring(button.internal or "") or ""
+    if injuryId == "" then return end
+
+    local partId = getSelectedInjuryPartId()
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "ApplyVanillaInjury", {
+            partId = partId,
+            injuryId = injuryId,
+        })
+        EHR.DebugV2.Log(string.format("Apply injury %s to %s sent to server", injuryId, partId), "INJURIES", "INFO")
+        return
+    end
+
+    local ok = debugApplyVanillaInjury(self.player, partId, injuryId)
+    EHR.DebugV2.Log(string.format("Apply injury %s to %s -> %s", injuryId, partId, tostring(ok)), "INJURIES", "INFO")
+end
+
+function EHR_DebugMenuV2:onRandomVanillaInjury()
+    if not self.player then return end
+
+    local injuryPool = {
+        "scratch", "cut", "deep_wound", "glass", "bite",
+        "bleeding", "burn", "bullet", "fracture", "strain", "infect",
+    }
+    local partId = EHR.DebugV2.BodyParts[ZombRand(#EHR.DebugV2.BodyParts) + 1]
+    local injuryId = injuryPool[ZombRand(#injuryPool) + 1]
+
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "ApplyVanillaInjury", {
+            partId = partId,
+            injuryId = injuryId,
+        })
+        EHR.DebugV2.Log(string.format("Random injury %s to %s sent to server", injuryId, partId), "INJURIES", "WARN")
+        return
+    end
+
+    local ok = debugApplyVanillaInjury(self.player, partId, injuryId)
+    EHR.DebugV2.Log(string.format("Random injury %s to %s -> %s", injuryId, partId, tostring(ok)), "INJURIES", "WARN")
+end
+
+function EHR_DebugMenuV2:onClearSelectedVanillaInjury()
+    if not self.player then return end
+    local partId = getSelectedInjuryPartId()
+
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "ApplyVanillaInjury", {
+            partId = partId,
+            injuryId = "clear_part",
+        })
+        EHR.DebugV2.Log("Clear injury part sent to server: " .. partId, "INJURIES", "INFO")
+        return
+    end
+
+    debugApplyVanillaInjury(self.player, partId, "clear_part")
+    EHR.DebugV2.Log("Cleared vanilla injuries on " .. partId, "INJURIES", "INFO")
+end
+
+function EHR_DebugMenuV2:onClearAllVanillaInjuries()
+    if not self.player then return end
+
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "ClearVanillaInjuries", {})
+        EHR.DebugV2.Log("Clear all vanilla injuries sent to server", "INJURIES", "INFO")
+        return
+    end
+
+    debugClearAllVanillaInjuries(self.player)
+    EHR.DebugV2.Log("Cleared all vanilla injuries", "INJURIES", "INFO")
+end
+
+function EHR_DebugMenuV2:onApplyVanillaVisual(button)
+    if not self.player then return end
+    local visualId = button and tostring(button.internal or "") or ""
+    if visualId == "" then return end
+
+    local partId = getSelectedInjuryPartId()
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "ApplyVanillaVisual", {
+            partId = partId,
+            visualId = visualId,
+        })
+        EHR.DebugV2.Log(string.format("Apply visual %s to %s sent to server", visualId, partId), "INJURIES", "INFO")
+        return
+    end
+
+    local ok = debugApplyVanillaVisual(self.player, partId, visualId)
+    EHR.DebugV2.Log(string.format("Apply visual %s to %s -> %s", visualId, partId, tostring(ok)), "INJURIES", "INFO")
+end
+
+function EHR_DebugMenuV2:onClearAllVanillaVisuals()
+    if not self.player then return end
+
+    if isClient() then
+        sendClientCommand(self.player, "EHR_Debug", "ClearVanillaVisuals", {})
+        EHR.DebugV2.Log("Clear all vanilla visuals sent to server", "INJURIES", "INFO")
+        return
+    end
+
+    debugClearAllVanillaVisuals(self.player)
+    EHR.DebugV2.Log("Cleared all vanilla blood/dirt visuals", "INJURIES", "INFO")
+end
+
+-- ============================================
 -- TAB CONTENT: MEDICATIONS
 -- ============================================
 
@@ -2232,17 +2745,28 @@ function EHR_DebugMenuV2:onClearSideEffects()
     end
 
     -- SP: Execute directly
-    local data = self.player:getModData()
+    if EHR.Medication and EHR.Medication.ClearAllSideEffectState then
+        EHR.Medication.ClearAllSideEffectState(self.player, true)
+    else
+        local data = self.player:getModData()
 
-    if data.EHR_Medication and data.EHR_Medication.activeSideEffects then
-        for id, _ in pairs(data.EHR_Medication.activeSideEffects) do
-            data.EHR_Medication.activeSideEffects[id] = nil
+        if data.EHR_Medication and data.EHR_Medication.activeSideEffects then
+            for id, _ in pairs(data.EHR_Medication.activeSideEffects) do
+                data.EHR_Medication.activeSideEffects[id] = nil
+            end
         end
-    end
 
-    if data.EHR_SideEffects then
-        for id, _ in pairs(data.EHR_SideEffects) do
-            data.EHR_SideEffects[id] = nil
+        if data.EHR_Medication and data.EHR_Medication.activeGeneralEffects then
+            data.EHR_Medication.activeGeneralEffects.staminaLock = nil
+            data.EHR_Medication.activeGeneralEffects.fatigueBlock = nil
+            data.EHR_Medication.activeGeneralEffects.combatStimulants = nil
+            data.EHR_Medication.activeGeneralEffects.mpFatigueRecovery = nil
+        end
+
+        if data.EHR_SideEffects then
+            for id, _ in pairs(data.EHR_SideEffects) do
+                data.EHR_SideEffects[id] = nil
+            end
         end
     end
 
@@ -2295,15 +2819,19 @@ function EHR_DebugMenuV2:onAddSideEffect(button)
     end
 
     -- SP: Execute directly
-    local data = self.player:getModData()
-    data.EHR_Medication = data.EHR_Medication or {}
-    data.EHR_Medication.activeSideEffects = data.EHR_Medication.activeSideEffects or {}
+    if EHR.Medication and EHR.Medication.ApplySideEffect then
+        EHR.Medication.ApplySideEffect(self.player, effectId, { force = true })
+    else
+        local data = self.player:getModData()
+        data.EHR_Medication = data.EHR_Medication or {}
+        data.EHR_Medication.activeSideEffects = data.EHR_Medication.activeSideEffects or {}
 
-    data.EHR_Medication.activeSideEffects[effectId] = {
-        startTime = os.time(),
-        duration = 6,
-        severity = 0.5,
-    }
+        data.EHR_Medication.activeSideEffects[effectId] = {
+            startTime = getGameTime() and getGameTime():getWorldAgeHours() or 0,
+            duration = 6,
+            severity = 0.5,
+        }
+    end
 
     EHR.DebugV2.Log(string.format("Added side effect: %s", effectId), "MEDICATIONS", "INFO")
 end

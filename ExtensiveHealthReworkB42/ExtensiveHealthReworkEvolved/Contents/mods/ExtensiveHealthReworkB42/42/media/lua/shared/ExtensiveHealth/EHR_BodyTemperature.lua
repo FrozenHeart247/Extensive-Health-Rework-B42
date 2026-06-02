@@ -14,6 +14,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.BodyTemp = {}
@@ -171,6 +172,39 @@ function EHR.BodyTemp.IsEnabled()
     return true -- Default enabled
 end
 
+local function EHR_BodyTempGetRealisticTemperatureCompatMode()
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local mode = SandboxVars.ExtensiveHealthRework.RealisticTemperatureCompatibility
+        mode = tonumber(mode)
+        if mode == 2 then return "enabled" end
+        if mode == 3 then return "disabled" end
+    end
+
+    return "auto"
+end
+
+function EHR.BodyTemp.DetectRealisticTemperatureActive()
+    if _G and _G.RC_TempSim then return true end
+
+    if getActivatedMods then
+        local ok, activeMods = pcall(getActivatedMods)
+        if ok and activeMods and activeMods.contains then
+            return activeMods:contains("RC_RealisticColdMod")
+                or activeMods:contains("RealisticTemperature")
+        end
+    end
+
+    return false
+end
+
+function EHR.BodyTemp.IsRealisticTemperatureActive()
+    local mode = EHR_BodyTempGetRealisticTemperatureCompatMode()
+    if mode == "enabled" then return true end
+    if mode == "disabled" then return false end
+
+    return EHR.BodyTemp.DetectRealisticTemperatureActive()
+end
+
 function EHR.BodyTemp.GetSpeedMultiplier()
     if SandboxVars and SandboxVars.ExtensiveHealthRework then
         local speed = SandboxVars.ExtensiveHealthRework.TemperatureChangeSpeed
@@ -318,12 +352,43 @@ function EHR.BodyTemp.ReadVanillaBodyTemperature(player)
     return EHR.BodyTemp.Config.normalTemp or 36.6
 end
 
+local function EHR_BodyTempWriteRealisticTemperatureCore(player, bodyTemp)
+    if not player or not bodyTemp then return false end
+    if not (EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive()) then
+        return false
+    end
+
+    local modData = nil
+    pcall(function() modData = player:getModData() end)
+    local rec = modData and modData.RC_TempSimBodyTemp or nil
+    if type(rec) ~= "table" then return false end
+
+    if EHR.RealisticTemperatureCompat
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever
+            and EHR.RealisticTemperatureCompat.ShouldOwnFever(player)
+            and rec._ehrRtBaseCore == nil
+            and type(rec.core) == "number" then
+        rec._ehrRtBaseCore = rec.core
+    end
+
+    rec.core = bodyTemp
+    rec._lastBodyTempStatsApplied = bodyTemp
+    rec._bodyTempDirty = true
+    rec._ehrDiseaseFeverCore = bodyTemp
+    return true
+end
+
 function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     if not player then return false end
     bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
     if not bodyTemp then return false end
 
-    local wrote = false
+    -- Disease fever is owned by EHR even when an external temperature mod is
+    -- active. Environmental body temperature still follows vanilla/compat mods,
+    -- but fever must be mirrored to vanilla fields so moodles, the temperature
+    -- tab, and other systems can actually see it.
+
+    local wrote = EHR_BodyTempWriteRealisticTemperatureCore(player, bodyTemp)
     local bodyDamage = nil
     pcall(function() bodyDamage = player:getBodyDamage() end)
     if bodyDamage and bodyDamage.setTemperature then
@@ -342,8 +407,6 @@ function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     return wrote
 end
 
-<<<<<<< Updated upstream
-=======
 function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
     if not player then return false end
     if EHR.RealisticTemperatureCompat
@@ -369,7 +432,6 @@ function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
     return EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
 end
 
->>>>>>> Stashed changes
 function EHR.BodyTemp.IsHypothermiaEnabled()
     if SandboxVars and SandboxVars.ExtensiveHealthRework then
         local enabled = SandboxVars.ExtensiveHealthRework.HypothermiaEnabled
@@ -506,6 +568,11 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [3] = 40.0,
         [4] = 40.0,
     },
+    cellulitis = {
+        [2] = 37.8,
+        [3] = 38.6,
+        [4] = 39.2,
+    },
     pneumonia = {
         [1] = 38.0,
         [2] = 40.0,
@@ -513,7 +580,7 @@ EHR.BodyTemp.DiseaseFeverTargets = EHR.BodyTemp.DiseaseFeverTargets or {
         [4] = 40.0,
     },
     common_cold = {
-        [2] = 37.5,
+        [2] = 37.6,
         [3] = 38.0,
     },
     tuberculosis = {
@@ -1144,9 +1211,34 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
     local normalTemp = cfg.normalTemp or 36.6
     local ambientTemp = nil
     local usedCharacterAir = false
+    local usedRealisticTemperatureAir = false
+
+    if EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive() then
+        local rt = _G and _G.RC_TempSim or nil
+        if rt and type(rt.getSimulatedTemperatureSample) == "function" then
+            local ok, sample = pcall(function()
+                return rt.getSimulatedTemperatureSample(player, { consumer = "ehr_body" })
+            end)
+            if ok and type(sample) == "table" then
+                ambientTemp = tonumber(sample.airC)
+            end
+        end
+        if not ambientTemp and rt and type(rt.getSimulatedTemperatureForPlayer) == "function" then
+            local ok, temp = pcall(function()
+                return rt.getSimulatedTemperatureForPlayer(player)
+            end)
+            if ok then
+                ambientTemp = tonumber(temp)
+            end
+        end
+        if ambientTemp then
+            usedCharacterAir = true
+            usedRealisticTemperatureAir = true
+        end
+    end
 
     local climate = getClimateManager and getClimateManager() or nil
-    if climate and climate.getAirTemperatureForCharacter then
+    if not ambientTemp and climate and climate.getAirTemperatureForCharacter then
         local ok, temp = pcall(function()
             return climate:getAirTemperatureForCharacter(player, false)
         end)
@@ -1242,6 +1334,7 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
         tempData.lastClothingInsulation = clothingInsulation
         tempData.lastClothingHeatBurden = clothingHeatBurden
         tempData.lastUsedCharacterAirTemp = usedCharacterAir
+        tempData.lastUsedRealisticTemperatureAir = usedRealisticTemperatureAir
     end
 
     return math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, targetTemp))
@@ -1290,14 +1383,27 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
     local vanillaTemp = EHR.BodyTemp.ReadVanillaBodyTemperature(player) or tempData.bodyTemp or cfg.normalTemp
     vanillaTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, vanillaTemp))
 
-    -- Vanilla owns environmental heating/cooling. EHR mirrors it for UI and
-    -- thresholds, and only nudges temperature while a disease fever exists.
     local oldTemp = tonumber(tempData.bodyTemp) or vanillaTemp
     local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+    local managedEnvironment = EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive()
+    local environmentTarget = vanillaTemp
 
-    tempData.environmentTargetTemp = vanillaTemp
-    tempData.bodyTemp = vanillaTemp
-    tempData.targetTemp = vanillaTemp
+    if managedEnvironment then
+        -- Realistic Temperature compatibility disables RT's body-temperature
+        -- loop, so EHR must own environmental core changes while still using RT
+        -- air/room samples from CalculateTargetTemp().
+        environmentTarget = EHR.BodyTemp.CalculateTargetTemp(player) or vanillaTemp
+        environmentTarget = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, environmentTarget))
+        tempData.bodyTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, oldTemp))
+    else
+        -- Without RT compatibility, vanilla owns environmental heating/cooling.
+        -- EHR mirrors it for UI and thresholds, and only nudges disease fever.
+        tempData.bodyTemp = vanillaTemp
+        oldTemp = tonumber(oldTemp) or vanillaTemp
+    end
+
+    tempData.environmentTargetTemp = environmentTarget
+    tempData.targetTemp = environmentTarget
 
     if hasFeverSource then
         local gameTime = getGameTime and getGameTime() or nil
@@ -1320,11 +1426,11 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
     if hasFeverSource and tempData.diseaseTargetTemp then
         local diseaseTarget = math.max(
             cfg.minBodyTemp or 28.0,
-            math.min(cfg.maxBodyTemp or 42.0, tonumber(tempData.diseaseTargetTemp) or vanillaTemp)
+            math.min(cfg.maxBodyTemp or 42.0, tonumber(tempData.diseaseTargetTemp) or environmentTarget)
         )
         local current = oldTemp
-        if diseaseTarget >= vanillaTemp and current < vanillaTemp then
-            current = vanillaTemp
+        if diseaseTarget >= environmentTarget and current < environmentTarget then
+            current = environmentTarget
         end
 
         local step = math.max(0.01, (cfg.baseChangeRate or 0.8) * (tonumber(deltaHours) or 0.05))
@@ -1339,6 +1445,15 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
         tempData.bodyTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, tempData.bodyTemp))
         tempData.targetTemp = diseaseTarget
         tempData.diseaseFeverActive = tempData.bodyTemp > ((cfg.normalTemp or 36.6) + 0.2)
+
+        if EHR.BodyTemp.WriteDiseaseBodyTemperature then
+            EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
+        end
+    elseif managedEnvironment then
+        local change = EHR.BodyTemp.CalculateChangeRate(tempData.bodyTemp, environmentTarget, deltaHours)
+        tempData.bodyTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, tempData.bodyTemp + change))
+        tempData.targetTemp = environmentTarget
+        tempData.diseaseFeverActive = false
 
         if EHR.BodyTemp.WriteDiseaseBodyTemperature then
             EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
@@ -1420,7 +1535,7 @@ function EHR.BodyTemp.ApplyColdEffects(player, tempData, currentHour)
                 said = EHR.Dialogue.SayPeriodic(player, text, 1)  -- 1 = always (cooldown handles timing)
             else
                 -- Fallback if dialogue system not loaded
-                player:Say(text)
+                EHR.Locale.Say(player, text)
                 said = true
             end
 
@@ -1459,7 +1574,7 @@ function EHR.BodyTemp.ApplyHotEffects(player, tempData, currentHour)
                 said = EHR.Dialogue.SayPeriodic(player, text, 1)  -- 1 = always (cooldown handles timing)
             else
                 -- Fallback if dialogue system not loaded
-                player:Say(text)
+                EHR.Locale.Say(player, text)
                 said = true
             end
 
@@ -1915,6 +2030,9 @@ local function processPlayerTick(player)
 
     -- Legacy no-op: vanilla is authoritative for environmental temperature.
     EHR.BodyTemp.SuppressVanillaTemperature(player)
+    if EHR.BodyTemp.MaintainDiseaseFeverBridge then
+        EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+    end
 
     -- Throttled updates for our system
     local state = getTickState(player)
@@ -1972,6 +2090,9 @@ function EHR.BodyTemp.OnTick()
         local player = getSpecificPlayer(0)
         if player and EHR.BodyTemp.IsEnabled() then
             EHR.BodyTemp.SuppressVanillaTemperature(player)
+            if EHR.BodyTemp.MaintainDiseaseFeverBridge then
+                EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+            end
         end
         return
     end

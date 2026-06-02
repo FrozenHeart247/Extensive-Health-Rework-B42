@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework - Tooltip Data
 
@@ -156,7 +157,7 @@ EHR.Tooltips.Data = {
         category = "Medical Supply",
         description = "Sealed pack of clean bandages.",
         effects = {
-            "Applies as a normal clean bandage",
+            "Unpack to get a clean bandage",
             "Holds up to 5 bandages",
             "Can be refilled with clean bandages",
         },
@@ -216,6 +217,19 @@ EHR.Tooltips.Data = {
         effects = {
             "Uses vanilla sleeping pill behavior",
             "Tracked by EHR medication monitoring",
+            "Multi-dose bottle",
+        },
+    },
+    ["Base.PillsAntiDep"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Antidepressant tablets.",
+        relieves = {"Stress", "Insomnia sleep lock"},
+        cures = {"Insomnia"},
+        treatmentTime = "168 hours (14-dose course)",
+        effects = {
+            "Allows sleep while the dose is active",
+            "Long-course insomnia treatment",
             "Multi-dose bottle",
         },
     },
@@ -320,6 +334,21 @@ EHR.Tooltips.Data = {
         sideEffects = {"Whole-Body Muscle Pain"},
         warning = "Muscle pain begins after the booster wears off and lasts 6 hours.",
     },
+    ["ExtensiveHealth.CombatStimulants"] = {
+        category = "Military Stimulant",
+        tier = 3,
+        description = "Restricted battlefield stimulant bottle.",
+        relieves = {"Stress", "Panic", "Unhappiness", "Endurance loss"},
+        effects = {
+            "Doubles equipped weapon attack speed for 3 hours",
+            "Blocks stress, panic and unhappiness while active",
+            "Strong endurance support without locking stamina to 100%",
+            "8-dose bottle",
+            "Slightly increases running speed",
+        },
+        sideEffects = {"Combat Stimulant Crash"},
+        warning = "Crash after use: 80% fatigue, dehydration and limb muscle pain for 6 hours.",
+    },
     ["ExtensiveHealth.CoughSuppressant"] = {
         category = "OTC Medication",
         tier = 1,
@@ -379,6 +408,14 @@ EHR.Tooltips.Data = {
         cures = {"Food Poisoning", "Toxin Poisoning"},
         treatmentTime = "Food poisoning: 6 hours; toxin poisoning: 12 hours",
         effects = {"Absorbs toxins", "CURES ingested poison/toxin illness"},
+    },
+    ["ExtensiveHealth.HomeMadeActivatedCharcoal"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Homemade activated charcoal preparation.",
+        cures = {"Food Poisoning", "Toxin Poisoning"},
+        treatmentTime = "Food poisoning: 6 hours; toxin poisoning: 12 hours",
+        effects = {"Absorbs toxins", "CURES ingested poison/toxin illness", "Crafted with charcoal and lemon"},
     },
     ["ExtensiveHealth.AntiparasiticPills"] = {
         category = "Prescription",
@@ -473,6 +510,18 @@ EHR.Tooltips.Data = {
         cures = {"Delirium"},
         treatmentTime = "96 hours (8-dose course)",
         effects = {"CURES stress-induced delirium"},
+    },
+    ["ExtensiveHealth.DualOrexinReceptor"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Dual orexin receptor sleep medication.",
+        relieves = {"Insomnia sleep lock", "Stress"},
+        cures = {"Insomnia"},
+        treatmentTime = "96 hours (8-dose course)",
+        effects = {
+            "Allows sleep while the dose is active",
+            "CURES insomnia over a full course",
+        },
     },
 
     -- =========================================
@@ -703,12 +752,12 @@ end
 
 -- Get tier name
 function EHR.Tooltips.GetTierName(tier)
-    if tier == 0 then return "Basic"
-    elseif tier == 1 then return "OTC (Tier 1)"
-    elseif tier == 2 then return "Prescription (Tier 2)"
-    elseif tier == 3 then return "Clinical (Tier 3)"
-    elseif tier == 4 then return "Experimental (Tier 4)"
-    else return "Unknown"
+    if tier == 0 then return EHR.Locale.Text("Tooltip_EHR_Tier_Basic", "Basic")
+    elseif tier == 1 then return EHR.Locale.Text("Tooltip_EHR_Tier_OTC", "OTC (Tier 1)")
+    elseif tier == 2 then return EHR.Locale.Text("Tooltip_EHR_Tier_Prescription", "Prescription (Tier 2)")
+    elseif tier == 3 then return EHR.Locale.Text("Tooltip_EHR_Tier_Clinical", "Clinical (Tier 3)")
+    elseif tier == 4 then return EHR.Locale.Text("Tooltip_EHR_Tier_Experimental", "Experimental (Tier 4)")
+    else return EHR.Locale.Text("Tooltip_EHR_Tier_Unknown", "Unknown")
     end
 end
 
@@ -720,6 +769,7 @@ function EHR.Tooltips.GetCategoryColor(category)
         ["Medical Supply"] = {r=0.6, g=0.6, b=0.6},
         ["Emergency"] = {r=1.0, g=0.3, b=0.1},
         ["Stimulant"] = {r=1.0, g=0.65, b=0.2},
+        ["Military Stimulant"] = {r=1.0, g=0.65, b=0.2},
         ["OTC Medication"] = {r=0.3, g=0.8, b=0.3},
         ["Prescription"] = {r=0.3, g=0.6, b=1.0},
         ["Clinical"] = {r=0.8, g=0.3, b=0.8},

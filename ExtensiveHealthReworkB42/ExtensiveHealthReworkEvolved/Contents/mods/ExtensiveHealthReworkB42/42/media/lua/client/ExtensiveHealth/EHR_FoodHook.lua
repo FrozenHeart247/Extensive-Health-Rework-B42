@@ -19,6 +19,7 @@ EHR.FoodHook = {}
 EHR.FoodHook.initialized = false
 EHR.FoodHook.drinkInitialized = false
 EHR.FoodHook.worldDrinkInitialized = false
+EHR.FoodHook.lastFoodRisk = EHR.FoodHook.lastFoodRisk or {}
 EHR.FoodHook.lastDrinkRisk = EHR.FoodHook.lastDrinkRisk or {}
 
 local function shouldBlockEatingForTetanus(action)
@@ -75,6 +76,21 @@ local function startsWith(value, prefix)
     return type(value) == "string" and string.sub(value, 1, string.len(prefix)) == prefix
 end
 
+local function getLocalPlayerKey(player)
+    local playerNum = 0
+    if player and player.getPlayerNum then
+        local success, result = pcall(function() return player:getPlayerNum() end)
+        if success and result then playerNum = result end
+    end
+    return tostring(playerNum)
+end
+
+local function getActionItemKey(player, item, prefix)
+    local itemId = safeCall(item, "getID") or tostring(item)
+    local itemType = safeCall(item, "getFullType") or safeCall(item, "getType") or "unknown"
+    return tostring(prefix or "item") .. ":" .. getLocalPlayerKey(player) .. ":" .. tostring(itemId) .. ":" .. tostring(itemType)
+end
+
 local function isTaintedWaterSource(source)
     if not source then return false end
     if source.isTaintedWater then
@@ -99,7 +115,8 @@ local function getWorldWaterSourceType(waterObject)
     if not waterObject then return "unknown" end
 
     local customName = safeProperty(waterObject, "CustomName")
-    if customName == "Toilet" then
+    local customNameLower = customName and string.lower(tostring(customName)) or ""
+    if customNameLower:find("toilet", 1, true) then
         return "toilet"
     elseif customName == "Dispenser" then
         return "tap"
@@ -111,6 +128,9 @@ local function getWorldWaterSourceType(waterObject)
     end
 
     local objectName = safeCall(waterObject, "getName")
+    if objectName and string.find(string.lower(tostring(objectName)), "toilet", 1, true) then
+        return "toilet"
+    end
     if objectName and string.find(string.lower(tostring(objectName)), "rain collector", 1, true) then
         return "rainCollector"
     end
@@ -134,12 +154,7 @@ function EHR.FoodHook.HandleWaterDrink(player, waterSource, sourceType)
     sourceType = sourceType or "tainted"
 
     local currentHour = getGameTime():getWorldAgeHours()
-    local playerNum = 0
-    if player.getPlayerNum then
-        local success, result = pcall(function() return player:getPlayerNum() end)
-        if success and result then playerNum = result end
-    end
-    local playerKey = tostring(playerNum)
+    local playerKey = getLocalPlayerKey(player)
     local key = playerKey .. ":" .. tostring(sourceType)
     local lastHour = EHR.FoodHook.lastDrinkRisk[key]
     if lastHour and (currentHour - lastHour) < 0.001 then
@@ -147,10 +162,46 @@ function EHR.FoodHook.HandleWaterDrink(player, waterSource, sourceType)
     end
     EHR.FoodHook.lastDrinkRisk[key] = currentHour
 
-    if EHR.Environmental and EHR.Environmental.OnDrink then
-        EHR.Environmental.OnDrink(player, waterSource, sourceType)
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "DrinkWaterRisk", {
+            sourceType = tostring(sourceType),
+        })
+        return
+    end
+
+    if EHR.Environmental and EHR.Environmental.OnDrinkWater then
+        EHR.Environmental.OnDrinkWater(player, waterSource, sourceType)
     elseif EHR.Disease and EHR.Disease.TryContract then
         EHR.Disease.TryContract(player, "food_poisoning", 0.25)
+    end
+end
+
+function EHR.FoodHook.HandleFoodConsumption(player, item)
+    if not player or not item then return end
+    if player ~= getSpecificPlayer(0) then return end
+
+    local currentHour = getGameTime():getWorldAgeHours()
+    local key = getActionItemKey(player, item, "food")
+    local lastHour = EHR.FoodHook.lastFoodRisk[key]
+    if lastHour and (currentHour - lastHour) < 0.001 then
+        return
+    end
+    EHR.FoodHook.lastFoodRisk[key] = currentHour
+
+    if EHR.DEBUG then
+        EHR.Log("FoodHook: Player ate " .. (safeCall(item, "getDisplayName") or safeCall(item, "getName") or "unknown"))
+    end
+
+    if EHR.Disease and EHR.Disease.CheckFoodRisk then
+        EHR.Disease.CheckFoodRisk(player, item)
+    end
+end
+
+local function handleCompletedFoodAction(action)
+    if not action or action.EHR_FoodRiskHandled then return end
+    action.EHR_FoodRiskHandled = true
+    if action.item and action.character then
+        EHR.FoodHook.HandleFoodConsumption(action.character, action.item)
     end
 end
 
@@ -199,7 +250,11 @@ function EHR.FoodHook.Initialize()
             return false
         end
 
-        return originalComplete(self)
+        local result = originalComplete(self)
+        if result ~= false then
+            handleCompletedFoodAction(self)
+        end
+        return result
     end
 
     ISEatFoodAction.serverStop = function(self)
@@ -233,25 +288,11 @@ function EHR.FoodHook.Initialize()
 
         -- Call original first
         originalPerform(self)
-
-        -- Now check for disease risk
-        if self.item and self.character then
-            local player = self.character
-
-            -- Only process for local player
-            if player == getSpecificPlayer(0) then
-                EHR.Log("FoodHook: Player ate " .. (self.item:getDisplayName() or "unknown"))
-
-                -- Check disease risk
-                if EHR.Disease and EHR.Disease.CheckFoodRisk then
-                    EHR.Disease.CheckFoodRisk(player, self.item)
-                end
-            end
-        end
+        handleCompletedFoodAction(self)
     end
 
     EHR.FoodHook.initialized = true
-    EHR.Log("FoodHook: ISEatFoodAction.perform hooked successfully")
+    EHR.Log("FoodHook: ISEatFoodAction complete/perform hooked successfully")
 end
 
 --[[
@@ -266,23 +307,39 @@ function EHR.FoodHook.InitializeDrink()
         return
     end
 
+    local originalDrinkComplete = ISDrinkFromBottle.complete
     local originalDrinkPerform = ISDrinkFromBottle.perform
 
-    ISDrinkFromBottle.perform = function(self)
-        -- Call original first
-        originalDrinkPerform(self)
+    local function handleCompletedBottleDrinkAction(action)
+        if not action or action.EHR_BottleWaterRiskHandled then return end
+        action.EHR_BottleWaterRiskHandled = true
+        if action.item and action.character then
+            local player = action.character
 
-        if self.item and self.character then
-            local player = self.character
-
-            if player == getSpecificPlayer(0) and isTaintedWaterSource(self.item) then
-                EHR.Log("FoodHook: Player drank tainted bottled water")
-                EHR.FoodHook.HandleWaterDrink(player, self.item, "tainted")
+            if player == getSpecificPlayer(0) and isTaintedWaterSource(action.item) then
+                if EHR.DEBUG then
+                    EHR.Log("FoodHook: Player drank tainted bottled water")
+                end
+                EHR.FoodHook.HandleWaterDrink(player, action.item, "tainted")
             end
         end
     end
 
-    EHR.Log("FoodHook: ISDrinkFromBottle.perform hooked successfully")
+    ISDrinkFromBottle.complete = function(self)
+        local result = originalDrinkComplete(self)
+        if result ~= false then
+            handleCompletedBottleDrinkAction(self)
+        end
+        return result
+    end
+
+    ISDrinkFromBottle.perform = function(self)
+        -- Call original first
+        originalDrinkPerform(self)
+        handleCompletedBottleDrinkAction(self)
+    end
+
+    EHR.Log("FoodHook: ISDrinkFromBottle complete/perform hooked successfully")
     EHR.FoodHook.drinkInitialized = true
 end
 
@@ -295,27 +352,41 @@ function EHR.FoodHook.InitializeWorldDrink()
     end
 
     local originalTakeWaterComplete = ISTakeWaterAction.complete
+    local originalTakeWaterPerform = ISTakeWaterAction.perform
+
+    local function handleCompletedWorldDrinkAction(action)
+        -- item == nil means the player drank directly from the world object.
+        -- Filling a bottle is handled later by ISDrinkFromBottle when that water is consumed.
+        if not action or action.item ~= nil or not action.character or not action.waterObject then return end
+        if action.EHR_WorldWaterRiskHandled then return end
+        action.EHR_WorldWaterRiskHandled = true
+
+        local player = action.character
+        if player == getSpecificPlayer(0) then
+            local sourceType = getWorldWaterSourceType(action.waterObject)
+            if EHR.DEBUG then
+                EHR.Log("FoodHook: Player drank from world water source: " .. tostring(sourceType))
+            end
+            EHR.FoodHook.HandleWaterDrink(player, action.waterObject, sourceType)
+        end
+    end
 
     ISTakeWaterAction.complete = function(self)
         local result = originalTakeWaterComplete(self)
-
-        -- item == nil means the player drank directly from the world object.
-        -- Filling a bottle is handled later by ISDrinkFromBottle when that water is consumed.
-        if self and self.item == nil and self.character and self.waterObject then
-            local player = self.character
-            if player == getSpecificPlayer(0) then
-                local sourceType = getWorldWaterSourceType(self.waterObject)
-                if EHR.DEBUG then
-                    EHR.Log("FoodHook: Player drank from world water source: " .. tostring(sourceType))
-                end
-                EHR.FoodHook.HandleWaterDrink(player, self.waterObject, sourceType)
-            end
-        end
+        handleCompletedWorldDrinkAction(self)
 
         return result
     end
 
-    EHR.Log("FoodHook: ISTakeWaterAction.complete hooked successfully")
+    ISTakeWaterAction.perform = function(self)
+        originalTakeWaterPerform(self)
+        -- In multiplayer, direct world-water drinking may only reach the
+        -- client perform path. The duplicate guard in HandleWaterDrink keeps
+        -- solo complete+perform from rolling twice.
+        handleCompletedWorldDrinkAction(self)
+    end
+
+    EHR.Log("FoodHook: ISTakeWaterAction complete/perform hooked successfully")
     EHR.FoodHook.worldDrinkInitialized = true
 end
 
@@ -348,6 +419,8 @@ end
 -- Reset handler for death/respawn
 function EHR.FoodHook.Reset()
     -- The action hook is global. Reinstalling it after respawn stacks wrappers.
+    EHR.FoodHook.lastFoodRisk = {}
+    EHR.FoodHook.lastDrinkRisk = {}
     EHR.Log("FoodHook: Reset - global hook remains installed")
 end
 

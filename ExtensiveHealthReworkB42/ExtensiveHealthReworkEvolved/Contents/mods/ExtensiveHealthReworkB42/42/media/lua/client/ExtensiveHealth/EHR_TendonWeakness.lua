@@ -8,6 +8,7 @@
 
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Dialogue"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.TendonWeakness = EHR.TendonWeakness or {}
@@ -208,7 +209,7 @@ function EHR.TendonWeakness.SayFallLine(player, state)
     if EHR.Dialogue and EHR.Dialogue.SayPeriodic then
         EHR.Dialogue.SayPeriodic(player, line, 1)
     else
-        player:Say(line)
+        EHR.Locale.Say(player, line)
     end
 end
 
@@ -228,7 +229,7 @@ function EHR.TendonWeakness.SayTetanusFallLine(player, state)
     if EHR.Dialogue and EHR.Dialogue.SayPeriodic then
         EHR.Dialogue.SayPeriodic(player, line, 1)
     else
-        player:Say(line)
+        EHR.Locale.Say(player, line)
     end
 end
 

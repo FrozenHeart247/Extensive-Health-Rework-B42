@@ -6,6 +6,7 @@
 ]]--
 
 EHR = EHR or {}
+require "ExtensiveHealth/EHR_Localization"
 EHR.VERSION = "2.8.1"  -- Temperature rework, blood spoilage, MP fixes, Lifestyle compat improvements
 
 -- Debug flag - default value (overridden by sandbox setting)
@@ -265,6 +266,11 @@ function EHR.OnPlayerDeath(player)
 
     local playerID = tostring(player:getUsername() or player:getPlayerNum())
 
+    local modData = player:getModData()
+    if modData then
+        modData.EHR_DeadCharacter = true
+    end
+
     -- Print to console for debugging
     print("=====================================")
     print("[EHR] PLAYER DEATH REPORT")
@@ -305,11 +311,80 @@ function EHR.IsDebugMode()
     return EHR.DEBUG
 end
 
--- Simple logging function
-function EHR.Log(message)
-    if EHR.IsDebugMode() then
-        print("[EHR] " .. message)
+function EHR.IsVerboseLoggingEnabled()
+    if EHR.VerboseLogging == true or EHR.DEBUG_LOGGING == true then
+        return true
     end
+
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local sandbox = SandboxVars.ExtensiveHealthRework
+        if sandbox.VerboseLogging ~= nil then
+            return sandbox.VerboseLogging == true
+        end
+        if sandbox.DebugLogging ~= nil then
+            return sandbox.DebugLogging == true
+        end
+    end
+
+    return false
+end
+
+function EHR.ShouldLog(message)
+    if EHR.IsVerboseLoggingEnabled() then
+        return true
+    end
+
+    local text = string.lower(tostring(message or ""))
+    return string.find(text, "error", 1, true) ~= nil
+        or string.find(text, "warning", 1, true) ~= nil
+        or string.find(text, "failed", 1, true) ~= nil
+end
+
+-- Quiet by default. Debug menu access should not spam the console every tick.
+function EHR.Log(message)
+    if EHR.ShouldLog(message) then
+        print("[EHR] " .. tostring(message))
+    end
+end
+
+function EHR.GetItemIconTexture(item)
+    if not item then return nil end
+
+    local texture = nil
+    local ok, value
+
+    if item.getTex then
+        ok, value = pcall(function() return item:getTex() end)
+        if ok and value then texture = value end
+    end
+
+    if not texture and item.getTexture then
+        ok, value = pcall(function() return item:getTexture() end)
+        if ok and value then texture = value end
+    end
+
+    if not texture and item.getNormalTexture then
+        ok, value = pcall(function() return item:getNormalTexture() end)
+        if ok and value then texture = value end
+    end
+
+    if texture and texture.splitIcon then
+        ok, value = pcall(function() return texture:splitIcon() end)
+        if ok and value then return value end
+    end
+
+    return texture
+end
+
+function EHR.SetContextOptionIcon(option, item)
+    if not option or not item or option.iconTexture then return option end
+
+    local texture = EHR.GetItemIconTexture and EHR.GetItemIconTexture(item) or nil
+    if texture then
+        option.iconTexture = texture
+    end
+
+    return option
 end
 
 --[[
@@ -328,8 +403,9 @@ function EHR.InitializePlayer(player)
     EHR.Log("Initializing player health data...")
 
     -- BUG FIX: Preserve existing blood type if present (fixes blood type changing on save/load)
-    local existingBloodType = modData.EHR_Blood and modData.EHR_Blood.bloodType
-    local existingVolume = modData.EHR_Blood and modData.EHR_Blood.currentVolume
+    local isDeadCharacterData = modData.EHR_DeadCharacter == true
+    local existingBloodType = (not isDeadCharacterData) and modData.EHR_Blood and modData.EHR_Blood.bloodType or nil
+    local existingVolume = (not isDeadCharacterData) and modData.EHR_Blood and modData.EHR_Blood.currentVolume or nil
 
     -- Determine if we're in MP context
     local playerUsername = player:getUsername() or ("Player" .. player:getPlayerNum())
@@ -374,6 +450,7 @@ function EHR.InitializePlayer(player)
         lastRegenHour = 0,      -- Game hour of last regeneration (for elapsed time calculation)
     }
 
+    modData.EHR_DeadCharacter = nil
     modData.EHR_Initialized = true
     modData.EHR_Version = EHR.VERSION
 
@@ -524,6 +601,44 @@ local function handleInitDataRequest(player, data)
     end
 end
 
+function EHR.SyncEHRModDataToClient(player)
+    if not player or not sendServerCommand then return false end
+
+    local data = player:getModData()
+    if not data then return false end
+
+    sendServerCommand(player, "EHR_Sync", "UpdateModData", {
+        EHR_Sepsis = data.EHR_Sepsis,
+        EHR_Disease = data.EHR_Disease,
+        EHR_Blood = data.EHR_Blood,
+        EHR_WoundInfection = data.EHR_WoundInfection,
+        EHR_WoundInfections = data.EHR_WoundInfections,
+        EHR_Medication = data.EHR_Medication,
+        EHR_MedicalJournal = data.EHR_MedicalJournal,
+        EHR_Temperature = data.EHR_Temperature,
+        EHR_KnownDiseases = data.EHR_KnownDiseases,
+        EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
+        EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
+        EHR_CorpseSickness = data.EHR_CorpseSickness,
+        EHR_KnoxCure = data.EHR_KnoxCure,
+    })
+
+    return true
+end
+
+function EHR.SafeTransmitModData(player)
+    if not player then return false end
+
+    if isServer and isServer() then
+        return EHR.SyncEHRModDataToClient(player)
+    end
+
+    -- In SP/client contexts the local player modData is already available.
+    -- Avoid full transmitModData here: other mods store live client-side state
+    -- in the same table, and broad syncs can roll that state backwards.
+    return true
+end
+
 local function processPlayerTick(player)
     if not player then return end
     if not player:isAlive() then return end
@@ -553,11 +668,13 @@ local function processPlayerTick(player)
         end
     end
 
-    if isServer and isServer() and player.transmitModData then
+    if isServer and isServer() then
         state.sync = state.sync + 1
         if state.sync >= SYNC_TICK_INTERVAL then
             state.sync = 0
-            pcall(function() player:transmitModData() end)
+            if not EHR.SyncEHRModDataToClient(player) then
+                EHR.Log("EHR MP sync skipped: sendServerCommand unavailable")
+            end
         end
     end
 end
@@ -616,7 +733,9 @@ function EHR.OnCreatePlayer(playerIndex, player)
         modData.EHR_CorpseSickness
     )
 
-    if hasExistingData then
+    local isDeadCharacterData = modData and modData.EHR_DeadCharacter == true
+
+    if hasExistingData and not isDeadCharacterData then
         EHR.Log("OnCreatePlayer: Existing EHR data found, preserving player state")
         -- Log which fields exist for debugging
         if EHR.DEBUG then
@@ -638,6 +757,10 @@ function EHR.OnCreatePlayer(playerIndex, player)
         return
     end
 
+    if isDeadCharacterData then
+        EHR.Log("OnCreatePlayer: Dead-character EHR data found, forcing fresh blood type roll")
+    end
+
     -- CRITICAL: Log when we're about to wipe data - this helps debug data loss reports
     print("[EHR WARNING] OnCreatePlayer: No existing EHR data found for player " .. playerID .. " - initializing fresh state")
 
@@ -652,14 +775,15 @@ function EHR.OnCreatePlayer(playerIndex, player)
     -- BUG FIX: Clear ALL EHR modules, not just blood/disease (sepsis was persisting between characters!)
     modData = player:getModData()
     if modData then
-        -- BUG FIX: Preserve blood type - it should NEVER change once assigned
-        -- Blood type is a permanent characteristic, not something that resets on reconnect/death
-        local existingBloodType = modData.EHR_Blood and modData.EHR_Blood.bloodType
+        -- Preserve blood type only for the same living character. A newly-created
+        -- survivor after death should roll their own blood type.
+        local existingBloodType = (not isDeadCharacterData) and modData.EHR_Blood and modData.EHR_Blood.bloodType or nil
 
         -- Core systems
         modData.EHR_Initialized = nil
         modData.EHR_Blood = nil
         modData.EHR_Blood_Initialized = nil
+        modData.EHR_DeadCharacter = nil
 
         -- Restore blood type if it existed (will be used by InitializePlayer)
         if existingBloodType then

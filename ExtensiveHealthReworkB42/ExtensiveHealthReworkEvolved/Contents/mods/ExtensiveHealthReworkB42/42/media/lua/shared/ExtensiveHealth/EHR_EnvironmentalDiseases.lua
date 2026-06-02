@@ -20,6 +20,7 @@
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_DiseaseDefinitions"
 require "ExtensiveHealth/EHR_BodyTemperature"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Environmental = {}
@@ -100,6 +101,33 @@ EHR.Environmental.Config = {
 
 -- Track environmental exposure per player
 EHR.Environmental.ExposureData = {}
+EHR.Environmental.ClientSnapshots = EHR.Environmental.ClientSnapshots or {}
+
+function EHR.Environmental.GetPlayerKey(player)
+    if not player then return "0" end
+
+    local onlineId = nil
+    if player.getOnlineID then
+        pcall(function() onlineId = player:getOnlineID() end)
+    end
+    if onlineId and onlineId >= 0 then
+        return tostring(onlineId)
+    end
+
+    local username = nil
+    if player.getUsername then
+        pcall(function() username = player:getUsername() end)
+    end
+    if username and username ~= "" then
+        return tostring(username)
+    end
+
+    local playerNum = nil
+    if player.getPlayerNum then
+        pcall(function() playerNum = player:getPlayerNum() end)
+    end
+    return tostring(playerNum or "0")
+end
 
 --[[
     Initialize exposure tracking for a player
@@ -107,7 +135,7 @@ EHR.Environmental.ExposureData = {}
 function EHR.Environmental.InitializePlayer(player)
     if not player then return end
 
-    local playerID = tostring(player:getUsername() or player:getPlayerNum())
+    local playerID = EHR.Environmental.GetPlayerKey(player)
 
     if EHR.Environmental.ExposureData[playerID] then
         return -- Already initialized
@@ -153,7 +181,7 @@ end
 ]]--
 function EHR.Environmental.GetExposureData(player)
     if not player then return nil end
-    local playerID = tostring(player:getUsername() or player:getPlayerNum())
+    local playerID = EHR.Environmental.GetPlayerKey(player)
     return EHR.Environmental.ExposureData[playerID]
 end
 
@@ -176,6 +204,19 @@ function EHR.Environmental.GetAirTemperature()
     return 15 -- Default moderate temp if can't read
 end
 
+local function EHR_EnvironmentalNormalizeBodyTempStat(value)
+    value = tonumber(value)
+    if not value then return nil end
+
+    -- Realistic Temperature stores CharacterStat.TEMPERATURE as real Celsius.
+    -- This module's legacy thresholds use vanilla's normalized 0-1-ish scale.
+    if value >= 25.0 and value <= 45.0 then
+        return ((value - 37.0) / 8.0) + 0.5
+    end
+
+    return value
+end
+
 --[[
     Get player body temperature (0-1 scale, ~0.5 = normal)
     B42: CharacterStat.TEMPERATURE through stats:get()
@@ -187,7 +228,7 @@ function EHR.Environmental.GetBodyTemperature(player)
     if CharacterStat and CharacterStat.TEMPERATURE then
         local success, temp = pcall(function() return stats:get(CharacterStat.TEMPERATURE) end)
         if success and temp then
-            return temp
+            return EHR_EnvironmentalNormalizeBodyTempStat(temp) or temp
         end
     end
 
@@ -195,7 +236,7 @@ function EHR.Environmental.GetBodyTemperature(player)
     if player.getTemperature then
         local success, temp = pcall(function() return player:getTemperature() end)
         if success and temp then
-            return temp
+            return EHR_EnvironmentalNormalizeBodyTempStat(temp) or temp
         end
     end
 
@@ -241,6 +282,10 @@ end
 ]]--
 function EHR.Environmental.SuppressVanillaTemperature(player)
     if not player then return end
+
+    if EHR.BodyTemp and EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive() then
+        return
+    end
 
     local modData = player:getModData()
     if not modData or not modData.EHR_Disease then return end
@@ -365,6 +410,10 @@ function EHR.Environmental.SuppressVanillaCold(player)
         end
     end
 
+    local realisticTemperatureActive = EHR.BodyTemp
+        and EHR.BodyTemp.IsRealisticTemperatureActive
+        and EHR.BodyTemp.IsRealisticTemperatureActive()
+
     if hasAnyModRespiratory then
         -- Mod HAS a respiratory disease - sync SICKNESS to mod's disease stage
         local targetSickness = 0
@@ -426,6 +475,12 @@ function EHR.Environmental.SuppressVanillaCold(player)
             end
         end
     else
+        if realisticTemperatureActive then
+            -- Let Realistic Temperature own vanilla cold/sickness when EHR is
+            -- not currently managing a respiratory/food/corpse sickness source.
+            return
+        end
+
         -- No mod respiratory disease - if vanilla SICKNESS is elevated (from vanilla cold), suppress it
         -- This prevents vanilla coughing moodle when mod shows "0 Conditions"
         if not hasCorpseExposure and not hasFoodSicknessSignal and currentSickness > 0.15 then
@@ -670,6 +725,124 @@ end
 -- COLD EXPOSURE LOGIC
 -- ============================================
 
+local function EHR_EnvironmentalIsControlledBathing(player)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if modData then
+        if modData.EHR_HeatStrokeColdBathActive == true then
+            local untilHour = tonumber(modData.EHR_HeatStrokeColdBathUntil) or 0
+            local worldHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+            if untilHour <= 0 or worldHour <= untilHour then
+                return true
+            end
+        end
+
+        if modData.IsDoingShower == true or
+           modData.isDoingShower == true or
+           modData.IsBathing == true or
+           modData.isBathing == true or
+           modData.LSBathing == true or
+           modData.LSShowering == true or
+           modData.takingBath == true or
+           modData.TakingBath == true then
+            return true
+        end
+    end
+
+    if EHR.LifestyleCompat and EHR.LifestyleCompat.IsShowering then
+        local ok, isShowering = pcall(EHR.LifestyleCompat.IsShowering, player)
+        if ok and isShowering == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function EHR_EnvironmentalReadThirst(player)
+    if not player then return 0 end
+    local stats = player:getStats()
+    if stats and CharacterStat and CharacterStat.THIRST then
+        local success, thirst = pcall(function() return stats:get(CharacterStat.THIRST) end)
+        if success and thirst then return tonumber(thirst) or 0 end
+    end
+    return 0
+end
+
+local function EHR_EnvironmentalClampNumber(value, minValue, maxValue, fallback)
+    value = tonumber(value)
+    if not value then return fallback end
+    if minValue and value < minValue then return minValue end
+    if maxValue and value > maxValue then return maxValue end
+    return value
+end
+
+function EHR.Environmental.BuildClientSnapshot(player)
+    if not player then return nil end
+
+    return {
+        hour = getGameTime() and getGameTime():getWorldAgeHours() or 0,
+        airTemp = EHR.Environmental.GetAirTemperature(),
+        bodyTemp = EHR.Environmental.GetBodyTemperature(player),
+        wetness = EHR.Environmental.GetWetness(player),
+        isIndoors = EHR.Environmental.IsIndoors(player) == true,
+        isNearHeat = EHR.Environmental.IsNearHeat(player) == true,
+        isExerting = EHR.Environmental.IsExerting(player) == true,
+        isInShade = EHR.Environmental.IsInShade(player) == true,
+        controlledBathing = EHR_EnvironmentalIsControlledBathing(player) == true,
+        headwearMultiplier = EHR.Environmental.GetHeatHeadwearMultiplier(player),
+        thirst = EHR_EnvironmentalReadThirst(player),
+    }
+end
+
+function EHR.Environmental.StoreClientSnapshot(player, args)
+    if not player or type(args) ~= "table" then return end
+
+    local playerID = EHR.Environmental.GetPlayerKey(player)
+    local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+
+    EHR.Environmental.ClientSnapshots[playerID] = {
+        hour = EHR_EnvironmentalClampNumber(args.hour, currentHour - 1.0, currentHour + 1.0, currentHour),
+        receivedHour = currentHour,
+        airTemp = EHR_EnvironmentalClampNumber(args.airTemp, -80, 80, EHR.Environmental.GetAirTemperature()),
+        bodyTemp = EHR_EnvironmentalClampNumber(args.bodyTemp, 0, 1.5, 0.5),
+        wetness = EHR_EnvironmentalClampNumber(args.wetness, 0, 1.5, 0),
+        isIndoors = args.isIndoors == true,
+        isNearHeat = args.isNearHeat == true,
+        isExerting = args.isExerting == true,
+        isInShade = args.isInShade == true,
+        controlledBathing = args.controlledBathing == true,
+        headwearMultiplier = EHR_EnvironmentalClampNumber(args.headwearMultiplier, 0.05, 2.0, 1.0),
+        thirst = EHR_EnvironmentalClampNumber(args.thirst, 0, 1.5, 0),
+    }
+end
+
+function EHR.Environmental.GetClientSnapshot(player)
+    if not (isServer and isServer()) then return nil end
+    if not player then return nil end
+
+    local playerID = EHR.Environmental.GetPlayerKey(player)
+    local snapshot = EHR.Environmental.ClientSnapshots[playerID]
+    if not snapshot then return nil end
+
+    local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+    if (currentHour - (snapshot.receivedHour or 0)) > 0.5 then
+        return nil
+    end
+
+    return snapshot
+end
+
+function EHR.Environmental.GetRuntimeEnvironment(player)
+    local snapshot = EHR.Environmental.GetClientSnapshot(player)
+    if snapshot then
+        return snapshot
+    end
+
+    return EHR.Environmental.BuildClientSnapshot(player)
+end
+
 --[[
     Update cold exposure tracking
     Called periodically from main tick handler
@@ -679,11 +852,12 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     local exposure = EHR.Environmental.GetExposureData(player)
     if not exposure then return end
 
-    local airTemp = EHR.Environmental.GetAirTemperature()
-    local bodyTemp = EHR.Environmental.GetBodyTemperature(player)
-    local wetness = EHR.Environmental.GetWetness(player)
-    local isIndoors = EHR.Environmental.IsIndoors(player)
-    local isNearHeat = EHR.Environmental.IsNearHeat(player)
+    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local bodyTemp = tonumber(env.bodyTemp) or EHR.Environmental.GetBodyTemperature(player)
+    local wetness = tonumber(env.wetness) or EHR.Environmental.GetWetness(player)
+    local isIndoors = env.isIndoors == true
+    local isNearHeat = env.isNearHeat == true
 
     -- BUG-017 FIX: Use body temperature to determine if player is warm
     -- airTemp is OUTDOOR temperature, which is wrong for indoor warmth checks
@@ -704,6 +878,21 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     if EHR.DEBUG then
         EHR.Log(string.format("Cold check: indoors=%s, bodyTemp=%.2f, airTemp=%.1f, isWarm=%s",
             tostring(isIndoors), bodyTemp, airTemp, tostring(isWarm)))
+    end
+
+    -- Lifestyle baths/showers intentionally make the character wet. Treat that as
+    -- controlled bathing wetness so it does not become a common-cold trigger.
+    if env.controlledBathing == true then
+        exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours * 3)
+        exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours * 3)
+        exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours)
+        exposure.indoorDuration = exposure.indoorDuration + deltaHours
+
+        if EHR.DEBUG then
+            EHR.Log(string.format("Cold exposure skipped during controlled bath/shower (wet=%.2f)", wetness))
+        end
+
+        return
     end
 
     -- Check cold conditions
@@ -780,7 +969,9 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     end
 
     -- Check for disease contraction
-    EHR.Environmental.CheckColdDiseases(player, exposure)
+    if not EHR.Environmental._skipDiseaseChecks then
+        EHR.Environmental.CheckColdDiseases(player, exposure)
+    end
 end
 
 -- ============================================
@@ -803,16 +994,11 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
         return
     end
 
-    local airTemp = EHR.Environmental.GetAirTemperature()
-    local isIndoors = EHR.Environmental.IsIndoors(player)
-    local isExerting = EHR.Environmental.IsExerting(player)
-    local thirst = 0
-
-    local stats = player:getStats()
-    if stats and CharacterStat and CharacterStat.THIRST then
-        local success, t = pcall(function() return stats:get(CharacterStat.THIRST) end)
-        if success and t then thirst = t end
-    end
+    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local isIndoors = env.isIndoors == true
+    local isExerting = env.isExerting == true
+    local thirst = tonumber(env.thirst) or 0
 
     if isIndoors then
         exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatIndoorRecoveryRate or 2.25))
@@ -841,7 +1027,7 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     if isExerting then heatMultiplier = heatMultiplier * 1.25 end
     if isDehydrated then heatMultiplier = heatMultiplier * 1.15 end
     if isSeverelyDehydrated then heatMultiplier = heatMultiplier * 1.25 end
-    heatMultiplier = heatMultiplier * EHR.Environmental.GetHeatHeadwearMultiplier(player)
+    heatMultiplier = heatMultiplier * (tonumber(env.headwearMultiplier) or EHR.Environmental.GetHeatHeadwearMultiplier(player))
 
     exposure.heatExposure = math.max(0, exposure.heatExposure + (deltaHours * heatMultiplier))
 
@@ -853,7 +1039,9 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     exposure.heatStrokeExposure = exposure.heatExposure
 
     -- Check for disease contraction
-    EHR.Environmental.CheckHeatDiseases(player, exposure)
+    if not EHR.Environmental._skipDiseaseChecks then
+        EHR.Environmental.CheckHeatDiseases(player, exposure)
+    end
 end
 
 --[[
@@ -998,8 +1186,9 @@ function EHR.Environmental.CheckHeatProgression(player, exposure)
     if peakDuration < (def.progressAfterHours or 4) then return end
 
     -- Check if player is still in heat
-    local airTemp = EHR.Environmental.GetAirTemperature()
-    local isInShade = EHR.Environmental.IsInShade(player)
+    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local isInShade = env.isInShade == true
 
     if isInShade and airTemp < EHR.Environmental.Config.veryHotTemp then
         return  -- Cooling down, won't progress
@@ -1030,7 +1219,7 @@ function EHR.Environmental.CheckHeatProgression(player, exposure)
         EHR.Disease.Contract(player, "heat_stroke")
 
         if player.Say then
-            player:Say("*collapses* Can't... everything's burning...")
+            EHR.Locale.Say(player, "*collapses* Can't... everything's burning...")
         end
     end
 end
@@ -1060,7 +1249,7 @@ function EHR.Environmental.CheckHeatCooling(player)
                     EHR.Log(diseaseId .. ": Regressed from recovery to peak (not cool enough)")
 
                     if player.Say then
-                        player:Say("*pants* Still too hot... can't recover...")
+                        EHR.Locale.Say(player, "*pants* Still too hot... can't recover...")
                     end
                 end
 
@@ -1286,7 +1475,6 @@ local function EHR_EnvironmentalSetVanillaCold(player, strength)
     if not okBody or not bodyDamage then return end
 
     strength = tonumber(strength) or 0
-
     if bodyDamage.setCatchACold then
         pcall(function()
             bodyDamage:setCatchACold(0.0)
@@ -1359,7 +1547,7 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
 
         -- Player announcement
         if player.Say then
-            player:Say("*coughs violently* This isn't just a cold anymore...")
+            EHR.Locale.Say(player, "*coughs violently* This isn't just a cold anymore...")
         end
     else
         EHR.Log("Cold resolved without pneumonia.")
@@ -1371,7 +1559,7 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
         end
 
         if player.Say then
-            player:Say("*sniff* I think I'm finally getting over this cold...")
+            EHR.Locale.Say(player, "*sniff* I think I'm finally getting over this cold...")
         end
     end
 end
@@ -1475,7 +1663,7 @@ end
 
 local EHR_EnvironmentalDiseaseFeverTargets = {
     common_cold = {
-        [2] = { temp = 37.5, step = 0.018 },
+        [2] = { temp = 37.6, step = 0.018 },
         [3] = { temp = 38.0, step = 0.025 },
     },
     pneumonia = {
@@ -2737,7 +2925,7 @@ function EHR.Environmental.TriggerSneeze(player)
     -- Say sneeze dialogue
     if player.Say then
         local sneezes = {"*ACHOO!*", "*sneezes*", "*achoo!*"}
-        player:Say(sneezes[ZombRand(#sneezes) + 1])
+        EHR.Locale.Say(player, sneezes[ZombRand(#sneezes) + 1])
     end
 
     -- Play the audible sneeze SFX at the same moment as the dialogue bark.
@@ -2810,10 +2998,10 @@ function EHR.Environmental.TriggerCough(player, severe)
                 "*coughs uncontrollably*",
                 "*COUGHING* Can't... stop...",
             }
-            player:Say(coughs[ZombRand(#coughs) + 1])
+            EHR.Locale.Say(player, coughs[ZombRand(#coughs) + 1])
         else
             local coughs = {"*cough*", "*coughs*", "*cough cough*"}
-            player:Say(coughs[ZombRand(#coughs) + 1])
+            EHR.Locale.Say(player, coughs[ZombRand(#coughs) + 1])
         end
     end
 
@@ -2854,7 +3042,7 @@ function EHR.Environmental.TriggerVomit(player, options)
     -- Say vomit dialogue
     if player.Say then
         local vomits = {"*vomits*", "*retches violently*", "*throws up*"}
-        player:Say(vomits[ZombRand(#vomits) + 1])
+        EHR.Locale.Say(player, vomits[ZombRand(#vomits) + 1])
     end
 
     -- Increase hunger (lost food)
@@ -2914,7 +3102,7 @@ local function EHR_EnvironmentalSayLimited(player, cooldownKey, cooldownHours, l
         end
     end
 
-    player:Say(lines[ZombRand(#lines) + 1])
+    EHR.Locale.Say(player, lines[ZombRand(#lines) + 1])
     return true
 end
 
@@ -2953,7 +3141,7 @@ function EHR.Environmental.TriggerCramp(player)
             "*muscles seize up*",
             "*winces* Cramp!",
         }
-        player:Say(cramps[ZombRand(#cramps) + 1])
+        EHR.Locale.Say(player, cramps[ZombRand(#cramps) + 1])
     end
 
     -- Apply pain
@@ -3185,7 +3373,7 @@ end
 ]]--
 function EHR.Environmental.TriggerCollapse(player)
     if player.Say then
-        player:Say("*collapses*")
+        EHR.Locale.Say(player, "*collapses*")
     end
 
     -- Apply massive fatigue
@@ -3309,7 +3497,7 @@ function EHR.Environmental.CheckHypothermiaWarmth(player)
         EHR.Log("Hypothermia: Regressed from recovery to peak (not warm enough)")
 
         if player.Say then
-            player:Say("*shivers* I'm getting cold again... can't stay warm...")
+            EHR.Locale.Say(player, "*shivers* I'm getting cold again... can't stay warm...")
         end
     end
 
@@ -3412,11 +3600,11 @@ function EHR.Environmental.CheckDiseaseLethal(player, diseaseId, disease, def)
         -- Death message
         if player.Say then
             if diseaseId == "pneumonia" then
-                player:Say("*gasps* Can't... breathe...")
+                EHR.Locale.Say(player, "*gasps* Can't... breathe...")
             elseif diseaseId == "cadaveric_aspergillosis" then
-                player:Say("*wheezes* Can't... breathe...")
+                EHR.Locale.Say(player, "*wheezes* Can't... breathe...")
             elseif diseaseId == "hypothermia" then
-                player:Say("So... cold... tired...")
+                EHR.Locale.Say(player, "So... cold... tired...")
             end
         end
     end
@@ -3465,7 +3653,7 @@ function EHR.Environmental.CheckTreatment(player, item)
                     disease.stage = 4
 
                     if player.Say then
-                        player:Say("This medicine should help...")
+                        EHR.Locale.Say(player, "This medicine should help...")
                     end
                 end
             end
@@ -3485,20 +3673,7 @@ local GAME_HOUR_CHECK_INTERVAL = 0.1    -- Check every ~6 game minutes
 local tickStateByPlayer = {}
 
 local function getPlayerId(player)
-    if not player then return nil end
-    local onlineId = nil
-    pcall(function() onlineId = player:getOnlineID() end)
-    if onlineId and onlineId >= 0 then
-        return tostring(onlineId)
-    end
-    local username = nil
-    pcall(function() username = player:getUsername() end)
-    if username and username ~= "" then
-        return username
-    end
-    local num = nil
-    pcall(function() num = player:getPlayerNum() end)
-    return tostring(num or "0")
+    return EHR.Environmental.GetPlayerKey(player)
 end
 
 local function getTickState(player)
@@ -3622,6 +3797,48 @@ local function processPlayerTick(player)
     end
 end
 
+local function processClientEnvironmentalTick(player)
+    if not player or not player:isAlive() then return end
+
+    EHR.Environmental.InitializePlayer(player)
+
+    local exposure = EHR.Environmental.GetExposureData(player)
+    if not exposure then return end
+
+    local state = getTickState(player)
+    state.tick = state.tick + 1
+    if state.tick < ENVIRONMENTAL_TICK_INTERVAL then
+        return
+    end
+    state.tick = 0
+
+    local gameTime = getGameTime()
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local lastHour = state.lastHour > 0 and state.lastHour or currentHour
+    local deltaHours = currentHour - lastHour
+    if deltaHours > 1 or deltaHours < 0 then
+        deltaHours = GAME_HOUR_CHECK_INTERVAL
+    end
+    state.lastHour = currentHour
+
+    local snapshot = EHR.Environmental.BuildClientSnapshot(player)
+    if snapshot and isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "EnvironmentalSnapshot", snapshot)
+    end
+
+    -- Keep local exposure cards responsive in multiplayer, but leave disease
+    -- contraction/progression to the server-authoritative tick.
+    EHR.Environmental._skipDiseaseChecks = true
+    local okCold, errCold = pcall(EHR.Environmental.UpdateColdExposure, player, deltaHours)
+    local okHeat, errHeat = pcall(EHR.Environmental.UpdateHeatExposure, player, deltaHours)
+    EHR.Environmental._skipDiseaseChecks = false
+
+    if EHR.DEBUG then
+        if not okCold then EHR.Log("Environmental client cold prediction failed: " .. tostring(errCold)) end
+        if not okHeat then EHR.Log("Environmental client heat prediction failed: " .. tostring(errHeat)) end
+    end
+end
+
 --[[
     Main tick handler for environmental diseases
 ]]--
@@ -3637,6 +3854,7 @@ function EHR.Environmental.OnTick()
                 EHR.Environmental.SuppressVanillaTemperature(player)
             end
             EHR.Environmental.SuppressVanillaCold(player)
+            processClientEnvironmentalTick(player)
         end
         return
     end

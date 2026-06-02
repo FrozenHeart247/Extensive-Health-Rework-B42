@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework B42
     Medication Consumption Hook (Client-Side)
@@ -167,7 +168,7 @@ local function trackMedicationDose(character, item, medData, itemFullType)
 
     -- Show usage message
     if medData.usageMessage and character.Say then
-        character:Say(medData.usageMessage)
+        EHR.Locale.Say(character, medData.usageMessage)
     end
 
     -- MP sync

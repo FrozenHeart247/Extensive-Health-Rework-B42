@@ -32,6 +32,7 @@
     "ExtensiveHealth.DiseaseFlyer_AHTR": "Disease Information: AHTR",
     "ExtensiveHealth.DiseaseFlyer_BloodType": "Medical Information: Blood Types",
     "ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis": "Disease Information: Cadaveric Aspergillosis",
+    "ExtensiveHealth.DiseaseFlyer_Cellulitis": "Disease Information: Cellulitis",
     "ExtensiveHealth.DiseaseFlyer_CommonCold": "Disease Information: Common Cold",
     "ExtensiveHealth.DiseaseFlyer_CorpseSickness": "Disease Information: Corpse Exposure Illness",
     "ExtensiveHealth.DiseaseFlyer_Dysentery": "Disease Information: Dysentery",
@@ -70,8 +71,11 @@
     "ExtensiveHealth.IVVancomycin": "IV Vancomycin",
     "ExtensiveHealth.MuscleRelaxants": "Muscle Relaxants",
     "ExtensiveHealth.NitricOxideBooster": "Nitric Oxide Boosters",
+    "ExtensiveHealth.CombatStimulants": "Combat Stimulants",
+    "ExtensiveHealth.DualOrexinReceptor": "Dual Orexin Receptor",
     "ExtensiveHealth.OralRehydrationKit": "Oral Rehydration Kit",
     "ExtensiveHealth.PhalanxPills": "Phalanx Suppressant Pills",
+    "ExtensiveHealth.HomeMadeActivatedCharcoal": "Homemade Activated Charcoal",
     "ExtensiveHealth.PlantBasedAntibiotics": "Plant-Based Antibiotics",
     "ExtensiveHealth.PrescriptionAntibiotics": "Prescription Antibiotics",
     "ExtensiveHealth.RespiratorySupportKit": "Respiratory Support Kit",
@@ -82,5 +86,6 @@
     "ExtensiveHealth.TBAntibiotics": "TB Antibiotics (Isoniazid)",
     "ExtensiveHealth.TetanusAntitoxin": "Tetanus Antitoxin",
     "ExtensiveHealth.TetanusImmunoglobulin": "Tetanus Immunoglobulin",
-    "ExtensiveHealth.TopicalPermethrin": "Topical Permethrin"
+    "ExtensiveHealth.TopicalPermethrin": "Topical Permethrin",
+    "ExtensiveHealth.MedicalWildPlants": "Medical Guide: Wild Medicinal Plants"
 }

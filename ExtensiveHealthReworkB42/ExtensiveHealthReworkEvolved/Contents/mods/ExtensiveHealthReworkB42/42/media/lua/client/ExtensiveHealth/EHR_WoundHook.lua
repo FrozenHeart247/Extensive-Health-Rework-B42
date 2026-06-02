@@ -19,9 +19,33 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_WoundInfection"
 require "ExtensiveHealth/EHR_Sepsis"
 require "ExtensiveHealth/EHR_Medication"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.WoundHook = {}
+
+local function woundHookText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_WoundHook_" .. tostring(key), fallback)
+    end
+    local fullKey = "UI_EHR_WoundHook_" .. tostring(key)
+    local ok, value = pcall(getText, fullKey)
+    if ok and value and value ~= fullKey then return value end
+    return fallback
+end
+
+local function woundHookFormat(key, fallback, ...)
+    if EHR and EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format("UI_EHR_WoundHook_" .. tostring(key), fallback, ...)
+    end
+    local text = woundHookText(key, fallback)
+    local args = {...}
+    for i, value in ipairs(args) do
+        text = tostring(text):gsub("%%" .. tostring(i), tostring(value))
+    end
+    return text
+end
+
 
 -- Track initialization
 EHR.WoundHook.initialized = false
@@ -82,6 +106,25 @@ function EHR.WoundHook.IsIVAntibiotics(item)
     if not item then return false end
     local fullType = item:getFullType()
     return EHR.WoundHook.IVAntibioticItems[fullType] == true
+end
+
+local function getContextOptions(context)
+    if not context then return {} end
+
+    if context.getOptions then
+        local ok, options = pcall(function()
+            return context:getOptions()
+        end)
+        if ok and type(options) == "table" then
+            return options
+        end
+    end
+
+    if type(context.options) == "table" then
+        return context.options
+    end
+
+    return {}
 end
 
 function EHR.WoundHook.HasTreatableWoundInfection(player)
@@ -213,7 +256,7 @@ function EHR.WoundHook.HookPillAction()
                     -- Reset stage timer (buys time)
                     local gameTime = getGameTime()
                     data.stageStartTime = gameTime:getWorldAgeHours()
-                    player:Say("The antibiotics might slow this down... but I need IV treatment.")
+                    EHR.Locale.Say(player, "The antibiotics might slow this down... but I need IV treatment.")
                     EHR.Log("WoundHook: Antibiotics slowed sepsis progression")
                 end
             end
@@ -268,7 +311,7 @@ function EHR.WoundHook.HookEatAction()
                     if data then
                         local gameTime = getGameTime()
                         data.stageStartTime = gameTime:getWorldAgeHours()
-                        player:Say("The antibiotics might slow this down... but I need IV treatment.")
+                        EHR.Locale.Say(player, "The antibiotics might slow this down... but I need IV treatment.")
                     end
                 end
 
@@ -366,34 +409,37 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
             if hasTreatableCondition and hasIVKit then
                 -- Add "Administer IV Antibiotics" option
                 local option = context:addOption(
-                    "Administer IV Antibiotics",
+                    woundHookText("AdministerIVAntibiotics", "Administer IV Antibiotics"),
                     player,
                     EHR.WoundHook.OnAdministerIVAntibiotics,
                     item
                 )
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 -- Add tooltip
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
-                tooltip:setName("IV Antibiotics")
+                tooltip:setName(woundHookText("IVAntibiotics", "IV Antibiotics"))
 
-                local targetText = hasSepsis and "sepsis" or "wound infection"
-                tooltip.description = "Starts IV antibiotic treatment for " .. targetText .. "."
+                local targetText = hasSepsis and woundHookText("Sepsis", "sepsis") or woundHookText("WoundInfection", "wound infection")
+                tooltip.description = woundHookFormat("StartsIVTreatment", "Starts IV antibiotic treatment for %1.", targetText)
                 option.toolTip = tooltip
             elseif hasTreatableCondition then
-                local option = context:addOption("Administer IV Antibiotics (Requires IV Kit)", player)
+                local option = context:addOption(woundHookText("AdministerIVRequiresKit", "Administer IV Antibiotics (Requires IV Kit)"), player)
                 option.notAvailable = true
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
-                tooltip:setName("IV Antibiotics")
-                tooltip.description = "Requires an IV Administration Kit."
+                tooltip:setName(woundHookText("IVAntibiotics", "IV Antibiotics"))
+                tooltip.description = woundHookText("RequiresIVKit", "Requires an IV Administration Kit.")
                 option.toolTip = tooltip
             else
-                local option = context:addOption("Administer IV Antibiotics (No Infection)", player)
+                local option = context:addOption(woundHookText("AdministerIVNoInfection", "Administer IV Antibiotics (No Infection)"), player)
                 option.notAvailable = true
+                if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
-                tooltip:setName("IV Antibiotics")
-                tooltip.description = "No sepsis or wound infection to treat."
+                tooltip:setName(woundHookText("IVAntibiotics", "IV Antibiotics"))
+                tooltip.description = woundHookText("NoInfectionToTreat", "No sepsis or wound infection to treat.")
                 option.toolTip = tooltip
             end
         end
@@ -410,13 +456,14 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
 
             if hasInfection then
                 -- Show infection status in tooltip
-                local existingOptions = context:getOptions()
+                local existingOptions = getContextOptions(context)
                 for _, opt in ipairs(existingOptions) do
                     if opt.name and string.find(opt.name, "Antibiotics") then
                         local tooltip = ISWorldObjectContextMenu.addToolTip()
-                        tooltip:setName("Antibiotics")
-                        tooltip.description = "Will help treat your wound infection."
+                        tooltip:setName(woundHookText("Antibiotics", "Antibiotics"))
+                        tooltip.description = woundHookText("AntibioticsHelpWound", "Will help treat your wound infection.")
                         opt.toolTip = tooltip
+                        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(opt, item) end
                         break
                     end
                 end
@@ -438,7 +485,7 @@ function EHR.WoundHook.OnAdministerIVAntibiotics(player, item)
 
     if not inventory:containsTypeRecurse("ExtensiveHealth.IVKit") then
         if player:isLocalPlayer() then
-            player:Say("I need an IV administration kit.")
+            EHR.Locale.Say(player, "I need an IV administration kit.")
         end
         return
     end

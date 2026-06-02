@@ -19,9 +19,44 @@ if not EHR or not EHR.Tooltips or not EHR.Tooltips.Data then
 end
 pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 
 EHR = EHR or {}
 EHR.Tooltips = EHR.Tooltips or {}
+
+
+local function tooltipItemName(itemFullType)
+    itemFullType = tostring(itemFullType or "")
+    return (itemFullType:match("%.(.+)$") or itemFullType):gsub("[^%w_]", "_")
+end
+
+local function tooltipText(itemFullType, suffix, fallback)
+    local key = "Tooltip_EHR_" .. tooltipItemName(itemFullType) .. "_" .. tostring(suffix or "Text")
+    return EHR.Locale.Text(key, fallback)
+end
+
+local function tooltipLabel(key, fallback)
+    return EHR.Locale.Text("Tooltip_EHR_Label_" .. key, fallback)
+end
+
+local function tooltipFormat(key, fallback, ...)
+    return EHR.Locale.Format("Tooltip_EHR_Label_" .. key, fallback, ...)
+end
+
+local function tooltipListValue(itemFullType, prefix, index, fallback)
+    return tooltipText(itemFullType, prefix .. "_" .. tostring(index), fallback)
+end
+
+local function tooltipSuccessText(itemFullType, data)
+    if tostring(itemFullType or "") == "ExtensiveHealth.GeneTherapyKit"
+            and EHR.KnoxCure
+            and EHR.KnoxCure.IsPatientZeroTraitEnabled
+            and not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
+        return tooltipText(itemFullType, "SuccessText_PatientZeroDisabled", "SUCCESS: Current Knox infection cured")
+    end
+    return tooltipText(itemFullType, "SuccessText", data.successText)
+end
 
 -- ============================================
 -- HELPER FUNCTIONS
@@ -78,12 +113,12 @@ end
 -- Format hours into human-readable time (e.g., "5 days", "12 hours", "2 days 6 hours")
 function EHR.Tooltips.FormatTimeRemaining(hours)
     if hours <= 0 then
-        return "0 hours"
+        return tooltipLabel("ZeroHours", "0 hours")
     end
 
     if hours < 1 then
         local minutes = math.max(1, math.ceil(hours * 60))
-        return string.format("%d min", minutes)
+        return tooltipFormat("Minutes", "%1 min", minutes)
     end
 
     local days = math.floor(hours / 24)
@@ -91,12 +126,12 @@ function EHR.Tooltips.FormatTimeRemaining(hours)
 
     if days > 0 then
         if remainingHours > 0 then
-            return string.format("%d day%s %d hr%s", days, days == 1 and "" or "s", remainingHours, remainingHours == 1 and "" or "s")
+            return tooltipFormat("DaysHours", "%1 day(s) %2 hr(s)", days, remainingHours)
         else
-            return string.format("%d day%s", days, days == 1 and "" or "s")
+            return tooltipFormat("Days", "%1 day(s)", days)
         end
     else
-        return string.format("%d hour%s", remainingHours, remainingHours == 1 and "" or "s")
+        return tooltipFormat("Hours", "%1 hour(s)", remainingHours)
     end
 end
 
@@ -121,7 +156,7 @@ function EHR.Tooltips.RegisterTranslations()
             local tooltipKey = "Tooltip_" .. itemName
 
             -- Build tooltip text from data
-            local tooltipText = EHR.Tooltips.BuildTooltipText(data)
+            local tooltipText = EHR.Tooltips.BuildTooltipText(data, itemFullType)
 
             -- Register in global Tooltip_EN table
             Tooltip_EN[tooltipKey] = tooltipText
@@ -142,12 +177,13 @@ function EHR.Tooltips.CountData()
 end
 
 -- Build tooltip text string from data
-function EHR.Tooltips.BuildTooltipText(data)
+function EHR.Tooltips.BuildTooltipText(data, itemFullType)
     local lines = {}
+    itemFullType = itemFullType or ""
 
     -- Description
     if data.description then
-        table.insert(lines, data.description)
+        table.insert(lines, tooltipText(itemFullType, "Description", data.description))
     end
 
     -- Empty line separator
@@ -155,53 +191,59 @@ function EHR.Tooltips.BuildTooltipText(data)
 
     -- Effects
     if data.effects and #data.effects > 0 then
-        for _, effect in ipairs(data.effects) do
-            table.insert(lines, "<RGB:0.3,0.9,0.3> + " .. effect)
+        for i, effect in ipairs(data.effects) do
+            table.insert(lines, "<RGB:0.3,0.9,0.3> + " .. tooltipListValue(itemFullType, "Effect", i, effect))
         end
     end
 
     -- What it cures
     if data.cures and #data.cures > 0 then
-        local curesText = "<RGB:0.3,0.8,1.0> CURES: " .. table.concat(data.cures, ", ")
+        local localized = {}
+        for i, cure in ipairs(data.cures) do table.insert(localized, tooltipListValue(itemFullType, "Cure", i, cure)) end
+        local curesText = "<RGB:0.3,0.8,1.0> " .. tooltipLabel("Cures", "CURES:") .. " " .. table.concat(localized, ", ")
         table.insert(lines, curesText)
     end
 
     -- What it relieves (doesn't cure)
     if data.relieves and #data.relieves > 0 then
-        local relievesText = "<RGB:0.9,0.9,0.3> Relieves: " .. table.concat(data.relieves, ", ")
+        local localized = {}
+        for i, relief in ipairs(data.relieves) do table.insert(localized, tooltipListValue(itemFullType, "Relief", i, relief)) end
+        local relievesText = "<RGB:0.9,0.9,0.3> " .. tooltipLabel("Relieves", "Relieves:") .. " " .. table.concat(localized, ", ")
         table.insert(lines, relievesText)
     end
 
     -- Treatment time
     if data.treatmentTime then
-        table.insert(lines, "<RGB:0.7,0.7,0.7> Treatment time: " .. data.treatmentTime)
+        table.insert(lines, "<RGB:0.7,0.7,0.7> " .. tooltipLabel("TreatmentTime", "Treatment time:") .. " " .. tooltipText(itemFullType, "TreatmentTime", data.treatmentTime))
     end
 
     -- Requirements
     if data.requirements and #data.requirements > 0 then
-        local reqText = "<RGB:0.9,0.6,0.2> Requires: " .. table.concat(data.requirements, ", ")
+        local localized = {}
+        for i, req in ipairs(data.requirements) do table.insert(localized, tooltipListValue(itemFullType, "Requirement", i, req)) end
+        local reqText = "<RGB:0.9,0.6,0.2> " .. tooltipLabel("Requires", "Requires:") .. " " .. table.concat(localized, ", ")
         table.insert(lines, reqText)
     end
 
     -- Side effects (each on its own line)
     if data.sideEffects and #data.sideEffects > 0 then
-        table.insert(lines, "<RGB:1.0,0.5,0.0> SIDE EFFECTS:")
-        for _, sideEffect in ipairs(data.sideEffects) do
-            table.insert(lines, "<RGB:1.0,0.6,0.2>   - " .. sideEffect)
+        table.insert(lines, "<RGB:1.0,0.5,0.0> " .. tooltipLabel("SideEffects", "SIDE EFFECTS:"))
+        for i, sideEffect in ipairs(data.sideEffects) do
+            table.insert(lines, "<RGB:1.0,0.6,0.2>   - " .. tooltipListValue(itemFullType, "SideEffect", i, sideEffect))
         end
     end
 
     -- Warning
     if data.warning then
-        table.insert(lines, "<RGB:1.0,0.3,0.3> ! " .. data.warning)
+        table.insert(lines, "<RGB:1.0,0.3,0.3> ! " .. tooltipText(itemFullType, "Warning", data.warning))
     end
 
     -- Success/Failure text (for Gene Therapy etc)
     if data.successText then
-        table.insert(lines, "<RGB:0.3,1.0,0.3> + " .. data.successText)
+        table.insert(lines, "<RGB:0.3,1.0,0.3> + " .. tooltipSuccessText(itemFullType, data))
     end
     if data.failureText then
-        table.insert(lines, "<RGB:1.0,0.3,0.3> - " .. data.failureText)
+        table.insert(lines, "<RGB:1.0,0.3,0.3> - " .. tooltipText(itemFullType, "FailureText", data.failureText))
     end
 
     return table.concat(lines, " <LINE> ")
@@ -230,15 +272,8 @@ function ISToolTipInv:render()
     -- Try EHR custom tooltip first
     local item = self.item
     if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
-        local itemFullType = item:getFullType()
-        local ehrData = EHR.Tooltips.GetData(itemFullType)
-
-        -- Debug: Log what we're checking (only once per item type)
-        if not EHR.Tooltips._debuggedTypes then EHR.Tooltips._debuggedTypes = {} end
-        if not EHR.Tooltips._debuggedTypes[itemFullType] then
-            EHR.Tooltips._debuggedTypes[itemFullType] = true
-            print("[EHR Tooltip] Checking item: " .. tostring(itemFullType) .. " | Has EHR data: " .. tostring(ehrData ~= nil))
-        end
+        local itemFullType = item.getFullType and item:getFullType() or nil
+        local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
 
         if ehrData then
             -- Wrap in pcall to catch any rendering errors
@@ -279,8 +314,8 @@ if ISFoodToolTip and type(ISFoodToolTip) == "table" and ISFoodToolTip.render the
         -- Try EHR custom tooltip first
         local item = self.item
         if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
-            local itemFullType = item:getFullType()
-            local ehrData = EHR.Tooltips.GetData(itemFullType)
+            local itemFullType = item.getFullType and item:getFullType() or nil
+            local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
             if ehrData then
                 -- Wrap in pcall to catch any rendering errors
                 local success, err = pcall(function()
@@ -389,6 +424,7 @@ local function renderEHRTooltipImpl(self, data, item)
     local lines = {}
     local totalHeight = 0
     local maxWidth = 200
+    local itemFullType = item and item.getFullType and item:getFullType() or ""
 
     local function addWrappedLines(text, color)
         local wrapped = wrapText(tostring(text or ""), maxLineWidth, color)
@@ -411,7 +447,7 @@ local function renderEHRTooltipImpl(self, data, item)
     -- Category and tier
     if data.category then
         local catColor = EHR.Tooltips.GetCategoryColor(data.category)
-        local catText = data.category
+        local catText = tooltipText(itemFullType, "Category", data.category)
         if data.tier then
             catText = catText .. " - " .. EHR.Tooltips.GetTierName(data.tier)
         end
@@ -424,7 +460,7 @@ local function renderEHRTooltipImpl(self, data, item)
             return EHR.Medication.GetItemDoseInfo(item)
         end)
         if okDose and doseInfo and doseInfo.maxDoses and doseInfo.maxDoses > 1 then
-            addWrappedLines(string.format("Remaining: %d/%d", doseInfo.remainingDoses or 0, doseInfo.maxDoses), {r=0.45, g=0.9, b=1.0})
+            addWrappedLines(tooltipFormat("Remaining", "Remaining: %1/%2", doseInfo.remainingDoses or 0, doseInfo.maxDoses), {r=0.45, g=0.9, b=1.0})
         end
     end
 
@@ -434,7 +470,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Description (with wrapping)
     if data.description then
-        local descLines = wrapText(data.description, maxLineWidth, {r=0.9, g=0.9, b=0.9})
+        local descLines = wrapText(tooltipText(itemFullType, "Description", data.description), maxLineWidth, {r=0.9, g=0.9, b=0.9})
         for _, line in ipairs(descLines) do
             table.insert(lines, line)
             totalHeight = totalHeight + fontHeight + lineSpacing
@@ -444,8 +480,8 @@ local function renderEHRTooltipImpl(self, data, item)
     -- Effects (with wrapping)
     if data.effects and #data.effects > 0 then
         addSpacer()
-        for _, effect in ipairs(data.effects) do
-            local effectLines = wrapText("+ " .. effect, maxLineWidth, {r=0.3, g=0.9, b=0.3})
+        for i, effect in ipairs(data.effects) do
+            local effectLines = wrapText("+ " .. tooltipListValue(itemFullType, "Effect", i, effect), maxLineWidth, {r=0.3, g=0.9, b=0.3})
             for _, line in ipairs(effectLines) do
                 table.insert(lines, line)
                 totalHeight = totalHeight + fontHeight + lineSpacing
@@ -456,15 +492,17 @@ local function renderEHRTooltipImpl(self, data, item)
     if data.bloodCompatibility then
         local canReadCompatibility = EHR.Tooltips.HasBloodTypeKnowledge and EHR.Tooltips.HasBloodTypeKnowledge(self)
         if canReadCompatibility then
-            addWrappedLines(data.bloodCompatibility, {r=0.3, g=0.8, b=1.0})
+            addWrappedLines(tooltipText(itemFullType, "BloodCompatibility", data.bloodCompatibility), {r=0.3, g=0.8, b=1.0})
         else
-            addWrappedLines("Compatibility: unknown (read Blood Types flyer or reach First Aid 8)", {r=0.7, g=0.7, b=0.7})
+            addWrappedLines(tooltipLabel("CompatibilityUnknown", "Compatibility: unknown (read Blood Types flyer or reach First Aid 8)"), {r=0.7, g=0.7, b=0.7})
         end
     end
 
     -- Cures (with wrapping)
     if data.cures and #data.cures > 0 then
-        local curesText = "CURES: " .. table.concat(data.cures, ", ")
+        local localized = {}
+        for i, cure in ipairs(data.cures) do table.insert(localized, tooltipListValue(itemFullType, "Cure", i, cure)) end
+        local curesText = tooltipLabel("Cures", "CURES:") .. " " .. table.concat(localized, ", ")
         local curesLines = wrapText(curesText, maxLineWidth, {r=0.3, g=0.8, b=1.0})
         for _, line in ipairs(curesLines) do
             table.insert(lines, line)
@@ -474,7 +512,9 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Relieves (with wrapping)
     if data.relieves and #data.relieves > 0 then
-        local relievesText = "Relieves: " .. table.concat(data.relieves, ", ")
+        local localized = {}
+        for i, relief in ipairs(data.relieves) do table.insert(localized, tooltipListValue(itemFullType, "Relief", i, relief)) end
+        local relievesText = tooltipLabel("Relieves", "Relieves:") .. " " .. table.concat(localized, ", ")
         local relievesLines = wrapText(relievesText, maxLineWidth, {r=0.9, g=0.9, b=0.3})
         for _, line in ipairs(relievesLines) do
             table.insert(lines, line)
@@ -484,12 +524,14 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Treatment time
     if data.treatmentTime then
-        addWrappedLines("Treatment time: " .. data.treatmentTime, {r=0.7, g=0.7, b=0.7})
+        addWrappedLines(tooltipLabel("TreatmentTime", "Treatment time:") .. " " .. tooltipText(itemFullType, "TreatmentTime", data.treatmentTime), {r=0.7, g=0.7, b=0.7})
     end
 
     -- Requirements (with wrapping)
     if data.requirements and #data.requirements > 0 then
-        local reqText = "Requires: " .. table.concat(data.requirements, ", ")
+        local localized = {}
+        for i, req in ipairs(data.requirements) do table.insert(localized, tooltipListValue(itemFullType, "Requirement", i, req)) end
+        local reqText = tooltipLabel("Requires", "Requires:") .. " " .. table.concat(localized, ", ")
         local reqLines = wrapText(reqText, maxLineWidth, {r=0.9, g=0.6, b=0.2})
         for _, line in ipairs(reqLines) do
             table.insert(lines, line)
@@ -500,10 +542,10 @@ local function renderEHRTooltipImpl(self, data, item)
     -- Side effects (with wrapping)
     if data.sideEffects and #data.sideEffects > 0 then
         addSpacer()
-        table.insert(lines, {text = "SIDE EFFECTS:", color = {r=1.0, g=0.5, b=0.0}})
+        table.insert(lines, {text = tooltipLabel("SideEffects", "SIDE EFFECTS:"), color = {r=1.0, g=0.5, b=0.0}})
         totalHeight = totalHeight + fontHeight + lineSpacing
-        for _, sideEffect in ipairs(data.sideEffects) do
-            local seLines = wrapText("  - " .. sideEffect, maxLineWidth, {r=1.0, g=0.6, b=0.2})
+        for i, sideEffect in ipairs(data.sideEffects) do
+            local seLines = wrapText("  - " .. tooltipListValue(itemFullType, "SideEffect", i, sideEffect), maxLineWidth, {r=1.0, g=0.6, b=0.2})
             for _, line in ipairs(seLines) do
                 table.insert(lines, line)
                 totalHeight = totalHeight + fontHeight + lineSpacing
@@ -513,7 +555,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Warning (with wrapping)
     if data.warning then
-        local warningLines = wrapText("! " .. data.warning, maxLineWidth, {r=1.0, g=0.3, b=0.3})
+        local warningLines = wrapText("! " .. tooltipText(itemFullType, "Warning", data.warning), maxLineWidth, {r=1.0, g=0.3, b=0.3})
         for _, line in ipairs(warningLines) do
             table.insert(lines, line)
             totalHeight = totalHeight + fontHeight + lineSpacing
@@ -522,15 +564,15 @@ local function renderEHRTooltipImpl(self, data, item)
 
     -- Success/Failure text (for Gene Therapy etc)
     if data.successText then
-        addWrappedLines("+ " .. data.successText, {r=0.3, g=1.0, b=0.3})
+        addWrappedLines("+ " .. tooltipSuccessText(itemFullType, data), {r=0.3, g=1.0, b=0.3})
     end
     if data.failureText then
-        addWrappedLines("- " .. data.failureText, {r=1.0, g=0.3, b=0.3})
+        addWrappedLines("- " .. tooltipText(itemFullType, "FailureText", data.failureText), {r=1.0, g=0.3, b=0.3})
     end
 
     -- Spoilage time for perishable items (blood bags, saline, etc.)
     if EHR.DEBUG then
-        print("[EHR Tooltip DEBUG] data.perishable = " .. tostring(data.perishable))
+        EHR.Log("[Tooltip DEBUG] data.perishable = " .. tostring(data.perishable))
     end
     if data.perishable then
         local age = 0
@@ -569,7 +611,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
         -- DEBUG: Log the values we got (only in debug mode)
         if EHR.DEBUG then
-            print("[EHR Tooltip DEBUG] Perishable item - age: " .. tostring(age) .. ", offAge: " .. tostring(offAge) .. ", offAgeMax: " .. tostring(offAgeMax))
+            EHR.Log("[Tooltip DEBUG] Perishable item - age: " .. tostring(age) .. ", offAge: " .. tostring(offAge) .. ", offAgeMax: " .. tostring(offAgeMax))
             table.insert(lines, {text = "DEBUG: age=" .. tostring(age) .. " offAge=" .. tostring(offAge) .. " offAgeMax=" .. tostring(offAgeMax), color = {r=1, g=1, b=0}})
             totalHeight = totalHeight + fontHeight + lineSpacing
         end
@@ -587,24 +629,24 @@ local function renderEHRTooltipImpl(self, data, item)
             local spoilColor = {r=0.7, g=0.7, b=0.7}
 
             if customSpoilage.isFrozen then
-                spoilText = "FROZEN - spoil timer paused"
+                spoilText = tooltipLabel("FrozenSpoilage", "FROZEN - spoil timer paused")
                 spoilColor = {r=0.4, g=0.8, b=1.0}
             elseif customSpoilage.state == "rotten" then
-                spoilText = "SPOILED - Do not use!"
+                spoilText = tooltipLabel("Spoiled", "SPOILED - Do not use!")
                 spoilColor = {r=1.0, g=0.2, b=0.2}
             elseif customSpoilage.state == "stale" then
                 local timeText = tostring(math.floor(customSpoilage.hoursUntilRotten or 0)) .. " hours"
                 if EHR.Tooltips.FormatTimeRemaining then
                     pcall(function() timeText = EHR.Tooltips.FormatTimeRemaining(customSpoilage.hoursUntilRotten or 0) end)
                 end
-                spoilText = "STALE - Spoils in: " .. timeText
+                spoilText = tooltipLabel("StaleSpoilsIn", "STALE - Spoils in:") .. " " .. timeText
                 spoilColor = {r=1.0, g=0.6, b=0.2}
             else
                 local timeText = tostring(math.floor(customSpoilage.hoursUntilStale or 0)) .. " hours"
                 if EHR.Tooltips.FormatTimeRemaining then
                     pcall(function() timeText = EHR.Tooltips.FormatTimeRemaining(customSpoilage.hoursUntilStale or 0) end)
                 end
-                spoilText = "Fresh for: " .. timeText
+                spoilText = tooltipLabel("FreshFor", "Fresh for:") .. " " .. timeText
                 spoilColor = {r=0.5, g=0.9, b=0.5}
             end
 
@@ -619,7 +661,7 @@ local function renderEHRTooltipImpl(self, data, item)
 
             if hoursUntilRotten <= 0 then
                 -- Already rotten
-                spoilText = "SPOILED - Do not use!"
+                spoilText = tooltipLabel("Spoiled", "SPOILED - Do not use!")
                 spoilColor = {r=1.0, g=0.2, b=0.2}
             elseif hoursUntilStale <= 0 then
                 -- Stale but not rotten
@@ -627,7 +669,7 @@ local function renderEHRTooltipImpl(self, data, item)
                 if EHR.Tooltips.FormatTimeRemaining then
                     pcall(function() timeText = EHR.Tooltips.FormatTimeRemaining(hoursUntilRotten) end)
                 end
-                spoilText = "STALE - Spoils in: " .. timeText
+                spoilText = tooltipLabel("StaleSpoilsIn", "STALE - Spoils in:") .. " " .. timeText
                 spoilColor = {r=1.0, g=0.6, b=0.2}
             else
                 -- Still fresh
@@ -635,7 +677,7 @@ local function renderEHRTooltipImpl(self, data, item)
                 if EHR.Tooltips.FormatTimeRemaining then
                     pcall(function() timeText = EHR.Tooltips.FormatTimeRemaining(hoursUntilStale) end)
                 end
-                spoilText = "Fresh for: " .. timeText
+                spoilText = tooltipLabel("FreshFor", "Fresh for:") .. " " .. timeText
                 spoilColor = {r=0.5, g=0.9, b=0.5}
             end
 
@@ -648,7 +690,7 @@ local function renderEHRTooltipImpl(self, data, item)
     local weight = item:getUnequippedWeight()
     if weight then
         addSpacer()
-        table.insert(lines, {text = string.format("Encumbrance: %.1f", weight), color = {r=0.6, g=0.6, b=0.6}})
+        table.insert(lines, {text = tooltipFormat("Encumbrance", "Encumbrance: %1", string.format("%.1f", weight)), color = {r=0.6, g=0.6, b=0.6}})
         totalHeight = totalHeight + fontHeight + lineSpacing
     end
 

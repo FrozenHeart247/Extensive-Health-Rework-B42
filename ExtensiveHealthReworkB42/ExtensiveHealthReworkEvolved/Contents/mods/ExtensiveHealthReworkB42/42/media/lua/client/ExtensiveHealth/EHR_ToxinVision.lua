@@ -9,6 +9,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_Dialogue"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.ToxinVision = EHR.ToxinVision or {}
@@ -278,7 +279,7 @@ function EHR.ToxinVision.SayBlurLine(player, state)
     if EHR.Dialogue and EHR.Dialogue.SayStageChange then
         EHR.Dialogue.SayStageChange(player, line)
     else
-        player:Say(line)
+        EHR.Locale.Say(player, line)
     end
 end
 

@@ -92,6 +92,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.AntiDiarrheal"] = true,
     ["ExtensiveHealth.MuscleRelaxants"] = true,
     ["ExtensiveHealth.NitricOxideBooster"] = true,
+    ["ExtensiveHealth.CombatStimulants"] = true,
     ["ExtensiveHealth.CoughSuppressant"] = true,
     ["ExtensiveHealth.AntisepticCream"] = true,
 
@@ -106,6 +107,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.InstantIcePack"] = true,
     ["ExtensiveHealth.Furosemide"] = true,
     ["ExtensiveHealth.Antipsychotics"] = true,
+    ["ExtensiveHealth.DualOrexinReceptor"] = true,
     ["ExtensiveHealth.TBAntibiotics"] = true,
     ["ExtensiveHealth.AntibioticOintment"] = true,
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,

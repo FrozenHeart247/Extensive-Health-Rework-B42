@@ -28,6 +28,8 @@ EHR.Keybinds.IDs = {
     TOGGLE_MONITOR = "ToggleMedicalMonitor",
     TOGGLE_DEBUG = "ToggleDebugMenu",
     TOGGLE_JOURNAL = "ToggleMedicalJournal",
+    PRIMARY_HEALTH_PANEL = "PrimaryHealthPanel",
+    OPEN_HEALTH_PANEL_COMPACT = "OpenHealthPanelCompact",
 }
 
 -- Default keycodes (Keyboard.KEY_*)
@@ -43,6 +45,42 @@ local DEFAULT_KEYS = {
 
 EHR.Keybinds.initialized = false
 EHR.Keybinds.modOptions = nil
+EHR.Keybinds.ignoreNextPressedKey = nil
+
+local function optionText(key, fallback)
+    local text = nil
+    if getText then
+        text = getText(key)
+    end
+    if not text or text == key or text == "?" then
+        return fallback
+    end
+    return text
+end
+
+local function ensureKeyBind(id, labelKey, fallbackLabel, defaultKey, tooltipKey, fallbackTooltip)
+    if not EHR.Keybinds.modOptions then return end
+    if EHR.Keybinds.modOptions:getOption(id) then return end
+
+    EHR.Keybinds.modOptions:addKeyBind(
+        id,
+        optionText(labelKey, fallbackLabel),
+        defaultKey,
+        optionText(tooltipKey, fallbackTooltip)
+    )
+end
+
+local function ensureTickBox(id, labelKey, fallbackLabel, defaultValue, tooltipKey, fallbackTooltip)
+    if not EHR.Keybinds.modOptions then return end
+    if EHR.Keybinds.modOptions:getOption(id) then return end
+
+    EHR.Keybinds.modOptions:addTickBox(
+        id,
+        optionText(labelKey, fallbackLabel),
+        defaultValue == true,
+        optionText(tooltipKey, fallbackTooltip)
+    )
+end
 
 -- ============================================
 -- INITIALIZATION
@@ -52,8 +90,8 @@ EHR.Keybinds.modOptions = nil
     Initialize EHR keybinds in PZAPI system.
     Called during mod initialization after game loads.
 ]]--
-function EHR.Keybinds.Initialize()
-    if EHR.Keybinds.initialized then return end
+function EHR.Keybinds.Initialize(forceRefresh)
+    if EHR.Keybinds.initialized and not forceRefresh then return end
 
     -- Check if PZAPI.ModOptions exists (B42+)
     if not PZAPI or not PZAPI.ModOptions then
@@ -69,39 +107,65 @@ function EHR.Keybinds.Initialize()
     if not EHR.Keybinds.modOptions then
         -- Create mod options group
         EHR.Keybinds.modOptions = PZAPI.ModOptions:create(MOD_OPTIONS_ID, MOD_NAME)
-
-        -- Add keybind options
-        -- Toggle Medical Monitor (default: M key)
-        EHR.Keybinds.modOptions:addKeyBind(
-            EHR.Keybinds.IDs.TOGGLE_MONITOR,
-            getText("UI_EHR_ToggleMedicalMonitor") or "Toggle Medical Monitor",
-            DEFAULT_KEYS[EHR.Keybinds.IDs.TOGGLE_MONITOR],
-            getText("UI_EHR_ToggleMedicalMonitor_tt") or "Opens/closes the Medical Monitor panel"
-        )
-
-        -- Toggle Debug Menu (default: G key, admin only display)
-        EHR.Keybinds.modOptions:addKeyBind(
-            EHR.Keybinds.IDs.TOGGLE_DEBUG,
-            getText("UI_EHR_ToggleDebugMenu") or "Toggle Debug Menu",
-            DEFAULT_KEYS[EHR.Keybinds.IDs.TOGGLE_DEBUG],
-            getText("UI_EHR_ToggleDebugMenu_tt") or "Opens/closes the EHR Debug Menu (requires debug mode)"
-        )
-
-        -- Toggle Medical Journal (default: J key)
-        EHR.Keybinds.modOptions:addKeyBind(
-            EHR.Keybinds.IDs.TOGGLE_JOURNAL,
-            getText("UI_EHR_ToggleMedicalJournal") or "Toggle Medical Journal",
-            DEFAULT_KEYS[EHR.Keybinds.IDs.TOGGLE_JOURNAL],
-            getText("UI_EHR_ToggleMedicalJournal_tt") or "Opens/closes the Medical Journal (diagnosis history)"
-        )
-
         EHR.Log("Keybinds: Registered via PZAPI.ModOptions")
     else
         EHR.Log("Keybinds: Using existing PZAPI.ModOptions")
     end
 
+    EHR.Keybinds.useFallback = false
+
+    -- Add any missing options even when the player already has an older saved group.
+    ensureKeyBind(
+        EHR.Keybinds.IDs.TOGGLE_MONITOR,
+        "UI_EHR_ToggleMedicalMonitor",
+        "Toggle Medical Monitor",
+        DEFAULT_KEYS[EHR.Keybinds.IDs.TOGGLE_MONITOR],
+        "UI_EHR_ToggleMedicalMonitor_tt",
+        "Opens/closes the selected primary health panel"
+    )
+    ensureKeyBind(
+        EHR.Keybinds.IDs.TOGGLE_DEBUG,
+        "UI_EHR_ToggleDebugMenu",
+        "Toggle Debug Menu",
+        DEFAULT_KEYS[EHR.Keybinds.IDs.TOGGLE_DEBUG],
+        "UI_EHR_ToggleDebugMenu_tt",
+        "Opens/closes the EHR Debug Menu (requires debug mode)"
+    )
+    ensureKeyBind(
+        EHR.Keybinds.IDs.TOGGLE_JOURNAL,
+        "UI_EHR_ToggleMedicalJournal",
+        "Toggle Medical Journal",
+        DEFAULT_KEYS[EHR.Keybinds.IDs.TOGGLE_JOURNAL],
+        "UI_EHR_ToggleMedicalJournal_tt",
+        "Opens/closes the Medical Journal (diagnosis history)"
+    )
+    ensureTickBox(
+        EHR.Keybinds.IDs.PRIMARY_HEALTH_PANEL,
+        "UI_EHR_PrimaryHealthPanel",
+        "Use EHR as primary health panel",
+        true,
+        "UI_EHR_PrimaryHealthPanel_tt",
+        "When enabled, the EHR hotkey opens the EHR panel and the heart button opens vanilla health. Disable to swap them."
+    )
+    ensureTickBox(
+        EHR.Keybinds.IDs.OPEN_HEALTH_PANEL_COMPACT,
+        "UI_EHR_OpenHealthPanelCompact",
+        "Open EHR panels compact",
+        true,
+        "UI_EHR_OpenHealthPanelCompact_tt",
+        "When enabled, EHR health panels open in compact mode. Disable to open them expanded."
+    )
+
     EHR.Keybinds.initialized = true
     EHR.Log("Keybinds: Initialization complete")
+end
+
+function EHR.Keybinds.EnsureModOptionsAvailable()
+    if EHR.Keybinds.useFallback and PZAPI and PZAPI.ModOptions then
+        EHR.Keybinds.Initialize(true)
+    elseif not EHR.Keybinds.modOptions and PZAPI and PZAPI.ModOptions then
+        EHR.Keybinds.modOptions = PZAPI.ModOptions:getOptions(MOD_OPTIONS_ID)
+    end
 end
 
 -- ============================================
@@ -114,6 +178,8 @@ end
     @return keyCode (integer) - Keyboard code, or 0 if unbound
 ]]--
 function EHR.Keybinds.GetKey(keybindId)
+    EHR.Keybinds.EnsureModOptionsAvailable()
+
     -- Fallback mode uses defaults
     if EHR.Keybinds.useFallback then
         return DEFAULT_KEYS[keybindId] or 0
@@ -153,6 +219,48 @@ end
 ]]--
 function EHR.Keybinds.GetToggleJournalKey()
     return EHR.Keybinds.GetKey(EHR.Keybinds.IDs.TOGGLE_JOURNAL)
+end
+
+function EHR.Keybinds.GetOptionBoolean(optionId, defaultValue)
+    EHR.Keybinds.EnsureModOptionsAvailable()
+
+    if EHR.Keybinds.useFallback then
+        return defaultValue == true
+    end
+
+    if EHR.Keybinds.modOptions then
+        local option = EHR.Keybinds.modOptions:getOption(optionId)
+        if option then
+            local value = nil
+            if option.getValue then
+                local ok, result = pcall(function() return option:getValue() end)
+                if ok then value = result end
+            elseif option.value ~= nil then
+                value = option.value
+            end
+            if value ~= nil then
+                return value == true
+            end
+        end
+    end
+
+    return defaultValue == true
+end
+
+function EHR.Keybinds.IsEHRPrimaryHealthPanel()
+    return EHR.Keybinds.GetOptionBoolean(EHR.Keybinds.IDs.PRIMARY_HEALTH_PANEL, true)
+end
+
+function EHR.Keybinds.ShouldOpenHealthPanelCompact()
+    return EHR.Keybinds.GetOptionBoolean(EHR.Keybinds.IDs.OPEN_HEALTH_PANEL_COMPACT, true)
+end
+
+function EHR.Keybinds.ShouldHotkeyOpenEHR()
+    return EHR.Keybinds.IsEHRPrimaryHealthPanel()
+end
+
+function EHR.Keybinds.ShouldHeartButtonOpenEHR()
+    return not EHR.Keybinds.IsEHRPrimaryHealthPanel()
 end
 
 --[[
@@ -227,6 +335,11 @@ end
     Called from OnKeyPressed event.
 ]]--
 function EHR.Keybinds.OnKeyPressed(key)
+    if EHR.Keybinds.ignoreNextPressedKey == key then
+        EHR.Keybinds.ignoreNextPressedKey = nil
+        return
+    end
+
     local player = getSpecificPlayer(0)
     if not player then return end
 
@@ -252,8 +365,17 @@ function EHR.Keybinds.OnKeyPressed(key)
 
     -- Toggle Medical Monitor / Health Panel
     if EHR.Keybinds.IsToggleMonitorKey(key) then
-        if EHR.UI and EHR.UI.ToggleHealthPanel then
+        if EHR.Keybinds.ShouldHotkeyOpenEHR() and EHR.UI and EHR.UI.ToggleHealthPanel then
             EHR.UI.ToggleHealthPanel(player)
+        elseif EHR.UI and EHR.UI.ToggleVanillaHealthPanel then
+            local vanillaHealthKey = 0
+            if core and core.getKey then
+                vanillaHealthKey = tonumber(core:getKey("Toggle Health Panel")) or 0
+            end
+            if vanillaHealthKey > 0 and vanillaHealthKey == key then
+                return
+            end
+            EHR.UI.ToggleVanillaHealthPanel(player)
         elseif EHR.UI and EHR.UI.ToggleMonitor then
             EHR.UI.ToggleMonitor(player)
         end

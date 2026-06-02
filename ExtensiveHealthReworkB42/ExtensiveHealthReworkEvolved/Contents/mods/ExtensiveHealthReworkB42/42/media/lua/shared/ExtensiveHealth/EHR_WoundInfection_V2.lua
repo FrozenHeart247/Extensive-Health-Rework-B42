@@ -19,6 +19,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.WoundInfection = EHR.WoundInfection or {}
@@ -599,7 +600,7 @@ function EHR.WoundInfection.ScanForInfections(player)
 
                             -- NOW say dialogue - symptoms are showing
                             if player.Say then
-                                player:Say(EHR.WoundInfection.StageDialogue[1])
+                                EHR.Locale.Say(player, EHR.WoundInfection.StageDialogue[1])
                             end
                             EHR.Log("Wound infection now symptomatic on " .. partName)
                         else
@@ -663,7 +664,7 @@ function EHR.WoundInfection.ScanForInfections(player)
                             data.incubating[partName] = nil
 
                             if player.Say then
-                                player:Say(EHR.WoundInfection.StageDialogue[1])
+                                EHR.Locale.Say(player, EHR.WoundInfection.StageDialogue[1])
                             end
                             EHR.Log("Wound infection now symptomatic on " .. partName .. " (vanilla flag cleared during incubation)")
                         end
@@ -1051,7 +1052,7 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
 
         -- Give player feedback
         if player.Say then
-            player:Say("Good thing I disinfected that early...")
+            EHR.Locale.Say(player, "Good thing I disinfected that early...")
         end
 
         EHR.WoundInfection.RecalculateStats(player)
@@ -1069,7 +1070,7 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
         EHR.Log("Disinfectant prevented wound infection on " .. partName .. " (caught before EHR tracking)")
 
         if player.Say then
-            player:Say("Good thing I disinfected that early...")
+            EHR.Locale.Say(player, "Good thing I disinfected that early...")
         end
 
         return
@@ -1085,7 +1086,7 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
             partData.stageStartTime = currentHour
             EHR.WoundInfection.RecalculateStats(player)
             if player.Say then
-                player:Say("I cleaned it, but the infection is still there...")
+                EHR.Locale.Say(player, "I cleaned it, but the infection is still there...")
             end
         end
         return
@@ -1426,8 +1427,8 @@ function EHR.WoundInfection.OnTick()
             if runEffects or runScan then
                 EHR.WoundInfection.ApplyEffects(player)
             end
-            if runScan and isServer and isServer() and player.transmitModData then
-                pcall(function() player:transmitModData() end)
+            if runScan and EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
             end
         end
     end

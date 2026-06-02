@@ -1,3 +1,6 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_Dialogue" end)
+pcall(function() require "ExtensiveHealth/EHR_DiseaseDefinitions" end)
 --[[
     Extensive Health Rework B42
     Knox Infection Cure Module
@@ -68,6 +71,229 @@ EHR.KnoxCure.Config = {
     geneTherapyHealthReduction = 0.10,  -- 10% max health reduction
     geneTherapyMigraineChance = 0.001,  -- Per tick chance of migraine
 }
+
+local KNOX_DIALOGUE_FALLBACK = {
+    stageCount = 4,
+    stageDurations = {
+        [1] = 0.20,
+        [2] = 0.30,
+        [3] = 0.30,
+        [4] = 0.20,
+    },
+    stageEntryDialogue = {
+        [1] = "I feel off... maybe I just need to rest.",
+        [2] = "*shivers* Fever's getting worse...",
+        [3] = "*confused* Can't think straight... something is very wrong...",
+        [4] = "*resigned* This is it... I can feel myself slipping away...",
+    },
+    dialogue = {
+        [1] = {
+            "My skin feels cold...",
+            "Why am I sweating?",
+            "Just breathe. It might pass.",
+        },
+        [2] = {
+            "The fever... it's getting worse...",
+            "I can't get warm...",
+            "*shivers uncontrollably*",
+            "Something is spreading through me...",
+        },
+        [3] = {
+            "*mumbles incoherently*",
+            "Who... who are you? Where am I?",
+            "The hunger... it's... different...",
+            "*aggressive outburst* Stay away from me!",
+        },
+        [4] = {
+            "*barely conscious*",
+            "Tell them... tell them I tried...",
+            "I'm sorry... I'm so sorry...",
+        },
+    },
+}
+
+local function getKnoxDialogueDefinition()
+    local diseases = EHR and EHR.Disease and EHR.Disease.Diseases or nil
+    if type(diseases) == "table" then
+        return diseases.Knox_Infection or diseases.knox_infection or KNOX_DIALOGUE_FALLBACK
+    end
+    return KNOX_DIALOGUE_FALLBACK
+end
+
+local function getKnoxDialogueStage(player)
+    local definition = getKnoxDialogueDefinition()
+    local stageCount = tonumber(definition.stageCount) or 4
+    local progress = 0
+    if EHR.KnoxCure and EHR.KnoxCure.GetInfectionProgress then
+        progress = tonumber(EHR.KnoxCure.GetInfectionProgress(player)) or 0
+    end
+    progress = math.max(0, math.min(1, progress))
+    if progress <= 0 then
+        return 1
+    end
+
+    local durations = definition.stageDurations or KNOX_DIALOGUE_FALLBACK.stageDurations
+    local cumulative = 0
+    for stage = 1, stageCount do
+        local duration = tonumber(durations and durations[stage]) or (1 / stageCount)
+        cumulative = cumulative + duration
+        if progress <= cumulative then
+            return stage
+        end
+    end
+
+    return stageCount
+end
+
+local function randomKnoxDelay(baseHours, spreadHours)
+    local spread = math.max(0, tonumber(spreadHours) or 0)
+    local roll = 0
+    if spread > 0 and ZombRand then
+        roll = ZombRand(math.floor(spread * 60) + 1) / 60
+    end
+    return (tonumber(baseHours) or 0) + roll
+end
+
+local function pickKnoxDialogueLine(lines)
+    if type(lines) ~= "table" or #lines == 0 then
+        return nil
+    end
+
+    local index = 1
+    if ZombRand then
+        index = ZombRand(#lines) + 1
+    else
+        index = math.random(#lines)
+    end
+    return lines[index]
+end
+
+local function sayKnoxDialogue(player, text, isStageChange)
+    if not player or not text or text == "" then return false end
+
+    if EHR.Dialogue then
+        if isStageChange and EHR.Dialogue.SayStageChange then
+            return EHR.Dialogue.SayStageChange(player, text)
+        end
+        if EHR.Dialogue.SayPeriodic then
+            return EHR.Dialogue.SayPeriodic(player, text, 1)
+        end
+    end
+
+    if EHR.Locale and EHR.Locale.Say then
+        return EHR.Locale.Say(player, text)
+    end
+
+    if player.Say then
+        player:Say(text)
+        return true
+    end
+
+    return false
+end
+
+local function handleKnoxInfectionDialogue(player, data, isInfected, currentHour)
+    if not player or not data then return end
+
+    if not isInfected then
+        data.knoxDialogueActive = false
+        data.knoxLastDialogueStage = nil
+        data.knoxNextRandomDialogueHour = nil
+        return
+    end
+
+    local stage = getKnoxDialogueStage(player)
+    local definition = getKnoxDialogueDefinition()
+    local entryLines = definition.stageEntryDialogue or KNOX_DIALOGUE_FALLBACK.stageEntryDialogue
+    local randomLines = definition.dialogue or KNOX_DIALOGUE_FALLBACK.dialogue
+
+    if data.knoxDialogueActive ~= true then
+        sayKnoxDialogue(player, entryLines and (entryLines[stage] or entryLines[1]), true)
+        data.knoxDialogueActive = true
+        data.knoxLastDialogueStage = stage
+        data.knoxNextRandomDialogueHour = currentHour + randomKnoxDelay(2.0, 2.0)
+        return
+    end
+
+    if data.knoxLastDialogueStage ~= stage then
+        sayKnoxDialogue(player, entryLines and entryLines[stage], true)
+        data.knoxLastDialogueStage = stage
+        data.knoxNextRandomDialogueHour = currentHour + randomKnoxDelay(1.5, 1.5)
+        return
+    end
+
+    if not data.knoxNextRandomDialogueHour or currentHour >= data.knoxNextRandomDialogueHour then
+        local line = pickKnoxDialogueLine(randomLines and (randomLines[stage] or randomLines[1]))
+        sayKnoxDialogue(player, line, false)
+        data.knoxNextRandomDialogueHour = currentHour + randomKnoxDelay(3.0, 3.0)
+    end
+end
+
+local function getEHRKnoxSandboxBool(name, default)
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local value = SandboxVars.ExtensiveHealthRework[name]
+        if value ~= nil then return value == true end
+    end
+
+    if getSandboxOptions then
+        local ok, options = pcall(getSandboxOptions)
+        if ok and options and options.getOptionByName then
+            local optOk, option = pcall(function()
+                return options:getOptionByName("ExtensiveHealthRework." .. tostring(name))
+            end)
+            if optOk and option and option.getValue then
+                local valueOk, value = pcall(function() return option:getValue() end)
+                if valueOk and value ~= nil then return value == true end
+            end
+        end
+    end
+
+    return default == true
+end
+
+function EHR.KnoxCure.IsPatientZeroTraitEnabled()
+    return getEHRKnoxSandboxBool("PatientZeroTraitDisabled", false) ~= true
+end
+
+function EHR.KnoxCure.HasPermanentKnoxImmunity(player, data)
+    if not EHR.KnoxCure.IsPatientZeroTraitEnabled() then return false end
+    data = data or (player and EHR.KnoxCure.GetData and EHR.KnoxCure.GetData(player))
+    return data ~= nil and data.geneTherapyImmune == true
+end
+local function consumeKnoxItem(player, item)
+    if not player or not item then return false end
+
+    local container = nil
+    if item.getContainer then
+        local okContainer, itemContainer = pcall(function() return item:getContainer() end)
+        if okContainer then container = itemContainer end
+    end
+
+    if not container and player.getInventory then
+        container = player:getInventory()
+    end
+
+    if container and container.Remove then
+        local okRemove = pcall(function() container:Remove(item) end)
+        if okRemove then
+            if sendRemoveItemFromContainer then
+                pcall(function() sendRemoveItemFromContainer(container, item) end)
+            end
+            return true
+        end
+    end
+
+    local inventory = player.getInventory and player:getInventory() or nil
+    if inventory and inventory.Remove then
+        local okFallback = pcall(function() inventory:Remove(item) end)
+        if okFallback and sendRemoveItemFromContainer then
+            pcall(function() sendRemoveItemFromContainer(inventory, item) end)
+        end
+        return okFallback == true
+    end
+
+    return false
+end
 
 -- ============================================
 -- PLAYER DATA MANAGEMENT
@@ -285,8 +511,8 @@ function EHR.KnoxCure.ClearStaleExternalInfection(player)
     end
 
     if changed then
-        if player.transmitModData then
-            pcall(function() player:transmitModData() end)
+        if EHR and EHR.SafeTransmitModData then
+            EHR.SafeTransmitModData(player)
         end
         if EHR.Log then
             EHR.Log("KnoxCure: cleared stale Knox state after external cure")
@@ -377,6 +603,12 @@ end
 function EHR.KnoxCure.GrantImmunityTrait(player, data)
     if not player then return false end
 
+    if not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
+        data = data or (EHR.KnoxCure.GetData and EHR.KnoxCure.GetData(player))
+        if data then data.immunityTraitGranted = false end
+        return false
+    end
+
     data = data or EHR.KnoxCure.GetData(player)
 
     local traitToken = nil
@@ -384,7 +616,8 @@ function EHR.KnoxCure.GrantImmunityTrait(player, data)
         traitToken = EHRCharacterTraits[EHR.KnoxCure.ImmunityTraitRegistryKey]
     end
 
-    if type(traitToken) == "string" or not traitToken then
+    traitToken = traitToken or EHR.KnoxCure.ImmunityTrait
+    if not traitToken then
         return false
     end
 
@@ -408,8 +641,14 @@ function EHR.KnoxCure.GrantImmunityTrait(player, data)
         return true
     end
 
-    traits:add(traitToken)
+    local added = pcall(function() traits:add(traitToken) end)
+    if added ~= true then
+        return false
+    end
     if data then data.immunityTraitGranted = true end
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
+    end
     EHR.Log("KnoxCure: Granted Patient Zero trait")
     return true
 end
@@ -602,13 +841,16 @@ function EHR.KnoxCure.GetGeneTherapyChance(player)
     if not player then return 50 end
 
     -- Get blood type from EHR blood system
-    local bloodType = "O+"  -- Default
+    local bloodType = nil
     if EHR.Blood and EHR.Blood.GetPlayerBloodType then
-        bloodType = EHR.Blood.GetPlayerBloodType(player) or "O+"
+        bloodType = EHR.Blood.GetPlayerBloodType(player)
     end
 
     local config = EHR.KnoxCure.Config
-    return config.geneTherapyCompatibility[bloodType] or 50
+    if bloodType and config.geneTherapyCompatibility[bloodType] then
+        return config.geneTherapyCompatibility[bloodType]
+    end
+    return 50
 end
 
 --[[
@@ -639,7 +881,7 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
     if not data then return "error" end
 
     -- Check if already a Gene Therapy survivor (immune)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Dialogue.SayStageChange(player, "I'm already immune to the virus...")
         return "already_immune"
     end
@@ -658,19 +900,25 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
 
     -- Consume item
     if item then
-        player:getInventory():Remove(item)
+        consumeKnoxItem(player, item)
     end
 
     if roll < cureChance then
         -- SUCCESS - Cured!
         EHR.KnoxCure.CureInfection(player)
 
-        -- Mark as Gene Therapy survivor
+        -- Mark as Gene Therapy survivor. Permanent Patient Zero immunity can be disabled by sandbox.
+        local grantPermanentImmunity = EHR.KnoxCure.IsPatientZeroTraitEnabled()
         data.geneTherapySurvivor = true
-        data.geneTherapyImmune = true
+        data.geneTherapyImmune = grantPermanentImmunity
+        data.immunityTraitGranted = false
 
         -- Visible permanent marker on the character sheet
-        EHR.KnoxCure.GrantImmunityTrait(player, data)
+        if grantPermanentImmunity then
+            EHR.KnoxCure.GrantImmunityTrait(player, data)
+        else
+            EHR.Log("KnoxCure: Gene Therapy cured current infection without Patient Zero immunity (sandbox disabled)")
+        end
 
         -- Apply permanent side effects (reduced max health)
         EHR.KnoxCure.ApplyGeneTherapySideEffects(player)
@@ -678,7 +926,11 @@ function EHR.KnoxCure.UseGeneTherapy(player, item)
         -- Dialogue
         EHR.Dialogue.SayStageChange(player, "*gasps* It... it worked! I can feel it working!")
 
-        EHR.Log("KnoxCure: Gene Therapy SUCCESS - player cured and now immune")
+        if grantPermanentImmunity then
+            EHR.Log("KnoxCure: Gene Therapy SUCCESS - player cured and now immune")
+        else
+            EHR.Log("KnoxCure: Gene Therapy SUCCESS - current infection cured; Patient Zero disabled")
+        end
         return "cured"
     else
         -- FAILURE - Incompatible, death
@@ -756,7 +1008,7 @@ function EHR.KnoxCure.UsePhalanx(player, item)
     if not data then return "error" end
 
     -- Check if immune (Gene Therapy survivor)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Dialogue.SayStageChange(player, "I don't need this anymore... I'm immune.")
         return "immune"
     end
@@ -895,16 +1147,16 @@ function EHR.KnoxCure.UseAntibodyTest(player, item)
 
     -- Consume item
     if item then
-        player:getInventory():Remove(item)
+        consumeKnoxItem(player, item)
     end
 
-    -- Show result via dialogue
+    -- Show result to the player. This is an action result, so do not gate it
+    -- behind dialogue frequency.
     local resultText = string.format("Test complete... Blood type %s. %s - %d%% survival chance.",
         bloodType, rating, chance)
-    EHR.Dialogue.SayStageChange(player, resultText)
-
-    -- Also show as HUD message if available
-    if player.Say then
+    if EHR.Locale and EHR.Locale.Say then
+        EHR.Locale.Say(player, resultText)
+    elseif player.Say then
         player:Say(resultText)
     end
 
@@ -985,7 +1237,7 @@ function EHR.KnoxCure.UseImmunobooster(player, item)
     if not data then return "error" end
 
     -- Check if already immune (Gene Therapy survivor)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Dialogue.SayStageChange(player, "I'm already permanently immune...")
         return "already_immune"
     end
@@ -1015,7 +1267,7 @@ function EHR.KnoxCure.UseImmunobooster(player, item)
 
     -- Consume item
     if item then
-        player:getInventory():Remove(item)
+        consumeKnoxItem(player, item)
     end
 
     local currentHour = getGameTime():getWorldAgeHours()
@@ -1070,7 +1322,7 @@ function EHR.KnoxCure.TryBlockInfection(player)
     if not data then return false end
 
     -- Check for permanent immunity (Gene Therapy survivor)
-    if data.geneTherapyImmune then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         EHR.Log("KnoxCure: Infection blocked - Gene Therapy immunity")
         return true
     end
@@ -1158,7 +1410,8 @@ local function SuppressVanillaInfection(player, data)
     if not bodyDamage or not stats then return end
 
     -- Check if player should be immune
-    local isImmune = data.geneTherapyImmune or EHR.KnoxCure.IsImmunoboosterActive(player)
+    local hasPermanentImmunity = EHR.KnoxCure.HasPermanentKnoxImmunity(player, data)
+    local isImmune = hasPermanentImmunity or EHR.KnoxCure.IsImmunoboosterActive(player)
     if not isImmune then
         suppressionLoggedThisSession = false  -- Reset when no longer immune
         data.knoxImmuneBlockedExposure = nil
@@ -1227,7 +1480,7 @@ local function SuppressVanillaInfection(player, data)
 
     -- Log ONCE when we first start blocking infection (prevents spam)
     if wasInfected and not suppressionLoggedThisSession then
-        local immuneSource = data.geneTherapyImmune and "Gene Therapy immunity" or "Immunobooster"
+        local immuneSource = hasPermanentImmunity and "Gene Therapy immunity" or "Immunobooster"
         EHR.Log("KnoxCure: Blocking vanilla infection - " .. immuneSource .. " (this message will not repeat)")
         suppressionLoggedThisSession = true
     end
@@ -1246,7 +1499,7 @@ local function processPlayerTick(player)
     -- =====================================
     SuppressVanillaInfection(player, data)
 
-    if data.geneTherapyImmune and not data.immunityTraitGranted then
+    if EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) and not data.immunityTraitGranted then
         EHR.KnoxCure.GrantImmunityTrait(player, data)
     end
 
@@ -1258,9 +1511,10 @@ local function processPlayerTick(player)
 
     -- Keeps EHR in sync with external Knox cure mods that clear vanilla infection
     -- state without touching EHR's cached disease/monitor data.
-    EHR.KnoxCure.IsInfected(player)
-
+    local isInfected = EHR.KnoxCure.IsInfected(player)
     local currentHour = getGameTime():getWorldAgeHours()
+    handleKnoxInfectionDialogue(player, data, isInfected == true, currentHour)
+
     local stats = player:getStats()
 
     -- Gene Therapy survivor: random migraines

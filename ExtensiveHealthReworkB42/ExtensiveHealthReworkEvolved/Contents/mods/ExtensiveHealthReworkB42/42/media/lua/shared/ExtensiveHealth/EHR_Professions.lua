@@ -84,6 +84,16 @@ local function hasCharacterTrait(player, registryKey)
     return false
 end
 
+local function isPatientZeroTraitEnabled()
+    if EHR.KnoxCure and EHR.KnoxCure.IsPatientZeroTraitEnabled then
+        return EHR.KnoxCure.IsPatientZeroTraitEnabled()
+    end
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if options and options.PatientZeroTraitDisabled ~= nil then
+        return options.PatientZeroTraitDisabled ~= true
+    end
+    return true
+end
 local function isEHRMedicalProfession(player)
     if not player then return false, nil end
 
@@ -146,7 +156,6 @@ local fallbackDiseaseKnowledgeIds = {
     tetanus = true,
     wound_infection = true,
     cellulitis = true,
-    knox_infection = true,
 }
 
 function EHR.Professions.GrantAllDiseaseKnowledge(player)
@@ -175,15 +184,20 @@ function EHR.Professions.GrantAllDiseaseKnowledge(player)
     end
 
     for diseaseId, _ in pairs(knowledgeIds) do
-        modData.EHR_KnownDiseases[diseaseId] = true
-        modData.EHR_MedicalJournal.discoveries[diseaseId] = modData.EHR_MedicalJournal.discoveries[diseaseId] or now
+        local isKnox = EHR.DiseaseFlyers
+            and EHR.DiseaseFlyers.IsKnoxDiseaseId
+            and EHR.DiseaseFlyers.IsKnoxDiseaseId(diseaseId)
+        if not isKnox then
+            modData.EHR_KnownDiseases[diseaseId] = true
+            modData.EHR_MedicalJournal.discoveries[diseaseId] = modData.EHR_MedicalJournal.discoveries[diseaseId] or now
+        end
     end
 
     modData.EHR_MedicalJournal.lastUpdated = now
     modData.EHR_ProfessionDiseaseKnowledge = professionKey
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     if EHR.Log then
@@ -214,13 +228,25 @@ function EHR.Professions.ApplyPatientZeroTrait(player)
     local data = getKnoxData(player)
     if not data then return false end
 
+    if not isPatientZeroTraitEnabled() then
+        if data.patientZeroTraitSource == true then
+            data.geneTherapyImmune = false
+            data.immunityTraitGranted = false
+            data.patientZeroTraitSource = false
+            if EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
+            end
+        end
+        return false
+    end
+
     if hasPatientZero then
         if data.geneTherapyImmune ~= true or data.patientZeroTraitSource ~= true then
             data.geneTherapyImmune = true
             data.immunityTraitGranted = true
             data.patientZeroTraitSource = true
-            if player.transmitModData then
-                pcall(function() player:transmitModData() end)
+            if EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
             end
             if EHR.Log then EHR.Log("Patient Zero trait activated Knox immunity") end
         end
@@ -231,8 +257,8 @@ function EHR.Professions.ApplyPatientZeroTrait(player)
         data.geneTherapyImmune = false
         data.immunityTraitGranted = false
         data.patientZeroTraitSource = false
-        if player.transmitModData then
-            pcall(function() player:transmitModData() end)
+        if EHR and EHR.SafeTransmitModData then
+            EHR.SafeTransmitModData(player)
         end
     end
 

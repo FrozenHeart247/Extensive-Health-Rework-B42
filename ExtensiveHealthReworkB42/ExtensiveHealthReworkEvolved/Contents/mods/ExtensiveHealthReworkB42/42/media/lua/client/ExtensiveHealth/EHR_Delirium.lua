@@ -11,7 +11,10 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Disease"
 require "ISUI/ISPanel"
 require "TimedActions/ISSmashWindow"
-require "TimedActions/ISWalkToTimedAction"
+pcall(function() require "TimedActions/ISWalkToTimedAction" end)
+pcall(function() require "TimedActions/ISReloadWeaponAction" end)
+pcall(function() require "ISUI/ISInventoryPaneContextMenu" end)
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Delirium = EHR.Delirium or {}
@@ -31,9 +34,24 @@ EHR.Delirium.Config = {
     OVERLAY_MAX_MINUTES = 8,
     OVERLAY_ALPHA_MIN = 0.08,
     OVERLAY_ALPHA_MAX = 0.16,
+    ENABLE_MULTIPLAYER_OVERLAY = false,
 
     WINDOW_SEARCH_RADIUS = 2,
-    WINDOW_IMPULSE_CHANCE = 1.0,
+    IMPULSE_CHANCE = 1.0,
+    IMPULSE_WEIGHTS = {
+        window = 30,
+        shout = 35,
+        dropBackpack = 20,
+        firearm = 25,
+    },
+    IMPULSE_COOLDOWNS_HOURS = {
+        window = 1.0,
+        shout = 0.75,
+        dropBackpack = 2.0,
+        firearm = 1.0,
+    },
+    SHOUT_SOUND_RADIUS = 45,
+    SHOUT_SOUND_VOLUME = 45,
 
     LINE_DURATION_TICKS = 600,
 }
@@ -223,8 +241,8 @@ function EHR.Delirium.Contract(player, currentHour)
         state.triggeredAt = currentHour
     end
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     EHR.Log("Delirium triggered by prolonged maximum stress")
@@ -334,6 +352,11 @@ function EHR.Delirium.RemoveOverlay(playerIndex)
 end
 
 function EHR.Delirium.UpdateOverlay(playerIndex, currentHour)
+    if isClient and isClient() and not EHR.Delirium.Config.ENABLE_MULTIPLAYER_OVERLAY then
+        EHR.Delirium.RemoveOverlay(playerIndex)
+        return
+    end
+
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
     if not runtime.overlay then return end
 
@@ -348,6 +371,11 @@ function EHR.Delirium.UpdateOverlay(playerIndex, currentHour)
 end
 
 function EHR.Delirium.StartOverlay(playerIndex, currentHour)
+    if isClient and isClient() and not EHR.Delirium.Config.ENABLE_MULTIPLAYER_OVERLAY then
+        EHR.Delirium.RemoveOverlay(playerIndex)
+        return
+    end
+
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
     local cfg = EHR.Delirium.Config
     local colors = EHR.Delirium.OverlayColors
@@ -418,7 +446,6 @@ end
 
 function EHR.Delirium.TrySmashNearbyWindow(player)
     if not isPlayerValid(player) then return false end
-    if ZombRand(100) >= math.floor((EHR.Delirium.Config.WINDOW_IMPULSE_CHANCE or 0) * 100) then return false end
 
     local window = EHR.Delirium.FindNearbyWindow(player)
     if not window then return false end
@@ -435,6 +462,205 @@ function EHR.Delirium.TrySmashNearbyWindow(player)
         EHR.Log("Delirium impulse: queued nearby window smash")
     end
     return ok
+end
+
+local function impulseChancePassed(chance)
+    chance = tonumber(chance) or 0
+    if chance <= 0 then return false end
+    if chance >= 1 then return true end
+    return ZombRand(10000) < math.floor(chance * 10000)
+end
+
+local function getImpulseCooldowns(runtime)
+    runtime.impulseCooldowns = runtime.impulseCooldowns or {}
+    return runtime.impulseCooldowns
+end
+
+local function isImpulseReady(runtime, impulseId, currentHour)
+    local cooldowns = getImpulseCooldowns(runtime)
+    local nextHour = tonumber(cooldowns[impulseId]) or 0
+    return (tonumber(currentHour) or 0) >= nextHour
+end
+
+local function markImpulseUsed(runtime, impulseId, currentHour)
+    local cfg = EHR.Delirium.Config
+    local hours = cfg.IMPULSE_COOLDOWNS_HOURS and tonumber(cfg.IMPULSE_COOLDOWNS_HOURS[impulseId]) or 0
+    getImpulseCooldowns(runtime)[impulseId] = (tonumber(currentHour) or worldHour()) + math.max(0, hours or 0)
+    runtime.lastImpulseId = impulseId
+end
+
+local function getImpulseWeight(impulseId)
+    local weights = EHR.Delirium.Config.IMPULSE_WEIGHTS or {}
+    return math.max(0, tonumber(weights[impulseId]) or 0)
+end
+
+local function chooseWeightedImpulse(candidates)
+    local totalWeight = 0
+    for _, candidate in ipairs(candidates) do
+        totalWeight = totalWeight + (tonumber(candidate.weight) or 0)
+    end
+    if totalWeight <= 0 then return nil end
+
+    local roll = ZombRand(totalWeight) + 1
+    local cursor = 0
+    for _, candidate in ipairs(candidates) do
+        cursor = cursor + (tonumber(candidate.weight) or 0)
+        if roll <= cursor then return candidate end
+    end
+    return candidates[#candidates]
+end
+
+function EHR.Delirium.TryShoutImpulse(player)
+    if not isPlayerValid(player) then return false end
+
+    local ok = false
+    if player.Callout then
+        ok = pcall(function() player:Callout() end) == true
+    elseif player.Say then
+        ok = pcall(function() EHR.Locale.Say(player, "HEY!") end) == true
+    end
+
+    local cfg = EHR.Delirium.Config
+    local radius = tonumber(cfg.SHOUT_SOUND_RADIUS) or 45
+    local volume = tonumber(cfg.SHOUT_SOUND_VOLUME) or radius
+    if player.addWorldSoundUnlessInvisible then
+        pcall(function() player:addWorldSoundUnlessInvisible(radius, volume, true) end)
+    elseif addSound then
+        pcall(function() addSound(player, player:getX(), player:getY(), player:getZ(), radius, volume) end)
+    end
+
+    if ok then
+        EHR.Log("Delirium impulse: forced shout")
+    end
+    return ok
+end
+
+local function getHeldFirearm(player)
+    if not player then return nil end
+
+    local items = {}
+    if player.getPrimaryHandItem then
+        local ok, item = pcall(function() return player:getPrimaryHandItem() end)
+        if ok and item then table.insert(items, item) end
+    end
+    if player.getSecondaryHandItem then
+        local ok, item = pcall(function() return player:getSecondaryHandItem() end)
+        if ok and item then table.insert(items, item) end
+    end
+
+    for _, item in ipairs(items) do
+        local okRanged, ranged = pcall(function()
+            return item.isRanged and item:isRanged()
+        end)
+        if okRanged and ranged == true then
+            return item
+        end
+    end
+    return nil
+end
+
+local function canFireWeapon(player, weapon)
+    if not weapon then return false end
+    if ISReloadWeaponAction and ISReloadWeaponAction.canShoot then
+        local ok, canShoot = pcall(function() return ISReloadWeaponAction.canShoot(player, weapon) end)
+        if ok then return canShoot == true end
+    end
+
+    local okAmmo, ammo = pcall(function()
+        if weapon.haveChamber and weapon:haveChamber() then
+            return weapon.isRoundChambered and weapon:isRoundChambered()
+        end
+        return weapon.getCurrentAmmoCount and (weapon:getCurrentAmmoCount() > 0)
+    end)
+    return okAmmo and ammo == true
+end
+
+function EHR.Delirium.TryFireHeldWeapon(player)
+    if not isPlayerValid(player) then return false end
+    local weapon = getHeldFirearm(player)
+    if not canFireWeapon(player, weapon) then return false end
+    if not ISReloadWeaponAction or not ISReloadWeaponAction.attackHook then return false end
+
+    local ok = pcall(function()
+        ISReloadWeaponAction.attackHook(player, nil, weapon)
+    end)
+    if ok then
+        EHR.Log("Delirium impulse: fired held firearm")
+    end
+    return ok
+end
+
+local function getWornBackpack(player)
+    if not player or not player.getClothingItem_Back then return nil end
+    local ok, item = pcall(function() return player:getClothingItem_Back() end)
+    if ok then return item end
+    return nil
+end
+
+function EHR.Delirium.TryDropWornBackpack(player)
+    if not isPlayerValid(player) then return false end
+    local backpack = getWornBackpack(player)
+    if not backpack then return false end
+
+    local playerNum = getPlayerIndex(player, 0)
+    local ok = false
+    if ISInventoryPaneContextMenu and ISInventoryPaneContextMenu.dropItem then
+        ok = pcall(function()
+            ISInventoryPaneContextMenu.dropItem(backpack, playerNum)
+        end) == true
+    end
+
+    if not ok then
+        local square = player.getCurrentSquare and player:getCurrentSquare() or nil
+        if not square then return false end
+        local container = backpack.getContainer and backpack:getContainer() or nil
+        ok = pcall(function()
+            if player.removeAttachedItem then player:removeAttachedItem(backpack) end
+            if player.setClothingItem_Back then player:setClothingItem_Back(nil) end
+            if player.removeFromHands then player:removeFromHands(backpack) end
+            if container and container.Remove then container:Remove(backpack) end
+            if square and square.AddWorldInventoryItem then
+                square:AddWorldInventoryItem(backpack,
+                    player:getX() - math.floor(player:getX()),
+                    player:getY() - math.floor(player:getY()),
+                    player:getZ() - math.floor(player:getZ()))
+            end
+        end) == true
+    end
+
+    if ok then
+        EHR.Log("Delirium impulse: dropped worn backpack")
+    end
+    return ok
+end
+
+function EHR.Delirium.TryRandomImpulse(player, runtime, currentHour)
+    if not isPlayerValid(player) or not runtime then return false end
+    if not impulseChancePassed(EHR.Delirium.Config.IMPULSE_CHANCE) then return false end
+
+    local candidates = {}
+    if isImpulseReady(runtime, "firearm", currentHour) and canFireWeapon(player, getHeldFirearm(player)) then
+        table.insert(candidates, { id = "firearm", weight = getImpulseWeight("firearm"), fn = EHR.Delirium.TryFireHeldWeapon })
+    end
+    if isImpulseReady(runtime, "dropBackpack", currentHour) and getWornBackpack(player) then
+        table.insert(candidates, { id = "dropBackpack", weight = getImpulseWeight("dropBackpack"), fn = EHR.Delirium.TryDropWornBackpack })
+    end
+    if isImpulseReady(runtime, "window", currentHour) and EHR.Delirium.FindNearbyWindow(player) then
+        table.insert(candidates, { id = "window", weight = getImpulseWeight("window"), fn = EHR.Delirium.TrySmashNearbyWindow })
+    end
+    if isImpulseReady(runtime, "shout", currentHour) then
+        table.insert(candidates, { id = "shout", weight = getImpulseWeight("shout"), fn = EHR.Delirium.TryShoutImpulse })
+    end
+
+    local candidate = chooseWeightedImpulse(candidates)
+    if not candidate or not candidate.fn then return false end
+
+    local ok = candidate.fn(player)
+    if ok then
+        markImpulseUsed(runtime, candidate.id, currentHour)
+        return true
+    end
+    return false
 end
 
 local function sayRandomLine(player, runtime)
@@ -454,8 +680,19 @@ local function sayRandomLine(player, runtime)
         end)
     end
     if not usedHaloNote then
-        pcall(function() player:Say(line) end)
+        pcall(function() EHR.Locale.Say(player, line) end)
     end
+end
+
+local function playLocalUISound(sound)
+    if not sound or not getSoundManager then return false end
+    local soundManager = getSoundManager()
+    if not soundManager or type(soundManager.playUISound) ~= "function" then return false end
+
+    local ok = pcall(function()
+        soundManager:playUISound(sound)
+    end)
+    return ok == true
 end
 
 local function playRandomSound(player, runtime)
@@ -467,6 +704,14 @@ local function playRandomSound(player, runtime)
         index = (index % #sounds) + 1
     end
     runtime.lastSoundIndex = index
+
+    if playLocalUISound(sounds[index]) then
+        return
+    end
+
+    -- In multiplayer, player:playSound is spatial/network-audible. If the UI
+    -- sound path fails, fail silent rather than broadcasting hallucinations.
+    if isClient and isClient() then return end
     pcall(function() player:playSound(sounds[index]) end)
 end
 
@@ -477,7 +722,7 @@ function EHR.Delirium.StartEpisode(player, playerIndex, currentHour)
     playRandomSound(player, runtime)
     sayRandomLine(player, runtime)
     EHR.Delirium.StartOverlay(playerIndex, currentHour)
-    EHR.Delirium.TrySmashNearbyWindow(player)
+    EHR.Delirium.TryRandomImpulse(player, runtime, currentHour)
     EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, false)
 end
 

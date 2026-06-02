@@ -124,14 +124,6 @@ option ExtensiveHealthRework.DiseaseSpeed
     translation = EHR_DiseaseSpeed,
 }
 
-option ExtensiveHealthRework.MisdiagnosisConsequences
-{
-    type = boolean,
-    default = true,
-    page = EHR_Disease,
-    translation = EHR_MisdiagnosisConsequences,
-}
-
 option ExtensiveHealthRework.WoundInfectionEnabled
 {
     type = boolean,
@@ -150,6 +142,13 @@ option ExtensiveHealthRework.WoundInfectionSpeed
     translation = EHR_WoundInfectionSpeed,
 }
 
+option ExtensiveHealthRework.CellulitisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_CellulitisEnabled,
+}
 option ExtensiveHealthRework.SepsisEnabled
 {
     type = boolean,
@@ -200,6 +199,22 @@ option ExtensiveHealthRework.TrichinosisEnabled
     translation = EHR_TrichinosisEnabled,
 }
 
+option ExtensiveHealthRework.ToxinPoisoningEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_ToxinPoisoningEnabled,
+}
+
+option ExtensiveHealthRework.HyperkeratoticScabiesEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_HyperkeratoticScabiesEnabled,
+}
+
 option ExtensiveHealthRework.DysenteryEnabled
 {
     type = boolean,
@@ -240,22 +255,58 @@ option ExtensiveHealthRework.HeatExhaustionEnabled
     translation = EHR_HeatExhaustionEnabled,
 }
 
-option ExtensiveHealthRework.EnvironmentalDiseaseSpeed
-{
-    type = double,
-    min = 0.1,
-    max = 10.0,
-    default = 1.0,
-    page = EHR_Disease,
-    translation = EHR_EnvironmentalDiseaseSpeed,
-}
-
-option ExtensiveHealthRework.AspergilliosisEnabled
+option ExtensiveHealthRework.HeatStrokeEnabled
 {
     type = boolean,
     default = true,
     page = EHR_Disease,
-    translation = EHR_AspergilliosisEnabled,
+    translation = EHR_HeatStrokeEnabled,
+}
+
+option ExtensiveHealthRework.ConcussionEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_ConcussionEnabled,
+}
+
+option ExtensiveHealthRework.DeliriumEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_DeliriumEnabled,
+}
+
+option ExtensiveHealthRework.InsomniaEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_InsomniaEnabled,
+}
+option ExtensiveHealthRework.AHTREnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_AHTREnabled,
+}
+
+option ExtensiveHealthRework.CorpseSicknessEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_CorpseSicknessEnabled,
+}
+option ExtensiveHealthRework.CadavericAspergillosisEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_CadavericAspergillosisEnabled,
 }
 
 option ExtensiveHealthRework.PutrefactionSicknessEnabled
@@ -310,6 +361,15 @@ option ExtensiveHealthRework.PreDiseaseEffectsEnabled
     translation = EHR_PreDiseaseEffectsEnabled,
 }
 
+option ExtensiveHealthRework.RealisticTemperatureCompatibility
+{
+    type = enum,
+    numValues = 3,
+    default = 1,
+    page = EHR_Comp,
+    translation = EHR_RealisticTemperatureCompatibility,
+}
+
 option ExtensiveHealthRework.KnoxCureItemsEnabled
 {
     type = boolean,
@@ -318,48 +378,39 @@ option ExtensiveHealthRework.KnoxCureItemsEnabled
     translation = EHR_KnoxCureItemsEnabled,
 }
 
-option ExtensiveHealthRework.NnCCompatEnabled
-{
-    type = boolean,
-    default = true,
-    page = EHR_Comp,
-    translation = EHR_NnCCompatEnabled,
-}
-
-option ExtensiveHealthRework.NnCStimulantBloodLoss
+option ExtensiveHealthRework.MedicationLootMultiplier
 {
     type = double,
-    min = 1.0,
-    max = 3.0,
-    default = 1.5,
-    page = EHR_Comp,
-    translation = EHR_NnCStimulantBloodLoss,
+    min = 0.0,
+    max = 2.0,
+    default = 1.0,
+    page = EHR_Loot,
+    translation = EHR_MedicationLootMultiplier,
 }
 
-option ExtensiveHealthRework.NnCOpioidInfectionReduction
+option ExtensiveHealthRework.MedicationPackageFill
 {
-    type = double,
-    min = 0.1,
-    max = 1.0,
-    default = 0.5,
-    page = EHR_Comp,
-    translation = EHR_NnCOpioidInfectionReduction,
+    type = enum,
+    numValues = 4,
+    default = 3,
+    page = EHR_Loot,
+    translation = EHR_MedicationPackageFill,
 }
 
-option ExtensiveHealthRework.NnCWithdrawalBlocksHealing
-{
-    type = boolean,
-    default = true,
-    page = EHR_Comp,
-    translation = EHR_NnCWithdrawalBlocksHealing,
-}
-
-option ExtensiveHealthRework.NnCOverdoseTriggersDisease
+option ExtensiveHealthRework.AllowFullPharmacyPackages
 {
     type = boolean,
     default = true,
-    page = EHR_Comp,
-    translation = EHR_NnCOverdoseTriggersDisease,
+    page = EHR_Loot,
+    translation = EHR_AllowFullPharmacyPackages,
+}
+
+option ExtensiveHealthRework.HouseholdPrescriptionLoot
+{
+    type = boolean,
+    default = true,
+    page = EHR_Loot,
+    translation = EHR_HouseholdPrescriptionLoot,
 }
 
 option ExtensiveHealthRework.HealingRequiresFed
@@ -457,6 +508,37 @@ option ExtensiveHealthRework.FirstAidXPMultiplier
     translation = EHR_FirstAidXPMultiplier,
 }
 
+option ExtensiveHealthRework.StitchMinigameEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_StitchMinigameEnabled,
+}
+
+option ExtensiveHealthRework.TheLastPrescriptionEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_TheLastPrescriptionEnabled,
+}
+
+option ExtensiveHealthRework.MedicalWatchRequired
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_MedicalWatchRequired,
+}
+
+option ExtensiveHealthRework.PatientZeroTraitDisabled
+{
+    type = boolean,
+    default = false,
+    page = EHR_Other,
+    translation = EHR_PatientZeroTraitDisabled,
+}
 option ExtensiveHealthRework.DebugMode
 {
     type = boolean,

@@ -20,6 +20,7 @@ require "ExtensiveHealth/EHR_WoundInfection"
 require "ExtensiveHealth/EHR_LifestyleCompat"
 require "ExtensiveHealth/EHR_SubstanceScanner"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.UI = EHR.UI or {}
@@ -578,7 +579,7 @@ function EHR_MedicalMonitorUI:onExamineSelf()
 
     -- Make the character say the dialogue
     if dialogue and self.player.Say then
-        self.player:Say(dialogue)
+        EHR.Locale.Say(self.player, dialogue)
     end
 
     -- Record examination to medical journal
@@ -614,6 +615,14 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
     end
 
     local function canIdentifyDisease(diseaseId)
+        if EHR.DiseaseFlyers
+            and EHR.DiseaseFlyers.IsKnoxDiseaseId
+            and EHR.DiseaseFlyers.IsKnoxDiseaseId(diseaseId)
+        then
+            return EHR.DiseaseFlyers.KnowsDisease
+                and EHR.DiseaseFlyers.KnowsDisease(self.player, diseaseId) == true
+        end
+
         if skillTier >= 4 then return true end
         if EHR.DiseaseFlyers and EHR.DiseaseFlyers.CanIdentifyDisease then
             return EHR.DiseaseFlyers.CanIdentifyDisease(self.player, diseaseId)
@@ -732,13 +741,14 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
             end
         elseif disease then
             -- Single disease
-            if skillTier >= 3 and disease.data then
+            local diseaseCanIdentify = canIdentifyDisease(disease.id)
+            if skillTier >= 3 and disease.data and diseaseCanIdentify then
                 -- Expert: Full details
                 local displayName = getDiseaseDisplayName(disease.id)
                 local stage = disease.data.stage or 1
                 local severity = disease.data.severity or 1
                 dialogue = ehrFormatText("UI_EHR_Examine_DiseaseDetailed", "Diagnosis: %s, Stage %d. Severity: %d/5.", displayName, stage, severity)
-            elseif canIdentifyDisease(disease.id) or diseaseKnownFromFlyer then
+            elseif diseaseCanIdentify or diseaseKnownFromFlyer then
                 -- Novice or flyer knowledge: can identify disease, but not numeric details.
                 local displayName = getDiseaseDisplayName(disease.id)
                 dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %s.", displayName)
@@ -890,24 +900,6 @@ function EHR_MedicalMonitorUI:updateCachedData()
     end
 
     if diseaseData then
-        
-        -- DEBUG: Log what we found
-        if not EHR.UI._diseaseLogTimer then EHR.UI._diseaseLogTimer = 0 end
-        EHR.UI._diseaseLogTimer = EHR.UI._diseaseLogTimer + 1
-        if EHR.UI._diseaseLogTimer >= 120 then  -- Log every ~2 seconds
-            EHR.UI._diseaseLogTimer = 0
-            if diseaseData then
-                local count = 0
-                if diseaseData.active then
-                    for id, _ in pairs(diseaseData.active) do
-                        count = count + 1
-                    end
-                end
-                print("[EHR Monitor] Disease data found: " .. count .. " active diseases")
-            else
-                print("[EHR Monitor] No disease data found for player")
-            end
-        end
         
         if diseaseData and diseaseData.active then
             local currentHour = getGameTime():getWorldAgeHours()
@@ -1888,7 +1880,15 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
     local canIdentify = true
     local unknownInfo = nil
 
-    if skillTier >= 4 then
+    if diseaseData.isKnox
+        and EHR.DiseaseFlyers
+        and EHR.DiseaseFlyers.KnowsDisease
+    then
+        canIdentify = EHR.DiseaseFlyers.KnowsDisease(self.player, "knox_infection") == true
+        if not canIdentify and EHR.DiseaseFlyers.GetUnknownDiseaseDisplay then
+            unknownInfo = EHR.DiseaseFlyers.GetUnknownDiseaseDisplay("knox_infection")
+        end
+    elseif skillTier >= 4 then
         canIdentify = true
     elseif EHR.DiseaseFlyers and EHR.DiseaseFlyers.CanIdentifyDisease then
         canIdentify = EHR.DiseaseFlyers.CanIdentifyDisease(self.player, diseaseId)
@@ -1925,7 +1925,7 @@ function EHR_MedicalMonitorUI:renderDiseaseEntry(startY, diseaseId, diseaseData)
     self:drawText(self:truncateText(displayName, self.width - padding * 2, UIFont.Small), padding, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Small)
     y = y + self.LINE_HEIGHT
 
-    if diseaseData.isKnox then
+    if diseaseData.isKnox and canIdentify then
         self:drawText("There is no cure", padding + 5, y,
             c.danger.r, c.danger.g, c.danger.b, c.danger.a, UIFont.Small)
     elseif showSeverity then
@@ -2984,8 +2984,7 @@ local function suppressVanillaTemperatureClient()
             -- If we had to force, thermoregulator might have re-enabled
             clientSuppression.thermoregulatorDisabled = false
 
-            -- Log when safety net triggers
-            print("[EHR] Client safety net: " .. tostring(current) .. " -> " .. tostring(targetTemp))
+            EHR.Log("Client safety net: " .. tostring(current) .. " -> " .. tostring(targetTemp))
         end
     end
 end

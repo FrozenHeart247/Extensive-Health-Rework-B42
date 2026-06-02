@@ -18,6 +18,7 @@
 
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Disease"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Sepsis = {}
@@ -35,7 +36,7 @@ function EHR.Sepsis.MarkDebugSet(player)
     if not player then return end
     local username = player:getUsername() or tostring(player:getPlayerNum())
     EHR.Sepsis.DebugGracePeriod[username] = os.time()
-    print("[EHR Sepsis] Debug grace period started for " .. username)
+    EHR.Log("Sepsis debug grace period started for " .. username)
 end
 
 -- Check if we're in grace period (shouldn't overwrite debug data)
@@ -442,7 +443,7 @@ function EHR.Sepsis.InitializePlayer(player)
     -- MP FIX: Don't overwrite during debug grace period
     -- Debug menu sets data and we need to protect it from server sync overwrites
     if EHR.Sepsis.IsInDebugGracePeriod(player) then
-        print("[EHR Sepsis] In debug grace period, skipping initialization")
+        EHR.Log("Sepsis debug grace period active, skipping initialization")
         -- If debug data exists, mark as initialized to prevent future calls
         if modData.EHR_Sepsis and modData.EHR_Sepsis.stage and modData.EHR_Sepsis.stage > 0 then
             modData.EHR_Sepsis_Initialized = true
@@ -560,7 +561,7 @@ function EHR.Sepsis.Trigger(player, sourcePartName)
 
     -- Entry dialogue
     if player.Say and EHR.Sepsis.StageEntryDialogue[1] then
-        player:Say(EHR.Sepsis.StageEntryDialogue[1])
+        EHR.Locale.Say(player, EHR.Sepsis.StageEntryDialogue[1])
     end
 end
 
@@ -619,7 +620,7 @@ function EHR.Sepsis.UpdateProgression(player)
 
         -- Entry dialogue
         if player.Say and EHR.Sepsis.StageEntryDialogue[newStage] then
-            player:Say(EHR.Sepsis.StageEntryDialogue[newStage])
+            EHR.Locale.Say(player, EHR.Sepsis.StageEntryDialogue[newStage])
         end
     end
 end
@@ -706,7 +707,7 @@ function EHR.Sepsis.ApplyEffects(player)
         -- Random confusion dialogue
         if player.Say and ZombRand(100) < 30 then
             local confusionLines = { "Where am I?", "What's happening?", "I can't think..." }
-            player:Say(confusionLines[ZombRand(#confusionLines) + 1])
+            EHR.Locale.Say(player, confusionLines[ZombRand(#confusionLines) + 1])
         end
     end
 
@@ -725,7 +726,7 @@ function EHR.Sepsis.OnDeath(player, reason)
 
     -- Final dialogue
     if player.Say then
-        player:Say("*collapses*")
+        EHR.Locale.Say(player, "*collapses*")
     end
 
     -- Build descriptive death cause for tracking
@@ -781,7 +782,7 @@ function EHR.Sepsis.OnTakeIVAntibiotics(player)
 
     if data.active ~= true or not data.stage or data.stage <= 0 then
         if player.Say then
-            player:Say("I don't need this right now...")
+            EHR.Locale.Say(player, "I don't need this right now...")
         end
         return false  -- Don't consume
     end
@@ -809,11 +810,11 @@ function EHR.Sepsis.OnTakeIVAntibiotics(player)
             if ZombRand(100) < 50 then
                 EHR.Sepsis.Cure(player)
                 if player.Say then
-                    player:Say("*gasps* I... I think it's working...")
+                    EHR.Locale.Say(player, "*gasps* I... I think it's working...")
                 end
             else
                 if player.Say then
-                    player:Say("*weakly* It's not enough... I can feel it...")
+                    EHR.Locale.Say(player, "*weakly* It's not enough... I can feel it...")
                 end
                 -- Reset doses, player needs to try again
                 data.treatmentDoses = 0
@@ -822,12 +823,12 @@ function EHR.Sepsis.OnTakeIVAntibiotics(player)
             -- Non-terminal: guaranteed cure at dose threshold
             EHR.Sepsis.Cure(player)
             if player.Say then
-                player:Say("*relief* The fever is breaking... I might make it...")
+                EHR.Locale.Say(player, "*relief* The fever is breaking... I might make it...")
             end
         end
     else
         if player.Say then
-            player:Say(string.format("I need %d more doses...", remaining))
+            EHR.Locale.Say(player, string.format("I need %d more doses...", remaining))
         end
     end
 
@@ -887,6 +888,9 @@ function EHR.Sepsis.Cure(player)
 
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+    end
+    if EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+        EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
     end
 
     -- Build immunity to wound infections
@@ -998,7 +1002,7 @@ function EHR.Sepsis.CheckDialogue(player)
 
     if ZombRand(100) < speakChance then
         local line = dialogueList[ZombRand(#dialogueList) + 1]
-        player:Say(line)
+        EHR.Locale.Say(player, line)
     end
 end
 
@@ -1032,7 +1036,7 @@ local function processPlayerTick(player)
     if DEBUG_SEPSIS_TICK and lastKnownSepsisStage[playerID] and lastKnownSepsisStage[playerID] > 0 then
         if state.debug >= 60 then
             state.debug = 0
-            print("[EHR SEPSIS DEBUG] Tick check: rawExists=" .. tostring(rawSepsisExists) .. ", rawStage=" .. tostring(rawStage) .. ", lastKnown=" .. tostring(lastKnownSepsisStage[playerID]))
+            EHR.Log("[SEPSIS DEBUG] Tick check: rawExists=" .. tostring(rawSepsisExists) .. ", rawStage=" .. tostring(rawStage) .. ", lastKnown=" .. tostring(lastKnownSepsisStage[playerID]))
         end
     end
 
@@ -1043,7 +1047,7 @@ local function processPlayerTick(player)
             -- Debug data exists, track it
             lastKnownSepsisStage[playerID] = modData.EHR_Sepsis.stage
             modData.EHR_Sepsis_Initialized = true
-            print("[EHR SEPSIS] Grace period active, preserving debug sepsis stage=" .. modData.EHR_Sepsis.stage)
+            EHR.Log("[SEPSIS] Grace period active, preserving debug sepsis stage=" .. modData.EHR_Sepsis.stage)
         end
         return  -- Skip normal processing during grace period
     end

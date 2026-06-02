@@ -15,6 +15,7 @@
 
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_DiseaseDefinitions"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Food = {}
@@ -149,7 +150,7 @@ function EHR.Food.WashHands(player, method)
     EHR.Log(string.format("Hands washed (%s): effectiveness=%.0f%%", method, effectiveness * 100))
 
     if player.Say and handData.bloodLevel < 0.1 and handData.dirtLevel < 0.1 then
-        player:Say("*washes hands* Much better.")
+        EHR.Locale.Say(player, "*washes hands* Much better.")
     end
 end
 
@@ -478,7 +479,7 @@ function EHR.Food.CheckTetanusRisk(player, woundType, woundSource, riskOverride)
                 EHR.Log("Player at risk for tetanus! Incubation period starting...")
 
                 if player.Say then
-                    player:Say("That was a nasty wound... hope it doesn't get infected.")
+                    EHR.Locale.Say(player, "That was a nasty wound... hope it doesn't get infected.")
                 end
 
                 return true

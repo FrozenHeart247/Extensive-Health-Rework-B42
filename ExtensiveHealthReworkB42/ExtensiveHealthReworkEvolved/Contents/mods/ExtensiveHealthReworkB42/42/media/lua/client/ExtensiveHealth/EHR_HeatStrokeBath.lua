@@ -7,6 +7,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_EnvironmentalDiseases"
 require "ExtensiveHealth/EHR_BodyTemperature"
@@ -264,7 +265,7 @@ function EHRHeatStrokeColdBathAction:start()
     end
 
     if self.character.Say then
-        self.character:Say(EHR_HeatStrokeBathText("UI_EHR_ColdBath_Start", "Cold... but I need this."))
+        EHR.Locale.Say(self.character, EHR_HeatStrokeBathText("UI_EHR_ColdBath_Start", "Cold... but I need this."))
     end
 
     if self.useLifestyleAnim and self.parts and self.parts.main then
@@ -335,7 +336,7 @@ function EHRHeatStrokeColdBathAction:perform()
     end
 
     if self.character.Say then
-        self.character:Say(EHR_HeatStrokeBathText("UI_EHR_ColdBath_Complete", "The fever finally broke..."))
+        EHR.Locale.Say(self.character, EHR_HeatStrokeBathText("UI_EHR_ColdBath_Complete", "The fever finally broke..."))
     end
 
     ISBaseTimedAction.perform(self)

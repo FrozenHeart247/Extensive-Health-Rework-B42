@@ -8,6 +8,7 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Disease"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.CorpseSickness = EHR.CorpseSickness or {}
@@ -98,6 +99,7 @@ EHR.CorpseSickness.Config = {
     ASPERGILLOSIS_BASE_CHANCE = 0.35,
     ASPERGILLOSIS_MAX_CHANCE = 0.85,
     ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN = true,
+    ASPERGILLOSIS_DISPLAY_MIN_EXPOSURE = 1,
 
     -- Dialogue lines for smell warning
     SMELL_DIALOGUES = {
@@ -121,7 +123,7 @@ EHR.CorpseSickness.Config = {
 
 EHR.CorpseSickness.FirstSeenCorpses = EHR.CorpseSickness.FirstSeenCorpses or {}
 
-local function isEnabled()
+local function isPutrefactionEnabled()
     local options = SandboxVars and SandboxVars.ExtensiveHealthRework
     if not options then return true end
 
@@ -129,11 +131,21 @@ local function isEnabled()
         return options.CorpseSicknessEnabled
     end
 
-    local putrefaction = options.PutrefactionSicknessEnabled
+    if options.PutrefactionSicknessEnabled ~= nil then
+        return options.PutrefactionSicknessEnabled
+    end
+
+    return true
+end
+
+local function isEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if not options then return true end
+
     local cadaveric = options.CadavericAspergillosisEnabled
     if cadaveric == nil then cadaveric = options.AspergilliosisEnabled end
 
-    return (putrefaction ~= false) or (cadaveric ~= false)
+    return isPutrefactionEnabled() or (cadaveric ~= false)
 end
 
 local function getSpeedMultiplier()
@@ -291,8 +303,8 @@ function EHR.CorpseSickness.ResetAfterCure(player)
     EHR.CorpseSickness.ClampVanillaSickness(player, 0)
     EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     EHR.Log("Corpse sickness exposure reset after cure")
@@ -1068,7 +1080,7 @@ function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
         data.lastFungalCorpseCount = 0
         data.lastFungalRiskReason = nil
         if player.Say then
-            player:Say("*coughs* My chest feels wrong after breathing that air...")
+            EHR.Locale.Say(player, "*coughs* My chest feels wrong after breathing that air...")
         end
         EHR.Log("Player contracted cadaveric aspergillosis from damp corpse exposure")
     end
@@ -1081,6 +1093,16 @@ function EHR.CorpseSickness.UpdateExposure(player)
     if not data then return end
 
     EHR.CorpseSickness.UpdateAspergillosisExposure(player)
+
+    if not isPutrefactionEnabled() then
+        data.currentExposure = 0
+        data.vanillaCorpseExposure = 0
+        data.lastVanillaCorpseSignalHour = 0
+        data.timeInArea = 0
+        EHR.CorpseSickness.ClampVanillaSickness(player, 0)
+        EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+        return
+    end
 
     if EHR.CorpseSickness.IsImmune(player) then
         data.currentExposure = 0
@@ -1141,11 +1163,41 @@ function EHR.CorpseSickness.UpdateExposure(player)
     data.lastCorpseCount = corpseInfo.count
 
     local envMultiplier = EHR.CorpseSickness.GetEnvironmentMultiplier(player)
+    local _, hasFungalWeather = EHR.CorpseSickness.GetFungalEnvironment(player)
     local protection = EHR.CorpseSickness.GetProtectionLevel(player)
     local isFullyProtected = protection >= 1.0
 
     local hasActiveFoodDisease = EHR.CorpseSickness.HasActiveFoodDisease(player)
     local hasRecentFoodRisk = EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
+
+    -- Damp/cold corpse fields are handled by cadaveric aspergillosis. Do not
+    -- also build acute putrefaction exposure from the same corpses/weather.
+    if isAspergillosisEnabled() and hasFungalWeather and (corpseInfo.count or 0) > 0 then
+        local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
+        data.currentExposure = math.max(0, (data.currentExposure or 0) - decay)
+
+        local bridgeDecay = (config.VANILLA_BRIDGE_DECAY_PER_HOUR or config.EXPOSURE_DECAY_PER_HOUR) * deltaHours
+        data.vanillaCorpseExposure = math.max(0, (data.vanillaCorpseExposure or 0) - bridgeDecay)
+        data.lastVanillaCorpseSignalHour = 0
+        data.timeInArea = 0
+
+        local effectiveExposureLevel = math.max(data.currentExposure or 0, data.vanillaCorpseExposure or 0)
+        EHR.CorpseSickness.DecayVanillaSickness(player, effectiveExposureLevel, deltaHours)
+        EHR.CorpseSickness.ClampVanillaSickness(player, effectiveExposureLevel)
+
+        if effectiveExposureLevel <= (config.VANILLA_SICKNESS_CLEAR_EXPOSURE or 1) then
+            EHR.CorpseSickness.ClearTinyVanillaSickness(player, config.VANILLA_SICKNESS_CLEAR_THRESHOLD or 0.005)
+        end
+
+        if not hasActiveFoodDisease and not hasRecentFoodRisk then
+            data.suppressFoodSicknessUntil = currentHour + (config.FOOD_SICKNESS_SUPPRESS_DURATION or 0.5)
+            EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
+        end
+
+        local target = EHR.CorpseSickness.GetVanillaSicknessTarget(effectiveExposureLevel)
+        data.lastVanillaSickness = math.min(vanillaSickness, target + (config.VANILLA_SICKNESS_CLAMP_BUFFER or 0.005))
+        return
+    end
 
     local rawVanillaCorpseSignal = corpseInfo.count > 0
         and vanillaSickness > 0.01
@@ -1291,7 +1343,7 @@ function EHR.CorpseSickness.ShowSmellWarning(player)
     if not player or not player.Say then return end
     local dialogues = EHR.CorpseSickness.Config.SMELL_DIALOGUES
     local line = dialogues[ZombRand(#dialogues) + 1]
-    player:Say(line)
+    EHR.Locale.Say(player, line)
 end
 
 function EHR.CorpseSickness.GetVanillaSicknessTarget(exposure)
@@ -1692,7 +1744,7 @@ function EHR.CorpseSickness.TriggerSickness(player)
             data.suppressFoodSicknessUntil = 0
         end
         if player.Say then
-            player:Say("I don't feel so good... must be the corpses.")
+            EHR.Locale.Say(player, "I don't feel so good... must be the corpses.")
         end
         EHR.Log("Player contracted corpse sickness")
     end
@@ -1814,8 +1866,8 @@ function EHR.CorpseSickness.OnTick()
             if state.tick >= EHR.CorpseSickness.Config.UPDATE_TICKS then
                 state.tick = 0
                 EHR.CorpseSickness.UpdateExposure(player)
-                if player.transmitModData then
-                    pcall(function() player:transmitModData() end)
+                if EHR and EHR.SafeTransmitModData then
+                    EHR.SafeTransmitModData(player)
                 end
             end
         end

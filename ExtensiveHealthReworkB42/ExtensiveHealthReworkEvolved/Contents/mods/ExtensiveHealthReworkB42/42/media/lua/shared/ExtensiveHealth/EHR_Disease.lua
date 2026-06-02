@@ -22,6 +22,8 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Dialogue"
 require "ExtensiveHealth/EHR_LifestyleCompat"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Sepsis" end)
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Disease = {}
@@ -49,7 +51,7 @@ function EHR.Disease.MarkDebugSet(player)
     if not player then return end
     local username = player:getUsername() or tostring(player:getPlayerNum())
     EHR.Disease.DebugGracePeriod[username] = EHR_DiseaseGetDebugClockSeconds()
-    print("[EHR Disease] Debug grace period started for " .. username)
+    EHR.Log("Disease debug grace period started for " .. username)
 end
 
 function EHR.Disease.IsInDebugGracePeriod(player)
@@ -96,6 +98,7 @@ end
 local SANDBOX_DISEASE_KEYS = {
     ahtr = "AHTREnabled",
     cadaveric_aspergillosis = "CadavericAspergillosisEnabled",
+    corpse_sickness = "CorpseSicknessEnabled",
 }
 
 function EHR.Disease.GetSandboxKeyForDisease(diseaseId)
@@ -521,13 +524,13 @@ EHR.Disease.Diseases = {
             [1] = "The skin around the wound looks red...",
             [2] = "The redness is spreading...",
             [3] = "*hot to touch* The cellulitis is getting severe!",
-            [4] = "The swelling is going down...",
+            [4] = "The infection is spreading through me...",
         },
         dialogue = {
             [1] = {"Skin looks inflamed...", "A bit swollen..."},
             [2] = {"The redness is spreading fast...", "It's hot to touch...", "Need antibiotics..."},
             [3] = {"*swollen limb*", "Can barely move this limb...", "It could turn to sepsis..."},
-            [4] = {"Swelling reducing...", "Treatment is working..."},
+            [4] = {"This is moving through my whole body...", "I need stronger treatment now...", "This infection is going septic..."},
         },
     },
 
@@ -870,7 +873,7 @@ function EHR.Disease.InitializePlayer(player)
 
     -- MP FIX: Don't overwrite during debug grace period
     if EHR.Disease.IsInDebugGracePeriod(player) then
-        print("[EHR Disease] In debug grace period, skipping initialization")
+        EHR.Log("Disease debug grace period active, skipping initialization")
         -- If debug data exists with active diseases, mark as initialized
         if modData.EHR_Disease and modData.EHR_Disease.active then
             local hasActive = false
@@ -1194,6 +1197,42 @@ function EHR.Disease.ApplyHealingBonuses(player, data)
     end
 end
 
+function EHR.Disease.TriggerCellulitisSepsis(player, disease)
+    if not player or not disease then return false end
+
+    if EHR.Disease.HasActiveCurativeTreatment and EHR.Disease.HasActiveCurativeTreatment(player, "cellulitis") then
+        disease.cellulitisSepsisBlockedByTreatment = true
+        return false
+    end
+
+    local sourceBodyPart = disease.sourceBodyPart or "cellulitis"
+
+    if isClient and isClient() and sendClientCommand then
+        if not disease.cellulitisSepsisRequested then
+            disease.cellulitisSepsisRequested = true
+            sendClientCommand(player, "EHR", "CellulitisSepsisHandoff", {
+                sourceBodyPart = sourceBodyPart,
+            })
+        end
+        return false
+    end
+
+    disease.cellulitisSepsisTriggered = true
+    disease._ehrTransitionToSepsis = true
+
+    if EHR.Sepsis and EHR.Sepsis.Trigger then
+        EHR.Sepsis.Trigger(player, sourceBodyPart)
+    elseif EHR.Disease.Contract then
+        EHR.Disease.Contract(player, "sepsis")
+    end
+
+    if EHR.Dialogue and EHR.Dialogue.SayStageChange then
+        EHR.Dialogue.SayStageChange(player, "The skin infection is spreading through my body...")
+    end
+
+    return true
+end
+
 --[[
     Update disease progression - called every DISEASE_TICK_INTERVAL
 ]]--
@@ -1238,6 +1277,13 @@ function EHR.Disease.UpdateProgression(player, data)
                 disease.incubationEnd = disease.startTime or currentHour
                 disease.peakTime = currentHour
                 disease.endTime = math.max(tonumber(disease.endTime) or 0, currentHour + 999999)
+            elseif def.manualProgression then
+                disease.stageCount = tonumber(def.stageCount) or tonumber(disease.stageCount) or 3
+                disease.incubationEnd = disease.startTime or currentHour
+                disease.peakTime = disease.peakTime or currentHour
+                if def.noNaturalRecovery then
+                    disease.endTime = math.max(tonumber(disease.endTime) or 0, currentHour + 999999)
+                end
             elseif def.reverseProgression then
                 local oldStage = disease.stage
                 local stageCount = tonumber(def.stageCount) or tonumber(disease.stageCount) or 3
@@ -1329,6 +1375,13 @@ function EHR.Disease.UpdateProgression(player, data)
                 end
             end
 
+            if diseaseId == "cellulitis" and disease.stage >= 4 and not disease.cellulitisSepsisTriggered then
+                if EHR.Disease.TriggerCellulitisSepsis and EHR.Disease.TriggerCellulitisSepsis(player, disease) then
+                    disease._ehrSkipEffects = true
+                    table.insert(toRemove, diseaseId)
+                end
+            end
+
             -- Apply effects based on stage
             if not disease._ehrSkipEffects and (disease.stage > 1 or def.stageDrivenByBodyTemperature or def.applyEffectsInStage1) then
                 local effectScale = EHR_DiseaseGetRuntimeTimeScale()
@@ -1349,6 +1402,9 @@ function EHR.Disease.UpdateProgression(player, data)
     end
     if #toRemove > 0 and EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, false)
+    end
+    if #toRemove > 0 and EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+        EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
     end
 end
 
@@ -1411,6 +1467,12 @@ function EHR.Disease.OnRecovery(player, diseaseId)
             EHR.Concussion.ClearAfterCure(player)
         elseif EHR.Concussion.ClearHeadPain then
             EHR.Concussion.ClearHeadPain(player)
+        end
+    elseif diseaseId == "insomnia" then
+        local modData = player and player:getModData() or nil
+        if modData then modData.EHR_Insomnia = nil end
+        if EHR.Insomnia and EHR.Insomnia.ClearAfterCure then
+            EHR.Insomnia.ClearAfterCure(player)
         end
     elseif diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
         EHR.HyperkeratoticScabies.ClearAfterCure(player)
@@ -1574,6 +1636,11 @@ local EHR_DiseaseBodyFeverTargets = {
         [2] = { temp = 38.0, step = 0.035 },
         [3] = { temp = 40.0, step = 0.060 },
         [4] = { temp = 40.0, step = 0.060 },
+    },
+    cellulitis = {
+        [2] = { temp = 37.8, step = 0.026 },
+        [3] = { temp = 38.6, step = 0.042 },
+        [4] = { temp = 39.2, step = 0.050 },
     },
     tuberculosis = {
         [2] = { temp = 37.7, step = 0.016 },
@@ -1746,7 +1813,7 @@ local function EHR_DiseaseSay(player, lines)
         index = ZombRand(#lines) + 1
     end
 
-    player:Say(lines[index])
+    EHR.Locale.Say(player, lines[index])
 end
 
 local function EHR_DiseaseTriggerVomit(player)
@@ -1815,7 +1882,7 @@ local function EHR_DiseaseKillPlayer(player, cause)
     end
 
     if player.Say then
-        player:Say("*collapses*")
+        EHR.Locale.Say(player, "*collapses*")
     end
 
     pcall(function()
@@ -2524,6 +2591,94 @@ local function EHR_DiseaseReduceMuscleStrainToward(player, targetStiffness, step
     end
 end
 
+local function EHR_DiseaseNormalizePartName(name)
+    return tostring(name or ""):lower():gsub("[%s_%-]", "")
+end
+
+local function EHR_DiseaseIsCellulitisSourcePart(sourceBodyPart, partType, part)
+    local source = EHR_DiseaseNormalizePartName(sourceBodyPart)
+    if source ~= "" and source ~= "debug" and source ~= "cellulitis" then
+        return EHR_DiseaseNormalizePartName(EHR_DiseaseGetBodyPartName(partType, part)) == source
+    end
+
+    return EHR_DiseaseIsMusclePart(partType, part)
+end
+
+local function EHR_DiseaseApplyCellulitisEffects(player, disease, stage, severity, stats, trySymptom)
+    -- Kept out of ApplyEffects to avoid Kahlua's 200-local compiler limit.
+    local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "cellulitis")
+    local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "cellulitis", disease)
+    local painRelief = math.max(
+        EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "pain"),
+        EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "inflammation") * 0.85
+    )
+    local feverRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "fever")
+    local weaknessRelief = EHR_DiseaseGetActiveSymptomReduction(player, "cellulitis", "weakness")
+    local treatmentMult = curativeTreatment and 0.38 or 1.0
+
+    local painTarget = 8
+    local sicknessTarget = 0.08
+    local fatigueTarget = 0.10
+    local enduranceDrain = 0.001
+    local enduranceFloor = 0.90
+    local dialogueChance = 0.001
+    local dialogueCooldown = 1.2
+
+    if stage == 2 then
+        painTarget = 16
+        sicknessTarget = 0.18
+        fatigueTarget = 0.18
+        enduranceDrain = 0.0025
+        enduranceFloor = 0.82
+        dialogueChance = 0.0025
+        dialogueCooldown = 0.9
+    elseif stage == 3 then
+        painTarget = 32
+        sicknessTarget = 0.34
+        fatigueTarget = 0.34
+        enduranceDrain = 0.006
+        enduranceFloor = 0.68
+        dialogueChance = 0.0040
+        dialogueCooldown = 0.65
+    elseif stage >= 4 then
+        painTarget = 38
+        sicknessTarget = 0.42
+        fatigueTarget = 0.44
+        enduranceDrain = 0.007
+        enduranceFloor = 0.62
+        dialogueChance = 0.0045
+        dialogueCooldown = 0.55
+    end
+
+    local painMult = math.max(curativeTreatment and 0.16 or 0.35, symptomMult * treatmentMult * (1 - (painRelief * 1.45)))
+    local weaknessMult = math.max(curativeTreatment and 0.20 or 0.38, symptomMult * treatmentMult * (1 - (weaknessRelief * 1.2)))
+    local feverMult = math.max(curativeTreatment and 0.18 or 0.35, symptomMult * treatmentMult * (1 - (feverRelief * 1.45)))
+
+    local sourceBodyPart = disease.sourceBodyPart
+    EHR_DiseaseMoveTargetedPainToward(player, painTarget * painMult * math.max(0.65, severity), 0.85 * severity, curativeTreatment and 4.0 or 1.35, function(partType, part)
+        return EHR_DiseaseIsCellulitisSourcePart(sourceBodyPart, partType, part)
+    end)
+
+    if CharacterStat then
+        EHR_DiseaseDrainEndurance(stats, enduranceDrain * severity * weaknessMult, enduranceFloor)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat.SICKNESS, sicknessTarget * math.max(0.55, symptomMult), 0.0028 * severity, 1)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat.FATIGUE, fatigueTarget * weaknessMult, 0.0014 * severity, 1)
+    end
+
+    if stage >= 2 then
+        EHR_DiseaseApplyBodyFever(player, "cellulitis", disease, severity, feverMult, curativeTreatment)
+    end
+
+    trySymptom("cellulitis_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+        local lines = stage >= 4
+            and {"The infection is spreading...", "I feel hot and weak...", "This wound is poisoning me..."}
+            or stage == 3
+                and {"The skin is hot to touch...", "The swelling is getting worse...", "I need antibiotics..."}
+                or {"The stitched skin is red...", "That wound feels inflamed...", "The area feels swollen..."}
+        EHR_DiseaseSay(player, lines)
+    end)
+end
+
 local function EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, stats, trySymptom)
     -- Kept out of ApplyEffects to avoid Kahlua's 200-local compiler limit.
     local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "hyperkeratotic_scabies")
@@ -2919,6 +3074,9 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
     elseif diseaseId == "hyperkeratotic_scabies" then
         EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, stats, trySymptom)
 
+    elseif diseaseId == "cellulitis" then
+        EHR_DiseaseApplyCellulitisEffects(player, disease, stage, severity, stats, trySymptom)
+
     elseif diseaseId == "tetanus" then
         -- Lockjaw and spasms from contaminated deep wounds. Stage 1 is incubation and has no active effects.
         local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tetanus")
@@ -3218,12 +3376,15 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         end
         EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.PANIC, 0.0008 * severity * stageMult * breathingMult)
 
-        local coughChance = (stage == 3 and 0.010 or stage == 2 and 0.0035 or stage == 4 and 0.0012 or 0.0003) * severity * coughMult
+        local coughChance = (stage == 3 and 0.018 or stage == 2 and 0.0060 or stage == 4 and 0.0018 or 0.0005) * severity * coughMult
         trySymptom("aspergillosis_cough", coughChance, 0.14, function()
             EHR_DiseaseTriggerCough(player, stage == 3)
         end)
 
         if stage >= 2 then
+            trySymptom("aspergillosis_breathing_dialogue", (stage == 3 and 0.006 or 0.003) * severity * breathingMult, 0.22, function()
+                EHR_DiseaseSay(player, {"My lungs feel tight...", "It hurts to breathe...", "I can't get a full breath..."})
+            end)
             trySymptom("aspergillosis_fever", (stage == 3 and 0.004 or 0.0015) * severity * symptomMult, 0.28, function()
                 EHR_DiseaseSay(player, {"I'm burning up...", "My chest is on fire...", "This fever is getting worse..."})
             end)
@@ -3494,6 +3655,75 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
                 or stage == 2
                     and {"Still dizzy...", "My head still hurts...", "Need to move carefully..."}
                     or {"A little headache left...", "Almost steady again...", "The fog is lifting..."}
+            EHR_DiseaseSay(player, lines)
+        end)
+
+    elseif diseaseId == "insomnia" then
+        local sleepAidActive = EHR.Medication
+            and EHR.Medication.HasActiveSleepAid
+            and EHR.Medication.HasActiveSleepAid(player)
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "insomnia", disease)
+
+        local fatigueTarget = 0.82
+        local stressTarget = 0.22
+        local unhappinessTarget = 0.10
+        local painTarget = 0.06
+        local headPainTarget = 8
+        local dialogueChance = 0.0009
+        local dialogueCooldown = 2.0
+
+        if stage == 2 then
+            fatigueTarget = 0.90
+            stressTarget = 0.34
+            unhappinessTarget = 0.18
+            painTarget = 0.12
+            headPainTarget = 18
+            dialogueChance = 0.0025
+            dialogueCooldown = 1.1
+        elseif stage >= 3 then
+            fatigueTarget = 0.96
+            stressTarget = 0.48
+            unhappinessTarget = 0.28
+            painTarget = 0.18
+            headPainTarget = 28
+            dialogueChance = 0.0038
+            dialogueCooldown = 0.75
+        end
+
+        if sleepAidActive then
+            symptomMult = math.min(symptomMult, 0.25)
+            fatigueTarget = math.min(fatigueTarget, 0.74)
+            stressTarget = math.min(stressTarget, 0.10)
+            unhappinessTarget = math.min(unhappinessTarget, 0.08)
+            painTarget = math.min(painTarget, 0.06)
+            headPainTarget = math.min(headPainTarget, 8)
+        end
+
+        if CharacterStat then
+            if not sleepAidActive then
+                EHR_DiseaseRaiseStatToward(stats, CharacterStat.FATIGUE, fatigueTarget, 0.00075 * severity * math.max(0.25, symptomMult))
+            end
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * math.max(0.35, symptomMult), 0.00055 * severity)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * math.max(0.35, symptomMult), 0.00035 * severity)
+            EHR_DiseaseMovePainToward(stats, painTarget * math.max(0.35, symptomMult), 0.0012 * severity, sleepAidActive and 0.020 or 0.006)
+        end
+
+        EHR_DiseaseMoveTargetedPainToward(
+            player,
+            headPainTarget * math.max(0.35, symptomMult),
+            0.55 * severity,
+            sleepAidActive and 4.0 or 1.25,
+            EHR_DiseaseIsHeadPart
+        )
+
+        trySymptom("insomnia_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+            local lines = sleepAidActive
+                and {"The medicine is finally quieting my head...", "Maybe I can sleep now...", "The edge is softening..."}
+                or stage >= 3
+                    and {"I need sleep. I can't make myself sleep.", "My head won't shut up...", "I'm exhausted and still wide awake...", "Every sound is too sharp."}
+                    or stage == 2
+                        and {"I'm so tired, but I can't sleep...", "My eyes burn. My brain won't stop.", "Just let me sleep..."}
+                        or {"I slept, but it didn't feel like sleep...", "I keep waking up...", "Rest isn't sticking."}
             EHR_DiseaseSay(player, lines)
         end)
 
@@ -3957,8 +4187,8 @@ function EHR.Disease.ClearVanillaPoison(player)
         pcall(function() stats:set(CharacterStat.POISON, 0) end)
     end
 
-    if player and player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 end
 
@@ -4003,8 +4233,8 @@ function EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poison
         graceUntil = now + 24,
     }
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     if EHR.DEBUG then
@@ -4121,6 +4351,8 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     nameLower = nameLower or ""
     local foodTypeLower = string.lower(tostring(EHR_DiseaseSafeItemMethod(item, "getFoodType") or EHR_DiseaseSafeItemMethod(item, "getEatType") or ""))
     local dangerousUncooked = EHR_DiseaseGetItemFlag(item, {"isDangerousUncooked", "getDangerousUncooked"})
+    local isCookable = EHR_DiseaseGetItemFlag(item, {"isCookable", "getIsCookable"})
+    local hiddenUncooked = EHR_DiseaseScriptItemHasTag(item, "base:hideuncooked")
 
     local cookedPatterns = {"cooked", "grilled", "roasted", "fried", "boiled", "burnt", "burned", "charred"}
     for _, pattern in ipairs(cookedPatterns) do
@@ -4166,9 +4398,44 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
         or string.find(nameLower, "raw", 1, true) ~= nil
         or string.find(nameLower, "uncooked", 1, true) ~= nil
         or string.find(nameLower, "undercooked", 1, true) ~= nil
+        or string.find(nameLower, "dead", 1, true) ~= nil
+    local rawByCookState = isCookable == true and hiddenUncooked ~= true
+    local rawMeatCandidate = rawByNameOrFlag == true or rawByCookState == true
 
     if looksPrepared and not rawByNameOrFlag then
         return 0, nil
+    end
+
+    local preservedReadyPatterns = {
+        "jerky",
+        "dehydrated",
+        "dried",
+        "cured",
+        "smoked",
+        "salted",
+        "corned",
+        "canned",
+        "tinned",
+        "tin can",
+        "pepperoni",
+        "salami",
+        "ham ",
+        " ham",
+        ".ham",
+        "hamslice",
+        "ham slice",
+        "hotdog",
+        "hot dog",
+        "meat stick",
+        "meatstick",
+        "pork rinds",
+        "porkrinds",
+        "spam",
+    }
+    for _, pattern in ipairs(preservedReadyPatterns) do
+        if string.find(nameLower, pattern, 1, true) then
+            return 0, nil
+        end
     end
 
     if EHR.Food and EHR.Food.CheckTrichinosisRisk then
@@ -4186,7 +4453,10 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     }
     for _, pattern in ipairs(highRiskPatterns) do
         if string.find(nameLower, pattern) then
-            return EHR.Disease.FoodRisks.rawWildGameHigh or 0.40, "uncooked wild game"
+            if rawMeatCandidate then
+                return EHR.Disease.FoodRisks.rawWildGameHigh or 0.40, "uncooked wild game"
+            end
+            return 0, nil
         end
     end
 
@@ -4200,11 +4470,14 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     }
     for _, pattern in ipairs(mediumRiskPatterns) do
         if string.find(nameLower, pattern) then
-            return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
+            if rawMeatCandidate then
+                return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
+            end
+            return 0, nil
         end
     end
 
-    if foodTypeLower == "game" then
+    if foodTypeLower == "game" and rawMeatCandidate then
         return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
     end
 
@@ -4215,7 +4488,10 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     }
     for _, pattern in ipairs(lowRiskPatterns) do
         if string.find(nameLower, pattern) then
-            return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+            if rawMeatCandidate then
+                return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+            end
+            return 0, nil
         end
     end
 
@@ -4399,8 +4675,17 @@ function EHR.Disease.CheckFoodRisk(player, item)
             toxinType = "berry"
         end
 
-        EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
-        EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+        if isClient and isClient() and sendClientCommand then
+            sendClientCommand(player, "EHR", "FoodToxinRisk", {
+                itemName = tostring(itemName or "unknown"),
+                poisonPower = tonumber(poisonPower) or 0,
+                poisonDetectionLevel = tonumber(poisonDetectionLevel) or 0,
+                toxinType = tostring(toxinType or "toxin"),
+            })
+        else
+            EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
+            EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+        end
     end
 
     -- B42 alternative: check if item has "Rotten" in name or category
@@ -4421,7 +4706,7 @@ function EHR.Disease.CheckFoodRisk(player, item)
     -- Raw or undercooked meat causes trichinosis risk, not generic food poisoning.
     local trichinosisRisk, trichinosisReason = EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
     if trichinosisRisk > 0 then
-        print(string.format("[EHR] Food risk: %s -> trichinosis (%s, %.0f%%)",
+        EHR.Log(string.format("Food risk: %s -> trichinosis (%s, %.0f%%)",
             tostring(itemName or "unknown"), tostring(trichinosisReason or "uncooked meat"), trichinosisRisk * 100))
         addRisk("trichinosis", trichinosisReason, trichinosisRisk)
     end
@@ -4510,6 +4795,23 @@ function EHR.Disease.CheckFoodRisk(player, item)
         EHR.Log(string.format("CheckFoodRisk: rotten=%s, burnt=%s, cooked=%s, age=%.2f/%.2f",
             tostring(isRotten), tostring(isBurnt), tostring(isCooked),
             age or 0, offAge or 0))
+    end
+
+    if isClient and isClient() and sendClientCommand and #risks > 0 then
+        local packetRisks = {}
+        for _, foodRisk in ipairs(risks) do
+            table.insert(packetRisks, {
+                diseaseId = tostring(foodRisk.diseaseId or ""),
+                reason = tostring(foodRisk.reason or "food"),
+                chance = math.max(0, math.min(1, tonumber(foodRisk.chance) or 0)),
+            })
+        end
+
+        sendClientCommand(player, "EHR", "FoodDiseaseRisk", {
+            itemName = tostring(itemName or "unknown"),
+            risks = packetRisks,
+        })
+        return
     end
 
     for _, foodRisk in ipairs(risks) do
@@ -4606,6 +4908,14 @@ function EHR.Disease.Cure(player, diseaseId)
             end
         end
 
+        if diseaseId == "insomnia" then
+            local modData = player and player:getModData() or nil
+            if modData then modData.EHR_Insomnia = nil end
+            if EHR.Insomnia and EHR.Insomnia.ClearAfterCure then
+                EHR.Insomnia.ClearAfterCure(player)
+            end
+        end
+
         if diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
             EHR.HyperkeratoticScabies.ClearAfterCure(player)
         end
@@ -4625,6 +4935,9 @@ function EHR.Disease.Cure(player, diseaseId)
 
         if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
             EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+        end
+        if EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+            EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
         end
 
         EHR.Log("Cured disease: " .. tostring(diseaseId))
@@ -4764,6 +5077,9 @@ function EHR.Disease.CureAll(player)
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
         EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
     end
+    if count > 0 and EHR.Medication and EHR.Medication.StartMPFatigueRecovery then
+        EHR.Medication.StartMPFatigueRecovery(player, 0.35, 4)
+    end
 
 
     if count > 0 then
@@ -4871,8 +5187,8 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
 
         if isClient() then
             sendClientCommand(player, "EHR", "RequestSync", {})
-        elseif player.transmitModData then
-            pcall(function() player:transmitModData() end)
+        elseif EHR and EHR.SafeTransmitModData then
+            EHR.SafeTransmitModData(player)
         end
 
         EHR.Log("Set " .. tostring(diseaseId) .. " to stage " .. tostring(stage))
@@ -5233,8 +5549,8 @@ function EHR.Disease.ResetFoodSicknessAfterCure(player, curedDiseaseId)
     local playerID = player:getUsername() or "default"
     cachedSicknessTargets[playerID] = { target = targetB42, lastSetTime = getGameTime():getWorldAgeHours() }
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
     EHR.Log("Food sickness reset after cure")
@@ -5553,7 +5869,7 @@ local function processPlayerTick(player)
             EHR.Disease._graceLogCounter = EHR.Disease._graceLogCounter + 1
             if EHR.Disease._graceLogCounter >= 60 then
                 EHR.Disease._graceLogCounter = 0
-                print("[EHR Disease] Grace period: " .. diseaseCount .. " active diseases preserved")
+                EHR.Log("Disease grace period: " .. diseaseCount .. " active diseases preserved")
             end
         end
     end
@@ -5601,8 +5917,8 @@ local function processPlayerTick(player)
         state.sync = state.sync + 1
         if state.sync >= SYNC_TICK_INTERVAL then
             state.sync = 0
-            if player.transmitModData then
-                pcall(function() player:transmitModData() end)
+            if EHR and EHR.SafeTransmitModData then
+                EHR.SafeTransmitModData(player)
             end
         end
     end
@@ -5697,6 +6013,13 @@ if not (EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.UpdatePlayer) th
     local okScabies, scabiesErr = pcall(require, "ExtensiveHealth/EHR_HyperkeratoticScabies")
     if not okScabies then
         EHR.Log("Disease module: failed to load scabies detector: " .. tostring(scabiesErr))
+    end
+end
+
+if not (EHR.Insomnia and EHR.Insomnia.UpdateTracking) then
+    local okInsomnia, insomniaErr = pcall(require, "ExtensiveHealth/EHR_Insomnia")
+    if not okInsomnia then
+        EHR.Log("Disease module: failed to load insomnia detector: " .. tostring(insomniaErr))
     end
 end
 

@@ -1,3 +1,4 @@
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 --[[
     Extensive Health Rework B42
     Knox Cure Context Menu Integration
@@ -12,9 +13,44 @@
 ]]--
 
 require "ExtensiveHealth/EHR_KnoxCure"
+require "TimedActions/ISBaseTimedAction"
+require "TimedActions/ISInventoryTransferAction"
 
 EHR = EHR or {}
 EHR.KnoxCureMenu = {}
+
+local function knoxMenuText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_KnoxCure_" .. tostring(key), fallback)
+    end
+    local fullKey = "UI_EHR_KnoxCure_" .. tostring(key)
+    local ok, value = pcall(getText, fullKey)
+    if ok and value and value ~= fullKey then return value end
+    return fallback
+end
+
+local function useKnoxCureItem(player, item, action)
+    if not player or not item then return end
+
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "UseKnoxCureItem", {
+            action = action,
+            itemID = item:getID(),
+            itemFullType = item:getFullType(),
+        })
+        return
+    end
+
+    if action == "geneTherapy" then
+        EHR.KnoxCure.UseGeneTherapy(player, item)
+    elseif action == "phalanx" then
+        EHR.KnoxCure.UsePhalanx(player, item)
+    elseif action == "antibodyTest" then
+        EHR.KnoxCure.UseAntibodyTest(player, item)
+    elseif action == "immunobooster" then
+        EHR.KnoxCure.UseImmunobooster(player, item)
+    end
+end
 
 -- ============================================
 -- CONTEXT MENU HANDLERS
@@ -76,9 +112,10 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     -- Check if already immune
-    if data and data.geneTherapyImmune then
+    if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         local option = context:addOption("Gene Therapy (Already Immune)", nil, nil)
         option.notAvailable = true
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         option.toolTip = ISWorldObjectContextMenu.addToolTip()
         option.toolTip:setName("Already Immune")
         option.toolTip.description = "You survived Gene Therapy and are permanently immune to the Knox Virus."
@@ -91,6 +128,7 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     -- Create option
     local optionText = "Use Gene Therapy Injector"
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseGeneTherapy, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
@@ -107,7 +145,11 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
         option.notAvailable = true
     end
 
-    desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity"
+    if EHR.KnoxCure.IsPatientZeroTraitEnabled and not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
+        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: current Knox infection cured. Patient Zero immunity is disabled by sandbox."
+    else
+        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity"
+    end
 
     option.toolTip.description = desc
 end
@@ -130,7 +172,7 @@ end
 
 function EHR.KnoxCureMenu.OnGeneTherapyConfirm(this, button, player, item)
     if button.internal == "YES" then
-        EHR.KnoxCure.UseGeneTherapy(player, item)
+        useKnoxCureItem(player, item, "geneTherapy")
     end
 end
 
@@ -142,9 +184,10 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     -- Check if immune
-    if data and data.geneTherapyImmune then
+    if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         local option = context:addOption("Take Phalanx (Already Immune)", nil, nil)
         option.notAvailable = true
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         return
     end
 
@@ -164,6 +207,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
     end
 
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUsePhalanx, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Disable if ineffective or not infected
     if resetTo >= 100 then
@@ -202,7 +246,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
 end
 
 function EHR.KnoxCureMenu.OnUsePhalanx(player, item)
-    EHR.KnoxCure.UsePhalanx(player, item)
+    useKnoxCureItem(player, item, "phalanx")
 end
 
 -- ============================================
@@ -213,6 +257,7 @@ function EHR.KnoxCureMenu.AddAntibodyTestOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     local option = context:addOption("Use Antibody Test", player, EHR.KnoxCureMenu.OnUseAntibodyTest, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
@@ -233,6 +278,12 @@ function EHR.KnoxCureMenu.AddAntibodyTestOption(context, player, item)
 end
 
 function EHR.KnoxCureMenu.OnUseAntibodyTest(player, item)
+    -- Transfer first so timed action validation and server-side consumption work
+    -- the same from backpacks, belt slots, and the main inventory.
+    if item and item.getContainer and item:getContainer() ~= player:getInventory() then
+        ISTimedActionQueue.add(ISInventoryTransferAction:new(player, item, item:getContainer(), player:getInventory()))
+    end
+
     -- Start a timed action for the test
     ISTimedActionQueue.add(ISEHRAntibodyTestAction:new(player, item, 200))  -- ~6.6 seconds
 end
@@ -245,9 +296,10 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
     -- Check if already immune
-    if data and data.geneTherapyImmune then
+    if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
         local option = context:addOption("Use Immunobooster (Already Immune)", nil, nil)
         option.notAvailable = true
+        if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         return
     end
 
@@ -276,6 +328,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     end
 
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseImmunobooster, item)
+    if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Disable if not usable
     if isActive or isOnCooldown or isInfected or hasBites then
@@ -310,7 +363,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
 end
 
 function EHR.KnoxCureMenu.OnUseImmunobooster(player, item)
-    EHR.KnoxCure.UseImmunobooster(player, item)
+    useKnoxCureItem(player, item, "immunobooster")
 end
 
 -- ============================================
@@ -329,12 +382,14 @@ function ISEHRAntibodyTestAction:new(player, item, time)
 end
 
 function ISEHRAntibodyTestAction:isValid()
-    return self.item and self.character:getInventory():contains(self.item)
+    if not self.item or not self.character or not self.character:isAlive() then return false end
+    local inventory = self.character:getInventory()
+    return inventory and inventory:contains(self.item)
 end
 
 function ISEHRAntibodyTestAction:start()
     if self.character.Say then
-        self.character:Say("Running the test...")
+        EHR.Locale.Say(self.character, knoxMenuText("RunningTest", "Running the test..."))
     end
 end
 
@@ -347,7 +402,7 @@ function ISEHRAntibodyTestAction:stop()
 end
 
 function ISEHRAntibodyTestAction:perform()
-    EHR.KnoxCure.UseAntibodyTest(self.character, self.item)
+    useKnoxCureItem(self.character, self.item, "antibodyTest")
     ISBaseTimedAction.perform(self)
 end
 

@@ -12,6 +12,7 @@ require "ISUI/ISScrollingListBox"
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR_MedicalJournalUI = ISPanel:derive("EHR_MedicalJournalUI")
 EHR_MedicalJournalUI.instance = nil
@@ -21,6 +22,24 @@ local WINDOW_HEIGHT = 640
 local PADDING = 14
 local HEADER_HEIGHT = 42
 local LIST_WIDTH = 326
+
+
+local function L(key, fallback)
+    return EHR.Locale.Text(key, fallback)
+end
+
+local function LF(key, fallback, ...)
+    return EHR.Locale.Format(key, fallback, ...)
+end
+
+local function codexKey(diseaseId, field)
+    diseaseId = tostring(diseaseId or "unknown"):gsub("[^%w_]", "_")
+    return "UI_EHR_Codex_" .. diseaseId .. "_" .. tostring(field or "Text")
+end
+
+local function codexText(diseaseId, field, fallback)
+    return L(codexKey(diseaseId, field), fallback)
+end
 
 local Colors = {
     bg = { r = 0.015, g = 0.014, b = 0.014, a = 0.96 },
@@ -43,7 +62,7 @@ local DiseaseIcons = {
     unknown = "media/textures/EHR_Disease_Unknown.png",
     ahtr = "media/textures/EHR_Disease_AHTR.png",
     cadaveric_aspergillosis = "media/textures/EHR_Disease_CadavericAspergillosis.png",
-    cellulitis = "media/textures/EHR_Disease_Wound_Infection.png",
+    cellulitis = "media/textures/EHR_Disease_Cellulitis.png",
     common_cold = "media/textures/EHR_Disease_CommonCold.png",
     concussion = "media/textures/EHR_Disease_Concussion.png",
     corpse_sickness = "media/textures/EHR_Disease_CorpseSickness.png",
@@ -106,6 +125,7 @@ local CatalogOrder = {
     "hyperkeratotic_scabies",
     "concussion",
     "delirium",
+    "insomnia",
     "ahtr",
     "knox_infection",
 }
@@ -214,11 +234,11 @@ local CodexInfo = {
     },
     cellulitis = {
         category = "wound",
-        name = "Cellulitis (WIP)",
-        cause = "WIP: not currently triggered by gameplay. Planned as a spreading bacterial infection through damaged skin or untreated wounds.",
-        symptoms = "WIP: planned symptoms are hot red skin, swelling, pain, fever, and reduced limb function.",
-        prevention = "WIP: treat wound infections early and keep injured skin clean. Full gameplay mechanics are not active yet.",
-        treatment = "WIP: planned treatment is antibiotic ointment for mild cases; antibiotics or clinical antibiotics for severe infection.",
+        name = "Cellulitis",
+        cause = "A spreading bacterial skin infection after a poorly closed wound. Rough suturing has a high risk of starting cellulitis.",
+        symptoms = "Hot red skin, swelling, local pain, fever, fatigue, weakness, and reduced endurance. Untreated stage 4 can progress into sepsis.",
+        prevention = "Clean wounds before suturing, use sterile supplies, and avoid rough stitching when possible.",
+        treatment = "Antibiotic ointment can treat mild cases. Prescription antibiotics, broad-spectrum antibiotics, plant-based antibiotics, IV antibiotics, or IV vancomycin treat more serious cases. Anti-inflammatory and antipyretic tablets reduce symptoms only.",
     },
     sepsis = {
         category = "wound",
@@ -254,6 +274,15 @@ local CodexInfo = {
         symptoms = "Hallucinated sounds, irrational speech, visual distortion, and unsafe impulsive behavior.",
         prevention = "Reduce stress before it reaches a prolonged maximum state.",
         treatment = "Antipsychotics. Requires an 8-dose course over 4 days.",
+    },
+    insomnia = {
+        category = "mental",
+        incubation = "Triggered after 12 hours at very high fatigue, or rarely after stimulant crashes.",
+        duration = "Stage 3 is persistent until treated.",
+        cause = "Prolonged extreme fatigue, caffeine crash, combat stimulant crash, or nitric oxide booster crash.",
+        symptoms = "Poor rest, inability to sleep naturally in later stages, stress, fatigue, and headache.",
+        prevention = "Sleep before exhaustion becomes prolonged and avoid stacking strong stimulants.",
+        treatment = "Sleeping pills allow sleep while active. Dual orexin receptor medication cures over 96 hours; antidepressants cure over 168 hours.",
     },
     ahtr = {
         category = "blood",
@@ -317,7 +346,7 @@ end
 local function rangeHoursToText(minHours, maxHours)
     local minText = hoursToText(minHours)
     local maxText = hoursToText(maxHours)
-    if not minText and not maxText then return "Unknown" end
+    if not minText and not maxText then return L("UI_EHR_Codex_Unknown", "Unknown") end
     if minText == maxText then return minText end
     return tostring(minText or "?") .. " - " .. tostring(maxText or "?")
 end
@@ -344,7 +373,8 @@ local function truncateText(text, maxWidth, font)
 end
 
 local function categoryName(category)
-    return CategoryNames[category] or tostring(category or "Unknown")
+    local key = "UI_EHR_Codex_Category_" .. tostring(category or "unknown")
+    return L(key, CategoryNames[category] or tostring(category or L("UI_EHR_Codex_Unknown", "Unknown")))
 end
 
 function EHR_MedicalJournalUI:new(x, y, width, height, player)
@@ -418,10 +448,16 @@ function EHR_MedicalJournalUI:getFirstAidLevel()
 end
 
 function EHR_MedicalJournalUI:knowsDisease(diseaseId)
+    local id = normalizeDiseaseId(diseaseId)
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.IsKnoxDiseaseId and EHR.DiseaseFlyers.IsKnoxDiseaseId(id) then
+        return EHR.DiseaseFlyers.KnowsDisease
+            and EHR.DiseaseFlyers.KnowsDisease(self.player, id) == true
+    end
+
     local level = self:getFirstAidLevel()
     if level >= 8 then return true end
     if EHR.DiseaseFlyers and EHR.DiseaseFlyers.CanIdentifyDisease then
-        return EHR.DiseaseFlyers.CanIdentifyDisease(self.player, diseaseId) == true
+        return EHR.DiseaseFlyers.CanIdentifyDisease(self.player, id) == true
     end
     return false
 end
@@ -433,7 +469,7 @@ function EHR_MedicalJournalUI:getCatalogEntry(diseaseId)
     local category = info.category or (def and def.category) or "infection"
     local known = self:knowsDisease(id)
     local realName = info.name or (def and def.name) or (EHR.DiseaseFlyers and EHR.DiseaseFlyers.GetDiseaseFriendlyName and EHR.DiseaseFlyers.GetDiseaseFriendlyName(id)) or id
-    local displayName = known and realName or (CategoryUnknownNames[category] or "Unknown Illness")
+    local displayName = known and realName or L("UI_EHR_Codex_UnknownCategory_" .. tostring(category or "unknown"), CategoryUnknownNames[category] or L("UI_EHR_DiseaseUnknown", "Unknown Illness"))
 
     return {
         id = id,
@@ -441,10 +477,10 @@ function EHR_MedicalJournalUI:getCatalogEntry(diseaseId)
         info = info,
         category = category,
         known = known,
-        realName = realName,
-        displayName = displayName,
-        incubation = info.incubation or rangeHoursToText(def and def.incubationMin, def and def.incubationMax),
-        duration = info.duration or rangeHoursToText(def and def.durationMin, def and def.durationMax),
+        realName = codexText(id, "Name", realName),
+        displayName = known and codexText(id, "Name", displayName) or displayName,
+        incubation = codexText(id, "Incubation", info.incubation or rangeHoursToText(def and def.incubationMin, def and def.incubationMax)),
+        duration = codexText(id, "Duration", info.duration or rangeHoursToText(def and def.durationMin, def and def.durationMax)),
         canKill = (def and def.canKill == true) or info.canKill == true,
     }
 end
@@ -529,21 +565,21 @@ function EHR_MedicalJournalUI:prerender()
     self:drawRect(0, 0, self.width, self.height, c.bg.a, c.bg.r, c.bg.g, c.bg.b)
     self:drawRectBorder(0, 0, self.width, self.height, c.border.a, c.border.r, c.border.g, c.border.b)
     self:drawRect(0, 0, self.width, HEADER_HEIGHT, 0.82, 0.02, 0.02, 0.02)
-    self:drawText("EHR DISEASE HANDBOOK", 16, 8, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Large)
+    self:drawText(L("UI_EHR_DiseaseHandbook_Title", "EHR DISEASE HANDBOOK"), 16, 8, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Large)
 
     local total = #CatalogOrder
     local known = tonumber(self.knownCount) or 0
-    local progress = string.format("%d/%d known", known, total)
+    local progress = LF("UI_EHR_DiseaseHandbook_KnownCount", "%1/%2 known", known, total)
     local progressW = measureText(UIFont.Medium, progress)
     self:drawText(progress, self.width - progressW - 50, 11, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Medium)
 
-    self:drawPanelFrame(PADDING, HEADER_HEIGHT + PADDING, LIST_WIDTH, self.height - HEADER_HEIGHT - PADDING * 2, "DISEASE INDEX")
+    self:drawPanelFrame(PADDING, HEADER_HEIGHT + PADDING, LIST_WIDTH, self.height - HEADER_HEIGHT - PADDING * 2, L("UI_EHR_DiseaseHandbook_Index", "DISEASE INDEX"))
 
     local detailX = PADDING + LIST_WIDTH + 12
     local detailY = HEADER_HEIGHT + PADDING
     local detailW = self.width - detailX - PADDING
     local detailH = self.height - detailY - PADDING
-    self:drawPanelFrame(detailX, detailY, detailW, detailH, "ENTRY DETAILS")
+    self:drawPanelFrame(detailX, detailY, detailW, detailH, L("UI_EHR_DiseaseHandbook_Details", "ENTRY DETAILS"))
 end
 
 function EHR_MedicalJournalUI:render()
@@ -574,12 +610,12 @@ function EHR_MedicalJournalUI:drawDiseaseDetails(entry, x, y, w, h)
     local titleX = x + iconSize + 18
     self:drawText(entry.displayName, titleX, y + 4, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Large)
     self:drawText(categoryName(entry.category), titleX, y + 34, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium)
-    local badge = entry.known and "KNOWN" or "LOCKED"
+    local badge = entry.known and L("UI_EHR_Codex_KnownUpper", "KNOWN") or L("UI_EHR_Codex_LockedUpper", "LOCKED")
     local badgeColor = entry.known and c.green or c.yellow
     self:drawText(badge, titleX, y + 60, badgeColor.r, badgeColor.g, badgeColor.b, badgeColor.a, UIFont.Medium)
 
     if entry.canKill then
-        local lethal = "LETHAL RISK"
+        local lethal = L("UI_EHR_Codex_LethalRisk", "LETHAL RISK")
         local lethalW = measureText(UIFont.Medium, lethal)
         self:drawText(lethal, x + w - lethalW, y + 60, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Medium)
     end
@@ -589,21 +625,21 @@ function EHR_MedicalJournalUI:drawDiseaseDetails(entry, x, y, w, h)
     y = y + 16
 
     if not entry.known then
-        self:drawText("Knowledge unavailable", x, y, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Medium)
+        self:drawText(L("UI_EHR_Codex_KnowledgeUnavailable", "Knowledge unavailable"), x, y, c.red.r, c.red.g, c.red.b, c.red.a, UIFont.Medium)
         y = y + 28
         self:drawWrappedText(
-            "Read the matching disease flyer or reach First Aid level 8 to unlock symptoms, causes, prevention, and treatment notes.",
+            L("UI_EHR_Codex_LockedDesc", "Read the matching disease flyer or reach First Aid level 8 to unlock symptoms, causes, prevention, and treatment notes."),
             x + 8, y, w - 16, c.textDim, UIFont.Small, 19
         )
         return
     end
 
     local info = entry.info or {}
-    y = self:drawInfoSection("Cause", info.cause or "Unknown.", x, y, w)
-    y = self:drawInfoSection("Symptoms", info.symptoms or "No symptom notes available.", x, y, w)
-    y = self:drawInfoSection("Timing", "Incubation: " .. tostring(entry.incubation or "Unknown") .. ". Duration: " .. tostring(entry.duration or "Unknown") .. ".", x, y, w)
-    y = self:drawInfoSection("Prevention", info.prevention or "No prevention notes available.", x, y, w)
-    self:drawInfoSection("Treatment", info.treatment or "No treatment notes available.", x, y, w)
+    y = self:drawInfoSection(L("UI_EHR_Codex_Cause", "Cause"), codexText(entry.id, "Cause", info.cause or L("UI_EHR_Codex_UnknownSentence", "Unknown.")), x, y, w)
+    y = self:drawInfoSection(L("UI_EHR_Codex_Symptoms", "Symptoms"), codexText(entry.id, "Symptoms", info.symptoms or L("UI_EHR_Codex_NoSymptoms", "No symptom notes available.")), x, y, w)
+    y = self:drawInfoSection(L("UI_EHR_Codex_Timing", "Timing"), LF("UI_EHR_Codex_TimingText", "Incubation: %1. Duration: %2.", tostring(entry.incubation or L("UI_EHR_Codex_Unknown", "Unknown")), tostring(entry.duration or L("UI_EHR_Codex_Unknown", "Unknown"))), x, y, w)
+    y = self:drawInfoSection(L("UI_EHR_Codex_Prevention", "Prevention"), codexText(entry.id, "Prevention", info.prevention or L("UI_EHR_Codex_NoPrevention", "No prevention notes available.")), x, y, w)
+    self:drawInfoSection(L("UI_EHR_Codex_Treatment", "Treatment"), codexText(entry.id, "Treatment", info.treatment or L("UI_EHR_Codex_NoTreatment", "No treatment notes available.")), x, y, w)
 end
 
 function EHR_MedicalJournalUI.drawDiseaseItem(self, y, item, alt)
@@ -634,7 +670,7 @@ function EHR_MedicalJournalUI.drawDiseaseItem(self, y, item, alt)
     local category = truncateText(categoryName(entry.category), self:getWidth() - 118, UIFont.Small)
     self:drawText(category, 76, y + 42, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
 
-    local status = entry.known and "Known" or "Locked"
+    local status = entry.known and L("UI_EHR_Codex_Known", "Known") or L("UI_EHR_Codex_Locked", "Locked")
     local statusColor = entry.known and c.green or c.yellow
     local statusW = measureText(UIFont.Small, status)
     self:drawText(status, self:getWidth() - statusW - 18, y + 42, statusColor.r, statusColor.g, statusColor.b, statusColor.a, UIFont.Small)

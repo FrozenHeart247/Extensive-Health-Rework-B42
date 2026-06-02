@@ -6,6 +6,58 @@ module ExtensiveHealth
         Updated for B42 with balanced multi-dose packages
     =========================================== **/
 
+    model EHR_ActivatedCharcoal
+    {
+        mesh = EHR/ActivatedCharcoal,
+        texture = ActivatedCharcoal,
+
+    }
+ model EHR_AntibioticOintment
+    {
+        mesh = EHR/AntibioticOintment,
+        texture = AntibioticOintment,
+	scale=0.3,
+
+    }
+	 model EHR_CorticosteroidInjection
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	scale=0.3,
+	}
+    model EHR_AlbendazoleInjection
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	}
+    model EHR_IVAmphotericin
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	scale=0.5,
+	}
+    model EHR_IVAntibiotics
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	}
+    model EHR_IVCiprofloxacin
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	}
+    model EHR_IVMetronidazole
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	}
+    model EHR_IVVancomycin
+    {
+        mesh = EHR/InjectorBase,
+        texture = InjectorBase,
+	}
+   
+
     /** =========================================
         BLOOD BAGS (Single Use - Perishable)
         Fresh for ~1 hour outside frozen storage.
@@ -150,7 +202,7 @@ module ExtensiveHealth
         Icon = BloodBagEmpty,
         Weight = 0.2,
         Tooltip = Tooltip_EmptyBloodBag,
-        WorldStaticModel = MedicalParcel_White,
+        WorldStaticModel = MedicalParcel_Green,
         Medical = true,
     }
 
@@ -206,8 +258,6 @@ module ExtensiveHealth
         Tooltip = Tooltip_SterilizedBandages,
         UseDelta = 0.2,
         UseWhileEquipped = false,
-        BandagePower = 4.0,
-        CanBandage = true,
         ConsolidateOption = ContextMenu_Merge,
         Medical = true,
         WorldStaticModel = MedicalParcel_Green,
@@ -378,6 +428,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item CombatStimulants
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Combat Stimulants,
+        Icon = CombatStimulants,
+        Weight = 0.2,
+        Tooltip = Tooltip_CombatStimulants,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item CoughSuppressant
     {
         DisplayCategory = FirstAid,
@@ -458,6 +521,23 @@ module ExtensiveHealth
         Tooltip = Tooltip_ActivatedCharcoal,
         UseDelta = 0.125,
         UseWhileEquipped = false,
+        StaticModel = EHR_ActivatedCharcoal,
+        WorldStaticModel = EHR_ActivatedCharcoal,
+        Medical = true,
+    }
+
+    item HomeMadeActivatedCharcoal
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Activated Charcoal,
+        Icon = HomeMadeActivatedCharcoal,
+        Weight = 0.2,
+        Tooltip = Tooltip_ActivatedCharcoal,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        StaticModel = EHR_ActivatedCharcoal,
+        WorldStaticModel = EHR_ActivatedCharcoal,
         Medical = true,
     }
 
@@ -539,6 +619,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item DualOrexinReceptor
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Dual Orexin Receptor,
+        Icon = DualOrexinReceptor,
+        Weight = 0.1,
+        Tooltip = Tooltip_DualOrexinReceptor,
+        UseDelta = 0.125,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item TetanusAntitoxin
     {
         DisplayCategory = FirstAid,
@@ -546,6 +639,8 @@ module ExtensiveHealth
         DisplayName = Tetanus Antitoxin,
         Icon = TetanusAntitoxin,
         Weight = 0.1,
+        StaticModel = EHR_CorticosteroidInjection,
+        WorldStaticModel = EHR_CorticosteroidInjection,
         Tooltip = Tooltip_TetanusAntitoxin,
         Medical = true,
     }
@@ -570,8 +665,12 @@ module ExtensiveHealth
         DisplayName = Antibiotic Ointment,
         Icon = AntibioticOintment,
         Weight = 0.1,
+  	StaticModel = EHR_AntibioticOintment,
+        WorldStaticModel = EHR_AntibioticOintment,
+
         Tooltip = Tooltip_AntibioticOintment,
         UseDelta = 0.1667,
+
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -614,6 +713,8 @@ module ExtensiveHealth
         DisplayName = Corticosteroid Injection,
         Icon = CorticosteroidInjection,
         Weight = 0.1,
+        StaticModel = EHR_CorticosteroidInjection,
+        WorldStaticModel = EHR_CorticosteroidInjection,
         Tooltip = Tooltip_CorticosteroidInjection,
         Medical = true,
     }
@@ -639,6 +740,7 @@ module ExtensiveHealth
         Icon = IVFluids,
         Weight = 0.6,
         Tooltip = Tooltip_IVFluids,
+        WorldStaticModel = MedicalParcel_Green,
         WorldStaticScale = 0.06,
         Medical = true,
     }
@@ -650,6 +752,8 @@ module ExtensiveHealth
         DisplayName = IV Antibiotics,
         Icon = IVAntibiotics,
         Weight = 0.4,
+        StaticModel = EHR_IVAntibiotics,
+        WorldStaticModel = EHR_IVAntibiotics,
         Tooltip = Tooltip_IVAntibiotics,
         WorldStaticScale = 0.06,
         Medical = true,
@@ -662,6 +766,8 @@ module ExtensiveHealth
         DisplayName = IV Metronidazole,
         Icon = IVMetronidazole,
         Weight = 0.4,
+        StaticModel = EHR_IVMetronidazole,
+        WorldStaticModel = EHR_IVMetronidazole,
         Tooltip = Tooltip_IVMetronidazole,
         WorldStaticScale = 0.06,
         Medical = true,
@@ -674,6 +780,8 @@ module ExtensiveHealth
         DisplayName = IV Amphotericin B,
         Icon = IVAmphotericin,
         Weight = 0.4,
+        StaticModel = EHR_IVAmphotericin,
+        WorldStaticModel = EHR_IVAmphotericin,
         Tooltip = Tooltip_IVAmphotericin,
         WorldStaticScale = 0.06,
         Medical = true,
@@ -697,6 +805,8 @@ module ExtensiveHealth
         DisplayName = Albendazole Injection,
         Icon = AlbendazoleInjection,
         Weight = 0.1,
+        StaticModel = EHR_AlbendazoleInjection,
+        WorldStaticModel = EHR_AlbendazoleInjection,
         Tooltip = Tooltip_AlbendazoleInjection,
         Medical = true,
     }
@@ -708,6 +818,8 @@ module ExtensiveHealth
         DisplayName = IV Ciprofloxacin,
         Icon = IVCiprofloxacin,
         Weight = 0.4,
+        StaticModel = EHR_IVCiprofloxacin,
+        WorldStaticModel = EHR_IVCiprofloxacin,
         Tooltip = Tooltip_IVCiprofloxacin,
         WorldStaticScale = 0.06,
         Medical = true,
@@ -720,6 +832,8 @@ module ExtensiveHealth
         DisplayName = Tetanus Immunoglobulin,
         Icon = TetanusImmunoglobulin,
         Weight = 0.2,
+        StaticModel = EHR_CorticosteroidInjection,
+        WorldStaticModel = EHR_CorticosteroidInjection,
         Tooltip = Tooltip_TetanusImmunoglobulin,
         Medical = true,
     }
@@ -744,6 +858,8 @@ module ExtensiveHealth
         DisplayName = IV Vancomycin,
         Icon = IVVancomycin,
         Weight = 0.4,
+        StaticModel = EHR_IVVancomycin,
+        WorldStaticModel = EHR_IVVancomycin,
         Tooltip = Tooltip_IVVancomycin,
         WorldStaticScale = 0.06,
         Medical = true,

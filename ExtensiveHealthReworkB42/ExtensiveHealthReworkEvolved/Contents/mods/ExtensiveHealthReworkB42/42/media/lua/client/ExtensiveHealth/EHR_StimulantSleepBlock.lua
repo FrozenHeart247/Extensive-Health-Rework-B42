@@ -3,6 +3,8 @@
 require "ExtensiveHealth/EHR_Medication"
 require "ISUI/ISWorldObjectContextMenu"
 require "ISUI/ISSleepDialog"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_Insomnia" end)
 
 EHR = EHR or {}
 EHR.Stimulants = EHR.Stimulants or {}
@@ -20,21 +22,38 @@ end
 
 local function EHR_StimulantSleepBlocked(player)
     if not player or not EHR.Medication or not EHR.Medication.IsCaffeineAwake then
-        return false
+        -- Keep checking insomnia even if the medication module is missing a caffeine helper.
+    elseif EHR.Medication.IsCaffeineAwake(player) then
+        local text = EHR_StimulantSleepText()
+        if HaloTextHelper and HaloTextHelper.addBadText then
+            pcall(function() HaloTextHelper.addBadText(player, text) end)
+        elseif player.Say then
+            pcall(function() EHR.Locale.Say(player, text) end)
+        end
+
+        return true
     end
 
-    if not EHR.Medication.IsCaffeineAwake(player) then
-        return false
+    if EHR.Insomnia and EHR.Insomnia.ShouldBlockSleep and EHR.Insomnia.ShouldBlockSleep(player) then
+        local text = "I'm exhausted, but I can't sleep without medication."
+        if getText then
+            local key = "UI_EHR_Insomnia_NoSleep"
+            local translated = getText(key)
+            if translated and translated ~= key then
+                text = translated
+            end
+        end
+
+        if HaloTextHelper and HaloTextHelper.addBadText then
+            pcall(function() HaloTextHelper.addBadText(player, text) end)
+        elseif player.Say then
+            pcall(function() EHR.Locale.Say(player, text) end)
+        end
+
+        return true
     end
 
-    local text = EHR_StimulantSleepText()
-    if HaloTextHelper and HaloTextHelper.addBadText then
-        pcall(function() HaloTextHelper.addBadText(player, text) end)
-    elseif player.Say then
-        pcall(function() player:Say(text) end)
-    end
-
-    return true
+    return false
 end
 
 function EHR.Stimulants.HookSleep()

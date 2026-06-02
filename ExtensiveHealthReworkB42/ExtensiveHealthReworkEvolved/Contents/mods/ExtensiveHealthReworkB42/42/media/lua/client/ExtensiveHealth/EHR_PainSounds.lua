@@ -18,6 +18,7 @@
 
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Dialogue"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.PainSounds = {}
@@ -442,7 +443,7 @@ function EHR.PainSounds.SayPainDialogue(player, painLevel)
     if EHR.Dialogue and EHR.Dialogue.SayCritical then
         EHR.Dialogue.SayCritical(player, text)
     else
-        player:Say(text)
+        EHR.Locale.Say(player, text)
     end
 end
 

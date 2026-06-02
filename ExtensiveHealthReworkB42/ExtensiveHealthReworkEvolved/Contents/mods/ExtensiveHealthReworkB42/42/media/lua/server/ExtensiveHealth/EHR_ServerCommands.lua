@@ -12,7 +12,15 @@ if isClient() then
 end
 
 EHR = EHR or {}
+pcall(function() require "ExtensiveHealth/EHR_Blood" end)
+pcall(function() require "ExtensiveHealth/EHR_Disease" end)
+pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
+pcall(function() require "ExtensiveHealth/EHR_Sepsis" end)
+pcall(function() require "ExtensiveHealth/EHR_EnvironmentalDiseases" end)
+pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -25,10 +33,95 @@ local function isEHRDebug()
 end
 
 local function log(msg)
-    if isEHRDebug() then
+    if EHR and EHR.ShouldLog and EHR.ShouldLog(msg) then
         print(msg)
     end
     return
+end
+
+local function serverText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text(key, fallback)
+    end
+    if getText then
+        local ok, value = pcall(getText, key)
+        if ok and value and value ~= key then return value end
+    end
+    return fallback or key
+end
+
+local function callBodyPartMethod(bodyPart, methodName, fallback)
+    if not bodyPart or not methodName then return fallback end
+    local method = bodyPart[methodName]
+    if not method then return fallback end
+    local ok, result = pcall(function()
+        return method(bodyPart)
+    end)
+    if ok then return result end
+    return fallback
+end
+
+local function getBodyPartName(bodyPart)
+    local partType = callBodyPartMethod(bodyPart, "getType", nil)
+    if partType ~= nil then
+        return tostring(partType)
+    end
+    return nil
+end
+
+local function buildBodyStatusSnapshot(player)
+    local snapshot = {
+        parts = {},
+        timestamp = getTimestampMs and getTimestampMs() or 0,
+    }
+    if not player or not player.getBodyDamage then return snapshot end
+
+    local okDamage, bodyDamage = pcall(function()
+        return player:getBodyDamage()
+    end)
+    if not okDamage or not bodyDamage or not bodyDamage.getBodyParts then
+        return snapshot
+    end
+
+    local okParts, bodyParts = pcall(function()
+        return bodyDamage:getBodyParts()
+    end)
+    if not okParts or not bodyParts or not bodyParts.size then
+        return snapshot
+    end
+
+    for i = 0, bodyParts:size() - 1 do
+        local bodyPart = bodyParts:get(i)
+        local partName = getBodyPartName(bodyPart)
+        if partName then
+            snapshot.parts[partName] = {
+                health = tonumber(callBodyPartMethod(bodyPart, "getHealth", 100)) or 100,
+                bandaged = callBodyPartMethod(bodyPart, "bandaged", false) == true,
+                bandageLife = tonumber(callBodyPartMethod(bodyPart, "getBandageLife", 1)) or 1,
+                infected = callBodyPartMethod(bodyPart, "isInfectedWound", false) == true,
+                infectionLevel = tonumber(callBodyPartMethod(bodyPart, "getWoundInfectionLevel", 0)) or 0,
+                additionalPain = tonumber(callBodyPartMethod(bodyPart, "getAdditionalPain", 0)) or 0,
+                stiffness = tonumber(callBodyPartMethod(bodyPart, "getStiffness", 0)) or 0,
+                hasInjury = callBodyPartMethod(bodyPart, "HasInjury", false) == true,
+                bleeding = callBodyPartMethod(bodyPart, "bleeding", false) == true,
+                fractureTime = tonumber(callBodyPartMethod(bodyPart, "getFractureTime", 0)) or 0,
+                haveBullet = callBodyPartMethod(bodyPart, "haveBullet", false) == true,
+                haveGlass = callBodyPartMethod(bodyPart, "haveGlass", false) == true,
+                burnTime = tonumber(callBodyPartMethod(bodyPart, "getBurnTime", 0)) or 0,
+                needBurnWash = callBodyPartMethod(bodyPart, "isNeedBurnWash", false) == true,
+                deepWounded = callBodyPartMethod(bodyPart, "deepWounded", false) == true,
+                bitten = callBodyPartMethod(bodyPart, "bitten", false) == true,
+                cut = callBodyPartMethod(bodyPart, "isCut", false) == true,
+                scratched = callBodyPartMethod(bodyPart, "scratched", false) == true,
+                stitched = callBodyPartMethod(bodyPart, "stitched", false) == true,
+                splintFactor = tonumber(callBodyPartMethod(bodyPart, "getSplintFactor", 0)) or 0,
+                plantainFactor = tonumber(callBodyPartMethod(bodyPart, "getPlantainFactor", 0)) or 0,
+                comfreyFactor = tonumber(callBodyPartMethod(bodyPart, "getComfreyFactor", 0)) or 0,
+            }
+        end
+    end
+
+    return snapshot
 end
 
 log("=========================================")
@@ -99,6 +192,183 @@ local function clearDebugVanillaWoundInfections(player)
     end
 end
 
+local function syncDebugBodyPart(bodyPart)
+    if syncBodyPart and bodyPart then
+        pcall(function() syncBodyPart(bodyPart, 0xFFFFFFFFFFF) end)
+    end
+end
+
+local function syncDebugVisuals(player)
+    if not player then return end
+    if syncVisuals then
+        pcall(function() syncVisuals(player) end)
+    end
+    if sendHumanVisual then
+        pcall(function() sendHumanVisual(player) end)
+    end
+    if player.resetModelNextFrame then
+        pcall(function() player:resetModelNextFrame() end)
+    end
+end
+
+local function getDebugBloodBodyPart(bodyPart)
+    if not bodyPart or not BloodBodyPartType or not BodyPartType then return nil end
+    local ok, result = pcall(function()
+        return BloodBodyPartType.FromIndex(BodyPartType.ToIndex(bodyPart:getType()))
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function clearDebugBodyPartStiffness(player, bodyPart)
+    if not player or not bodyPart then return end
+    pcall(function() bodyPart:setStiffness(0) end)
+    pcall(function()
+        if player.getFitness and BodyPartType and BodyPartType.ToString then
+            player:getFitness():removeStiffnessValue(BodyPartType.ToString(bodyPart:getType()))
+        end
+    end)
+end
+
+local function setDebugBandaged(player, bodyPart, bandaged, dirty)
+    if not player or not bodyPart then return false end
+    local bodyDamage = player:getBodyDamage()
+    if not bodyDamage then return false end
+
+    if bandaged then
+        local bandageType = dirty and "Base.RippedSheetsDirty" or "Base.Bandage"
+        local bandageLife = dirty and 0 or 10
+        pcall(function()
+            bodyDamage:SetBandaged(bodyPart:getIndex(), true, bandageLife, false, bandageType)
+        end)
+    else
+        pcall(function()
+            bodyDamage:SetBandaged(bodyPart:getIndex(), false, 0, false, nil)
+        end)
+    end
+    return true
+end
+
+local function setDebugBleeding(bodyPart, time)
+    if not bodyPart then return end
+    pcall(function()
+        bodyPart:setBleedingTime(math.max(tonumber(time) or 0, tonumber(bodyPart:getBleedingTime()) or 0))
+    end)
+end
+
+local function clearDebugVanillaBodyPart(player, bodyPart)
+    if not bodyPart then return end
+    pcall(function() bodyPart:RestoreToFullHealth() end)
+    pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+    pcall(function() bodyPart:setInfectedWound(false) end)
+    pcall(function() bodyPart:SetBitten(false) end)
+    pcall(function() bodyPart:SetInfected(false) end)
+    pcall(function() bodyPart:SetFakeInfected(false) end)
+    setDebugBandaged(player, bodyPart, false, false)
+    clearDebugBodyPartStiffness(player, bodyPart)
+    syncDebugBodyPart(bodyPart)
+end
+
+local function applyDebugVanillaInjury(player, partName, injuryId)
+    local bodyPart = getDebugBodyPart(player, partName)
+    if not player or not bodyPart or not injuryId then return false end
+
+    if injuryId == "bleeding" then
+        pcall(function() bodyPart:setBleedingTime(10) end)
+    elseif injuryId == "scratch" then
+        pcall(function() bodyPart:setScratched(true, false) end)
+        setDebugBleeding(bodyPart, 4)
+    elseif injuryId == "cut" then
+        pcall(function() bodyPart:setCut(true) end)
+        setDebugBleeding(bodyPart, 8)
+    elseif injuryId == "deep_wound" then
+        pcall(function() bodyPart:generateDeepWound() end)
+    elseif injuryId == "glass" then
+        pcall(function() bodyPart:generateDeepShardWound() end)
+    elseif injuryId == "bite" then
+        pcall(function() bodyPart:SetBitten(true) end)
+        pcall(function() bodyPart:SetInfected(true) end)
+        pcall(function() bodyPart:SetFakeInfected(false) end)
+        setDebugBleeding(bodyPart, 8)
+    elseif injuryId == "burn" then
+        pcall(function() bodyPart:setBurnTime(50) end)
+    elseif injuryId == "bullet" then
+        pcall(function() bodyPart:setHaveBullet(true, 0) end)
+    elseif injuryId == "fracture" then
+        pcall(function() bodyPart:setFractureTime(21) end)
+    elseif injuryId == "strain" then
+        pcall(function() bodyPart:setStiffness(100) end)
+    elseif injuryId == "infect" then
+        pcall(function() bodyPart:setInfectedWound(true) end)
+        pcall(function() bodyPart:setWoundInfectionLevel(10) end)
+    elseif injuryId == "bandage" then
+        setDebugBandaged(player, bodyPart, true, false)
+    elseif injuryId == "dirty_bandage" then
+        setDebugBandaged(player, bodyPart, true, true)
+    elseif injuryId == "remove_bandage" then
+        setDebugBandaged(player, bodyPart, false, false)
+    elseif injuryId == "clear_part" then
+        clearDebugVanillaBodyPart(player, bodyPart)
+        return true
+    else
+        return false
+    end
+
+    syncDebugBodyPart(bodyPart)
+    return true
+end
+
+local function applyDebugVanillaVisual(player, partName, visualId)
+    local bodyPart = getDebugBodyPart(player, partName)
+    local visualPart = getDebugBloodBodyPart(bodyPart)
+    if not player or not visualPart or not visualId then return false end
+
+    if visualId == "add_blood" then
+        pcall(function() player:addBlood(visualPart, false, true, false) end)
+    elseif visualId == "remove_blood" then
+        pcall(function()
+            if player.getVisual then player:getVisual():setBlood(visualPart, 0) end
+        end)
+    elseif visualId == "add_dirt" then
+        pcall(function() player:addDirt(visualPart, nil, false) end)
+    elseif visualId == "remove_dirt" then
+        pcall(function()
+            if player.getVisual then player:getVisual():setDirt(visualPart, 0) end
+        end)
+    elseif visualId == "add_hole" then
+        pcall(function() player:addHole(visualPart) end)
+    elseif visualId == "add_patch" then
+        pcall(function() player:addBasicPatch(visualPart) end)
+    elseif visualId == "clear_visual" then
+        pcall(function()
+            if player.getVisual then
+                player:getVisual():setBlood(visualPart, 0)
+                player:getVisual():setDirt(visualPart, 0)
+            end
+        end)
+    else
+        return false
+    end
+
+    syncDebugVisuals(player)
+    return true
+end
+
+local function clearAllDebugVanillaInjuries(player)
+    if not player then return end
+    for _, partName in ipairs(DEBUG_WOUND_BODY_PARTS) do
+        clearDebugVanillaBodyPart(player, getDebugBodyPart(player, partName))
+    end
+end
+
+local function clearAllDebugVanillaVisuals(player)
+    if not player then return end
+    for _, partName in ipairs(DEBUG_WOUND_BODY_PARTS) do
+        applyDebugVanillaVisual(player, partName, "clear_visual")
+    end
+    syncDebugVisuals(player)
+end
+
 -- ============================================
 -- HELPER: Generate blood type (server-authoritative)
 -- Uses same distribution as client for consistency
@@ -125,25 +395,79 @@ local function generateBloodType()
     return "O+"  -- Fallback
 end
 
+local function isValidBloodType(bloodType)
+    return bloodType == "O-" or bloodType == "O+" or
+           bloodType == "A-" or bloodType == "A+" or
+           bloodType == "B-" or bloodType == "B+" or
+           bloodType == "AB-" or bloodType == "AB+"
+end
+
+local function getBloodTypeStorageKey(player, fallbackUsername)
+    local username = tostring(fallbackUsername or "unknown")
+
+    if player and player.getUsername then
+        pcall(function()
+            username = tostring(player:getUsername() or username)
+        end)
+    end
+
+    local forename = "unknown"
+    local surname = "unknown"
+    local profession = "unknown"
+
+    if player and player.getDescriptor then
+        pcall(function()
+            local descriptor = player:getDescriptor()
+            if descriptor then
+                forename = tostring(descriptor:getForename() or forename)
+                surname = tostring(descriptor:getSurname() or surname)
+                if descriptor.getCharacterProfession then
+                    local prof = descriptor:getCharacterProfession()
+                    if prof then
+                        if prof.getName then
+                            profession = tostring(prof:getName() or profession)
+                        elseif prof.getType then
+                            profession = tostring(prof:getType() or profession)
+                        else
+                            profession = tostring(prof)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    return username .. "|" .. forename .. "|" .. surname .. "|" .. profession
+end
+
+local function storeBloodType(player, playerUsername, bloodType)
+    if not isValidBloodType(bloodType) then return end
+
+    local globalBloodTypes = ModData.getOrCreate("EHR_BloodTypes_Server")
+    local storageKey = getBloodTypeStorageKey(player, playerUsername)
+    globalBloodTypes[storageKey] = bloodType
+end
+
 -- ============================================
 -- HELPER: Get or create blood type from GlobalModData (server-side persistent storage)
 -- This ensures blood type survives server restarts
 -- ============================================
-local function getOrCreateBloodType(playerUsername)
+local function getOrCreateBloodType(player, playerUsername)
     -- GlobalModData persists across server restarts - use it as the authoritative source
     local globalBloodTypes = ModData.getOrCreate("EHR_BloodTypes_Server")
+    local storageKey = getBloodTypeStorageKey(player, playerUsername)
 
-    log("[EHR Server] getOrCreateBloodType for: " .. tostring(playerUsername))
-    log("[EHR Server] GlobalModData existing blood type: " .. tostring(globalBloodTypes[playerUsername]))
+    log("[EHR Server] getOrCreateBloodType for: " .. tostring(storageKey))
+    log("[EHR Server] GlobalModData existing blood type: " .. tostring(globalBloodTypes[storageKey]))
 
-    if globalBloodTypes[playerUsername] and globalBloodTypes[playerUsername] ~= "PENDING" then
-        log("[EHR Server] Returning EXISTING blood type from GlobalModData: " .. globalBloodTypes[playerUsername])
-        return globalBloodTypes[playerUsername]
+    if isValidBloodType(globalBloodTypes[storageKey]) then
+        log("[EHR Server] Returning EXISTING blood type from GlobalModData: " .. globalBloodTypes[storageKey])
+        return globalBloodTypes[storageKey]
     end
 
     -- Generate new blood type and store in GlobalModData
     local newBloodType = generateBloodType()
-    globalBloodTypes[playerUsername] = newBloodType
+    globalBloodTypes[storageKey] = newBloodType
     log("[EHR Server] Generated NEW blood type and stored in GlobalModData: " .. newBloodType)
 
     return newBloodType
@@ -152,22 +476,31 @@ end
 -- ============================================
 -- HELPER: Initialize blood data structure with proper blood type
 -- ============================================
-local function initializeBloodData(data, playerUsername)
+local function initializeBloodData(data, playerUsername, player)
+    if data.EHR_DeadCharacter == true then
+        data.EHR_Blood = {}
+    end
+
     data.EHR_Blood = data.EHR_Blood or {}
     data.EHR_Blood.maxVolume = data.EHR_Blood.maxVolume or 5000
     data.EHR_Blood.currentVolume = data.EHR_Blood.currentVolume or 5000
 
-    -- CRITICAL: Always get blood type from GlobalModData (authoritative source)
-    -- This ensures persistence across reconnects AND server restarts
-    if playerUsername then
-        local bloodType = getOrCreateBloodType(playerUsername)
+    local existingBloodType = data.EHR_Blood.bloodType
+    if isValidBloodType(existingBloodType) and data.EHR_DeadCharacter ~= true then
+        data.EHR_Blood.bloodType = existingBloodType
+        storeBloodType(player, playerUsername, existingBloodType)
+        log("[EHR Server] initializeBloodData: Kept existing character blood type " .. existingBloodType .. " for " .. tostring(playerUsername))
+    elseif playerUsername then
+        local bloodType = getOrCreateBloodType(player, playerUsername)
         data.EHR_Blood.bloodType = bloodType
         log("[EHR Server] initializeBloodData: Set blood type to " .. bloodType .. " for " .. playerUsername)
-    elseif not data.EHR_Blood.bloodType or data.EHR_Blood.bloodType == "PENDING" then
+    else
         -- Fallback if no username provided (shouldn't happen)
         data.EHR_Blood.bloodType = generateBloodType()
         log("[EHR Server] initializeBloodData: Generated fallback blood type: " .. data.EHR_Blood.bloodType)
     end
+
+    data.EHR_DeadCharacter = nil
 
     data.EHR_Blood.transfusedSaline = data.EHR_Blood.transfusedSaline or 0
     data.EHR_Blood.transfusedBlood = data.EHR_Blood.transfusedBlood or 0
@@ -286,7 +619,8 @@ local function syncModDataToClient(player)
 
     local data = player:getModData()
 
-    -- Method 1: Send EHR data directly to client via server command
+    -- Send only EHR-owned data. Full transmitModData can overwrite other mods'
+    -- client-side player fields, such as Lifestyle bathroom/hygiene state.
     if sendServerCommand then
         local ehrData = {
             EHR_Sepsis = data.EHR_Sepsis,
@@ -298,17 +632,990 @@ local function syncModDataToClient(player)
             EHR_MedicalJournal = data.EHR_MedicalJournal,
             EHR_Temperature = data.EHR_Temperature,  -- MP FIX: Include body temperature in sync
             EHR_KnownDiseases = data.EHR_KnownDiseases,
+            EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
+            EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
             EHR_CorpseSickness = data.EHR_CorpseSickness,
+            EHR_KnoxCure = data.EHR_KnoxCure,
         }
         sendServerCommand(player, "EHR_Sync", "UpdateModData", ehrData)
         log("[EHR Server] Sent EHR data to client via sendServerCommand")
     end
+end
 
-    -- Method 2: transmitModData (backup)
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
-        log("[EHR Server] ModData transmitted to client")
+local function findOnlinePlayerByArgs(args, fallbackPlayer)
+    if not args then return fallbackPlayer end
+
+    local targetUsername = args.targetUsername and tostring(args.targetUsername) or nil
+    local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
+    local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
+
+    if not targetUsername and not targetOnlineID and not targetDisplayName then
+        return fallbackPlayer
     end
+
+    local onlinePlayers = getOnlinePlayers and getOnlinePlayers() or nil
+    if not onlinePlayers then return fallbackPlayer end
+
+    for i = 0, onlinePlayers:size() - 1 do
+        local candidate = onlinePlayers:get(i)
+        local username = nil
+        local onlineID = nil
+        local displayName = nil
+
+        if candidate then
+            pcall(function()
+                if candidate.getUsername then username = candidate:getUsername() end
+            end)
+            pcall(function()
+                if candidate.getOnlineID then onlineID = tostring(candidate:getOnlineID()) end
+            end)
+            pcall(function()
+                if candidate.getDisplayName then displayName = tostring(candidate:getDisplayName()) end
+            end)
+        end
+
+        if candidate and (
+            (targetUsername and username == targetUsername) or
+            (targetOnlineID and onlineID == targetOnlineID) or
+            (targetDisplayName and displayName == targetDisplayName)
+        ) then
+            return candidate
+        end
+    end
+
+    return nil
+end
+
+local function findItemInContainer(container, itemID, visited)
+    if not container or itemID == nil then return nil, nil end
+    visited = visited or {}
+    if visited[container] then return nil, nil end
+    visited[container] = true
+
+    local items = container:getItems()
+    if not items then return nil, nil end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            local okID, currentID = pcall(function() return item:getID() end)
+            if okID and tostring(currentID) == tostring(itemID) then
+                return item, container
+            end
+
+            local nestedContainer = nil
+            if item.getInventory then
+                local okNested, nested = pcall(function() return item:getInventory() end)
+                if okNested then nestedContainer = nested end
+            end
+
+            if nestedContainer then
+                local found, owner = findItemInContainer(nestedContainer, itemID, visited)
+                if found then return found, owner end
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function findInventoryItemByID(player, itemID)
+    if not player or itemID == nil then return nil, nil end
+    local inventory = player:getInventory()
+    if not inventory then return nil, nil end
+    return findItemInContainer(inventory, itemID, {})
+end
+
+local function removeInventoryItem(item, fallbackContainer)
+    if not item then return false end
+
+    local container = fallbackContainer
+    if item.getContainer then
+        local okContainer, itemContainer = pcall(function() return item:getContainer() end)
+        if okContainer and itemContainer then
+            container = itemContainer
+        end
+    end
+
+    if container then
+        local removed = false
+        local okRemove = pcall(function()
+            container:Remove(item)
+            removed = true
+        end)
+        if okRemove and removed and sendRemoveItemFromContainer then
+            pcall(function() sendRemoveItemFromContainer(container, item) end)
+        end
+        return okRemove and removed
+    end
+
+    return false
+end
+
+local function syncInventoryItem(item)
+    if item and sendItemStats then
+        pcall(function() sendItemStats(item) end)
+    end
+end
+
+local function syncInventoryItemAdded(container, item)
+    if not item then return end
+    if container and sendAddItemToContainer then
+        pcall(function() sendAddItemToContainer(container, item) end)
+    end
+    syncInventoryItem(item)
+end
+
+local getSterilizedBandagePackDoseInfo
+local consumeSterilizedBandagePackDose
+
+function EHR.ServerCommands.UnpackCleanBandage(player, args)
+    if not player or not args or args.packID == nil then return false end
+    local pack, packContainer = findInventoryItemByID(player, args.packID)
+    if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then return false end
+
+    local inventory = player:getInventory()
+    if not inventory then return false end
+
+    local remaining = getSterilizedBandagePackDoseInfo(pack)
+    if remaining <= 0 then return false end
+
+    local okAdd, bandage = pcall(function() return inventory:AddItem("Base.Bandage") end)
+    if not okAdd or not bandage then return false end
+    syncInventoryItemAdded(inventory, bandage)
+
+    consumeSterilizedBandagePackDose(pack, packContainer)
+    return true
+end
+function getSterilizedBandagePackDoseInfo(pack)
+    local maxDoses = 5
+    local useDelta = 0.2
+    if EHR and EHR.Medication and EHR.Medication.GetItemDoseInfo then
+        local ok, info = pcall(function() return EHR.Medication.GetItemDoseInfo(pack) end)
+        if ok and info then
+            return tonumber(info.remainingDoses) or 0, tonumber(info.maxDoses) or maxDoses, tonumber(info.useDelta) or useDelta
+        end
+    end
+
+    if pack and pack.getUseDelta then
+        local okDelta, delta = pcall(function() return pack:getUseDelta() end)
+        if okDelta and tonumber(delta) and tonumber(delta) > 0 then
+            useDelta = tonumber(delta)
+            maxDoses = math.max(1, math.floor((1.0 / useDelta) + 0.5))
+        end
+    end
+
+    local currentUsesFloat = 1.0
+    if pack and pack.getCurrentUsesFloat then
+        local okCurrent, value = pcall(function() return pack:getCurrentUsesFloat() end)
+        if okCurrent and value ~= nil then currentUsesFloat = tonumber(value) or currentUsesFloat end
+    elseif pack and pack.getUsedDelta then
+        local okUsed, value = pcall(function() return pack:getUsedDelta() end)
+        if okUsed and value ~= nil then currentUsesFloat = tonumber(value) or currentUsesFloat end
+    end
+
+    currentUsesFloat = math.max(0, math.min(1.0, currentUsesFloat))
+    local remaining = math.floor((currentUsesFloat / useDelta) + 0.0001)
+    remaining = math.max(0, math.min(maxDoses, remaining))
+    return remaining, maxDoses, useDelta
+end
+
+function consumeSterilizedBandagePackDose(pack, packContainer)
+    local remaining = getSterilizedBandagePackDoseInfo(pack)
+    if remaining <= 0 then return false end
+
+    if pack and pack.UseAndSync then
+        local ok = pcall(function() pack:UseAndSync() end)
+        if ok then
+            syncInventoryItem(pack)
+            return true
+        end
+    end
+
+    if pack and pack.Use then
+        local ok = pcall(function() pack:Use() end)
+        if ok then
+            syncInventoryItem(pack)
+            return true
+        end
+    end
+
+    local _, _, useDelta = getSterilizedBandagePackDoseInfo(pack)
+    if remaining > 1 and pack.setUsedDelta then
+        local newUsed = math.max(0, math.min(1, (remaining - 1) * useDelta))
+        pcall(function() pack:setUsedDelta(newUsed) end)
+        syncInventoryItem(pack)
+    else
+        removeInventoryItem(pack, packContainer)
+    end
+    return true
+end
+
+local function setSterilizedBandagePackRemaining(pack, remaining)
+    if not pack then return false end
+    local _, maxDoses, useDelta = getSterilizedBandagePackDoseInfo(pack)
+    remaining = math.max(0, math.min(maxDoses, math.floor((tonumber(remaining) or 0) + 0.0001)))
+
+    local usedDelta = remaining * useDelta
+    if remaining >= maxDoses then
+        usedDelta = 1.0
+    end
+    usedDelta = math.max(0, math.min(1.0, usedDelta))
+
+    if pack.setUsedDelta then
+        local ok = pcall(function() pack:setUsedDelta(usedDelta) end)
+        if ok then
+            syncInventoryItem(pack)
+            return true
+        end
+    end
+    return false
+end
+
+local function findSterilizedBandagePackWithSpace(container, visited)
+    if not container then return nil, nil end
+    visited = visited or {}
+    if visited[container] then return nil, nil end
+    visited[container] = true
+
+    local items = container.getItems and container:getItems() or nil
+    if not items or not items.size then return nil, nil end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            if item.getFullType and item:getFullType() == "ExtensiveHealth.SterilizedBandages" then
+                local remaining, maxDoses = getSterilizedBandagePackDoseInfo(item)
+                if remaining < maxDoses then
+                    return item, container
+                end
+            end
+
+            local nestedContainer = nil
+            if item.getInventory then
+                local okNested, nested = pcall(function() return item:getInventory() end)
+                if okNested then nestedContainer = nested end
+            end
+            if nestedContainer then
+                local found, owner = findSterilizedBandagePackWithSpace(nestedContainer, visited)
+                if found then return found, owner end
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+function EHR.ServerCommands.AddCleanBandageToPack(player, args)
+    if not player or not args or args.bandageID == nil then return false end
+
+    local bandage, bandageContainer = findInventoryItemByID(player, args.bandageID)
+    if not bandage or not bandage.getFullType or bandage:getFullType() ~= "Base.Bandage" then
+        return false
+    end
+
+    local inventory = player:getInventory()
+    if not inventory then return false end
+
+    local explicitPack = args.packID ~= nil
+    local pack, packContainer = nil, nil
+    if explicitPack then
+        pack, packContainer = findInventoryItemByID(player, args.packID)
+        if not pack or not pack.getFullType or pack:getFullType() ~= "ExtensiveHealth.SterilizedBandages" then
+            return false
+        end
+    else
+        pack, packContainer = findSterilizedBandagePackWithSpace(inventory, {})
+    end
+
+    if not pack then
+        local okAdd, newPack = pcall(function() return inventory:AddItem("ExtensiveHealth.SterilizedBandages") end)
+        if not okAdd or not newPack then return false end
+        pack = newPack
+        packContainer = inventory
+        setSterilizedBandagePackRemaining(pack, 0)
+        syncInventoryItemAdded(inventory, pack)
+    end
+
+    local remaining, maxDoses = getSterilizedBandagePackDoseInfo(pack)
+    if remaining >= maxDoses then return false end
+    if not removeInventoryItem(bandage, bandageContainer) then return false end
+
+    setSterilizedBandagePackRemaining(pack, remaining + 1)
+    return true
+end
+local function getOnlinePlayerByIDSafe(onlineID)
+    if onlineID == nil then return nil end
+    local numericID = tonumber(onlineID)
+    if getPlayerByOnlineID then
+        local ok, playerByID = pcall(function() return getPlayerByOnlineID(numericID or onlineID) end)
+        if ok and playerByID then return playerByID end
+    end
+    if getOnlinePlayers then
+        local okPlayers, players = pcall(getOnlinePlayers)
+        if okPlayers and players and players.size then
+            for i = 0, players:size() - 1 do
+                local candidate = players:get(i)
+                if candidate and candidate.getOnlineID then
+                    local okID, candidateID = pcall(function() return candidate:getOnlineID() end)
+                    if okID and tonumber(candidateID) == numericID then return candidate end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function getBodyPartByIndex(player, bodyPartIndex)
+    if not player or bodyPartIndex == nil then return nil end
+    local bodyDamage = player:getBodyDamage()
+    local bodyParts = bodyDamage and bodyDamage.getBodyParts and bodyDamage:getBodyParts() or nil
+    local index = tonumber(bodyPartIndex)
+    if not bodyParts or not index then return nil end
+    local ok, bodyPart = pcall(function() return bodyParts:get(index) end)
+    return ok and bodyPart or nil
+end
+
+local function serverBodyPartCanReceiveCleanBandage(bodyPart)
+    if not bodyPart then return false end
+    if callBodyPartMethod(bodyPart, "bandaged", false) == true then return false end
+    if callBodyPartMethod(bodyPart, "HasInjury", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "bleeding", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "scratched", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "deepWounded", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "bitten", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "isCut", false) == true then return true end
+    if callBodyPartMethod(bodyPart, "isBurnt", false) == true then return true end
+    return (tonumber(callBodyPartMethod(bodyPart, "getBurnTime", 0)) or 0) > 0
+end
+
+function EHR.ServerCommands.ApplyBandagePack(player, args)
+    return false
+end
+local function serverSay(player, text)
+    if not player or not text then return end
+    if EHR and EHR.Locale and EHR.Locale.Say then
+        local ok = pcall(function() EHR.Locale.Say(player, text) end)
+        if ok then return end
+    end
+    if sendServerCommand then
+        pcall(function() sendServerCommand(player, "EHR_Dialogue", "Say", { text = tostring(text) }) end)
+        return
+    end
+    if player.Say then
+        pcall(function() player:Say(tostring(text)) end)
+    end
+end
+
+local function addCharacterStat(player, stat, amount, maxValue)
+    if not player or not stat or not amount then return end
+    local stats = player:getStats()
+    if not stats or not CharacterStat or not CharacterStat[stat] then return end
+
+    pcall(function()
+        local current = stats:get(CharacterStat[stat]) or 0
+        stats:set(CharacterStat[stat], math.min(maxValue or 1, current + amount))
+    end)
+end
+
+local function ensureServerBloodData(player)
+    if not player then return nil end
+    local data = nil
+    if EHR and EHR.GetPlayerData then
+        data = EHR.GetPlayerData(player)
+    end
+    data = data or player:getModData()
+    if not data then return nil end
+
+    local username = nil
+    pcall(function() username = player:getUsername() end)
+    initializeBloodData(data, username, player)
+    return data
+end
+
+local function getServerSpoilageState(item, clientState)
+    if not item then return "rotten" end
+
+    local md = nil
+    pcall(function() md = item:getModData() end)
+    local spoilage = md and md.EHR_BloodSpoilage or nil
+    if spoilage then
+        if spoilage.rotten then return "rotten" end
+        if spoilage.stale then return "stale" end
+    end
+
+    if item.isRotten then
+        local okRotten, rotten = pcall(function() return item:isRotten() end)
+        if okRotten and rotten then return "rotten" end
+    end
+    if item.isFresh then
+        local okFresh, fresh = pcall(function() return item:isFresh() end)
+        if okFresh and fresh == false then return "stale" end
+    end
+
+    if clientState == "fresh" or clientState == "stale" or clientState == "rotten" then
+        return clientState
+    end
+
+    return "fresh"
+end
+
+local function restoreServerBlood(player, data, amount)
+    if EHR.Blood and EHR.Blood.ModifyBloodVolume then
+        EHR.Blood.ModifyBloodVolume(player, amount)
+        data.EHR_Blood.transfusedBlood = (data.EHR_Blood.transfusedBlood or 0) + amount
+        return
+    end
+
+    local current = data.EHR_Blood.currentVolume or 0
+    local maxVolume = data.EHR_Blood.maxVolume or 5000
+    data.EHR_Blood.currentVolume = math.min(current + amount, maxVolume)
+    data.EHR_Blood.transfusedBlood = (data.EHR_Blood.transfusedBlood or 0) + amount
+end
+
+local function applyServerSpoiledBloodReaction(player, data, spoilageState)
+    local severityMult = spoilageState == "rotten" and 2.0 or 1.0
+    local bodyDamage = player and player:getBodyDamage() or nil
+
+    addCharacterStat(player, "SICKNESS", 0.6 * severityMult, 1)
+    addCharacterStat(player, "FOOD_SICKNESS", 0.7 * severityMult, 1)
+    addCharacterStat(player, "PAIN", 0.5 * severityMult, 1)
+    addCharacterStat(player, "PANIC", 0.4 * severityMult, 1)
+
+    if bodyDamage then
+        pcall(function()
+            local currentTemp = bodyDamage:getTemperature() or 37
+            bodyDamage:setTemperature(math.min(41, currentTemp + 2 * severityMult))
+        end)
+    end
+
+    if bodyDamage and BodyPartType then
+        local maxIndex = BodyPartType.ToIndex and BodyPartType.ToIndex(BodyPartType.MAX) or nil
+        if maxIndex then
+            for _ = 1, math.floor(4 * severityMult) do
+                local partType = BodyPartType.FromIndex(ZombRand(maxIndex))
+                local part = partType and bodyDamage:getBodyPart(partType) or nil
+                if part and part.ReduceHealth then
+                    pcall(function() part:ReduceHealth(ZombRand(10, 25) * severityMult) end)
+                end
+            end
+        end
+    end
+
+    if EHR.Blood and EHR.Blood.ModifyBloodVolume then
+        EHR.Blood.ModifyBloodVolume(player, -150 * severityMult)
+    elseif data and data.EHR_Blood then
+        data.EHR_Blood.currentVolume = math.max(0, (data.EHR_Blood.currentVolume or 5000) - 150 * severityMult)
+    end
+
+    serverSay(player, spoilageState == "rotten" and "Oh god... that blood was rotten!" or "That blood tasted off...")
+end
+
+local function applyServerBadBloodReaction(player, data)
+    addCharacterStat(player, "FOOD_SICKNESS", 0.12, 1)
+    addCharacterStat(player, "SICKNESS", 0.18, 1)
+    addCharacterStat(player, "PANIC", 0.35, 1)
+    addCharacterStat(player, "PAIN", 0.12, 1)
+
+    if EHR.Disease and EHR.Disease.Contract then
+        local diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or nil
+        local active = diseaseData and diseaseData.active and diseaseData.active.ahtr or nil
+        if active then
+            active.severity = math.min(1.25, (tonumber(active.severity) or 0.95) + 0.25)
+            active.endTime = math.max(tonumber(active.endTime) or 0, getGameTime():getWorldAgeHours() + 72)
+            active.incompatibleTransfusion = true
+        else
+            EHR.Disease.Contract(player, "ahtr")
+            diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or diseaseData
+            active = diseaseData and diseaseData.active and diseaseData.active.ahtr or nil
+            if active then
+                active.severity = math.max(tonumber(active.severity) or 0.95, 0.95)
+                active.incompatibleTransfusion = true
+            end
+        end
+    end
+
+    if EHR.Blood and EHR.Blood.ModifyBloodVolume then
+        EHR.Blood.ModifyBloodVolume(player, -150)
+    elseif data and data.EHR_Blood then
+        data.EHR_Blood.currentVolume = math.max(0, (data.EHR_Blood.currentVolume or 5000) - 150)
+    end
+
+    serverSay(player, "Something's wrong... I feel terrible!")
+end
+
+local function applyServerBloodBag(player, item, spoilageState)
+    local data = ensureServerBloodData(player)
+    if not data or not data.EHR_Blood or not item then return false end
+
+    local fullType = item:getFullType()
+    local bagType = EHR.Blood and EHR.Blood.BloodBagTypes and EHR.Blood.BloodBagTypes[fullType] or nil
+    if not bagType then return false end
+
+    if spoilageState == "stale" then
+        applyServerSpoiledBloodReaction(player, data, spoilageState)
+    elseif spoilageState == "rotten" then
+        applyServerSpoiledBloodReaction(player, data, spoilageState)
+        return true
+    end
+
+    local playerType = data.EHR_Blood.bloodType
+    if EHR.Blood and EHR.Blood.IsCompatible and EHR.Blood.IsCompatible(bagType, playerType) then
+        restoreServerBlood(player, data, 500)
+        serverSay(player, "That should help...")
+    else
+        applyServerBadBloodReaction(player, data)
+    end
+
+    return true
+end
+
+local function applyServerSalineBag(player, item, spoilageState)
+    if not player or not item then return false, false end
+    local data = ensureServerBloodData(player)
+    if not data then return false, false end
+
+    if spoilageState == "rotten" then
+        addCharacterStat(player, "SICKNESS", 0.25, 1)
+        serverSay(player, "That saline was contaminated!")
+        return true, false
+    end
+
+    if EHR.Blood and EHR.Blood.UseSalineBag then
+        EHR.Blood.UseSalineBag(player, item)
+    else
+        if EHR.Blood and EHR.Blood.ModifyBloodVolume then
+            EHR.Blood.ModifyBloodVolume(player, 250)
+        else
+            data.EHR_Blood.currentVolume = math.min((data.EHR_Blood.currentVolume or 0) + 250, data.EHR_Blood.maxVolume or 5000)
+        end
+        data.EHR_Blood.transfusedSaline = (data.EHR_Blood.transfusedSaline or 0) + 250
+    end
+
+    if spoilageState == "stale" then
+        addCharacterStat(player, "SICKNESS", 0.15, 1)
+        serverSay(player, "That saline tasted a bit off...")
+    end
+
+    -- EHR.Blood.UseSalineBag intentionally does not consume the item; the action layer does.
+    return true, false
+end
+
+function EHR.ServerCommands.UseMedication(player, args)
+    if not player or not args or not args.itemID then return end
+    if not EHR.Medication or not EHR.Medication.UseMedication then
+        log("[EHR Server] UseMedication rejected: medication module unavailable")
+        return
+    end
+
+    local item = findInventoryItemByID(player, args.itemID)
+    if not item then
+        log("[EHR Server] UseMedication rejected: item not found " .. tostring(args.itemID))
+        syncModDataToClient(player)
+        return
+    end
+
+    if args.itemFullType and item:getFullType() ~= args.itemFullType then
+        log("[EHR Server] UseMedication rejected: item type mismatch " .. tostring(args.itemFullType) .. " != " .. tostring(item:getFullType()))
+        syncModDataToClient(player)
+        return
+    end
+
+    local ok, result = pcall(function()
+        return EHR.Medication.UseMedication(player, item)
+    end)
+    if not ok then
+        log("[EHR Server] UseMedication failed: " .. tostring(result))
+    end
+
+    syncInventoryItem(item)
+    syncModDataToClient(player)
+end
+
+function EHR.ServerCommands.DrinkWaterRisk(player, args)
+    if not player then return end
+    if not EHR.Environmental or not EHR.Environmental.OnDrinkWater then
+        log("[EHR Server] DrinkWaterRisk rejected: environmental module unavailable")
+        return
+    end
+
+    local sourceType = "tainted"
+    if args and args.sourceType then
+        sourceType = tostring(args.sourceType)
+    end
+
+    local ok, result = pcall(function()
+        return EHR.Environmental.OnDrinkWater(player, nil, sourceType)
+    end)
+    if not ok then
+        log("[EHR Server] DrinkWaterRisk failed: " .. tostring(result))
+    end
+
+    syncModDataToClient(player)
+end
+
+function EHR.ServerCommands.EnvironmentalSnapshot(player, args)
+    if not player then return end
+    if not EHR.Environmental or not EHR.Environmental.StoreClientSnapshot then
+        log("[EHR Server] EnvironmentalSnapshot rejected: environmental module unavailable")
+        return
+    end
+
+    local ok, result = pcall(function()
+        return EHR.Environmental.StoreClientSnapshot(player, args or {})
+    end)
+    if not ok then
+        log("[EHR Server] EnvironmentalSnapshot failed: " .. tostring(result))
+    end
+end
+
+function EHR.ServerCommands.FoodDiseaseRisk(player, args)
+    if not player then return end
+    if not EHR.Disease or not EHR.Disease.ApplyFoodDiseaseRisk then
+        log("[EHR Server] FoodDiseaseRisk rejected: disease module unavailable")
+        return
+    end
+
+    if EHR.Disease.InitializePlayer then
+        pcall(function() EHR.Disease.InitializePlayer(player) end)
+    end
+
+    local risks = args and args.risks
+    if type(risks) ~= "table" then
+        log("[EHR Server] FoodDiseaseRisk rejected: missing risk table")
+        return
+    end
+
+    local itemName = tostring(args.itemName or "unknown")
+    local applied = 0
+    for _, foodRisk in ipairs(risks) do
+        if type(foodRisk) == "table" then
+            local diseaseId = tostring(foodRisk.diseaseId or "")
+            local reason = tostring(foodRisk.reason or "food")
+            local chance = math.max(0, math.min(1, tonumber(foodRisk.chance) or 0))
+            if chance > 0 and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] then
+                local ok, result = pcall(function()
+                    return EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, reason, chance)
+                end)
+                if ok then
+                    applied = applied + 1
+                else
+                    log("[EHR Server] FoodDiseaseRisk failed for " .. tostring(diseaseId) .. ": " .. tostring(result))
+                end
+            end
+        end
+    end
+
+    if applied > 0 then
+        syncModDataToClient(player)
+    end
+end
+
+local function setCellulitisSource(targetPlayer, args)
+    if not targetPlayer or not EHR.Disease or not EHR.Disease.GetDiseaseData then return end
+
+    local diseaseData = EHR.Disease.GetDiseaseData(targetPlayer)
+    local cellulitis = diseaseData and diseaseData.active and diseaseData.active.cellulitis or nil
+    if not cellulitis then return end
+
+    cellulitis.source = "rough_stitch"
+    cellulitis.sourceBodyPart = args and args.sourceBodyPart or cellulitis.sourceBodyPart
+    cellulitis.stitchQuality = tonumber(args and args.quality) or cellulitis.stitchQuality
+    cellulitis.stitchMisses = tonumber(args and args.misses) or cellulitis.stitchMisses
+end
+
+function EHR.ServerCommands.StitchCellulitisRisk(player, args)
+    if not player or not args then return end
+
+    local targetPlayer = findOnlinePlayerByArgs(args, player)
+    if not targetPlayer then
+        log("[EHR Server] StitchCellulitisRisk rejected: target player not found")
+        return
+    end
+
+    if not EHR.Disease or not EHR.Disease.Contract then
+        log("[EHR Server] StitchCellulitisRisk rejected: disease module unavailable")
+        return
+    end
+
+    local chance = math.max(0, math.min(1, tonumber(args.chance) or 0))
+    if chance <= 0 then return end
+
+    local roll = ZombRand and (ZombRand(100) / 100) or 1
+    if roll >= chance then return end
+
+    if EHR.Disease.InitializePlayer then
+        pcall(function() EHR.Disease.InitializePlayer(targetPlayer) end)
+    end
+
+    local diseaseData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(targetPlayer) or nil
+    if not (diseaseData and diseaseData.active and diseaseData.active.cellulitis) then
+        EHR.Disease.Contract(targetPlayer, "cellulitis")
+    end
+
+    setCellulitisSource(targetPlayer, args)
+    syncModDataToClient(targetPlayer)
+end
+
+local function triggerCellulitisSepsisHandoff(targetPlayer, args)
+    if not targetPlayer then return false end
+
+    local sourceBodyPart = args and args.sourceBodyPart or "cellulitis"
+    if EHR.Sepsis and EHR.Sepsis.Trigger then
+        EHR.Sepsis.Trigger(targetPlayer, sourceBodyPart)
+    else
+        if EHR.Disease and EHR.Disease.Contract then
+            EHR.Disease.Contract(targetPlayer, "sepsis")
+        end
+    end
+
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(targetPlayer) or nil
+    if diseaseData and diseaseData.active then
+        diseaseData.active.cellulitis = nil
+    end
+
+    syncModDataToClient(targetPlayer)
+    return true
+end
+
+function EHR.ServerCommands.CellulitisSepsisHandoff(player, args)
+    if not player then return end
+
+    local targetPlayer = findOnlinePlayerByArgs(args, player)
+    if not targetPlayer then
+        log("[EHR Server] CellulitisSepsisHandoff rejected: target player not found")
+        return
+    end
+
+    triggerCellulitisSepsisHandoff(targetPlayer, args or {})
+end
+
+function EHR.ServerCommands.FoodToxinRisk(player, args)
+    if not player then return end
+    if not EHR.Disease or not EHR.Disease.ApplyVanillaPoisonDisease then
+        log("[EHR Server] FoodToxinRisk rejected: disease module unavailable")
+        return
+    end
+
+    if EHR.Disease.InitializePlayer then
+        pcall(function() EHR.Disease.InitializePlayer(player) end)
+    end
+
+    local itemName = tostring(args and args.itemName or "unknown")
+    local poisonPower = math.max(0, math.min(100, tonumber(args and args.poisonPower) or 0))
+    local poisonDetectionLevel = math.max(0, tonumber(args and args.poisonDetectionLevel) or 0)
+    local toxinType = tostring(args and args.toxinType or "toxin")
+    if toxinType ~= "mushroom" and toxinType ~= "berry" then
+        toxinType = "toxin"
+    end
+
+    local ok, result = pcall(function()
+        if EHR.Disease.MarkVanillaPoisonFood then
+            EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
+        end
+        EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+    end)
+    if not ok then
+        log("[EHR Server] FoodToxinRisk failed: " .. tostring(result))
+    end
+
+    syncModDataToClient(player)
+end
+
+function EHR.ServerCommands.UseKnoxCureItem(player, args)
+    if not player or not args or not args.itemID then return end
+    if not EHR.KnoxCure then
+        log("[EHR Server] UseKnoxCureItem rejected: KnoxCure module unavailable")
+        return
+    end
+
+    local item = findInventoryItemByID(player, args.itemID)
+    if not item then
+        log("[EHR Server] UseKnoxCureItem rejected: item not found " .. tostring(args.itemID))
+        syncModDataToClient(player)
+        return
+    end
+
+    if args.itemFullType and item:getFullType() ~= args.itemFullType then
+        log("[EHR Server] UseKnoxCureItem rejected: item type mismatch " .. tostring(args.itemFullType) .. " != " .. tostring(item:getFullType()))
+        syncModDataToClient(player)
+        return
+    end
+
+    local action = tostring(args.action or "")
+    if action == "geneTherapy" or action == "antibodyTest" then
+        ensureServerBloodData(player)
+    end
+
+    local ok, result
+    if action == "geneTherapy" and EHR.KnoxCure.UseGeneTherapy then
+        ok, result = pcall(EHR.KnoxCure.UseGeneTherapy, player, item)
+    elseif action == "phalanx" and EHR.KnoxCure.UsePhalanx then
+        ok, result = pcall(EHR.KnoxCure.UsePhalanx, player, item)
+    elseif action == "antibodyTest" and EHR.KnoxCure.UseAntibodyTest then
+        ok, result = pcall(EHR.KnoxCure.UseAntibodyTest, player, item)
+    elseif action == "immunobooster" and EHR.KnoxCure.UseImmunobooster then
+        ok, result = pcall(EHR.KnoxCure.UseImmunobooster, player, item)
+    else
+        log("[EHR Server] UseKnoxCureItem rejected: unknown action " .. action)
+    end
+
+    if ok == false then
+        log("[EHR Server] UseKnoxCureItem failed: " .. tostring(result))
+    end
+
+    syncModDataToClient(player)
+end
+
+function EHR.ServerCommands.UseTransfusion(player, args)
+    if not player or not args or not args.itemID then return end
+    if not EHR.Blood then
+        log("[EHR Server] UseTransfusion rejected: blood module unavailable")
+        return
+    end
+
+    local item, container = findInventoryItemByID(player, args.itemID)
+    if not item then
+        log("[EHR Server] UseTransfusion rejected: item not found " .. tostring(args.itemID))
+        syncModDataToClient(player)
+        return
+    end
+
+    if args.itemFullType and item:getFullType() ~= args.itemFullType then
+        log("[EHR Server] UseTransfusion rejected: item type mismatch " .. tostring(args.itemFullType) .. " != " .. tostring(item:getFullType()))
+        syncModDataToClient(player)
+        return
+    end
+
+    local fullType = item:getFullType()
+    local spoilageState = getServerSpoilageState(item, args.spoilageState)
+    local consumed = false
+
+    if EHR.Blood.BloodBagTypes and EHR.Blood.BloodBagTypes[fullType] then
+        consumed = applyServerBloodBag(player, item, spoilageState)
+        if consumed then
+            if EHR.SkillXP and EHR.SkillXP.OnTransfusion then
+                pcall(function() EHR.SkillXP.OnTransfusion(player, false) end)
+            end
+            removeInventoryItem(item, container)
+        end
+    elseif fullType == "ExtensiveHealth.SalineBag" then
+        local applied, consumedByBloodApi = applyServerSalineBag(player, item, spoilageState)
+        consumed = applied
+        if consumed and not consumedByBloodApi then
+            removeInventoryItem(item, container)
+        end
+    else
+        log("[EHR Server] UseTransfusion rejected: unsupported item " .. tostring(fullType))
+    end
+
+    syncModDataToClient(player)
+end
+
+function EHR.ServerCommands.DrawBlood(player, args)
+    if not player or not args or not args.itemID then return end
+    if not EHR.Blood then
+        log("[EHR Server] DrawBlood rejected: blood module unavailable")
+        return
+    end
+
+    local emptyBag, container = findInventoryItemByID(player, args.itemID)
+    if not emptyBag then
+        log("[EHR Server] DrawBlood rejected: empty bag not found " .. tostring(args.itemID))
+        syncModDataToClient(player)
+        return
+    end
+    if emptyBag:getFullType() ~= "ExtensiveHealth.EmptyBloodBag" then
+        log("[EHR Server] DrawBlood rejected: unsupported item " .. tostring(emptyBag:getFullType()))
+        syncModDataToClient(player)
+        return
+    end
+
+    local data = ensureServerBloodData(player)
+    if not data or not data.EHR_Blood then return end
+
+    local current = tonumber(data.EHR_Blood.currentVolume) or 5000
+    local maxVolume = tonumber(data.EHR_Blood.maxVolume) or 5000
+    if maxVolume <= 0 or (current / maxVolume) < 0.80 then
+        serverSay(player, serverText("UI_EHR_Transfusion_NotEnoughBloodSafe", "I don't have enough blood to do that safely."))
+        syncModDataToClient(player)
+        return
+    end
+
+    local playerType = data.EHR_Blood.bloodType
+    if EHR.Blood.GetPlayerBloodType then
+        local okType, typeValue = pcall(function() return EHR.Blood.GetPlayerBloodType(player) end)
+        if okType and typeValue then playerType = typeValue end
+    end
+
+    local bloodBagItems = {
+        ["O-"]  = "ExtensiveHealth.BloodBagONeg",
+        ["O+"]  = "ExtensiveHealth.BloodBagOPos",
+        ["A-"]  = "ExtensiveHealth.BloodBagANeg",
+        ["A+"]  = "ExtensiveHealth.BloodBagAPos",
+        ["B-"]  = "ExtensiveHealth.BloodBagBNeg",
+        ["B+"]  = "ExtensiveHealth.BloodBagBPos",
+        ["AB-"] = "ExtensiveHealth.BloodBagABNeg",
+        ["AB+"] = "ExtensiveHealth.BloodBagABPos",
+    }
+    local filledBagType = bloodBagItems[playerType]
+    if not filledBagType then
+        serverSay(player, serverText("UI_EHR_Transfusion_SomethingWentWrong", "Something went wrong..."))
+        log("[EHR Server] DrawBlood rejected: unknown blood type " .. tostring(playerType))
+        syncModDataToClient(player)
+        return
+    end
+
+    local inventory = player:getInventory()
+    local okAdd, filledBag = pcall(function() return inventory:AddItem(filledBagType) end)
+    if not okAdd or not filledBag then
+        serverSay(player, serverText("UI_EHR_Transfusion_SomethingWentWrong", "Something went wrong..."))
+        log("[EHR Server] DrawBlood failed to create " .. tostring(filledBagType) .. ": " .. tostring(filledBag))
+        syncModDataToClient(player)
+        return
+    end
+
+    pcall(function() filledBag:setAge(0) end)
+    pcall(function()
+        local now = getGameTime() and getGameTime():getWorldAgeHours() or 0
+        local modData = filledBag:getModData()
+        modData.EHR_BloodSpoilage = {
+            createdHour = now,
+            lastCheckHour = now,
+            warmElapsed = 0,
+            stale = false,
+            rotten = false,
+            isFrozen = false,
+        }
+        modData.EHR_DonorBloodType = playerType
+    end)
+
+    if EHR.Blood.ModifyBloodVolume then
+        EHR.Blood.ModifyBloodVolume(player, -500)
+    else
+        data.EHR_Blood.currentVolume = math.max(0, current - 500)
+    end
+
+    removeInventoryItem(emptyBag, container)
+    serverSay(player, serverText("UI_EHR_DrawBlood_Complete", "That made me lightheaded..."))
+
+    addCharacterStat(player, "FATIGUE", 0.15, 0.7)
+    if CharacterStat and CharacterStat.ENDURANCE then
+        local stats = player:getStats()
+        if stats then
+            pcall(function()
+                local endurance = stats:get(CharacterStat.ENDURANCE) or 1
+                stats:set(CharacterStat.ENDURANCE, math.max(0.3, endurance - 0.2))
+            end)
+        end
+    end
+
+    if EHR.SkillXP and EHR.SkillXP.OnTransfusion then
+        pcall(function() EHR.SkillXP.OnTransfusion(player, true) end)
+    end
+
+    syncInventoryItemAdded(inventory, filledBag)
+    syncModDataToClient(player)
 end
 
 -- ============================================
@@ -329,18 +1636,45 @@ function EHR.ServerCommands.UnlockDiseaseKnowledge(player, args)
     local data = player:getModData()
     if not data then return end
 
-    data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
-    data.EHR_KnownDiseases[diseaseId] = true
-    data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
-    data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
-    data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
-    data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+    local isKnox = EHR.DiseaseFlyers
+        and EHR.DiseaseFlyers.IsKnoxDiseaseId
+        and EHR.DiseaseFlyers.IsKnoxDiseaseId(diseaseId)
+    local knoxSource = EHR.DiseaseFlyers and EHR.DiseaseFlyers.KNOX_UNLOCK_SOURCE or "kentucky_herald_july16"
+    local allowKnox = args.allowKnox == true or args.source == knoxSource
+    if isKnox and not allowKnox then
+        log("[EHR Server] Knox disease knowledge rejected: Kentucky Herald July 16 required.")
+        return
+    end
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR.DiseaseFlyers and EHR.DiseaseFlyers.UnlockDiseaseKnowledge then
+        EHR.DiseaseFlyers.UnlockDiseaseKnowledge(player, diseaseId, {
+            allowKnox = allowKnox,
+            source = args.source,
+            silent = true,
+        })
+    else
+        data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
+        data.EHR_KnownDiseases[diseaseId] = true
+        if isKnox then
+            data.EHR_KnoxHeraldRead = true
+            data.EHR_KnoxKnowledgeSource = knoxSource
+        end
+        data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
+        data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
+        data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
+        data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
     end
 
     syncModDataToClient(player)
+    if sendServerCommand then
+        sendServerCommand(player, "EHR_Flyers", "KnowledgeUnlocked", {
+            diseaseId = diseaseId,
+            EHR_KnownDiseases = data.EHR_KnownDiseases,
+            EHR_MedicalJournal = data.EHR_MedicalJournal,
+            EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
+            EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
+        })
+    end
     log("[EHR Server] Disease knowledge unlocked: " .. tostring(diseaseId))
 end
 
@@ -489,6 +1823,96 @@ function EHR.ServerCommands.FullHeal(player, args)
 
     syncModDataToClient(player)
     log("[EHR Server] FullHeal command executed")
+end
+
+local function sendAdminCommandFeedback(player, text)
+    if not player or not text or not sendServerCommand then return end
+    pcall(function()
+        sendServerCommand(player, "EHR_Dialogue", "Say", { text = tostring(text) })
+    end)
+end
+
+local function normalizePlayerLookupName(value)
+    value = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if value:sub(1, 1) == "\"" and value:sub(-1) == "\"" then
+        value = value:sub(2, -2)
+    end
+    return value:lower()
+end
+
+local function findOnlinePlayerByName(value)
+    local wanted = normalizePlayerLookupName(value)
+    if wanted == "" then return nil end
+
+    local exact = nil
+    local partial = nil
+    local partialCount = 0
+    local onlinePlayers = getOnlinePlayers()
+    if not onlinePlayers then return nil end
+
+    for i = 0, onlinePlayers:size() - 1 do
+        local candidate = onlinePlayers:get(i)
+        if candidate then
+            local names = {}
+            pcall(function() names[#names + 1] = candidate:getUsername() end)
+            pcall(function()
+                if candidate.getDisplayName then
+                    names[#names + 1] = candidate:getDisplayName()
+                end
+            end)
+            pcall(function()
+                if candidate.getDescriptor and candidate:getDescriptor() then
+                    names[#names + 1] = candidate:getDescriptor():getForename()
+                    names[#names + 1] = candidate:getDescriptor():getSurname()
+                end
+            end)
+
+            for _, name in ipairs(names) do
+                local lookup = normalizePlayerLookupName(name)
+                if lookup ~= "" then
+                    if lookup == wanted then
+                        exact = candidate
+                        break
+                    end
+                    if lookup:find(wanted, 1, true) then
+                        partial = candidate
+                        partialCount = partialCount + 1
+                    end
+                end
+            end
+            if exact then break end
+        end
+    end
+
+    if exact then return exact end
+    if partialCount == 1 then return partial end
+    return nil
+end
+
+function EHR.ServerCommands.FullHealTarget(requester, args)
+    if not requester then return end
+
+    local targetName = args and (args.targetUsername or args.target or args.username or args.player) or nil
+    local target = nil
+    if targetName and tostring(targetName):gsub("%s+", "") ~= "" then
+        target = findOnlinePlayerByName(targetName)
+    else
+        target = requester
+    end
+
+    if not target then
+        sendAdminCommandFeedback(requester, "EHR: player not found: " .. tostring(targetName or ""))
+        return
+    end
+
+    EHR.ServerCommands.FullHeal(target, {})
+
+    local healedName = "player"
+    pcall(function() healedName = target:getUsername() or healedName end)
+    sendAdminCommandFeedback(requester, "EHR: full heal applied to " .. tostring(healedName))
+    if target ~= requester then
+        sendAdminCommandFeedback(target, "EHR: an admin restored your health.")
+    end
 end
 
 --[[
@@ -680,7 +2104,7 @@ function EHR.ServerCommands.SetBloodPercent(player, args)
 
     -- Ensure blood structure is fully initialized with proper blood type
     if not data.EHR_Blood or not data.EHR_Blood.maxVolume then
-        initializeBloodData(data, playerUsername)
+        initializeBloodData(data, playerUsername, player)
         log("[EHR Server] Initialized blood data structure")
     end
 
@@ -717,7 +2141,7 @@ function EHR.ServerCommands.AdjustBlood(player, args)
 
     -- Ensure blood structure is fully initialized with proper blood type
     if not data.EHR_Blood or not data.EHR_Blood.maxVolume then
-        initializeBloodData(data, playerUsername)
+        initializeBloodData(data, playerUsername, player)
         log("[EHR Server] Initialized blood data structure")
     end
 
@@ -754,7 +2178,7 @@ function EHR.ServerCommands.AddSaline(player, args)
 
     -- Ensure blood structure is fully initialized with proper blood type
     if not data.EHR_Blood or not data.EHR_Blood.maxVolume then
-        initializeBloodData(data, playerUsername)
+        initializeBloodData(data, playerUsername, player)
     end
     if not data.EHR_Initialized then data.EHR_Initialized = true end
 
@@ -951,6 +2375,46 @@ function EHR.ServerCommands.ClearAllInfections(player, args)
     log("[EHR Server] ClearAllInfections command executed")
 end
 
+function EHR.ServerCommands.ApplyVanillaInjury(player, args)
+    if not player or not args then return end
+
+    local partName = tostring(args.partId or "")
+    local injuryId = tostring(args.injuryId or "")
+    if partName == "" or injuryId == "" then return end
+
+    local ok = applyDebugVanillaInjury(player, partName, injuryId)
+    syncModDataToClient(player)
+    log("[EHR Server] ApplyVanillaInjury " .. tostring(partName) .. " " .. tostring(injuryId) .. " -> " .. tostring(ok))
+end
+
+function EHR.ServerCommands.ClearVanillaInjuries(player, args)
+    if not player then return end
+
+    clearAllDebugVanillaInjuries(player)
+    syncModDataToClient(player)
+    log("[EHR Server] ClearVanillaInjuries command executed")
+end
+
+function EHR.ServerCommands.ApplyVanillaVisual(player, args)
+    if not player or not args then return end
+
+    local partName = tostring(args.partId or "")
+    local visualId = tostring(args.visualId or "")
+    if partName == "" or visualId == "" then return end
+
+    local ok = applyDebugVanillaVisual(player, partName, visualId)
+    syncModDataToClient(player)
+    log("[EHR Server] ApplyVanillaVisual " .. tostring(partName) .. " " .. tostring(visualId) .. " -> " .. tostring(ok))
+end
+
+function EHR.ServerCommands.ClearVanillaVisuals(player, args)
+    if not player then return end
+
+    clearAllDebugVanillaVisuals(player)
+    syncModDataToClient(player)
+    log("[EHR Server] ClearVanillaVisuals command executed")
+end
+
 -- ============================================
 -- MEDICATION COMMANDS
 -- ============================================
@@ -999,17 +2463,39 @@ function EHR.ServerCommands.ClearSideEffects(player, args)
 
     local data = player:getModData()
 
-    if data.EHR_Medication and data.EHR_Medication.activeSideEffects then
-        for id, _ in pairs(data.EHR_Medication.activeSideEffects) do
-            data.EHR_Medication.activeSideEffects[id] = nil
+    if EHR.Medication and EHR.Medication.ClearAllSideEffectState then
+        pcall(function()
+            EHR.Medication.ClearAllSideEffectState(player, true)
+        end)
+    else
+        if data.EHR_Medication and data.EHR_Medication.activeSideEffects then
+            for id, _ in pairs(data.EHR_Medication.activeSideEffects) do
+                data.EHR_Medication.activeSideEffects[id] = nil
+            end
         end
-    end
+        if data.EHR_Medication and data.EHR_Medication.activeGeneralEffects then
+            data.EHR_Medication.activeGeneralEffects.staminaLock = nil
+            data.EHR_Medication.activeGeneralEffects.fatigueBlock = nil
+            data.EHR_Medication.activeGeneralEffects.combatStimulants = nil
+            data.EHR_Medication.activeGeneralEffects.mpFatigueRecovery = nil
+        end
 
-    -- Also clear legacy data
-    if data.EHR_SideEffects then
-        for id, _ in pairs(data.EHR_SideEffects) do
-            data.EHR_SideEffects[id] = nil
+        -- Also clear legacy data
+        if data.EHR_SideEffects then
+            for id, _ in pairs(data.EHR_SideEffects) do
+                data.EHR_SideEffects[id] = nil
+            end
         end
+
+        data.EHR_TendonWeakness = nil
+        data.EHR_KidneyStress = nil
+        data.EHR_Insomnia = nil
+        data.EHR_Immunosuppressed = nil
+        data.EHR_LiverStress = nil
+        data.EHR_CaffeineAwake = nil
+        data.EHR_CombatStimulantsActive = nil
+        data.EHR_CombatStimSpeedActive = nil
+        data.EHR_CombatStimWeaponId = nil
     end
 
     syncModDataToClient(player)
@@ -1058,18 +2544,24 @@ function EHR.ServerCommands.AddSideEffect(player, args)
     local effectId = args.effectId
     log("[EHR Server] AddSideEffect command received: " .. tostring(effectId))
 
-    local data = player:getModData()
-    data.EHR_Medication = data.EHR_Medication or {}
-    data.EHR_Medication.activeSideEffects = data.EHR_Medication.activeSideEffects or {}
+    if EHR.Medication and EHR.Medication.ApplySideEffect then
+        pcall(function()
+            EHR.Medication.ApplySideEffect(player, effectId, { force = true })
+        end)
+    else
+        local data = player:getModData()
+        data.EHR_Medication = data.EHR_Medication or {}
+        data.EHR_Medication.activeSideEffects = data.EHR_Medication.activeSideEffects or {}
 
-    local gameTime = getGameTime()
-    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local gameTime = getGameTime()
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
 
-    data.EHR_Medication.activeSideEffects[effectId] = {
-        startTime = currentHour,
-        duration = 6,
-        severity = 0.5,
-    }
+        data.EHR_Medication.activeSideEffects[effectId] = {
+            startTime = currentHour,
+            duration = 6,
+            severity = 0.5,
+        }
+    end
 
     syncModDataToClient(player)
     log("[EHR Server] AddSideEffect command executed")
@@ -1385,47 +2877,75 @@ end
 -- ============================================
 
 local function OnClientCommand(module, command, player, args)
-    -- DEBUG: Log ALL incoming commands (even non-EHR ones for diagnostics)
-    log("[EHR Server DEBUG] ========== OnClientCommand ==========")
-    log("[EHR Server DEBUG] module = '" .. tostring(module) .. "'")
-    log("[EHR Server DEBUG] command = '" .. tostring(command) .. "'")
-    log("[EHR Server DEBUG] player = " .. tostring(player and player:getUsername() or "nil"))
+    local isEHRCommand = module == "EHR" or module == "EHR_Flyers"
+    local quietCommand = module == "EHR" and command == "EnvironmentalSnapshot"
+    if isEHRCommand and not quietCommand then
+        log("[EHR Server DEBUG] ========== OnClientCommand ==========")
+        log("[EHR Server DEBUG] module = '" .. tostring(module) .. "'")
+        log("[EHR Server DEBUG] command = '" .. tostring(command) .. "'")
+        log("[EHR Server DEBUG] player = " .. tostring(player and player:getUsername() or "nil"))
+    end
 
     -- ============================================
     -- MP ITEM SYNC COMMANDS (any player can use)
     -- ============================================
     if module == "EHR" then
-        if command == "RemoveItem" and args and args.itemID then
+        if command == "UseMedication" then
+            EHR.ServerCommands.UseMedication(player, args)
+            return
+        elseif command == "DrinkWaterRisk" then
+            EHR.ServerCommands.DrinkWaterRisk(player, args)
+            return
+        elseif command == "EnvironmentalSnapshot" then
+            EHR.ServerCommands.EnvironmentalSnapshot(player, args)
+            return
+        elseif command == "FoodDiseaseRisk" then
+            EHR.ServerCommands.FoodDiseaseRisk(player, args)
+            return
+        elseif command == "StitchCellulitisRisk" then
+            EHR.ServerCommands.StitchCellulitisRisk(player, args)
+            return
+        elseif command == "CellulitisSepsisHandoff" then
+            EHR.ServerCommands.CellulitisSepsisHandoff(player, args)
+            return
+        elseif command == "FoodToxinRisk" then
+            EHR.ServerCommands.FoodToxinRisk(player, args)
+            return
+        elseif command == "UseKnoxCureItem" then
+            EHR.ServerCommands.UseKnoxCureItem(player, args)
+            return
+        elseif command == "UseTransfusion" then
+            EHR.ServerCommands.UseTransfusion(player, args)
+            return
+        elseif command == "DrawBlood" then
+            EHR.ServerCommands.DrawBlood(player, args)
+            return
+        elseif command == "RemoveItem" and args and args.itemID then
             -- Find and remove the item from player's inventory
-            local inventory = player:getInventory()
-            if not inventory then return end
-
-            local items = inventory:getItems()
-            for i = 0, items:size() - 1 do
-                local item = items:get(i)
-                if item and item:getID() == args.itemID then
-                    inventory:Remove(item)
-                    log("[EHR] Server: Synced item removal for " .. player:getUsername())
-                    return
-                end
+            local item, container = findInventoryItemByID(player, args.itemID)
+            if item then
+                removeInventoryItem(item, container)
+                log("[EHR] Server: Synced item removal for " .. player:getUsername())
+                return
             end
+        elseif command == "UnpackCleanBandage" then
+            EHR.ServerCommands.UnpackCleanBandage(player, args)
+            return
+        elseif command == "AddCleanBandageToPack" then
+            EHR.ServerCommands.AddCleanBandageToPack(player, args)
+            return
+        elseif command == "ApplyBandagePack" then
+            EHR.ServerCommands.ApplyBandagePack(player, args)
+            return
         elseif command == "UpdateItemDelta" and args and args.itemID and args.usedDelta then
             -- Sync drainable item usedDelta from client
-            local inventory = player:getInventory()
-            if not inventory then return end
-
-            local items = inventory:getItems()
-            for i = 0, items:size() - 1 do
-                local item = items:get(i)
-                if item and item:getID() == args.itemID then
-                    local newUsed = math.max(0, math.min(1, args.usedDelta))
-                    pcall(function() item:setUsedDelta(newUsed) end)
-                    if sendItemStats then
-                        pcall(function() sendItemStats(item) end)
-                    end
-                    log("[EHR] Server: Synced item usedDelta for " .. player:getUsername())
-                    return
-                end
+            local item = findInventoryItemByID(player, args.itemID)
+            if item then
+                local newUsed = math.max(0, math.min(1, args.usedDelta))
+                pcall(function() item:setUsedDelta(newUsed) end)
+                syncInventoryItem(item)
+                log("[EHR] Server: Synced item usedDelta for " .. player:getUsername())
+                return
             end
         elseif command == "TrackMedication" and args and args.medKey then
             -- Sync medication tracking from client (for generic medical items)
@@ -1459,21 +2979,43 @@ local function OnClientCommand(module, command, player, args)
             return
         elseif command == "RequestExamData" then
             -- Client requests another player's EHR data for examination
-            -- args.targetUsername = username of player to examine
-            if not args or not args.targetUsername then
-                log("[EHR] Server: RequestExamData missing targetUsername")
+            -- args.targetUsername/targetOnlineID/targetDisplayName = identifiers of player to examine
+            if not args or (not args.targetUsername and not args.targetOnlineID and not args.targetDisplayName and not args.targetKey) then
+                log("[EHR] Server: RequestExamData missing target identifier")
                 return
             end
 
             local targetUsername = args.targetUsername
+            local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
+            local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
+            local requestKey = args.targetKey or targetUsername or (targetOnlineID and ("online_" .. targetOnlineID)) or targetDisplayName
             local targetPlayer = nil
 
-            -- Find target player by username
+            -- Find target player by the most stable identifiers available. In
+            -- MP/listen-server cases getUsername() can be missing on one side
+            -- of the client, while onlineID/displayName still resolve.
             local onlinePlayers = getOnlinePlayers()
             if onlinePlayers then
                 for i = 0, onlinePlayers:size() - 1 do
                     local p = onlinePlayers:get(i)
-                    if p and p:getUsername() == targetUsername then
+                    local username = nil
+                    local onlineID = nil
+                    local displayName = nil
+                    if p then
+                        pcall(function() username = p:getUsername() end)
+                        pcall(function()
+                            if p.getOnlineID then onlineID = tostring(p:getOnlineID()) end
+                        end)
+                        pcall(function()
+                            if p.getDisplayName then displayName = tostring(p:getDisplayName()) end
+                        end)
+                    end
+
+                    if p and (
+                        (targetUsername and username == targetUsername) or
+                        (targetOnlineID and onlineID == targetOnlineID) or
+                        (targetDisplayName and displayName == targetDisplayName)
+                    ) then
                         targetPlayer = p
                         break
                     end
@@ -1481,10 +3023,10 @@ local function OnClientCommand(module, command, player, args)
             end
 
             if not targetPlayer then
-                log("[EHR] Server: RequestExamData - target player not found: " .. targetUsername)
+                log("[EHR] Server: RequestExamData - target player not found: " .. tostring(requestKey))
                 -- Send empty response so client knows request failed
                 sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
-                    targetUsername = targetUsername,
+                    targetUsername = requestKey,
                     success = false,
                     error = "Player not found or offline",
                 })
@@ -1495,7 +3037,7 @@ local function OnClientCommand(module, command, player, args)
             local targetData = targetPlayer:getModData()
             if not targetData then
                 sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
-                    targetUsername = targetUsername,
+                    targetUsername = requestKey,
                     success = false,
                     error = "No data available",
                 })
@@ -1503,23 +3045,61 @@ local function OnClientCommand(module, command, player, args)
             end
 
             -- Compile EHR data to send
+            local medicationView = nil
+            if EHR.Medication then
+                medicationView = {
+                    activeTreatments = EHR.Medication.GetActiveTreatments and EHR.Medication.GetActiveTreatments(targetPlayer) or {},
+                    activeDoses = EHR.Medication.GetAllDoseStatuses and EHR.Medication.GetAllDoseStatuses(targetPlayer) or {},
+                    activeSideEffects = EHR.Medication.GetActiveSideEffects and EHR.Medication.GetActiveSideEffects(targetPlayer) or {},
+                }
+            end
+
+            local actualUsername = targetUsername
+            pcall(function() actualUsername = targetPlayer:getUsername() or actualUsername end)
+
+            local knoxStatus = {
+                infected = false,
+                progress = 0,
+            }
+            if EHR.KnoxCure then
+                if EHR.KnoxCure.IsInfected then
+                    local ok, infected = pcall(function()
+                        return EHR.KnoxCure.IsInfected(targetPlayer)
+                    end)
+                    knoxStatus.infected = ok and infected == true
+                end
+                if EHR.KnoxCure.GetInfectionProgress then
+                    local ok, progress = pcall(function()
+                        return EHR.KnoxCure.GetInfectionProgress(targetPlayer)
+                    end)
+                    if ok then
+                        knoxStatus.progress = math.max(0, math.min(1, tonumber(progress) or 0))
+                    end
+                end
+            end
+
             local examData = {
-                targetUsername = targetUsername,
+                targetUsername = requestKey,
+                targetActualUsername = actualUsername,
                 success = true,
                 EHR_Blood = targetData.EHR_Blood,
                 EHR_Disease = targetData.EHR_Disease,
                 EHR_Sepsis = targetData.EHR_Sepsis,
                 EHR_WoundInfection = targetData.EHR_WoundInfection,
+                EHR_BodyStatus = buildBodyStatusSnapshot(targetPlayer),
                 EHR_Medication = targetData.EHR_Medication,
+                EHR_MedicationView = medicationView,
                 EHR_MedicalJournal = targetData.EHR_MedicalJournal,
                 EHR_Temperature = targetData.EHR_Temperature,
                 EHR_CorpseSickness = targetData.EHR_CorpseSickness,
+                EHR_KnoxCure = targetData.EHR_KnoxCure,
+                EHR_KnoxStatus = knoxStatus,
                 EHR_Initialized = targetData.EHR_Initialized,
             }
 
             -- Send data to requesting player
             sendServerCommand(player, "EHR_Exam", "ExamDataResponse", examData)
-            log("[EHR] Server: Sent exam data for " .. targetUsername .. " to " .. player:getUsername())
+            log("[EHR] Server: Sent exam data for " .. tostring(requestKey) .. " to " .. player:getUsername())
             return
         end
         return
@@ -1562,6 +3142,8 @@ local function OnClientCommand(module, command, player, args)
         EHR.ServerCommands.KillPlayer(player, args)
     elseif command == "FullHeal" then
         EHR.ServerCommands.FullHeal(player, args)
+    elseif command == "FullHealTarget" then
+        EHR.ServerCommands.FullHealTarget(player, args)
     elseif command == "ResetAll" then
         EHR.ServerCommands.ResetAll(player, args)
 
@@ -1596,6 +3178,14 @@ local function OnClientCommand(module, command, player, args)
         EHR.ServerCommands.SetWoundStage(player, args)
     elseif command == "ClearAllInfections" then
         EHR.ServerCommands.ClearAllInfections(player, args)
+    elseif command == "ApplyVanillaInjury" then
+        EHR.ServerCommands.ApplyVanillaInjury(player, args)
+    elseif command == "ClearVanillaInjuries" then
+        EHR.ServerCommands.ClearVanillaInjuries(player, args)
+    elseif command == "ApplyVanillaVisual" then
+        EHR.ServerCommands.ApplyVanillaVisual(player, args)
+    elseif command == "ClearVanillaVisuals" then
+        EHR.ServerCommands.ClearVanillaVisuals(player, args)
 
     -- Medication commands
     elseif command == "ClearAllMedications" then
@@ -1649,12 +3239,8 @@ function EHR.ServerCommands.RequestInitData(player, args)
 
     local data = player:getModData()
 
-    -- CRITICAL: Always use GlobalModData for blood type (ensures persistence)
-    -- This will either return existing or generate new
-    local bloodType = getOrCreateBloodType(playerUsername)
-
     -- Initialize blood data with the authoritative blood type
-    initializeBloodData(data, playerUsername)
+    initializeBloodData(data, playerUsername, player)
 
     log("[EHR Server] Blood type for " .. playerUsername .. ": " .. tostring(data.EHR_Blood.bloodType))
 
@@ -1691,12 +3277,8 @@ local function OnServerCreatePlayer(playerIndex, player)
 
     local data = player:getModData()
 
-    -- CRITICAL: Get blood type from GlobalModData (authoritative, persists across restarts)
-    local bloodType = getOrCreateBloodType(playerUsername)
-    log("[EHR Server] Blood type from GlobalModData: " .. tostring(bloodType))
-
     -- Initialize blood data with authoritative blood type
-    initializeBloodData(data, playerUsername)
+    initializeBloodData(data, playerUsername, player)
     log("[EHR Server] After initializeBloodData, blood type: " .. tostring(data.EHR_Blood and data.EHR_Blood.bloodType))
 
     -- Ensure other EHR data structures exist
@@ -1741,6 +3323,24 @@ local function OnServerCreatePlayer(playerIndex, player)
     end
 end
 
+local function OnServerPlayerDeath(player)
+    if not player then return end
+
+    local playerUsername = player:getUsername() or ("Player" .. player:getPlayerNum())
+    local globalBloodTypes = ModData.getOrCreate("EHR_BloodTypes_Server")
+    local storageKey = getBloodTypeStorageKey(player, playerUsername)
+
+    globalBloodTypes[storageKey] = nil
+    globalBloodTypes[playerUsername] = nil -- legacy username-only key
+
+    local data = player:getModData()
+    if data then
+        data.EHR_DeadCharacter = true
+    end
+
+    log("[EHR Server] Cleared stored blood type for dead character: " .. tostring(storageKey))
+end
+
 -- Register server command handler
 log("[EHR Server DEBUG] Attempting to register OnClientCommand handler...")
 log("[EHR Server DEBUG] Events = " .. tostring(Events))
@@ -1760,6 +3360,11 @@ if Events and Events.OnCreatePlayer then
     log("[EHR Server] Registered OnCreatePlayer handler for MP data initialization")
 else
     log("[EHR Server] WARNING: Events.OnCreatePlayer not available!")
+end
+
+if Events and Events.OnPlayerDeath then
+    Events.OnPlayerDeath.Add(OnServerPlayerDeath)
+    log("[EHR Server] Registered OnPlayerDeath handler for blood type reset")
 end
 
 -- ============================================
@@ -1793,7 +3398,69 @@ end
 -- ============================================
 
 local PROGRESSION_INTERVAL_TICKS = 300  -- ~10 seconds
+local MEDICATION_INTERVAL_TICKS = 30    -- ~1 second; keeps delayed side effects responsive in MP
+local BLOOD_INTERVAL_TICKS = 30         -- ~1 second; server is authoritative for MP blood
+local BLOOD_SYNC_INTERVAL_TICKS = 90    -- ~3 seconds while bleeding; keeps UI responsive without spam
 local progressionTickCounter = 0
+local medicationTickCounter = 0
+local bloodTickCounter = 0
+local bloodSyncTickCounter = 0
+
+local function syncBloodDataToClient(player, data)
+    if not player or not data or not data.EHR_Blood or not sendServerCommand then return end
+    sendServerCommand(player, "EHR_Sync", "UpdateModData", { EHR_Blood = data.EHR_Blood })
+end
+
+local function processPlayerBlood(player, shouldSync)
+    if not player or not player:isAlive() then return end
+    if not (EHR and EHR.Blood and EHR.Blood.UpdateBloodVolume) then return end
+
+    local data = nil
+    if EHR.GetPlayerData then
+        data = EHR.GetPlayerData(player)
+    end
+    data = data or player:getModData()
+    if not data then return end
+
+    if not data.EHR_Blood then
+        local username = nil
+        pcall(function() username = player:getUsername() end)
+        initializeBloodData(data, username, player)
+    end
+
+    local oldVolume = data.EHR_Blood and data.EHR_Blood.currentVolume or nil
+    local wasBleeding = data.EHR_Blood and data.EHR_Blood.isCurrentlyBleeding == true
+
+    local ok, err = pcall(function()
+        EHR.Blood.UpdateBloodVolume(player, data)
+    end)
+    if not ok then
+        log("[EHR Server] Blood progression failed: " .. tostring(err))
+        return
+    end
+
+    local newVolume = data.EHR_Blood and data.EHR_Blood.currentVolume or nil
+    local isBleedingNow = data.EHR_Blood and data.EHR_Blood.isCurrentlyBleeding == true
+
+    if shouldSync and newVolume then
+        local changed = oldVolume == nil or math.abs((newVolume or 0) - (oldVolume or 0)) >= 0.5
+        if changed or wasBleeding or isBleedingNow then
+            syncBloodDataToClient(player, data)
+        end
+    end
+end
+
+local function processPlayerMedication(player)
+    if not player or not player:isAlive() then return end
+    if EHR.Medication and EHR.Medication.Update then
+        local ok, err = pcall(function()
+            EHR.Medication.Update(player)
+        end)
+        if not ok then
+            log("[EHR Server] Medication progression failed: " .. tostring(err))
+        end
+    end
+end
 
 local function processPlayerProgression(player)
     if not player or not player:isAlive() then return end
@@ -1863,6 +3530,21 @@ local function processPlayerProgression(player)
                     disease.stage = newStage
                     log("[EHR Server] Player " .. player:getUsername() .. " " .. diseaseId .. " progressed to stage " .. newStage)
                 end
+
+                if diseaseId == "cellulitis" and disease.stage >= 4 and not disease.cellulitisSepsisTriggered then
+                    local hasTreatment = EHR.Disease
+                        and EHR.Disease.HasActiveCurativeTreatment
+                        and EHR.Disease.HasActiveCurativeTreatment(player, "cellulitis")
+
+                    if hasTreatment then
+                        disease.cellulitisSepsisBlockedByTreatment = true
+                    else
+                        disease.cellulitisSepsisTriggered = true
+                        triggerCellulitisSepsisHandoff(player, {
+                            sourceBodyPart = disease.sourceBodyPart or "cellulitis",
+                        })
+                    end
+                end
             end
         end
     end
@@ -1914,35 +3596,10 @@ local function processPlayerProgression(player)
         recalcWoundStats(data.EHR_WoundInfection)
     end
 
-    -- Process Blood Regeneration (slow, ~100mL per hour when healthy)
-    if data.EHR_Blood and data.EHR_Blood.currentVolume then
-        local blood = data.EHR_Blood
-        local maxVol = blood.maxVolume or 5000
-        local currentVol = blood.currentVolume or maxVol
-
-        -- Only regen if below max and not actively bleeding
-        if currentVol < maxVol and not blood.isCurrentlyBleeding then
-            local lastRegenHour = blood.lastRegenHour or currentHour
-            local hoursSinceRegen = currentHour - lastRegenHour
-
-            if hoursSinceRegen >= 1 then
-                -- Base regen: 100mL/hour, reduced if low blood
-                local regenRate = 100
-                local bloodPercent = currentVol / maxVol
-                if bloodPercent < 0.5 then
-                    regenRate = regenRate * bloodPercent * 2  -- Slower when very low
-                end
-
-                local regenAmount = regenRate * math.floor(hoursSinceRegen)
-                blood.currentVolume = math.min(maxVol, currentVol + regenAmount)
-                blood.lastRegenHour = currentHour
-
-                if regenAmount > 0 then
-                    log("[EHR Server] Player " .. player:getUsername() .. " blood regen: +" .. math.floor(regenAmount) .. "mL")
-                end
-            end
-        end
-    end
+    -- Blood regeneration is handled by EHR.Blood.UpdateBloodVolume through
+    -- EHR.Blood.ApplyBloodRegeneration. Keeping a second server-only regen here
+    -- bypassed sandbox delay/healing checks and made MP players recover too fast.
+    processPlayerMedication(player)
 end
 
 local function OnServerTick()
@@ -1951,6 +3608,36 @@ local function OnServerTick()
     if syncTickCounter >= SYNC_INTERVAL_TICKS then
         syncTickCounter = 0
         syncAllPlayers()
+    end
+
+    medicationTickCounter = medicationTickCounter + 1
+    if medicationTickCounter >= MEDICATION_INTERVAL_TICKS then
+        medicationTickCounter = 0
+
+        local players = getOnlinePlayers()
+        if players then
+            for i = 0, players:size() - 1 do
+                processPlayerMedication(players:get(i))
+            end
+        end
+    end
+
+    bloodTickCounter = bloodTickCounter + 1
+    bloodSyncTickCounter = bloodSyncTickCounter + 1
+    if bloodTickCounter >= BLOOD_INTERVAL_TICKS then
+        bloodTickCounter = 0
+
+        local shouldSyncBlood = bloodSyncTickCounter >= BLOOD_SYNC_INTERVAL_TICKS
+        if shouldSyncBlood then
+            bloodSyncTickCounter = 0
+        end
+
+        local players = getOnlinePlayers()
+        if players then
+            for i = 0, players:size() - 1 do
+                processPlayerBlood(players:get(i), shouldSyncBlood)
+            end
+        end
     end
 
     -- Disease/Sepsis/Wound progression

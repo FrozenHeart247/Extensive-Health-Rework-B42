@@ -18,6 +18,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_MedicalSkill"
 require "ExtensiveHealth/EHR_DialogueData"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Dialogue = {}
@@ -192,7 +193,7 @@ function EHR.Dialogue.Say(player, text, dialogueType, baseChance)
     -- Critical and stage change always happen (unless Off)
     if dialogueType == EHR.Dialogue.Types.CRITICAL or
        dialogueType == EHR.Dialogue.Types.STAGE_CHANGE then
-        player:Say(text)
+        EHR.Locale.Say(player, text)
         return true
     end
 
@@ -206,7 +207,7 @@ function EHR.Dialogue.Say(player, text, dialogueType, baseChance)
         adjustedChance = math.max(1, adjustedChance)  -- At least 1 in 1
 
         if ZombRand(adjustedChance) < 1 then
-            player:Say(text)
+            EHR.Locale.Say(player, text)
             return true
         end
     end
@@ -345,11 +346,11 @@ function EHR.Dialogue.GetSkillDialogue(player, disease, stage, isCorrectDiagnosi
         if text == dialogueKey or text == "?" or text == nil or text == "" then
             -- Return a generic message based on tier
             if tierGroup == "clueless" then
-                return "Something feels wrong..."
+                return EHR.Locale.Text("UI_EHR_Dialogue_Generic_Clueless", "Something feels wrong...")
             elseif tierGroup == "novice" then
-                return "I don't feel well..."
+                return EHR.Locale.Text("UI_EHR_Dialogue_Generic_Novice", "I don't feel well...")
             else
-                return "I'm experiencing symptoms..."
+                return EHR.Locale.Text("UI_EHR_Dialogue_Generic_Symptoms", "I'm experiencing symptoms...")
             end
         end
         return text

@@ -7,23 +7,28 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
+pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Concussion = EHR.Concussion or {}
 EHR.Concussion.State = EHR.Concussion.State or {}
 
 EHR.Concussion.Config = {
-    FALL_CHANCE = 0.35,
+    FALL_CHANCE = 0.65,
     VEHICLE_CHANCE = 0.45,
     COOLDOWN_HOURS = 0.25,
     FAILED_ROLL_COOLDOWN_HOURS = 0.02,
-    FALL_DROP_FLOORS = 0.75,
+    FALL_DROP_FLOORS = 2.0,
     TRAUMA_PENDING_HOURS = 0.06,
     FALL_PENDING_HOURS = 0.02,
     CRASH_PENDING_HOURS = 0.06,
+    FALL_MAX_HORIZONTAL_TILES = 0.85,
+    STAIR_SCAN_RADIUS = 0,
     MIN_FALL_HEALTH_LOSS = 3.0,
     MIN_HEAD_PAIN_GAIN = 5.0,
+    MIN_HEAD_HEALTH_LOSS = 1.0,
     MIN_PART_HEALTH_LOSS = 1.0,
+    MIN_MAJOR_PART_HEALTH_LOSS = 6.0,
     MIN_PART_PAIN_GAIN = 4.0,
     CRASH_SPEED_DROP_KMH = 28.0,
     CRASH_SEVERE_DROP_KMH = 55.0,
@@ -257,6 +262,7 @@ local function getTraumaDelta(before, after)
     local delta = {
         overallHealthLoss = math.max(0, (tonumber(before.overallHealth) or tonumber(after.overallHealth) or 100) - (tonumber(after.overallHealth) or 100)),
         headPainGain = math.max(0, (tonumber(after.headPain) or 0) - (tonumber(before.headPain) or tonumber(after.headPain) or 0)),
+        headHealthLoss = 0,
         partHealthLoss = 0,
         maxPartPainGain = 0,
         woundIncrease = math.max(0, (tonumber(after.woundScore) or 0) - (tonumber(before.woundScore) or 0)),
@@ -266,7 +272,11 @@ local function getTraumaDelta(before, after)
     local beforeParts = before.parts or {}
     for partName, current in pairs(after.parts or {}) do
         local previous = beforeParts[partName] or current
-        delta.partHealthLoss = delta.partHealthLoss + math.max(0, (tonumber(previous.health) or tonumber(current.health) or 100) - (tonumber(current.health) or 100))
+        local partHealthLoss = math.max(0, (tonumber(previous.health) or tonumber(current.health) or 100) - (tonumber(current.health) or 100))
+        delta.partHealthLoss = delta.partHealthLoss + partHealthLoss
+        if tostring(partName or ""):find("head", 1, true) then
+            delta.headHealthLoss = math.max(delta.headHealthLoss, partHealthLoss)
+        end
         delta.maxPartPainGain = math.max(delta.maxPartPainGain, math.max(0, (tonumber(current.pain) or 0) - (tonumber(previous.pain) or 0)))
     end
 
@@ -276,27 +286,25 @@ end
 local function isTraumaticInjury(delta, cfg, source)
     if not delta then return false end
 
-    local minHealthLoss = source == "vehicle crash" and (cfg.MIN_CRASH_HEALTH_LOSS or 1.5) or (cfg.MIN_FALL_HEALTH_LOSS or 3)
     local minHeadPainGain = source == "vehicle crash" and (cfg.MIN_CRASH_HEAD_PAIN_GAIN or 2.5) or (cfg.MIN_HEAD_PAIN_GAIN or 5)
-
-    local hasBodyPartTrauma = delta.woundIncrease > 0
-        or delta.severeWoundIncrease > 0
-        or delta.partHealthLoss >= (cfg.MIN_PART_HEALTH_LOSS or 1.0)
-        or delta.maxPartPainGain >= (cfg.MIN_PART_PAIN_GAIN or 4.0)
-        or delta.headPainGain >= minHeadPainGain
+    local hasHeadImpact = delta.headPainGain >= minHeadPainGain
+        or delta.headHealthLoss >= (cfg.MIN_HEAD_HEALTH_LOSS or 1.0)
+    local hasMajorTrauma = delta.severeWoundIncrease > 0
+        or delta.partHealthLoss >= (cfg.MIN_MAJOR_PART_HEALTH_LOSS or 6.0)
 
     if source ~= "vehicle crash" then
-        -- Overencumbrance and some moodle effects drain overall body health without
-        -- causing impact trauma. For falls we require a real wound/body-part signal.
-        return hasBodyPartTrauma
+        -- Overencumbrance, pain drift, and controlled Z transitions can change
+        -- health/pain without a head impact. A fall needs head trauma or a major
+        -- fresh injury, not just generic body damage.
+        return hasHeadImpact or hasMajorTrauma
     end
 
-    return delta.woundIncrease > 0
-        or delta.severeWoundIncrease > 0
-        or delta.partHealthLoss >= (cfg.MIN_PART_HEALTH_LOSS or 1.0)
-        or delta.maxPartPainGain >= (cfg.MIN_PART_PAIN_GAIN or 4.0)
-        or delta.overallHealthLoss >= minHealthLoss
-        or delta.headPainGain >= minHeadPainGain
+    -- Vehicle speed can fluctuate in MP or during vehicle transitions. Require
+    -- an actual fresh wound/head hit/major body-part loss instead of overall HP
+    -- drain alone.
+    return hasHeadImpact
+        or hasMajorTrauma
+        or (delta.woundIncrease > 0 and delta.partHealthLoss >= (cfg.MIN_PART_HEALTH_LOSS or 1.0))
 end
 
 local function debugTraumaLog(kind, pending, delta)
@@ -413,14 +421,14 @@ function EHR.Concussion.Start(player, source, force)
     modData.EHR_Concussion.lastSource = source or "trauma"
 
     if player.Say then
-        player:Say("My head... something is wrong.")
+        EHR.Locale.Say(player, "My head... something is wrong.")
     end
 
-    if player.transmitModData then
-        pcall(function() player:transmitModData() end)
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
     end
 
-    print("[EHR] Concussion triggered by " .. tostring(source or "trauma"))
+    EHR.Log("Concussion triggered by " .. tostring(source or "trauma"))
     return true
 end
 
@@ -502,6 +510,173 @@ local function getPlayerZ(player)
     return tonumber(z) or 0
 end
 
+local function getFallTrackingZ(z)
+    z = tonumber(z) or 0
+    if z < 0 then return 0 end
+    return z
+end
+
+local function isBasementZTransition(currentZ, lastZ)
+    currentZ = tonumber(currentZ) or 0
+    lastZ = tonumber(lastZ)
+    return currentZ < 0 or (lastZ ~= nil and lastZ < 0)
+end
+
+local function getPlayerXY(player)
+    local x, y = 0, 0
+    pcall(function()
+        if player and player.getX then x = player:getX() end
+        if player and player.getY then y = player:getY() end
+    end)
+    return tonumber(x) or 0, tonumber(y) or 0
+end
+
+local function getPlayerSquare(player)
+    local square = nil
+    pcall(function()
+        if player and player.getSquare then
+            square = player:getSquare()
+        elseif player and player.getCurrentSquare then
+            square = player:getCurrentSquare()
+        end
+    end)
+    return square
+end
+
+local function getGridSquareAt(x, y, z)
+    local cell = getCell and getCell() or nil
+    if not cell or not cell.getGridSquare then return nil end
+
+    local square = nil
+    pcall(function()
+        square = cell:getGridSquare(
+            math.floor(tonumber(x) or 0),
+            math.floor(tonumber(y) or 0),
+            math.floor(tonumber(z) or 0)
+        )
+    end)
+    return square
+end
+
+local function squareHasStairs(square)
+    if not square then return false end
+
+    local methods = {
+        "HasStairs",
+        "HasStairsBelow",
+        "HasStairsNorth",
+        "HasStairsWest",
+    }
+    for _, methodName in ipairs(methods) do
+        local method = square[methodName]
+        if method then
+            local ok, value = pcall(function() return method(square) end)
+            if ok and value == true then return true end
+        end
+    end
+
+    local modData = nil
+    pcall(function()
+        if square.getModData then modData = square:getModData() end
+    end)
+    if modData and (modData.ConnectedToStairstrue or modData.ConnectedToStairsfalse) then
+        return true
+    end
+
+    if IsoObjectType and square.has then
+        local stairTypes = {
+            "stairsBN",
+            "stairsBW",
+            "stairsMN",
+            "stairsMW",
+            "stairsTN",
+            "stairsTW",
+        }
+        for _, stairTypeName in ipairs(stairTypes) do
+            local stairType = IsoObjectType[stairTypeName]
+            if stairType then
+                local ok, value = pcall(function() return square:has(stairType) end)
+                if ok and value == true then return true end
+            end
+        end
+    end
+
+    local objects = nil
+    pcall(function()
+        if square.getObjects then objects = square:getObjects() end
+    end)
+    if objects then
+        local objectCount = 0
+        pcall(function()
+            if objects.size then objectCount = objects:size() end
+        end)
+        for i = 0, objectCount - 1 do
+            local object = nil
+            pcall(function() object = objects:get(i) end)
+            if object then
+                local okStairs, isStairs = pcall(function()
+                    if object.isStairsObject then return object:isStairsObject() end
+                    return false
+                end)
+                if okStairs and isStairs == true then return true end
+
+                local okType, objectType = pcall(function()
+                    if object.getType then return object:getType() end
+                    return nil
+                end)
+                if okType and objectType and IsoObjectType then
+                    if objectType == IsoObjectType.stairsBN or objectType == IsoObjectType.stairsBW
+                        or objectType == IsoObjectType.stairsMN or objectType == IsoObjectType.stairsMW
+                        or objectType == IsoObjectType.stairsTN or objectType == IsoObjectType.stairsTW then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function isNearStairsAt(x, y, z, radius)
+    radius = tonumber(radius) or 2
+    local baseX = math.floor(tonumber(x) or 0)
+    local baseY = math.floor(tonumber(y) or 0)
+    local baseZ = math.floor(tonumber(z) or 0)
+
+    for dz = -1, 1 do
+        for dx = -radius, radius do
+            for dy = -radius, radius do
+                if squareHasStairs(getGridSquareAt(baseX + dx, baseY + dy, baseZ + dz)) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function isStairTransition(player, state, x, y, z, cfg)
+    local radius = cfg.STAIR_SCAN_RADIUS or 2
+    local currentSquare = getPlayerSquare(player) or getGridSquareAt(x, y, z)
+    if squareHasStairs(currentSquare) or squareHasStairs(state.lastSquare) then
+        return true
+    end
+
+    if radius > 0 then
+        if isNearStairsAt(x, y, z, radius) then return true end
+        if state.lastX and state.lastY and state.lastZ and isNearStairsAt(state.lastX, state.lastY, state.lastZ, radius) then
+            return true
+        end
+        if state.highestZ and isNearStairsAt(x, y, state.highestZ, radius) then
+            return true
+        end
+    end
+
+    return false
+end
+
 function EHR.Concussion.UpdateTracking(player)
     if not isValidPlayer(player) then return end
 
@@ -516,30 +691,62 @@ function EHR.Concussion.UpdateTracking(player)
     normalizeOldCooldown(player, now, cfg)
 
     local z = getPlayerZ(player)
+    local fallZ = getFallTrackingZ(z)
+    local x, y = getPlayerXY(player)
     local snapshot = getBodySnapshot(player)
     local health = snapshot.overallHealth
     local headPain = snapshot.headPain
     local vehicle = getVehicle(player)
     local lastSnapshot = state.lastSnapshot or snapshot
 
-    resolvePendingTrauma(player, state, "pendingFall", now, cfg, snapshot, cfg.FALL_CHANCE or 0.35)
     resolvePendingTrauma(player, state, "pendingCrash", now, cfg, snapshot, cfg.VEHICLE_CHANCE or 0.45)
+    state.pendingFall = nil
 
     if not vehicle then
-        state.highestZ = math.max(tonumber(state.highestZ) or z, tonumber(state.lastZ) or z, z)
-        local drop = math.max((tonumber(state.highestZ) or z) - z, (tonumber(state.lastZ) or z) - z)
-        if drop >= (cfg.FALL_DROP_FLOORS or 0.75) then
-            setPendingTrauma(state, "pendingFall", now, "fall", lastSnapshot, {
-                fromZ = state.highestZ,
-                toZ = z,
-            })
-            state.highestZ = z
-        elseif z > (tonumber(state.highestZ) or z) then
-            state.highestZ = z
+        local lastFallZ = tonumber(state.lastFallZ)
+        if lastFallZ == nil then
+            lastFallZ = getFallTrackingZ(state.lastZ)
+        end
+
+        state.highestZ = math.max(tonumber(state.highestZ) or fallZ, lastFallZ or fallZ, fallZ)
+        local drop = math.max((tonumber(state.highestZ) or fallZ) - fallZ, (lastFallZ or fallZ) - fallZ)
+        local basementTransition = isBasementZTransition(z, state.lastZ)
+
+        if basementTransition then
+            if EHR.DEBUG and drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
+                EHR.Log(string.format(
+                    "Concussion ignored basement Z transition: rawZ %.2f -> %.2f, trackedDrop %.2f",
+                    tonumber(state.lastZ) or z,
+                    z,
+                    drop
+                ))
+            end
+            state.highestZ = fallZ
+        elseif drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
+            local stairTransition = isStairTransition(player, state, x, y, z, cfg)
+            if not stairTransition then
+                if EHR.DEBUG then
+                    EHR.Log(string.format(
+                        "Concussion fall roll: drop %.2f, chance %.0f%%",
+                        drop,
+                        (cfg.FALL_CHANCE or 0.65) * 100
+                    ))
+                end
+                EHR.Concussion.TryStart(player, "fall", cfg.FALL_CHANCE or 0.65)
+            elseif EHR.DEBUG then
+                EHR.Log(string.format(
+                    "Concussion ignored stair Z transition: drop %.2f, stairs=%s",
+                    drop,
+                    tostring(stairTransition)
+                ))
+            end
+            state.highestZ = fallZ
+        elseif fallZ > (tonumber(state.highestZ) or fallZ) then
+            state.highestZ = fallZ
         end
     else
         state.pendingFall = nil
-        state.highestZ = z
+        state.highestZ = fallZ
     end
 
     if vehicle then
@@ -574,9 +781,13 @@ function EHR.Concussion.UpdateTracking(player)
     end
 
     state.lastZ = z
+    state.lastFallZ = fallZ
+    state.lastX = x
+    state.lastY = y
     state.lastHealth = health
     state.lastHeadPain = headPain
     state.lastSnapshot = snapshot
+    state.lastSquare = getPlayerSquare(player) or getGridSquareAt(x, y, z)
 end
 
 function EHR.Concussion.OnPlayerUpdate(player)

@@ -1,3 +1,4 @@
 Recipes_EN = {
     MakePlantBasedAntibiotics = "Prepare Plant-Based Antibiotics",
+    MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
 }

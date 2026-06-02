@@ -1,0 +1,3 @@
+-- Extensive Health Rework B42
+-- Intentionally empty: clean bandage packs are unpacked into real Base.Bandage items before use.
+-- This keeps vanilla ISApplyBandage behavior untouched in multiplayer.

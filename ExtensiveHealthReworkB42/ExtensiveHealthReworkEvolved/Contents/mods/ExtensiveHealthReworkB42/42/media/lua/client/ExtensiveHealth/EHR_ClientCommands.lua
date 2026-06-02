@@ -24,30 +24,108 @@ local function isEHRDebug()
 end
 
 local function log(msg)
-    if isEHRDebug() then
+    if EHR and EHR.ShouldLog and EHR.ShouldLog(msg) then
         print(msg)
     end
 end
 
 log("[EHR] EHR_ClientCommands.lua loading on client...")
 
+local function getLocalPlayerForCommand()
+    local player = getPlayer()
+    if not player then
+        log("[EHR Client] No local player found!")
+    end
+    return player
+end
+
+local function handleDialogueCommand(command, args)
+    if command ~= "Say" then
+        return false
+    end
+
+    local player = getLocalPlayerForCommand()
+    if not player or not args or not args.text then
+        return true
+    end
+
+    local text = tostring(args.text)
+    if EHR and EHR.Locale and EHR.Locale.Say then
+        EHR.Locale.Say(player, text)
+    elseif player.Say then
+        player:Say(text)
+    end
+    return true
+end
+
+local function handleFlyerCommand(command, args)
+    if command ~= "KnowledgeUnlocked" then
+        return false
+    end
+
+    local player = getLocalPlayerForCommand()
+    if not player or not args or not args.diseaseId then
+        return true
+    end
+
+    local data = player:getModData()
+    if not data then
+        return true
+    end
+
+    local diseaseId = tostring(args.diseaseId)
+    if EHR and EHR.DiseaseFlyers and EHR.DiseaseFlyers.NormalizeDiseaseId then
+        diseaseId = EHR.DiseaseFlyers.NormalizeDiseaseId(diseaseId)
+    end
+
+    data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
+    data.EHR_KnownDiseases[diseaseId] = true
+    if args.EHR_KnoxHeraldRead ~= nil then
+        data.EHR_KnoxHeraldRead = args.EHR_KnoxHeraldRead == true
+    end
+    if args.EHR_KnoxKnowledgeSource ~= nil then
+        data.EHR_KnoxKnowledgeSource = args.EHR_KnoxKnowledgeSource
+    end
+
+    if type(args.EHR_MedicalJournal) == "table" then
+        data.EHR_MedicalJournal = args.EHR_MedicalJournal
+    else
+        data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
+        data.EHR_MedicalJournal.discoveries = data.EHR_MedicalJournal.discoveries or {}
+        data.EHR_MedicalJournal.discoveries[diseaseId] = getGameTime():getWorldAgeHours()
+        data.EHR_MedicalJournal.lastUpdated = getGameTime():getWorldAgeHours()
+    end
+
+    log("[EHR Client] Knowledge unlocked ack: " .. tostring(diseaseId))
+    return true
+end
+
 -- ============================================
 -- SERVER COMMAND HANDLER
 -- ============================================
 
 local function OnServerCommand(module, command, args)
-    -- Debug: Log all incoming server commands
-    log("[EHR Client] OnServerCommand received:")
-    log("[EHR Client]   module = " .. tostring(module))
-    log("[EHR Client]   command = " .. tostring(command))
+    local isEHRCommand = module == "EHR_Dialogue" or module == "EHR_Flyers" or module == "EHR_Sync"
+    if isEHRCommand then
+        log("[EHR Client] OnServerCommand received:")
+        log("[EHR Client]   module = " .. tostring(module))
+        log("[EHR Client]   command = " .. tostring(command))
+    end
+
+    if module == "EHR_Dialogue" then
+        if handleDialogueCommand(command, args) then return end
+    end
+
+    if module == "EHR_Flyers" then
+        if handleFlyerCommand(command, args) then return end
+    end
 
     if module ~= "EHR_Sync" then
         return
     end
 
-    local player = getPlayer()
+    local player = getLocalPlayerForCommand()
     if not player then
-        log("[EHR Client] No local player found!")
         return
     end
 
@@ -215,9 +293,21 @@ local function OnServerCommand(module, command, args)
                 log("[EHR Client] Updated EHR_KnownDiseases")
             end
 
+            if args.EHR_KnoxHeraldRead ~= nil then
+                data.EHR_KnoxHeraldRead = args.EHR_KnoxHeraldRead == true
+            end
+            if args.EHR_KnoxKnowledgeSource ~= nil then
+                data.EHR_KnoxKnowledgeSource = args.EHR_KnoxKnowledgeSource
+            end
+
             if args.EHR_CorpseSickness ~= nil then
                 data.EHR_CorpseSickness = args.EHR_CorpseSickness
                 log("[EHR Client] Updated EHR_CorpseSickness")
+            end
+
+            if args.EHR_KnoxCure ~= nil then
+                data.EHR_KnoxCure = args.EHR_KnoxCure
+                log("[EHR Client] Updated EHR_KnoxCure")
             end
         end
 

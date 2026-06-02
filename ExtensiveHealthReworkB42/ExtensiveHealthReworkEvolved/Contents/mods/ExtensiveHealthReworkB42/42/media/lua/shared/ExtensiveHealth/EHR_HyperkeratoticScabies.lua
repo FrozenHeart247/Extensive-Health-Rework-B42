@@ -10,10 +10,11 @@ EHR = EHR or {}
 EHR.HyperkeratoticScabies = EHR.HyperkeratoticScabies or {}
 
 EHR.HyperkeratoticScabies.Config = EHR.HyperkeratoticScabies.Config or {
-    CHECK_INTERVAL_HOURS = 1.0,
-    GROUND_CHANCE = 0.10,
+    CHECK_INTERVAL_HOURS = 0.25,
+    GROUND_CHANCE = 0.03,
     BLOCK_WINTER_MONTHS = true,
     BLOCK_SNOW = true,
+    DEBUG_ROLLS = true,
 }
 
 local function worldHour()
@@ -34,8 +35,70 @@ local function isValidPlayer(player)
     return not (okDead and dead == true)
 end
 
+local function isSandboxEnabled()
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework or nil
+    if options and options.HyperkeratoticScabiesEnabled == false then return false end
+    return true
+end
+
+local function isDebugRollsEnabled()
+    local config = EHR.HyperkeratoticScabies.Config or {}
+    if config.DEBUG_ROLLS == false then return false end
+
+    if EHR and EHR.IsDebugMode then
+        local ok, enabled = pcall(EHR.IsDebugMode)
+        if ok then return enabled == true end
+    end
+
+    return EHR and EHR.DEBUG == true
+end
+
+local function playerName(player)
+    local name = "unknown"
+    pcall(function()
+        if player and player.getUsername then name = tostring(player:getUsername() or name) end
+    end)
+    return name
+end
+
+local function debugRoll(player, state, reason, detail)
+    if not isDebugRollsEnabled() then return end
+
+    local now = worldHour()
+    if state then
+        local lastReason = tostring(state.lastDebugReason or "")
+        local lastHour = tonumber(state.lastDebugHour) or -999999
+        if lastReason == tostring(reason or "") and (now - lastHour) < 0.25 then return end
+        state.lastDebugReason = tostring(reason or "")
+        state.lastDebugHour = now
+    end
+
+    print("[EHR][ScabiesRoll][" .. playerName(player) .. "] " .. tostring(reason or "state") .. ": " .. tostring(detail or ""))
+end
+
+local function playerBool(player, methodName)
+    if not player or not methodName then return false end
+    local method = player[methodName]
+    if type(method) ~= "function" then return false end
+    local ok, value = pcall(function() return method(player) end)
+    return ok and value == true
+end
+
+local function blocksGroundSittingExposure(player)
+    if not player then return true end
+    local inVehicle = false
+    pcall(function() inVehicle = player.getVehicle and player:getVehicle() ~= nil end)
+    if inVehicle then return true end
+
+    return playerBool(player, "isSneaking")
+        or playerBool(player, "isRunning")
+        or playerBool(player, "isSprinting")
+        or playerBool(player, "isPlayerMoving")
+end
+
 local function isSittingOnGround(player)
     if not player then return false end
+    if blocksGroundSittingExposure(player) then return false end
 
     local okSit, sitting = pcall(function()
         if player.isSitOnGround then return player:isSitOnGround() end
@@ -53,12 +116,45 @@ local function isSittingOnGround(player)
     return false
 end
 
+local function resetGroundExposureState(modData)
+    if not modData or not modData.EHR_HyperkeratoticScabies then return end
+    modData.EHR_HyperkeratoticScabies.sittingStartedHour = nil
+    modData.EHR_HyperkeratoticScabies.lastGroundCheckHour = nil
+end
+
+local function randomUnit()
+    if ZombRand then
+        local value = ZombRand(1000000)
+        return (tonumber(value) or 0) / 1000000
+    end
+
+    if math and math.random then
+        local ok, value = pcall(function() return math.random() end)
+        if ok and value ~= nil then return tonumber(value) or 0 end
+
+        ok, value = pcall(function() return math.random(1000000) end)
+        if ok and value ~= nil then return ((tonumber(value) or 1) - 1) / 1000000 end
+    end
+
+    return 0
+end
+
 local function roll(chance)
     chance = tonumber(chance) or 0
     if chance <= 0 then return false end
     if chance >= 1 then return true end
-    if ZombRand then return (ZombRand(1000000) / 1000000) < chance end
-    return math.random() < chance
+    return randomUnit() < chance
+end
+
+local function rollDetailed(chance)
+    chance = tonumber(chance) or 0
+    if chance <= 0 then return false, 1.0 end
+    if chance >= 1 then return true, 0.0 end
+
+    local value = randomUnit()
+    if value < 0 then value = 0 end
+    if value > 0.999999 then value = 0.999999 end
+    return value < chance, value
 end
 
 local function getDiseaseData(player)
@@ -407,6 +503,7 @@ function EHR.HyperkeratoticScabies.ClearAfterCure(player)
     local modData = player and player.getModData and player:getModData() or nil
     if modData and modData.EHR_HyperkeratoticScabies then
         modData.EHR_HyperkeratoticScabies.lastGroundCheckHour = nil
+        modData.EHR_HyperkeratoticScabies.sittingStartedHour = nil
         modData.EHR_HyperkeratoticScabies.lastTriggerHour = nil
     end
 end
@@ -445,27 +542,87 @@ function EHR.HyperkeratoticScabies.Start(player, source)
 end
 
 function EHR.HyperkeratoticScabies.UpdatePlayer(player)
+    if not isSandboxEnabled() then return end
     if not isValidPlayer(player) then return end
     if isScabiesActive(player) then return end
-    if not isSittingOnGround(player) then return end
 
     local modData = player:getModData()
     if not modData then return end
     modData.EHR_HyperkeratoticScabies = modData.EHR_HyperkeratoticScabies or {}
+    local state = modData.EHR_HyperkeratoticScabies
+
+    if not isSittingOnGround(player) then
+        if state.sittingStartedHour then
+            debugRoll(player, state, "reset", "no longer sitting on ground; exposure timer cleared")
+        elseif isDebugRollsEnabled() then
+            debugRoll(player, state, "blocked", "not sitting on ground or blocked by movement/sneak/vehicle")
+        end
+        resetGroundExposureState(modData)
+        return
+    end
 
     local square = nil
     pcall(function() square = player:getCurrentSquare() end)
-    if not EHR.HyperkeratoticScabies.IsNaturalGround(square) then return end
-    if EHR.HyperkeratoticScabies.IsSeasonBlocked(square) then return end
+    if not EHR.HyperkeratoticScabies.IsNaturalGround(square) then
+        debugRoll(player, state, "reset", "not natural ground; texture=" .. tostring(getFloorTextureName(square) or "nil"))
+        resetGroundExposureState(modData)
+        return
+    end
+    if EHR.HyperkeratoticScabies.IsSeasonBlocked(square) then
+        debugRoll(player, state, "reset", "season/snow block active; texture=" .. tostring(getFloorTextureName(square) or "nil"))
+        resetGroundExposureState(modData)
+        return
+    end
 
     local now = worldHour()
-    local lastCheck = tonumber(modData.EHR_HyperkeratoticScabies.lastGroundCheckHour) or -999999
-    local interval = EHR.HyperkeratoticScabies.Config.CHECK_INTERVAL_HOURS or 1
-    if (now - lastCheck) < interval then return end
+    local interval = EHR.HyperkeratoticScabies.Config.CHECK_INTERVAL_HOURS or 0.25
+    local sittingStarted = tonumber(state.sittingStartedHour)
+    if not sittingStarted then
+        state.sittingStartedHour = now
+        state.lastGroundCheckHour = now
+        debugRoll(player, state, "started", string.format(
+            "sitting on natural ground; interval=%.2fh chance=%.2f%% texture=%s",
+            interval,
+            (tonumber(EHR.HyperkeratoticScabies.Config.GROUND_CHANCE) or 0.03) * 100,
+            tostring(getFloorTextureName(square) or "nil")
+        ))
+        return
+    end
 
-    modData.EHR_HyperkeratoticScabies.lastGroundCheckHour = now
+    local sittingHours = now - sittingStarted
+    if sittingHours < interval then
+        debugRoll(player, state, "waiting", string.format(
+            "continuous sitting %.2fh/%.2fh before first roll",
+            sittingHours,
+            interval
+        ))
+        return
+    end
 
-    if roll(EHR.HyperkeratoticScabies.Config.GROUND_CHANCE or 0.10) then
+    local lastCheck = tonumber(state.lastGroundCheckHour) or sittingStarted
+    local sinceLast = now - lastCheck
+    if sinceLast < interval then
+        debugRoll(player, state, "cooldown", string.format(
+            "next roll in %.2fh; sitting=%.2fh",
+            math.max(0, interval - sinceLast),
+            sittingHours
+        ))
+        return
+    end
+
+    state.lastGroundCheckHour = now
+
+    local chance = EHR.HyperkeratoticScabies.Config.GROUND_CHANCE or 0.03
+    local didProc, value = rollDetailed(chance)
+    debugRoll(player, state, "roll", string.format(
+        "chance=%.2f%% roll=%.2f%% result=%s sitting=%.2fh texture=%s",
+        (tonumber(chance) or 0) * 100,
+        (tonumber(value) or 0) * 100,
+        didProc and "PROC" or "no proc",
+        sittingHours,
+        tostring(getFloorTextureName(square) or "nil")
+    ))
+    if didProc then
         EHR.HyperkeratoticScabies.Start(player, "natural_ground")
     end
 end

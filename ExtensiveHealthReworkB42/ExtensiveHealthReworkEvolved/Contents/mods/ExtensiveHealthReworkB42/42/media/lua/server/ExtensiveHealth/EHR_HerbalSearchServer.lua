@@ -65,6 +65,22 @@ local function getSquare(args)
     return ok and square or nil
 end
 
+local function squareArgs(square, args)
+    if not square then return nil end
+    local out = {
+        playerNum = tonumber(args and args.playerNum) or 0,
+    }
+    pcall(function() out.x = square:getX(); out.y = square:getY(); out.z = square:getZ() end)
+    if out.x == nil or out.y == nil then return nil end
+    out.z = out.z or 0
+    return out
+end
+
+local function sendHerbalCommand(player, command, args)
+    if not player or not sendServerCommand then return end
+    pcall(function() sendServerCommand(player, "EHR_HerbalSearch", command, args or {}) end)
+end
+
 local function distanceToSquare(player, square)
     if not player or not square then return 999 end
     local dx = (player:getX() or 0) - ((square.getX and square:getX()) or 0)
@@ -287,6 +303,24 @@ function EHR.HerbalSearchServer.Hazard(player, args)
     applyScratch(player)
 end
 
+function EHR.HerbalSearchServer.RequestStart(player, args)
+    if not player or not args then return end
+    local square = getSquare(args)
+    if not square or distanceToSquare(player, square) > 4.5 or not squareLooksNatural(square) then return end
+
+    local md = square:getModData()
+    local now = getGameTime():getWorldAgeHours()
+    local last = tonumber(md.EHR_HerbalSearchLastHour)
+    local out = squareArgs(square, args)
+    if not out then return end
+    if last and now - last < COOLDOWN_HOURS then
+        out.lastHour = last
+        sendHerbalCommand(player, "StartDenied", out)
+        return
+    end
+    sendHerbalCommand(player, "StartApproved", out)
+end
+
 function EHR.HerbalSearchServer.Complete(player, args)
     if not player or not args then return end
     local square = getSquare(args)
@@ -338,6 +372,7 @@ local function OnClientCommand(module, command, player, args)
     if module ~= "EHR_HerbalSearch" then return end
     if command == "UnlockKnowledge" then EHR.HerbalSearchServer.UnlockKnowledge(player, args)
     elseif command == "Hazard" then EHR.HerbalSearchServer.Hazard(player, args)
+    elseif command == "RequestStart" then EHR.HerbalSearchServer.RequestStart(player, args)
     elseif command == "Complete" then EHR.HerbalSearchServer.Complete(player, args) end
 end
 

@@ -61,8 +61,10 @@ EHR.Environmental.Config = {
     heatCoolRecoveryRate = 1.25,      -- Outdoor cool weather recovery
     heatHeadwearMultiplier = 0.30,    -- Caps/hats reduce heat exposure by ~70%
     heatStrokeRiskCheckInterval = 0.25, -- Check heat stroke risk every 15 game minutes
-    heatStrokeMediumChance = 0.08,
-    heatStrokeHighChance = 0.65,
+    heatStrokeLowChance = 0.03,
+    heatStrokePreHighChance = 0.10,
+    heatStrokeHighChance = 0.35,
+    heatStrokeFullChance = 0.95,
 
     -- Water contamination risk
     untreatedWaterRisk = 0.25,      -- 25% per drink from contaminated/untreated water
@@ -1053,6 +1055,7 @@ function EHR.Environmental.CheckHeatDiseases(player, exposure)
     -- Check sandbox setting
     local options = SandboxVars and SandboxVars.ExtensiveHealthRework
     if options and options.HeatExhaustionEnabled == false then return end
+    if options and options.HeatStrokeEnabled == false then return end
 
     if not (EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.TryContract) then return end
 
@@ -1068,7 +1071,8 @@ function EHR.Environmental.CheckHeatDiseases(player, exposure)
     if threshold <= 0 then return end
 
     local ratio = exposure.heatExposure / threshold
-    if ratio < (config.heatExposureMediumRatio or 0.50) then return end
+    local lowRatio = config.heatExposureLowRatio or 0.05
+    if ratio < lowRatio then return end
 
     local currentHour = getGameTime and getGameTime():getWorldAgeHours() or 0
     local interval = config.heatStrokeRiskCheckInterval or 0.25
@@ -1078,15 +1082,18 @@ function EHR.Environmental.CheckHeatDiseases(player, exposure)
     exposure.lastHeatStrokeRiskCheck = currentHour
 
     local highRatio = config.heatExposureHighRatio or 0.85
-    local mediumRatio = config.heatExposureMediumRatio or 0.50
+    local lowChance = config.heatStrokeLowChance or 0.03
+    local preHighChance = config.heatStrokePreHighChance or 0.10
+    local highChance = config.heatStrokeHighChance or 0.35
+    local fullChance = config.heatStrokeFullChance or 0.95
     local chance
     if ratio >= 1.0 then
-        chance = 0.95
+        chance = fullChance
     elseif ratio >= highRatio then
-        chance = config.heatStrokeHighChance or 0.65
+        chance = highChance
     else
-        local t = math.max(0, math.min(1, (ratio - mediumRatio) / math.max(0.01, highRatio - mediumRatio)))
-        chance = (config.heatStrokeMediumChance or 0.08) + (t * 0.17)
+        local t = math.max(0, math.min(1, (ratio - lowRatio) / math.max(0.01, highRatio - lowRatio)))
+        chance = lowChance + (t * (preHighChance - lowChance))
     end
 
     local stats = player:getStats()
@@ -1161,6 +1168,9 @@ end
     Check if heat exhaustion should progress to heat stroke
 ]]--
 function EHR.Environmental.CheckHeatProgression(player, exposure)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
+    if options and options.HeatStrokeEnabled == false then return end
+
     local diseaseData = EHR.Disease.GetDiseaseData(player)
     if not diseaseData or not diseaseData.active then return end
 

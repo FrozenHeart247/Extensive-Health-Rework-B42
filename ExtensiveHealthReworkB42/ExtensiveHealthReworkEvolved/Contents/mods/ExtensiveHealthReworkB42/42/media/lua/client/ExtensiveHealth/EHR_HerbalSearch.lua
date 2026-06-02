@@ -145,6 +145,43 @@ local function isDepleted(square)
     return cooldownRemaining(square) > 0
 end
 
+local function squareArgs(square)
+    if not square then return nil end
+    local args = {}
+    pcall(function() args.x = square:getX(); args.y = square:getY(); args.z = square:getZ() end)
+    if args.x == nil or args.y == nil then return nil end
+    args.z = args.z or 0
+    return args
+end
+
+local function squareFromArgs(args)
+    if not args then return nil end
+    local x, y, z = tonumber(args.x), tonumber(args.y), tonumber(args.z) or 0
+    if not x or not y then return nil end
+    local cell = getCell and getCell() or nil
+    if not cell then return nil end
+    local ok, square = pcall(function() return cell:getGridSquare(x, y, z) end)
+    return ok and square or nil
+end
+
+local function playerNumOf(player)
+    local playerNum = 0
+    pcall(function()
+        if player and player.getPlayerNum then playerNum = tonumber(player:getPlayerNum()) or 0 end
+    end)
+    return playerNum
+end
+
+local function queueSearchAction(player, square)
+    if not player or not square then return end
+    if isDepleted(square) then
+        say(player, "Depleted", "This patch has already been searched recently.")
+        return
+    end
+    if squareDistance(player, square) > 1.8 and ISWalkToTimedAction then ISTimedActionQueue.add(ISWalkToTimedAction:new(player, square)) end
+    ISTimedActionQueue.add(EHR_HerbalSearchAction:new(player, square))
+end
+
 local function spriteName(obj)
     if not obj then return nil end
     local sprite = nil
@@ -555,8 +592,36 @@ function EHR.HerbalSearch.OnSearch(player, square)
         say(player, "Depleted", "This patch has already been searched recently.")
         return
     end
-    if squareDistance(player, square) > 1.8 and ISWalkToTimedAction then ISTimedActionQueue.add(ISWalkToTimedAction:new(player, square)) end
-    ISTimedActionQueue.add(EHR_HerbalSearchAction:new(player, square))
+    if isClient and isClient() and sendClientCommand then
+        local args = squareArgs(square)
+        if not args then return end
+        args.playerNum = playerNumOf(player)
+        sendClientCommand(player, "EHR_HerbalSearch", "RequestStart", args)
+        return
+    end
+    queueSearchAction(player, square)
+end
+
+function EHR.HerbalSearch.OnServerCommand(module, command, args)
+    if module ~= "EHR_HerbalSearch" then return end
+    if command ~= "StartApproved" and command ~= "StartDenied" then return end
+
+    local playerNum = tonumber(args and args.playerNum) or 0
+    local player = getSpecificPlayer and getSpecificPlayer(playerNum) or nil
+    if not player and getPlayer then player = getPlayer() end
+    if not player then return end
+
+    local square = squareFromArgs(args)
+    if command == "StartDenied" then
+        if square and square.getModData and args and args.lastHour ~= nil then
+            local md = square:getModData()
+            if md then md.EHR_HerbalSearchLastHour = tonumber(args.lastHour) end
+        end
+        say(player, "Depleted", "This patch has already been searched recently.")
+        return
+    end
+
+    queueSearchAction(player, square)
 end
 
 function EHR.HerbalSearch.OnFillWorldObjectContextMenu(playerNum, context, worldObjects, test)
@@ -579,5 +644,6 @@ end
 if not EHR.HerbalSearch._registered then
     EHR.HerbalSearch._registered = true
     Events.OnFillWorldObjectContextMenu.Add(EHR.HerbalSearch.OnFillWorldObjectContextMenu)
+    if Events.OnServerCommand then Events.OnServerCommand.Add(EHR.HerbalSearch.OnServerCommand) end
     if EHR and EHR.Log then EHR.Log("HerbalSearch: context menu registered") end
 end

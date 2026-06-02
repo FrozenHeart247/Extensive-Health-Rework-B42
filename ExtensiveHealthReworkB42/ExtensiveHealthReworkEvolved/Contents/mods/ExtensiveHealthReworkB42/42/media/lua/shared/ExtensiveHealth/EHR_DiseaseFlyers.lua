@@ -37,6 +37,7 @@ EHR.DiseaseFlyers.Config = {
         ["ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis"] = "cadaveric_aspergillosis",
         ["ExtensiveHealth.DiseaseFlyer_Tetanus"] = "tetanus",
         ["ExtensiveHealth.DiseaseFlyer_WoundInfection"] = "wound_infection",
+        ["ExtensiveHealth.DiseaseFlyer_Cellulitis"] = "cellulitis",
         ["ExtensiveHealth.DiseaseFlyer_KnoxInfection"] = "knox_infection",
         ["ExtensiveHealth.DiseaseFlyer_AHTR"] = "ahtr",
         ["ExtensiveHealth.DiseaseFlyer_BloodType"] = "blood_types",

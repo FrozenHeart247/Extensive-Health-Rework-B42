@@ -259,6 +259,19 @@ module ExtensiveHealth
         UnhappyChange = -5,
     }
 
+    item DiseaseFlyer_Cellulitis
+    {
+        DisplayCategory = Literature,
+        ItemType = base:literature,
+        DisplayName = Disease Information: Cellulitis,
+        Weight = 0.1,
+        Icon = DiseaseFlyer_Cellulitis,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 10,
+        BoredomChange = -10,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
     item DiseaseFlyer_KnoxInfection
     {
         DisplayCategory = Literature,

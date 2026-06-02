@@ -386,7 +386,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis"] = 0.8,
         ["ExtensiveHealth.DiseaseFlyer_Tetanus"] = 0.8,
         ["ExtensiveHealth.DiseaseFlyer_WoundInfection"] = 2,
-        ["ExtensiveHealth.DiseaseFlyer_KnoxInfection"] = 0.25,
+        ["ExtensiveHealth.DiseaseFlyer_Cellulitis"] = 1.2,
         ["ExtensiveHealth.DiseaseFlyer_AHTR"] = 0.5,
         ["ExtensiveHealth.DiseaseFlyer_BloodType"] = 1.5,
     }

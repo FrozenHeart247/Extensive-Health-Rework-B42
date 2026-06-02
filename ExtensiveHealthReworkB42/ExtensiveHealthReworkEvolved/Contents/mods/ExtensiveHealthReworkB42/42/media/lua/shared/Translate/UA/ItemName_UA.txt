@@ -32,6 +32,7 @@ ItemName_UA = {
     ExtensiveHealth.DiseaseFlyer_AHTR = "Інформація про захворювання: AHTR",
     ExtensiveHealth.DiseaseFlyer_BloodType = "Медична інформація: Групи крові",
     ExtensiveHealth.DiseaseFlyer_CadavericAspergillosis = "Інформація про хворобу: трупний аспергільоз",
+    ExtensiveHealth.DiseaseFlyer_Cellulitis = "Інформація про захворювання: целюліт",
     ExtensiveHealth.DiseaseFlyer_CommonCold = "Інформація про захворювання: звичайна застуда",
     ExtensiveHealth.DiseaseFlyer_CorpseSickness = "Інформація про захворювання: Хвороба, викликана трупом",
     ExtensiveHealth.DiseaseFlyer_Dysentery = "Інформація про захворювання: дизентерія",

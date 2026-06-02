@@ -25,6 +25,7 @@ EHR.DiseaseFlyers.Config = EHR.DiseaseFlyers.Config or {
         ["ExtensiveHealth.DiseaseFlyer_Hypothermia"] = "hypothermia",
         ["ExtensiveHealth.DiseaseFlyer_HeatExhaustion"] = "heat_exhaustion",
         ["ExtensiveHealth.DiseaseFlyer_Sepsis"] = "sepsis",
+        ["ExtensiveHealth.DiseaseFlyer_Cellulitis"] = "cellulitis",
         ["ExtensiveHealth.DiseaseFlyer_CorpseSickness"] = "corpse_sickness",
         ["ExtensiveHealth.DiseaseFlyer_Tuberculosis"] = "tuberculosis",
     },

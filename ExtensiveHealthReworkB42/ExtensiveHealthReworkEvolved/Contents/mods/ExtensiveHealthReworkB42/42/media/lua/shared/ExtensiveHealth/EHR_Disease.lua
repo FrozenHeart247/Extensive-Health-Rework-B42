@@ -767,9 +767,12 @@ EHR.Disease.FoodRiskAccumulation = {
     guaranteedThreshold = 0.80,
     pendingSicknessScale = 45,
     pendingSicknessMax = 24,
+    debugFoodPoisoning = true,
+    debugFoodPoisoningThrottleHours = 0.02,
 }
 
 EHR.Disease.FoodRiskMemory = EHR.Disease.FoodRiskMemory or {}
+EHR.Disease.FoodRiskDebugState = EHR.Disease.FoodRiskDebugState or {}
 
 -- ============================================
 -- TICK MANAGEMENT
@@ -828,6 +831,43 @@ local function getPlayerId(player)
     local num = nil
     pcall(function() num = player:getPlayerNum() end)
     return tostring(num or "0")
+end
+
+local function EHR_DiseasePlayerDebugName(player)
+    local username = nil
+    pcall(function()
+        if player and player.getUsername then username = player:getUsername() end
+    end)
+    if username and username ~= "" then return tostring(username) end
+    return tostring(getPlayerId(player) or "unknown")
+end
+
+local function EHR_DiseaseFoodDebugEnabled()
+    local cfg = EHR.Disease and EHR.Disease.FoodRiskAccumulation or {}
+    return cfg.debugFoodPoisoning == true
+end
+
+local function EHR_DiseaseDebugFood(player, reason, detail, force)
+    if not EHR_DiseaseFoodDebugEnabled() then return end
+
+    local id = getPlayerId(player) or "unknown"
+    local state = EHR.Disease.FoodRiskDebugState or {}
+    EHR.Disease.FoodRiskDebugState = state
+    state[id] = state[id] or {}
+    local playerState = state[id]
+
+    local now = getGameTime and getGameTime() and getGameTime():getWorldAgeHours() or 0
+    if not force then
+        local throttle = tonumber((EHR.Disease.FoodRiskAccumulation or {}).debugFoodPoisoningThrottleHours) or 0.02
+        local lastReason = tostring(playerState.lastReason or "")
+        local lastHour = tonumber(playerState.lastHour) or -999999
+        if lastReason == tostring(reason or "") and (now - lastHour) < throttle then return end
+        playerState.lastReason = tostring(reason or "")
+        playerState.lastHour = now
+    end
+
+    print("[EHR][FoodPoisoning][" .. EHR_DiseasePlayerDebugName(player) .. "] "
+        .. tostring(reason or "state") .. ": " .. tostring(detail or ""))
 end
 
 local function getTickState(player)
@@ -4566,7 +4606,16 @@ function EHR.Disease.GetGastroenteritisRisk(player)
 end
 
 function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReason, risk)
-    if not player or not diseaseId or not risk or risk <= 0 then return false end
+    if not player or not diseaseId or not risk or risk <= 0 then
+        EHR_DiseaseDebugFood(player, "apply-skipped", string.format(
+            "item=%s disease=%s reason=%s risk=%s",
+            tostring(itemName or "unknown"),
+            tostring(diseaseId),
+            tostring(riskReason or "unknown"),
+            tostring(risk)
+        ), true)
+        return false
+    end
 
     local diseaseData = EHR.Disease.GetDiseaseData(player)
     local now = getGameTime():getWorldAgeHours()
@@ -4583,6 +4632,13 @@ function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReaso
     if diseaseData and diseaseData.active and diseaseData.active[diseaseId] then
         EHR.Log(string.format("Risky food consumed: %s (%s -> %s) - %.0f%% base risk (already active)",
             itemName or "unknown", riskReason or "unknown", diseaseName, risk * 100))
+        EHR_DiseaseDebugFood(player, "already-active", string.format(
+            "item=%s disease=%s reason=%s base=%.2f%%",
+            tostring(itemName or "unknown"),
+            tostring(diseaseId),
+            tostring(riskReason or "unknown"),
+            risk * 100
+        ), true)
         return false
     end
 
@@ -4598,8 +4654,28 @@ function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReaso
         EHR.Disease.Contract(player, diseaseId)
         diseaseData = EHR.Disease.GetDiseaseData(player)
         contracted = diseaseData and diseaseData.active and diseaseData.active[diseaseId] ~= nil
+        EHR_DiseaseDebugFood(player, "guaranteed-contract", string.format(
+            "item=%s disease=%s reason=%s base=%.2f%% accumulated=%.2f%% threshold=%.2f%% result=%s",
+            tostring(itemName or "unknown"),
+            tostring(diseaseId),
+            tostring(riskReason or "unknown"),
+            risk * 100,
+            accumulatedRisk * 100,
+            (cfg.guaranteedThreshold or 0.80) * 100,
+            contracted and "CONTRACTED" or "contract failed"
+        ), true)
     else
         contracted = EHR.Disease.TryContract(player, diseaseId, contractChance)
+        EHR_DiseaseDebugFood(player, "roll-result", string.format(
+            "item=%s disease=%s reason=%s base=%.2f%% accumulated=%.2f%% rollChance=%.2f%% result=%s",
+            tostring(itemName or "unknown"),
+            tostring(diseaseId),
+            tostring(riskReason or "unknown"),
+            risk * 100,
+            accumulatedRisk * 100,
+            contractChance * 100,
+            contracted and "CONTRACTED" or "no proc"
+        ), true)
     end
 
     if contracted then
@@ -4790,6 +4866,41 @@ function EHR.Disease.CheckFoodRisk(player, item)
         addRisk("gastroenteritis", gastroReason, gastroRisk)
     end
 
+    local riskSummary = {}
+    for _, foodRisk in ipairs(risks) do
+        table.insert(riskSummary, string.format("%s:%s=%.2f%%",
+            tostring(foodRisk.diseaseId or "unknown"),
+            tostring(foodRisk.reason or "food"),
+            (tonumber(foodRisk.chance) or 0) * 100))
+    end
+    EHR_DiseaseDebugFood(player, "inspect", string.format(
+        "item=%s fullType=%s foodType=%s herbalist=%s rotten=%s burnt=%s cooked=%s cookable=%s fresh=%s age=%.2f/off=%.2f poison=%.2f detect=%.2f dangerousUncooked=%s looksUncooked=%s hiddenUncooked=%s rawSafe=%s prepared=%s cookableUncooked=%s trich=%.2f%%(%s) gastro=%.2f%%(%s) risks=[%s]",
+        tostring(itemName or "unknown"),
+        tostring(itemFullType or ""),
+        tostring(foodType or ""),
+        tostring(herbalistType or ""),
+        tostring(isRotten),
+        tostring(isBurnt),
+        tostring(isCooked),
+        tostring(isCookable),
+        tostring(isFresh),
+        tonumber(age) or 0,
+        tonumber(offAge) or 0,
+        poisonPower,
+        poisonDetectionLevel,
+        tostring(dangerousUncooked),
+        tostring(looksUncooked),
+        tostring(hiddenUncooked),
+        tostring(rawSafeUncooked),
+        tostring(preparedUncooked),
+        tostring(cookableUncooked),
+        (tonumber(trichinosisRisk) or 0) * 100,
+        tostring(trichinosisReason or "none"),
+        (tonumber(gastroRisk) or 0) * 100,
+        tostring(gastroReason or "none"),
+        table.concat(riskSummary, ", ")
+    ), true)
+
     -- Debug: Log what we found
     if EHR.DEBUG then
         EHR.Log(string.format("CheckFoodRisk: rotten=%s, burnt=%s, cooked=%s, age=%.2f/%.2f",
@@ -4807,11 +4918,26 @@ function EHR.Disease.CheckFoodRisk(player, item)
             })
         end
 
+        EHR_DiseaseDebugFood(player, "send-to-server", string.format(
+            "item=%s risks=%d [%s]",
+            tostring(itemName or "unknown"),
+            #packetRisks,
+            table.concat(riskSummary, ", ")
+        ), true)
+
         sendClientCommand(player, "EHR", "FoodDiseaseRisk", {
             itemName = tostring(itemName or "unknown"),
             risks = packetRisks,
         })
         return
+    end
+
+    if #risks == 0 then
+        EHR_DiseaseDebugFood(player, "no-risk", string.format(
+            "item=%s fullType=%s",
+            tostring(itemName or "unknown"),
+            tostring(itemFullType or "")
+        ))
     end
 
     for _, foodRisk in ipairs(risks) do
@@ -5160,6 +5286,11 @@ function EHR.Disease.SetStage(player, diseaseId, stage)
         if diseaseId == "common_cold" then
             disease.pneumoniaRollDone = nil
             disease.lastSneezeHour = nil
+            if stage == 4 then
+                disease.debugCommonColdStage4GraceUntil = currentHour + 0.25
+            else
+                disease.debugCommonColdStage4GraceUntil = nil
+            end
         end
 
         if diseaseId == "pneumonia" then

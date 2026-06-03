@@ -74,6 +74,8 @@ EHR.Environmental.Config = {
 
     -- Cold -> Pneumonia progression check interval (game hours)
     coldProgressionCheckInterval = 6,   -- Check every 6 game hours
+    debugCommonCold = false,             -- Set false to silence common cold exposure/progression diagnostics
+    commonColdDebugThrottleHours = 0.25,
 
     -- Sound radii for zombie attraction (MIN-004 fix)
     sound = {
@@ -96,6 +98,55 @@ EHR.Environmental.Config = {
         vomitVolume = 10,
     },
 }
+
+local function EHR_EnvironmentalWorldHour()
+    local gameTime = getGameTime and getGameTime() or nil
+    if gameTime and gameTime.getWorldAgeHours then
+        return tonumber(gameTime:getWorldAgeHours()) or 0
+    end
+    return 0
+end
+
+local function EHR_EnvironmentalPlayerName(player)
+    local name = "unknown"
+    pcall(function()
+        if player and player.getUsername then
+            name = tostring(player:getUsername() or name)
+        elseif player and player.getPlayerNum then
+            name = "Player" .. tostring(player:getPlayerNum())
+        end
+    end)
+    return name
+end
+
+local function EHR_EnvironmentalCommonColdDebugEnabled()
+    local config = EHR.Environmental and EHR.Environmental.Config or {}
+    return config.debugCommonCold == true
+end
+
+local function EHR_EnvironmentalRuntimeMode()
+    if EHR.Environmental and EHR.Environmental._skipDiseaseChecks then return "client-predict" end
+    if isServer and isServer() then return "server-auth" end
+    if isClient and isClient() then return "client-auth" end
+    return "single"
+end
+
+local function EHR_EnvironmentalDebugCommonCold(player, state, reason, detail, force)
+    if not EHR_EnvironmentalCommonColdDebugEnabled() then return end
+
+    local now = EHR_EnvironmentalWorldHour()
+    if state and not force then
+        local throttle = tonumber(EHR.Environmental.Config.commonColdDebugThrottleHours) or 0.25
+        local lastReason = tostring(state.EHR_CommonColdDebugLastReason or "")
+        local lastHour = tonumber(state.EHR_CommonColdDebugLastHour) or -999999
+        if lastReason == tostring(reason or "") and (now - lastHour) < throttle then return end
+        state.EHR_CommonColdDebugLastReason = tostring(reason or "")
+        state.EHR_CommonColdDebugLastHour = now
+    end
+
+    print("[EHR][CommonCold][" .. EHR_EnvironmentalPlayerName(player) .. "] "
+        .. tostring(reason or "state") .. ": " .. tostring(detail or ""))
+end
 
 -- ============================================
 -- EXPOSURE TRACKING
@@ -885,10 +936,17 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     -- Lifestyle baths/showers intentionally make the character wet. Treat that as
     -- controlled bathing wetness so it does not become a common-cold trigger.
     if env.controlledBathing == true then
+        exposure.commonColdRiskActive = false
+        exposure.commonColdFreezingWetRisk = false
+        exposure.commonColdSoakedRisk = false
         exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours * 3)
         exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours * 3)
         exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours)
         exposure.indoorDuration = exposure.indoorDuration + deltaHours
+        EHR_EnvironmentalDebugCommonCold(player, exposure, "controlled-bathing", string.format(
+            "wet=%.2f exposure drained; bath/shower wetness ignored",
+            wetness
+        ), true)
 
         if EHR.DEBUG then
             EHR.Log(string.format("Cold exposure skipped during controlled bath/shower (wet=%.2f)", wetness))
@@ -909,6 +967,28 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     local freezingWetRisk = isFreezing and isWet and not isIndoors and not isNearHeat
     local soakedRisk = isHeavilySoaked and not isNearHeat
     local coldRiskActive = freezingWetRisk or soakedRisk
+    exposure.commonColdRiskActive = coldRiskActive
+    exposure.commonColdFreezingWetRisk = freezingWetRisk
+    exposure.commonColdSoakedRisk = soakedRisk
+
+    EHR_EnvironmentalDebugCommonCold(player, exposure, "state", string.format(
+        "mode=%s delta=%.3fh temp=%.1fC body=%.3f wet=%.2f indoor=%s heat=%s warm=%s freezingWet=%s soakedRisk=%s exp=%.2f/%.2fh soakedExp=%.2f/%.2fh checks=%s",
+        EHR_EnvironmentalRuntimeMode(),
+        tonumber(deltaHours) or 0,
+        airTemp,
+        bodyTemp,
+        wetness,
+        tostring(isIndoors),
+        tostring(isNearHeat),
+        tostring(isWarm),
+        tostring(freezingWetRisk),
+        tostring(soakedRisk),
+        tonumber(exposure.coldExposure) or 0,
+        tonumber(config.coldExposureForCold) or 0,
+        tonumber(exposure.soakedColdExposure) or 0,
+        tonumber(config.soakedExposureForCold) or 0,
+        EHR.Environmental._skipDiseaseChecks and "skipped-client-predict" or "enabled"
+    ))
 
     -- Reset exposure if warm and there is no active wet/freezing cold risk.
     if isWarm and not coldRiskActive then
@@ -918,6 +998,12 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
         exposure.hypothermiaExposure = math.max(0, exposure.hypothermiaExposure - deltaHours * 3)
         exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours)
         exposure.indoorDuration = exposure.indoorDuration + deltaHours
+        EHR_EnvironmentalDebugCommonCold(player, exposure, "recovering", string.format(
+            "warm/no-risk; exp=%.2f soakedExp=%.2f hypoExp=%.2f",
+            tonumber(exposure.coldExposure) or 0,
+            tonumber(exposure.soakedColdExposure) or 0,
+            tonumber(exposure.hypothermiaExposure) or 0
+        ))
         return
     end
 
@@ -973,6 +1059,9 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     -- Check for disease contraction
     if not EHR.Environmental._skipDiseaseChecks then
         EHR.Environmental.CheckColdDiseases(player, exposure)
+    else
+        EHR_EnvironmentalDebugCommonCold(player, exposure, "client-predict-only",
+            "local MP prediction updated exposure; disease contraction waits for server-authoritative tick")
     end
 end
 
@@ -1284,13 +1373,38 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
     local soakedExposure = exposure.soakedColdExposure or 0
     local freezingReady = freezingExposure >= config.coldExposureForCold
     local soakedReady = soakedExposure >= (config.soakedExposureForCold or 1.0)
+    local currentRiskActive = exposure.commonColdRiskActive == true
 
-    if freezingReady or soakedReady then
+    if not (freezingReady or soakedReady) then
+        EHR_EnvironmentalDebugCommonCold(player, exposure, "not-ready", string.format(
+            "freezing=%.2f/%.2fh soaked=%.2f/%.2fh",
+            freezingExposure,
+            tonumber(config.coldExposureForCold) or 0,
+            soakedExposure,
+            tonumber(config.soakedExposureForCold) or 0
+        ))
+    end
+
+    if (freezingReady or soakedReady) and not currentRiskActive then
+        EHR_EnvironmentalDebugCommonCold(player, exposure, "blocked-no-current-risk", string.format(
+            "stored exposure is ready but current risk is inactive; freezing=%.2fh soaked=%.2fh freezingWet=%s soakedRisk=%s",
+            freezingExposure,
+            soakedExposure,
+            tostring(exposure.commonColdFreezingWetRisk == true),
+            tostring(exposure.commonColdSoakedRisk == true)
+        ))
+    elseif freezingReady or soakedReady then
         local gameTime = getGameTime and getGameTime() or nil
         local now = gameTime and gameTime:getWorldAgeHours() or 0
         local lastRoll = tonumber(exposure.lastCommonColdRoll) or -999999
         local rollInterval = config.commonColdRiskCheckInterval or 1.0
         if (now - lastRoll) < rollInterval then
+            EHR_EnvironmentalDebugCommonCold(player, exposure, "roll-cooldown", string.format(
+                "next roll in %.2fh; freezing=%.2f soaked=%.2f",
+                math.max(0, rollInterval - (now - lastRoll)),
+                freezingExposure,
+                soakedExposure
+            ))
             return
         end
         exposure.lastCommonColdRoll = now
@@ -1300,10 +1414,14 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
         if diseaseData and diseaseData.active then
             if diseaseData.active["common_cold"] or diseaseData.active["pneumonia"] or
                diseaseData.active["hypothermia"] then
+                EHR_EnvironmentalDebugCommonCold(player, exposure, "blocked-active-disease",
+                    "already has common cold/pneumonia/hypothermia")
                 return
             end
             -- BUG-010 FIX: Block if have heat diseases (mutual exclusion)
             if diseaseData.active["heat_exhaustion"] or diseaseData.active["heat_stroke"] then
+                EHR_EnvironmentalDebugCommonCold(player, exposure, "blocked-heat-disease",
+                    "heat disease active")
                 return
             end
         end
@@ -1318,7 +1436,16 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
         EHR.Log(string.format("Cold exposure check: freezing=%.2fh, soaked=%.2fh, base chance %.0f%%",
             freezingExposure, soakedExposure, baseChance * 100))
 
-        if EHR.Disease.TryContract(player, "common_cold", baseChance) then
+        local contracted = EHR.Disease.TryContract(player, "common_cold", baseChance)
+        EHR_EnvironmentalDebugCommonCold(player, exposure, "roll", string.format(
+            "freezing=%.2fh soaked=%.2fh chance=%.2f%% result=%s",
+            freezingExposure,
+            soakedExposure,
+            baseChance * 100,
+            contracted and "CONTRACTED" or "no proc"
+        ), true)
+
+        if contracted then
             -- Record when cold was contracted for pneumonia progression
             exposure.coldContractedHour = getGameTime():getWorldAgeHours()
             -- Reset exposure after contracting
@@ -1520,12 +1647,30 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
     if not coldDef or not coldDef.canProgress then return end
 
     -- Pneumonia is a late untreated complication, not an early cold upgrade.
+    local currentHour = EHR_EnvironmentalWorldHour()
     if (cold.stage or 1) ~= 4 then
+        EHR_EnvironmentalDebugCommonCold(player, cold, "progression-stage-wait", string.format(
+            "stage=%s; pneumonia roll only on stage 4",
+            tostring(cold.stage or 1)
+        ))
         return
+    end
+
+    local graceUntil = tonumber(cold.debugCommonColdStage4GraceUntil)
+    if graceUntil and currentHour < graceUntil then
+        EHR_EnvironmentalDebugCommonCold(player, cold, "debug-stage4-grace", string.format(
+            "waiting %.2fh before pneumonia/resolution roll",
+            graceUntil - currentHour
+        ))
+        return
+    elseif graceUntil then
+        cold.debugCommonColdStage4GraceUntil = nil
     end
 
     if EHR_EnvironmentalHasActiveDiseaseTreatment(player, "common_cold") then
         cold.pneumoniaRollDone = nil
+        EHR_EnvironmentalDebugCommonCold(player, cold, "progression-blocked-treatment",
+            "common cold treatment is active", true)
         if EHR.DEBUG then
             EHR.Log("Cold progression skipped: common cold treatment is active")
         end
@@ -1533,6 +1678,8 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
     end
 
     if cold.pneumoniaRollDone then
+        EHR_EnvironmentalDebugCommonCold(player, cold, "progression-roll-done",
+            "stage 4 complication already resolved")
         return
     end
 
@@ -1544,6 +1691,13 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
 
     -- Roll for progression
     local roll = ZombRand(100) / 100
+    EHR_EnvironmentalDebugCommonCold(player, cold, "stage4-roll", string.format(
+        "chance=%.2f%% roll=%.2f%% result=%s",
+        progressChance * 100,
+        roll * 100,
+        roll < progressChance and "PNEUMONIA" or "RECOVER"
+    ), true)
+
     if roll < progressChance then
         -- Progress to pneumonia!
         EHR.Log("Cold progressed to PNEUMONIA!")

@@ -18,12 +18,14 @@ EHR.Concussion.Config = {
     VEHICLE_CHANCE = 0.45,
     COOLDOWN_HOURS = 0.25,
     FAILED_ROLL_COOLDOWN_HOURS = 0.02,
+    debugConcussion = true,
+    debugConcussionThrottleHours = 0.02,
     FALL_DROP_FLOORS = 2.0,
     TRAUMA_PENDING_HOURS = 0.06,
     FALL_PENDING_HOURS = 0.02,
     CRASH_PENDING_HOURS = 0.06,
     FALL_MAX_HORIZONTAL_TILES = 0.85,
-    STAIR_SCAN_RADIUS = 0,
+    STAIR_SCAN_RADIUS = 2,
     MIN_FALL_HEALTH_LOSS = 3.0,
     MIN_HEAD_PAIN_GAIN = 5.0,
     MIN_HEAD_HEALTH_LOSS = 1.0,
@@ -66,6 +68,41 @@ local function playerKey(player)
     if okNum and playerNum ~= nil then return "p:" .. tostring(playerNum) end
 
     return tostring(player)
+end
+
+local function playerName(player)
+    local name = "unknown"
+    pcall(function()
+        if player and player.getUsername then
+            name = tostring(player:getUsername() or name)
+        elseif player and player.getPlayerNum then
+            name = "Player" .. tostring(player:getPlayerNum())
+        end
+    end)
+    return name
+end
+
+local function concussionDebugEnabled()
+    return EHR.Concussion
+        and EHR.Concussion.Config
+        and EHR.Concussion.Config.debugConcussion == true
+end
+
+local function debugConcussion(player, state, reason, detail, force)
+    if not concussionDebugEnabled() then return end
+
+    local now = worldHour()
+    if state and not force then
+        local throttle = tonumber(EHR.Concussion.Config.debugConcussionThrottleHours) or 0.02
+        local lastReason = tostring(state.EHR_ConcussionDebugLastReason or "")
+        local lastHour = tonumber(state.EHR_ConcussionDebugLastHour) or -999999
+        if lastReason == tostring(reason or "") and (now - lastHour) < throttle then return end
+        state.EHR_ConcussionDebugLastReason = tostring(reason or "")
+        state.EHR_ConcussionDebugLastHour = now
+    end
+
+    print("[EHR][Concussion][" .. playerName(player) .. "] "
+        .. tostring(reason or "state") .. ": " .. tostring(detail or ""))
 end
 
 local function isValidPlayer(player)
@@ -292,10 +329,19 @@ local function isTraumaticInjury(delta, cfg, source)
     local hasMajorTrauma = delta.severeWoundIncrease > 0
         or delta.partHealthLoss >= (cfg.MIN_MAJOR_PART_HEALTH_LOSS or 6.0)
 
+    if source == "fall" then
+        -- Overencumbrance and other non-impact drains can lower body/part health
+        -- during the short fall window. A fall concussion requires a head hit or
+        -- a fresh wound/severe injury, not generic HP loss.
+        return hasHeadImpact
+            or delta.severeWoundIncrease > 0
+            or (delta.woundIncrease > 0 and delta.partHealthLoss >= (cfg.MIN_PART_HEALTH_LOSS or 1.0))
+    end
+
     if source ~= "vehicle crash" then
         -- Overencumbrance, pain drift, and controlled Z transitions can change
-        -- health/pain without a head impact. A fall needs head trauma or a major
-        -- fresh injury, not just generic body damage.
+        -- health/pain without a head impact. Non-vehicle trauma needs a head hit
+        -- or a major fresh injury, not generic body damage.
         return hasHeadImpact or hasMajorTrauma
     end
 
@@ -308,7 +354,7 @@ local function isTraumaticInjury(delta, cfg, source)
 end
 
 local function debugTraumaLog(kind, pending, delta)
-    if not EHR.DEBUG then return end
+    if not EHR.DEBUG and not concussionDebugEnabled() then return end
     EHR.Log(string.format(
         "Concussion %s injury detected: healthLoss %.2f, partHealthLoss %.2f, headPainGain %.2f, partPainGain %.2f, wound +%.0f, severe +%.0f",
         tostring(kind),
@@ -373,28 +419,44 @@ end
 
 local function roll(chance)
     chance = tonumber(chance) or 0
-    if chance <= 0 then return false end
-    if chance >= 1 then return true end
-    if ZombRand then return (ZombRand(1000000) / 1000000) < chance end
-    return math.random() < chance
+    if chance <= 0 then return false, 1 end
+    if chance >= 1 then return true, 0 end
+    local value = ZombRand and (ZombRand(1000000) / 1000000) or math.random()
+    return value < chance, value
 end
 
 function EHR.Concussion.Start(player, source, force)
-    if not isValidPlayer(player) then return false end
-    if EHR.Disease and EHR.Disease.IsDiseaseEnabled and not EHR.Disease.IsDiseaseEnabled("concussion") then
+    if not isValidPlayer(player) then
+        debugConcussion(player, nil, "start-blocked", "invalid/dead player", true)
         return false
     end
-    if EHR.Concussion.IsActive(player) then return false end
+    if EHR.Disease and EHR.Disease.IsDiseaseEnabled and not EHR.Disease.IsDiseaseEnabled("concussion") then
+        debugConcussion(player, nil, "start-blocked", "disabled by sandbox", true)
+        return false
+    end
+    if EHR.Concussion.IsActive(player) then
+        debugConcussion(player, nil, "start-blocked", "already active", true)
+        return false
+    end
 
     local now = worldHour()
     local modData = player:getModData()
     modData.EHR_Concussion = modData.EHR_Concussion or {}
     if not force and (modData.EHR_Concussion.cooldownUntil or 0) > now then
+        debugConcussion(player, modData.EHR_Concussion, "start-blocked", string.format(
+            "cooldown %.2fh left source=%s force=%s",
+            (tonumber(modData.EHR_Concussion.cooldownUntil) or now) - now,
+            tostring(source or "trauma"),
+            tostring(force == true)
+        ), true)
         return false
     end
 
     local data = ensureDiseaseData(player)
-    if not data or not data.active then return false end
+    if not data or not data.active then
+        debugConcussion(player, modData.EHR_Concussion, "start-blocked", "disease data unavailable", true)
+        return false
+    end
 
     local def = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases.concussion or nil
     local duration = (def and def.durationMin) or 48
@@ -429,26 +491,62 @@ function EHR.Concussion.Start(player, source, force)
     end
 
     EHR.Log("Concussion triggered by " .. tostring(source or "trauma"))
+    debugConcussion(player, modData.EHR_Concussion, "contracted", string.format(
+        "source=%s duration=%.1fh severity=%.2f cooldown=%.2fh",
+        tostring(source or "trauma"),
+        duration,
+        data.active.concussion.severity or 0,
+        EHR.Concussion.Config.COOLDOWN_HOURS or 0
+    ), true)
     return true
 end
 
 function EHR.Concussion.TryStart(player, source, chance)
-    if not isValidPlayer(player) then return false end
-    if EHR.Disease and EHR.Disease.IsDiseaseEnabled and not EHR.Disease.IsDiseaseEnabled("concussion") then
+    if not isValidPlayer(player) then
+        debugConcussion(player, nil, "try-blocked", "invalid/dead player", true)
         return false
     end
-    if EHR.Concussion.IsActive(player) then return false end
+    if EHR.Disease and EHR.Disease.IsDiseaseEnabled and not EHR.Disease.IsDiseaseEnabled("concussion") then
+        debugConcussion(player, nil, "try-blocked", "disabled by sandbox", true)
+        return false
+    end
+    if EHR.Concussion.IsActive(player) then
+        debugConcussion(player, nil, "try-blocked", "already active", true)
+        return false
+    end
 
     local now = worldHour()
     local modData = player:getModData()
     modData.EHR_Concussion = modData.EHR_Concussion or {}
-    if (modData.EHR_Concussion.cooldownUntil or 0) > now then return false end
+    if (modData.EHR_Concussion.cooldownUntil or 0) > now then
+        debugConcussion(player, modData.EHR_Concussion, "try-blocked", string.format(
+            "cooldown %.2fh left source=%s chance=%.2f%%",
+            (tonumber(modData.EHR_Concussion.cooldownUntil) or now) - now,
+            tostring(source or "trauma"),
+            (tonumber(chance) or 0) * 100
+        ), true)
+        return false
+    end
 
-    if roll(chance) then
+    local success, rollValue = roll(chance)
+    debugConcussion(player, modData.EHR_Concussion, "roll", string.format(
+        "source=%s chance=%.2f%% roll=%.2f%% result=%s",
+        tostring(source or "trauma"),
+        (tonumber(chance) or 0) * 100,
+        (tonumber(rollValue) or 0) * 100,
+        success and "CONTRACTED" or "no proc"
+    ), true)
+
+    if success then
         return EHR.Concussion.Start(player, source, true)
     end
 
     modData.EHR_Concussion.cooldownUntil = now + (EHR.Concussion.Config.FAILED_ROLL_COOLDOWN_HOURS or 1)
+    debugConcussion(player, modData.EHR_Concussion, "failed-roll-cooldown", string.format(
+        "source=%s cooldown=%.2fh",
+        tostring(source or "trauma"),
+        EHR.Concussion.Config.FAILED_ROLL_COOLDOWN_HOURS or 0
+    ), true)
     return false
 end
 
@@ -485,6 +583,17 @@ local function resolvePendingTrauma(player, state, key, now, cfg, currentSnapsho
     local delta = getTraumaDelta(pending.before, currentSnapshot)
     if isTraumaticInjury(delta, cfg, pending.source) then
         debugTraumaLog(pending.source or key, pending, delta)
+        debugConcussion(player, state, "pending-trauma-valid", string.format(
+            "key=%s source=%s healthLoss=%.2f partHealthLoss=%.2f headPainGain=%.2f wound+%.0f severe+%.0f chance=%.2f%%",
+            tostring(key),
+            tostring(pending.source or "trauma"),
+            tonumber(delta.overallHealthLoss) or 0,
+            tonumber(delta.partHealthLoss) or 0,
+            tonumber(delta.headPainGain) or 0,
+            tonumber(delta.woundIncrease) or 0,
+            tonumber(delta.severeWoundIncrease) or 0,
+            (tonumber(chance) or 0) * 100
+        ), true)
         EHR.Concussion.TryStart(player, pending.source or "trauma", chance)
         state[key] = nil
         return
@@ -498,6 +607,15 @@ local function resolvePendingTrauma(player, state, key, now, cfg, currentSnapsho
     end
 
     if now - (tonumber(pending.time) or now) > pendingWindow then
+        debugConcussion(player, state, "pending-trauma-expired", string.format(
+            "key=%s source=%s window=%.2fh healthLoss=%.2f headPainGain=%.2f severe+%.0f",
+            tostring(key),
+            tostring(pending.source or "trauma"),
+            pendingWindow,
+            tonumber(delta.overallHealthLoss) or 0,
+            tonumber(delta.headPainGain) or 0,
+            tonumber(delta.severeWoundIncrease) or 0
+        ), true)
         state[key] = nil
     end
 end
@@ -700,7 +818,7 @@ function EHR.Concussion.UpdateTracking(player)
     local lastSnapshot = state.lastSnapshot or snapshot
 
     resolvePendingTrauma(player, state, "pendingCrash", now, cfg, snapshot, cfg.VEHICLE_CHANCE or 0.45)
-    state.pendingFall = nil
+    resolvePendingTrauma(player, state, "pendingFall", now, cfg, snapshot, cfg.FALL_CHANCE or 0.65)
 
     if not vehicle then
         local lastFallZ = tonumber(state.lastFallZ)
@@ -713,35 +831,57 @@ function EHR.Concussion.UpdateTracking(player)
         local basementTransition = isBasementZTransition(z, state.lastZ)
 
         if basementTransition then
-            if EHR.DEBUG and drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
-                EHR.Log(string.format(
-                    "Concussion ignored basement Z transition: rawZ %.2f -> %.2f, trackedDrop %.2f",
+            if drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
+                local detail = string.format(
+                    "rawZ %.2f -> %.2f, fallZ %.2f, trackedDrop %.2f, highestZ %.2f",
                     tonumber(state.lastZ) or z,
                     z,
-                    drop
-                ))
+                    fallZ,
+                    drop,
+                    tonumber(state.highestZ) or fallZ
+                )
+                debugConcussion(player, state, "ignored-basement-z", detail, true)
+                if EHR.DEBUG then
+                    EHR.Log("Concussion ignored basement Z transition: " .. detail)
+                end
             end
             state.highestZ = fallZ
         elseif drop >= (cfg.FALL_DROP_FLOORS or 1.0) then
             local stairTransition = isStairTransition(player, state, x, y, z, cfg)
-            if not stairTransition then
-                if EHR.DEBUG then
-                    EHR.Log(string.format(
-                        "Concussion fall roll: drop %.2f, chance %.0f%%",
-                        drop,
-                        (cfg.FALL_CHANCE or 0.65) * 100
-                    ))
-                end
-                EHR.Concussion.TryStart(player, "fall", cfg.FALL_CHANCE or 0.65)
-            elseif EHR.DEBUG then
+            debugConcussion(player, state, stairTransition and "fall-candidate-near-stairs" or "fall-candidate", string.format(
+                "rawZ %.2f lastZ %.2f fallZ %.2f drop %.2f x=%.2f y=%.2f stairs=%s chance=%.2f%% pending=requires trauma",
+                z,
+                tonumber(state.lastZ) or z,
+                fallZ,
+                drop,
+                x,
+                y,
+                tostring(stairTransition),
+                (cfg.FALL_CHANCE or 0.65) * 100
+            ), true)
+            if EHR.DEBUG then
                 EHR.Log(string.format(
-                    "Concussion ignored stair Z transition: drop %.2f, stairs=%s",
+                    "Concussion fall trauma window: drop %.2f, stairs=%s, chance %.0f%%",
                     drop,
-                    tostring(stairTransition)
+                    tostring(stairTransition),
+                    (cfg.FALL_CHANCE or 0.65) * 100
                 ))
             end
+            setPendingTrauma(state, "pendingFall", now, "fall", lastSnapshot, {
+                drop = drop,
+                nearStairs = stairTransition == true,
+                x = x,
+                y = y,
+                z = z,
+            })
             state.highestZ = fallZ
         elseif fallZ > (tonumber(state.highestZ) or fallZ) then
+            debugConcussion(player, state, "highest-z-updated", string.format(
+                "highestZ %.2f -> %.2f rawZ=%.2f",
+                tonumber(state.highestZ) or fallZ,
+                fallZ,
+                z
+            ))
             state.highestZ = fallZ
         end
     else
@@ -755,6 +895,13 @@ function EHR.Concussion.UpdateTracking(player)
         local speedDrop = previousSpeed - speed
 
         if speedDrop >= (cfg.CRASH_SPEED_DROP_KMH or 28) then
+            debugConcussion(player, state, "vehicle-impact-candidate", string.format(
+                "speed %.1f -> %.1f drop %.1f threshold %.1f",
+                previousSpeed,
+                speed,
+                speedDrop,
+                cfg.CRASH_SPEED_DROP_KMH or 28
+            ), true)
             if EHR.DEBUG then
                 EHR.Log(string.format(
                     "Concussion vehicle impact window opened: speedDrop %.1f km/h",

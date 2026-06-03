@@ -767,7 +767,7 @@ EHR.Disease.FoodRiskAccumulation = {
     guaranteedThreshold = 0.80,
     pendingSicknessScale = 45,
     pendingSicknessMax = 24,
-    debugFoodPoisoning = true,
+    debugFoodPoisoning = false,
     debugFoodPoisoningThrottleHours = 0.02,
 }
 

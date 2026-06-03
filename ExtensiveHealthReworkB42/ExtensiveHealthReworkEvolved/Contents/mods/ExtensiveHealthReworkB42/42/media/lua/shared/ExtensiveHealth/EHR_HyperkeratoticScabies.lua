@@ -14,7 +14,7 @@ EHR.HyperkeratoticScabies.Config = EHR.HyperkeratoticScabies.Config or {
     GROUND_CHANCE = 0.03,
     BLOCK_WINTER_MONTHS = true,
     BLOCK_SNOW = true,
-    DEBUG_ROLLS = true,
+    DEBUG_ROLLS = false,
 }
 
 local function worldHour()

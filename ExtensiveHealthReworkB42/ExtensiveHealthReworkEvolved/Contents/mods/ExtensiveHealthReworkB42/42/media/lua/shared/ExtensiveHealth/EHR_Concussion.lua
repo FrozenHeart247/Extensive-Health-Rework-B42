@@ -85,7 +85,7 @@ end
 local function concussionDebugEnabled()
     return EHR.Concussion
         and EHR.Concussion.Config
-        and EHR.Concussion.Config.debugConcussion == true
+        and EHR.Concussion.Config.debugConcussion == false
 end
 
 local function debugConcussion(player, state, reason, detail, force)

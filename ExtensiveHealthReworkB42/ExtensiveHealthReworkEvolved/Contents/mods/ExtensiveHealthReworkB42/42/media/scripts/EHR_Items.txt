@@ -876,6 +876,42 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item Honeycomb
+    {
+        DisplayCategory = Food,
+        ItemType = base:food,
+        DisplayName = Honeycomb,
+        Icon = EHR_Honeycomb,
+        Weight = 0.4,
+        Tooltip = Tooltip_EHR_Honeycomb,
+        CantBeFrozen = true,
+        EatType = GlugFood,
+        EvolvedRecipe = Cake:5;Sandwich:2;FruitSalad:2;HotDrink:2;Pancakes:2;ConeIcecream:2;PieSweet:5;Toast:2;Oatmeal:2,
+        Packaged = true,
+        Spice = true,
+        HungerChange = -20.0,
+        Calories = 660.0,
+        Carbohydrates = 187.0,
+        Lipids = 0.0,
+        Proteins = 0.0,
+        CustomContextMenu = Drink,
+        CustomEatSound = DrinkingFromCan,
+        StaticModel = Honey,
+        WorldStaticModel = Honey,
+        Tags = base:boostsflurecovery;base:herbaltea;base:wetbeverageingredient,
+    }
+
+    item Spiderweb
+    {
+        DisplayCategory = Material,
+        ItemType = base:normal,
+        DisplayName = Spiderweb,
+        Icon = EHR_Spiderweb,
+        Weight = 0.01,
+        Tooltip = Tooltip_EHR_Spiderweb,
+        WorldStaticModel = Thread,
+    }
+
     /** =========================================
         KNOX INFECTION TREATMENT
         Moved to EHR_KnoxItems.txt

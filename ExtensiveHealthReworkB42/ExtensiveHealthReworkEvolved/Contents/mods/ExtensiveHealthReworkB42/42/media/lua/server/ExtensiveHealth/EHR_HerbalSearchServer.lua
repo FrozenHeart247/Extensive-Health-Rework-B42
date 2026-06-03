@@ -55,6 +55,135 @@ local function getPerkLevel(player, perk)
     return 0
 end
 
+local function callBool(target, methods)
+    if not target then return false end
+    for _, methodName in ipairs(methods) do
+        local method = target[methodName]
+        if type(method) == "function" then
+            local ok, result = pcall(function() return method(target) end)
+            if ok and result == true then return true end
+        end
+    end
+    return false
+end
+
+local function callNumber(target, methodName, fallback)
+    if not target then return fallback end
+    local method = target[methodName]
+    if type(method) ~= "function" then return fallback end
+
+    local ok, result = pcall(function() return method(target) end)
+    if ok and result ~= nil then return tonumber(result) or fallback end
+    return fallback
+end
+
+local function callSet(target, methodName, value)
+    if not target then return false end
+    local method = target[methodName]
+    if type(method) ~= "function" then return false end
+
+    local ok = pcall(function() method(target, value) end)
+    return ok == true
+end
+
+local function getZombieStat(player, stat)
+    if not player or not stat then return 0 end
+    local stats = player:getStats()
+    if not stats or not stats.get then return 0 end
+
+    local ok, value = pcall(function() return stats:get(stat) end)
+    if ok then return tonumber(value) or 0 end
+    return 0
+end
+
+local function setZombieStat(player, stat, value)
+    if not player or not stat then return false end
+    local stats = player:getStats()
+    if not stats or not stats.set then return false end
+
+    local ok = pcall(function() stats:set(stat, value) end)
+    return ok == true
+end
+
+local function forEachBodyPart(bodyDamage, callback)
+    if not bodyDamage or not BodyPartType or not BodyPartType.FromIndex then return false end
+
+    local maxIndex = nil
+    if BodyPartType.ToIndex and BodyPartType.MAX then
+        local ok, value = pcall(function() return BodyPartType.ToIndex(BodyPartType.MAX) - 1 end)
+        if ok then maxIndex = value end
+    end
+    if not maxIndex or maxIndex < 0 then return false end
+
+    local changed = false
+    for i = 0, maxIndex do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+        if part and callback(part, i) then changed = true end
+    end
+    return changed
+end
+
+local function hasBodyPartKnoxPayload(bodyDamage)
+    return forEachBodyPart(bodyDamage, function(part)
+        return callBool(part, { "IsInfected", "isInfected" })
+    end)
+end
+
+local function hasKnoxDiseaseEntry(player)
+    local modData = player and player.getModData and player:getModData() or nil
+    local diseaseData = modData and modData.EHR_Disease
+    local active = diseaseData and diseaseData.active
+    return type(active) == "table" and (active.Knox_Infection ~= nil or active.knox_infection ~= nil)
+end
+
+local function captureKnoxState(player)
+    local bodyDamage = player and player.getBodyDamage and player:getBodyDamage() or nil
+    if not bodyDamage then return { infected = false } end
+
+    local infected = callBool(bodyDamage, { "IsInfected", "isInfected" })
+    infected = infected or hasBodyPartKnoxPayload(bodyDamage)
+    infected = infected or callNumber(bodyDamage, "getInfectionTime", -1) >= 0
+    infected = infected or callNumber(bodyDamage, "getInfectionMortalityDuration", -1) > 0
+    if CharacterStat then
+        infected = infected or getZombieStat(player, CharacterStat.ZOMBIE_INFECTION) > 0
+        infected = infected or getZombieStat(player, CharacterStat.ZOMBIE_FEVER) > 0
+    end
+    infected = infected or hasKnoxDiseaseEntry(player)
+
+    return { infected = infected == true }
+end
+
+local function clearKnoxIfCreatedByHerbalScratch(player, snapshot)
+    if not player or (snapshot and snapshot.infected == true) then return end
+
+    local bodyDamage = player:getBodyDamage()
+    if bodyDamage then
+        callSet(bodyDamage, "setInfected", false)
+        callSet(bodyDamage, "setInfectionTime", -1.0)
+        callSet(bodyDamage, "setInfectionMortalityDuration", -1.0)
+        forEachBodyPart(bodyDamage, function(part)
+            local changed = false
+            changed = callSet(part, "SetInfected", false) or changed
+            changed = callSet(part, "SetFakeInfected", false) or changed
+            return changed
+        end)
+    end
+
+    if CharacterStat then
+        setZombieStat(player, CharacterStat.ZOMBIE_INFECTION, 0)
+        setZombieStat(player, CharacterStat.ZOMBIE_FEVER, 0)
+    end
+
+    local modData = player:getModData()
+    local diseaseData = modData and modData.EHR_Disease
+    local active = diseaseData and diseaseData.active
+    if type(active) == "table" then
+        active.Knox_Infection = nil
+        active.knox_infection = nil
+    end
+end
+
 local function getSquare(args)
     if not args then return nil end
     local x, y, z = tonumber(args.x), tonumber(args.y), tonumber(args.z) or 0
@@ -266,6 +395,8 @@ local function applyScratch(player)
     if hasIntactGloves(player) then return false end
     local part = randomBodyPart(player)
     if not part then return false end
+
+    local knoxSnapshot = captureKnoxState(player)
     local changed = false
     if part.setScratched then changed = pcall(function() part:setScratched(true, false) end) or changed end
     if part.getScratchTime and part.setScratchTime then
@@ -284,6 +415,7 @@ local function applyScratch(player)
         pcall(function() syncBodyPart(part, 0x00570188) end)
         local bd = player:getBodyDamage()
         if bd and bd.DamageUpdate then pcall(function() bd:DamageUpdate() end) end
+        clearKnoxIfCreatedByHerbalScratch(player, knoxSnapshot)
     end
     return changed
 end

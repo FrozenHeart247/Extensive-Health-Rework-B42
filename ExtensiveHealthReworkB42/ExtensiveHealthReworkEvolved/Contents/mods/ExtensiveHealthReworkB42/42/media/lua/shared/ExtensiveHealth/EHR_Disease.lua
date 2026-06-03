@@ -4837,7 +4837,38 @@ function EHR.Disease.CheckFoodRisk(player, item)
             break
         end
     end
-    local rawSafeUncooked = rawSafeFoodTypes[foodTypeLower] == true and preparedUncooked ~= true
+    local readyPreparedPatterns = {
+        "bread slices",
+        "breadslices",
+        "bread loaf",
+        "toast",
+        "bagel",
+        "croissant",
+        "cake",
+        "muffin",
+        "pancake",
+        "waffle",
+        "cookie",
+        "biscuit",
+        "donut",
+        "doughnut",
+    }
+    local looksLikeRawBakeryBase = string.find(nameLower, "dough", 1, true) ~= nil
+        or string.find(nameLower, "batter", 1, true) ~= nil
+    local readyPreparedSafe = false
+    if dangerousUncooked ~= true and looksUncooked ~= true and looksLikeRawBakeryBase ~= true then
+        if foodTypeLower == "bread" then
+            readyPreparedSafe = true
+        else
+            for _, pattern in ipairs(readyPreparedPatterns) do
+                if string.find(nameLower, pattern, 1, true) then
+                    readyPreparedSafe = true
+                    break
+                end
+            end
+        end
+    end
+    local rawSafeUncooked = readyPreparedSafe == true or (rawSafeFoodTypes[foodTypeLower] == true and preparedUncooked ~= true)
     local cookableUncooked = isCookable == true and hiddenUncooked ~= true and rawSafeUncooked ~= true and preparedUncooked == true
     if trichinosisRisk <= 0
         and isRotten ~= true

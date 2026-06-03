@@ -347,31 +347,101 @@ local function isBrokenOrHoled(item)
     return false
 end
 
-local function hasIntactGloves(player)
-    if not player then return false end
+local function getIntactGloves(player)
+    if not player then return nil end
 
     if player.getWornItem and ItemBodyLocation then
         local locations = { ItemBodyLocation.HANDS, ItemBodyLocation.HANDS_LEFT, ItemBodyLocation.HANDS_RIGHT }
         for _, location in ipairs(locations) do
             local item = nil
             pcall(function() if location then item = player:getWornItem(location) end end)
-            if item and not isBrokenOrHoled(item) then return true end
+            if item and not isBrokenOrHoled(item) then return item end
         end
     end
 
-    if not player.getWornItems then return false end
+    if not player.getWornItems then return nil end
     local wornItems = player:getWornItems()
-    if not wornItems then return false end
+    if not wornItems then return nil end
     for i = 0, wornItems:size() - 1 do
         local item = wornItems:getItemByIndex(i)
         if item then
             local location = nil
             pcall(function() if item.getBodyLocation then location = item:getBodyLocation() end end)
             if not location then pcall(function() if item.getLocation then location = item:getLocation() end end) end
-            if isHandWearLocation(location) and not isBrokenOrHoled(item) then return true end
+            if isHandWearLocation(location) and not isBrokenOrHoled(item) then return item end
         end
     end
-    return false
+    return nil
+end
+
+local function hasIntactGloves(player)
+    return getIntactGloves(player) ~= nil
+end
+
+local function syncGloves(player, gloves)
+    if not gloves then return end
+    if gloves.syncItemFields then pcall(function() gloves:syncItemFields() end) end
+    if syncItemFields then pcall(function() syncItemFields(player, gloves) end) end
+    if sendItemStats then pcall(function() sendItemStats(gloves) end) end
+    if gloves.transmitModData then pcall(function() gloves:transmitModData() end) end
+    if player and player.resetModelNextFrame then pcall(function() player:resetModelNextFrame() end) end
+    if player and syncVisuals then pcall(function() syncVisuals(player) end) end
+    if player and sendHumanVisual then pcall(function() sendHumanVisual(player) end) end
+end
+
+local function getGloveCoveredHandPart(gloves)
+    if gloves and gloves.getCoveredParts then
+        local parts = nil
+        pcall(function() parts = gloves:getCoveredParts() end)
+        if parts then
+            for i = 0, parts:size() - 1 do
+                local part = parts:get(i)
+                local name = tostring(part or "")
+                if name:find("Hand", 1, true) then return part end
+            end
+            if parts:size() > 0 then return parts:get(0) end
+        end
+    end
+    if BloodBodyPartType then
+        if rand(2) == 0 and BloodBodyPartType.Hand_L then return BloodBodyPartType.Hand_L end
+        if BloodBodyPartType.Hand_R then return BloodBodyPartType.Hand_R end
+    end
+    return nil
+end
+
+local function punctureGloves(player, gloves)
+    if not gloves or isBrokenOrHoled(gloves) then return false end
+
+    local part = getGloveCoveredHandPart(gloves)
+    if part then
+        pcall(function() if gloves.addHole then gloves:addHole(part) end end)
+        if not isBrokenOrHoled(gloves) then
+            pcall(function()
+                local visual = gloves.getVisual and gloves:getVisual() or nil
+                if visual and visual.setHole then visual:setHole(part, 1.0) end
+            end)
+        end
+        if not isBrokenOrHoled(gloves) then
+            pcall(function()
+                local visual = gloves.getVisual and gloves:getVisual() or nil
+                if visual and visual.setHole then visual:setHole(part) end
+            end)
+        end
+    end
+
+    if not isBrokenOrHoled(gloves) and gloves.getCondition and gloves.setCondition then
+        pcall(function()
+            local condition = tonumber(gloves:getCondition()) or 0
+            local maxCondition = 0
+            if gloves.getConditionMax then maxCondition = tonumber(gloves:getConditionMax()) or 0 end
+            local puncturedCondition = 0
+            if maxCondition > 0 then puncturedCondition = math.max(0, math.floor(maxCondition * 0.05)) end
+            gloves:setCondition(math.min(math.max(0, condition - 1), puncturedCondition))
+        end)
+    end
+
+    syncGloves(player, gloves)
+    return true
 end
 
 local function randomBodyPart(player)
@@ -392,7 +462,11 @@ local function randomBodyPart(player)
 end
 
 local function applyScratch(player)
-    if hasIntactGloves(player) then return false end
+    local gloves = getIntactGloves(player)
+    if gloves then
+        punctureGloves(player, gloves)
+        return false
+    end
     local part = randomBodyPart(player)
     if not part then return false end
 

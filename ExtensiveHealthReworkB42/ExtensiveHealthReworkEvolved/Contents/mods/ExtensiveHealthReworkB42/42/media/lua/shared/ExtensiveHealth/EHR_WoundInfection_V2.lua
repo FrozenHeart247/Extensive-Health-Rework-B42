@@ -334,6 +334,77 @@ function EHR.WoundInfection.ClearVanillaInfection(bodyPart)
     EHR.Log("Cleared vanilla infection on body part")
 end
 
+function EHR.WoundInfection.IsGodModeActive(player)
+    if not player then return false end
+    if player.isGodMod then
+        local ok, value = pcall(function() return player:isGodMod() end)
+        if ok and value == true then return true end
+    end
+    return false
+end
+
+function EHR.WoundInfection.ClearForGodMode(player)
+    if not player then return false end
+
+    local data = EHR.WoundInfection.GetData(player)
+    if not data then return false end
+
+    local changed = false
+
+    if type(data.parts) == "table" then
+        for partName, partData in pairs(data.parts) do
+            changed = true
+            ClearWoundSymptomPain(player, partName, partData)
+
+            local bodyPart = GetBodyPartByName(player, partName)
+            if bodyPart then
+                EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+            end
+        end
+    end
+
+    if type(data.incubating) == "table" then
+        for partName, _ in pairs(data.incubating) do
+            changed = true
+            local bodyPart = GetBodyPartByName(player, partName)
+            if bodyPart then
+                EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+            end
+        end
+    end
+
+    if type(data.antisepticBlocked) == "table" then
+        for _ in pairs(data.antisepticBlocked) do
+            changed = true
+            break
+        end
+    end
+
+    if not changed then return false end
+
+    data.parts = {}
+    data.incubating = {}
+    data.antisepticBlocked = {}
+    data.totalInfectedParts = 0
+    data.infectedCount = 0
+    data.worstStage = 0
+    data.worstPart = nil
+    data.lastGodModeClear = getGameTime() and getGameTime():getWorldAgeHours() or 0
+
+    EHR.WoundInfection.RecalculateStats(player)
+
+    if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
+        EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
+    end
+
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
+    end
+
+    EHR.Log("Wound infection state cleared because God mode is active")
+    return true
+end
+
 -- ============================================
 -- MODDATA MANAGEMENT
 -- ============================================
@@ -1420,15 +1491,19 @@ function EHR.WoundInfection.OnTick()
     local players = getActivePlayers()
     for _, player in ipairs(players) do
         if player and not player:isDead() then
-            if runScan then
-                EHR.WoundInfection.ScanForInfections(player)
-                EHR.WoundInfection.UpdateProgression(player)
-            end
-            if runEffects or runScan then
-                EHR.WoundInfection.ApplyEffects(player)
-            end
-            if runScan and EHR and EHR.SafeTransmitModData then
-                EHR.SafeTransmitModData(player)
+            if EHR.WoundInfection.IsGodModeActive(player) then
+                EHR.WoundInfection.ClearForGodMode(player)
+            else
+                if runScan then
+                    EHR.WoundInfection.ScanForInfections(player)
+                    EHR.WoundInfection.UpdateProgression(player)
+                end
+                if runEffects or runScan then
+                    EHR.WoundInfection.ApplyEffects(player)
+                end
+                if runScan and EHR and EHR.SafeTransmitModData then
+                    EHR.SafeTransmitModData(player)
+                end
             end
         end
     end

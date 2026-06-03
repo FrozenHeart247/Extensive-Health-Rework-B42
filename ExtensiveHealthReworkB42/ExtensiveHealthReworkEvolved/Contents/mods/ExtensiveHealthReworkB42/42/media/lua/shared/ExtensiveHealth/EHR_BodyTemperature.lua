@@ -627,6 +627,7 @@ end
 local function EHR_BodyTempApplyMedicationFeverRelief(player, diseaseId, target)
     if not player or not diseaseId or not target then return target end
     if not EHR or not EHR.Disease or not EHR.Disease.GetActiveSymptomReduction then return target end
+    local cfg = EHR.BodyTemp and EHR.BodyTemp.Config or {}
 
     local ok, relief = pcall(function()
         return EHR.Disease.GetActiveSymptomReduction(player, diseaseId, "fever")

@@ -7,7 +7,7 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 EHR = EHR or {}
 EHR.HerbalSearchServer = EHR.HerbalSearchServer or {}
 
-local COOLDOWN_HOURS = 24
+local COOLDOWN_HOURS = 48
 local HERB_POOLS = {
     common = {
         "Base.Plantain", "Base.CommonMallow", "Base.Chamomile", "Base.Marigold",

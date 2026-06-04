@@ -7,8 +7,9 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 EHR = EHR or {}
 EHR.HiveWebSearchServer = EHR.HiveWebSearchServer or {}
 
-local COOLDOWN_HOURS = 24
-local EMPTY_COOLDOWN_HOURS = 8
+local COOLDOWN_HOURS = 48
+local EMPTY_COOLDOWN_HOURS = 48
+local CONTENT_CHANCE_PERCENT = 40
 
 local function rand(max)
     max = tonumber(max) or 0
@@ -124,13 +125,20 @@ end
 
 local function rollTreeContent(md)
     md.EHR_HiveWebKnown = true
+
+    if rand(100) >= CONTENT_CHANCE_PERCENT then
+        md.EHR_HiveWebHive = false
+        md.EHR_HiveWebWebs = 0
+        return
+    end
+
     md.EHR_HiveWebHive = rand(100) < 32
     local roll = rand(100)
     if roll < 35 then md.EHR_HiveWebWebs = 0
     elseif roll < 65 then md.EHR_HiveWebWebs = 1
     elseif roll < 87 then md.EHR_HiveWebWebs = 2
     else md.EHR_HiveWebWebs = 3 end
-    if md.EHR_HiveWebHive ~= true and (tonumber(md.EHR_HiveWebWebs) or 0) <= 0 and rand(100) < 45 then
+    if md.EHR_HiveWebHive ~= true and (tonumber(md.EHR_HiveWebWebs) or 0) <= 0 then
         md.EHR_HiveWebWebs = 1
     end
 end

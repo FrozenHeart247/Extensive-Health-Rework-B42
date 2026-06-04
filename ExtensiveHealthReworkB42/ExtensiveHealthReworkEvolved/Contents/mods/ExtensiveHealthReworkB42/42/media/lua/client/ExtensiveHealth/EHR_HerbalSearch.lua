@@ -11,7 +11,7 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 EHR = EHR or {}
 EHR.HerbalSearch = EHR.HerbalSearch or {}
 
-local COOLDOWN_HOURS = 24
+local COOLDOWN_HOURS = 48
 
 local C = {
     bg = { r = 0.014, g = 0.012, b = 0.010, a = 0.97 },

@@ -552,11 +552,9 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.ChelationKit", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RifampicinComboPack", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.DualOrexinReceptor", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Epinephrine", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SalineBag", 7)
@@ -572,7 +570,6 @@ local function EHR_InitDistributions()
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.CorticosteroidInjection", 2)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.RespiratorySupportKit", 2)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.TetanusImmunoglobulin", 2)
-    tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Epinephrine", 5)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.IVKit", 6)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.Syringe", 8)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.SalineBag", 7)
@@ -688,7 +685,6 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.SalineBag"] = 10,
         ["ExtensiveHealth.IVFluids"] = 8,
         ["ExtensiveHealth.Furosemide"] = 4,
-        ["ExtensiveHealth.Epinephrine"] = 3,
         ["ExtensiveHealth.RespiratorySupportKit"] = 3,
         ["ExtensiveHealth.CorticosteroidInjection"] = 2.5,
         ["ExtensiveHealth.EmergencySepsisKit"] = 1.5,
@@ -739,7 +735,6 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.SalineBag"] = 3,
         ["ExtensiveHealth.IVFluids"] = 1.5,
         ["ExtensiveHealth.IVKit"] = 1.5,
-        ["ExtensiveHealth.Epinephrine"] = 1,
         ["ExtensiveHealth.RespiratorySupportKit"] = 0.8,
         ["ExtensiveHealth.CorticosteroidInjection"] = 0.5,
         ["ExtensiveHealth.EmergencySepsisKit"] = 0.35,

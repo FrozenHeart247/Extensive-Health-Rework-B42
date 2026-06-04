@@ -222,6 +222,34 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.CommonColdTea"] = {
+        tier = 1,
+        treats = {"common_cold"},
+        displayName = "Herbal Tea",
+        icon = "CommonColdTea",
+        useVanillaActionOnly = true,
+        consumeViaFoodHook = true,
+        usageMessage = "You drink the herbal tea. Warmth settles in your chest.",
+        canCure = true,
+        cureTimeHours = 28,
+        treatmentTimeText = "28 hours (8-dose course)",
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The herbal tea dose is still active.",
+        appliesWithoutDisease = true,
+        hydrationSupport = {
+            durationHours = 0.35,
+            immediateBoost = 0.04,
+            hydrationBoost = 0.08,
+            restorePerHour = 0.25,
+        },
+        symptomReduction = {
+            fever = 0.25,
+            fatigue = 0.20,
+            pain = 0.15,
+        },
+    },
+
     ["ExtensiveHealth.AntipyreticTablets"] = {
         tier = 1,
         treats = {
@@ -241,6 +269,43 @@ EHR.Medication.Database = {
         displayName = "Antipyretic Tablets",
         usageMessage = "You take antipyretic tablets. The fever begins to ease.",
         effectDurationHours = 4,
+        symptomReduction = {
+            fever = 0.60,
+        },
+    },
+
+    ["ExtensiveHealth.AntipyreticTea"] = {
+        tier = 1,
+        treats = {
+            "common_cold",
+            "influenza",
+            "pneumonia",
+            "trichinosis",
+            "cadaveric_aspergillosis",
+            "wound_infection",
+            "cellulitis",
+            "tetanus",
+            "sepsis",
+            "tuberculosis",
+            "ahtr",
+            "hyperkeratotic_scabies",
+        },
+        displayName = "Antipyretic Tea",
+        icon = "AntipyreticTea",
+        useVanillaActionOnly = true,
+        consumeViaFoodHook = true,
+        usageMessage = "You drink the antipyretic tea. The fever begins to ease.",
+        appliesWithoutDisease = true,
+        effectDurationHours = 4,
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The antipyretic tea dose is still active. More now will be wasted.",
+        hydrationSupport = {
+            durationHours = 0.35,
+            immediateBoost = 0.04,
+            hydrationBoost = 0.08,
+            restorePerHour = 0.25,
+        },
         symptomReduction = {
             fever = 0.60,
         },
@@ -394,6 +459,29 @@ EHR.Medication.Database = {
             durationHours = 8,
         },
         usageMessage = "You take homemade sleeping pills. Drowsiness settles in.",
+    },
+
+    ["ExtensiveHealth.RelaxantTea"] = {
+        tier = 1,
+        treats = {},
+        displayName = "Relaxant Tea",
+        icon = "RelaxantTea",
+        useVanillaActionOnly = true,
+        consumeViaFoodHook = true,
+        usageMessage = "You drink the relaxant tea. Your nerves begin to loosen.",
+        appliesWithoutDisease = true,
+        effectDurationHours = 3,
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The relaxant tea dose is still active. More now will be wasted.",
+        stressSupport = {
+            durationHours = 3,
+            targetStress = 0.0,
+            restorePerHour = 0.35,
+        },
+        symptomReduction = {
+            stress = 0.35,
+        },
     },
 
     ["ExtensiveHealth.NitricOxideBooster"] = {
@@ -2103,7 +2191,9 @@ EHR.Medication.DosingSchedules = {
 
     -- Tier 1 - OTC (every 4-6 hours)
     ["ExtensiveHealth.ColdFluTablets"] = { doseInterval = 4, dosesRequired = 8 },
+    ["ExtensiveHealth.CommonColdTea"] = { doseInterval = 4, dosesRequired = 8 },
     ["ExtensiveHealth.AntipyreticTablets"] = { doseInterval = 6, dosesRequired = 3 },
+    ["ExtensiveHealth.AntipyreticTea"] = { doseInterval = 6, dosesRequired = 1 },
     ["ExtensiveHealth.CoughSyrup"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.HomemadeCoughSyrup"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.ElectrolytePowder"] = { doseInterval = 4, dosesRequired = 4 },
@@ -2113,6 +2203,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.AntiDiarrheal"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.MuscleRelaxants"] = { doseInterval = 8, dosesRequired = 3 },
     ["ExtensiveHealth.HomemadeMuscleRelaxant"] = { doseInterval = 8, dosesRequired = 3 },
+    ["ExtensiveHealth.RelaxantTea"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.NitricOxideBooster"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CombatStimulants"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CoughSuppressant"] = { doseInterval = 6, dosesRequired = 3 },
@@ -2929,6 +3020,126 @@ function EHR.Medication.RequestUseMedication(player, item)
     return EHR.Medication.UseMedication(player, item)
 end
 
+function EHR.Medication.UseConsumedMedication(player, itemFullType)
+    if not player or not itemFullType then return false end
+
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "UseConsumedMedication", {
+            itemFullType = tostring(itemFullType),
+        })
+        return true
+    end
+
+    local medData = EHR.Medication.Database and EHR.Medication.Database[itemFullType]
+    if not medData then return false end
+
+    local tier = medData.tier or 0
+    local tierEffects = EHR.Medication.TierEffectiveness[tier] or EHR.Medication.TierEffectiveness[0]
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(player)
+    local medKey = itemFullType
+    local canAdvanceDose = true
+
+    if EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData, itemFullType) then
+        if medData.activeDoseMessage and player.isLocalPlayer and player:isLocalPlayer() then
+            EHR.Locale.Say(player, medData.activeDoseMessage)
+        end
+        EHRMedicationRequestSync(player)
+        EHR.Log("Consumed food medication during active dose without treatment progress: " .. tostring(itemFullType))
+        return true
+    end
+
+    if medData.blockWhileDoseActive and EHR.Medication.GetDoseStatus then
+        local ok, status = pcall(EHR.Medication.GetDoseStatus, player, itemFullType)
+        local doseDue = ok and status and not status.treatmentComplete
+            and (status.isOverdue == true or (tonumber(status.hoursUntilNextDose) or 0) <= 0)
+        if ok and status and status.isDoseActive and not doseDue then
+            if medData.activeDoseMessage and player.isLocalPlayer and player:isLocalPlayer() then
+                EHR.Locale.Say(player, medData.activeDoseMessage)
+            end
+            EHRMedicationRequestSync(player)
+            EHR.Log("Consumed blocked food medication during active dose without treatment progress: " .. tostring(itemFullType))
+            return true
+        end
+    end
+
+    if medData.usageMessage and player.isLocalPlayer and player:isLocalPlayer() then
+        EHR.Locale.Say(player, medData.usageMessage)
+    end
+
+    local treatedAny = false
+    if canAdvanceDose then
+        local moduleTreatmentApplied = {}
+
+        if diseaseData and diseaseData.active and medData.preventionOnly ~= true then
+            for _, diseaseId in ipairs(medData.treats or {}) do
+                if diseaseData.active[diseaseId] then
+                    EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, medKey)
+                    treatedAny = true
+                end
+            end
+        end
+
+        if EHR.Medication.ApplyModuleTreatment then
+            for _, diseaseId in ipairs(medData.treats or {}) do
+                if EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEffects, medKey) then
+                    moduleTreatmentApplied[diseaseId] = true
+                    treatedAny = true
+                end
+            end
+        end
+
+        if EHR.Medication.ApplyModuleSymptomTreatment then
+            for _, diseaseId in ipairs(medData.treats or {}) do
+                if not moduleTreatmentApplied[diseaseId]
+                    and EHR.Medication.ApplyModuleSymptomTreatment(player, diseaseId, medData, tierEffects, medKey) then
+                    treatedAny = true
+                end
+            end
+        end
+
+        if medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
+            EHR.Medication.StartHydrationSupport(player, medData)
+        end
+
+        if not treatedAny then
+            if medData.appliesWithoutDisease and EHR.Medication.ApplyGeneralSymptomRelief then
+                EHR.Medication.ApplyGeneralSymptomRelief(player, medData)
+            end
+            EHR.Medication.TrackDoseOnly(player, medData, medKey)
+        end
+    end
+
+    if medData.stressSupport and EHR.Medication.StartStressSupport then
+        EHR.Medication.StartStressSupport(player, medData)
+    end
+    if medData.sleepAid and EHR.Medication.StartSleepAid then
+        EHR.Medication.StartSleepAid(player, medData)
+    end
+
+    EHR.Medication.CheckAndApplyInteractions(player)
+
+    if EHR.SkillXP and EHR.SkillXP.OnMedicationTaken then
+        EHR.SkillXP.OnMedicationTaken(player, {
+            tier = tier,
+            displayName = medData.displayName,
+            medId = medKey,
+            treatedDisease = treatedAny,
+        })
+    end
+
+    if treatedAny and EHR.SkillXP and EHR.SkillXP.OnTreatmentDose then
+        EHR.SkillXP.OnTreatmentDose(player, "disease", true)
+    end
+
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "RequestSync", {})
+    end
+
+    EHR.Log("Applied consumed medication: " .. tostring(itemFullType) .. " (treated disease: " .. tostring(treatedAny) .. ")")
+    return true
+end
+
 function EHR.Medication.UseMedication(player, item)
     if not player or not item then return false end
 
@@ -3045,6 +3256,9 @@ function EHR.Medication.UseMedication(player, item)
     if treatedAny and medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
         EHR.Medication.StartHydrationSupport(player, medData)
     end
+    if medData.stressSupport and EHR.Medication.StartStressSupport then
+        EHR.Medication.StartStressSupport(player, medData)
+    end
 
     if medData.sleepAid and EHR.Medication.StartSleepAid then
         EHR.Medication.StartSleepAid(player, medData)
@@ -3158,6 +3372,9 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
     if medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
         EHR.Medication.StartHydrationSupport(player, medData)
+    end
+    if medData.stressSupport and EHR.Medication.StartStressSupport then
+        EHR.Medication.StartStressSupport(player, medData)
     end
     if medData.staminaLock and EHR.Medication.StartStaminaLock then
         EHR.Medication.StartStaminaLock(player, medData)
@@ -3598,6 +3815,34 @@ function EHR.Medication.StartHydrationSupport(player, medData)
     return true
 end
 
+function EHR.Medication.StartStressSupport(player, medData)
+    local support = medData and medData.stressSupport
+    if not player or not support then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local currentStress = EHR_MedicationGetStat(player, CharacterStat and CharacterStat.STRESS) or 0
+    local duration = support.durationHours or medData.effectDurationHours or 3
+    local targetStress = math.max(0, math.min(1, support.targetStress or 0))
+    local restorePerHour = support.restorePerHour or 0.35
+
+    medTracking.activeGeneralEffects.relaxantTea = {
+        startTime = currentHour,
+        endTime = currentHour + math.max(0.05, duration),
+        lastUpdateHour = currentHour,
+        targetStress = math.min(currentStress, targetStress),
+        restorePerHour = restorePerHour,
+        medicationName = medData.displayName or "Relaxant Tea",
+    }
+
+    return true
+end
+
 function EHR.Medication.StartStaminaLock(player, medData)
     local support = medData and medData.staminaLock
     if not player or not support then return false end
@@ -4002,6 +4247,31 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
         end
     end
 
+    local stressSupport = medTracking.activeGeneralEffects.relaxantTea
+    if type(stressSupport) == "table" then
+        local endTime = tonumber(stressSupport.endTime) or currentHour
+        if currentHour >= endTime then
+            medTracking.activeGeneralEffects.relaxantTea = nil
+            changed = true
+        else
+            local lastUpdateHour = tonumber(stressSupport.lastUpdateHour) or currentHour
+            local deltaHours = math.max(0, math.min(0.25, currentHour - lastUpdateHour))
+            if deltaHours > 0 then
+                stressSupport.lastUpdateHour = currentHour
+
+                local currentStress = EHR_MedicationGetStat(player, CharacterStat and CharacterStat.STRESS)
+                if currentStress then
+                    local targetStress = math.max(0, math.min(1, tonumber(stressSupport.targetStress) or 0))
+                    if currentStress > targetStress then
+                        local restorePerHour = math.max(0, tonumber(stressSupport.restorePerHour) or 0.35)
+                        local nextStress = math.max(targetStress, currentStress - (restorePerHour * deltaHours))
+                        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.STRESS, nextStress)
+                    end
+                end
+            end
+        end
+    end
+
     local stamina = medTracking.activeGeneralEffects.staminaLock
     if type(stamina) == "table" then
         local endTime = tonumber(stamina.endTime) or currentHour
@@ -4302,6 +4572,12 @@ local function EHR_MedicationApplyImmediateSymptomRelief(player, diseaseId, medD
         end
     end
 
+    if reductions.stress then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.STRESS, -0.16 * reductions.stress, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.PANIC, -0.12 * reductions.stress, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.UNHAPPINESS, -0.08 * reductions.stress, 0, 1) or didRelieve
+    end
+
     didRelieve = EHR_MedicationSetCorpseNauseaTarget(player, diseaseId, reductions, doseTiming, currentHour) or didRelieve
 
     if reductions.dehydration and not hasHydrationSupport then
@@ -4540,6 +4816,12 @@ function EHR.Medication.ApplyGeneralSymptomRelief(player, medData)
     if reductions.vomiting then
         didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.SICKNESS, -0.03 * reductions.vomiting, 0, 1) or didRelieve
         didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.FOOD_SICKNESS, -0.04 * reductions.vomiting, 0, 1) or didRelieve
+    end
+
+    if reductions.stress then
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.STRESS, -0.14 * reductions.stress, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.PANIC, -0.10 * reductions.stress, 0, 1) or didRelieve
+        didRelieve = EHR_MedicationAdjustStat(player, CharacterStat and CharacterStat.UNHAPPINESS, -0.08 * reductions.stress, 0, 1) or didRelieve
     end
 
     if reductions.breathingDifficulty then
@@ -5367,6 +5649,10 @@ local function OnEatItemHandler(character, item)
         if not itemFullType then return end
 
         local medData = EHR.Medication.Database[itemFullType]
+
+        if medData and medData.consumeViaFoodHook == true then
+            return
+        end
 
         -- Only track if it's a recognized medication and wasn't already tracked
         -- (EHR context menu usage already tracks, so check if recently tracked)

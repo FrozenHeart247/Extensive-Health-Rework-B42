@@ -10,6 +10,7 @@
 
 require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_EnvironmentalDiseases"
+pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 require "TimedActions/ISEatFoodAction"
 
 EHR = EHR or {}
@@ -190,6 +191,13 @@ function EHR.FoodHook.HandleFoodConsumption(player, item)
 
     if EHR.DEBUG then
         EHR.Log("FoodHook: Player ate " .. (safeCall(item, "getDisplayName") or safeCall(item, "getName") or "unknown"))
+    end
+
+    local itemFullType = safeCall(item, "getFullType")
+    local medData = itemFullType and EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[itemFullType] or nil
+    if medData and medData.consumeViaFoodHook and EHR.Medication.UseConsumedMedication then
+        EHR.Medication.UseConsumedMedication(player, itemFullType)
+        return
     end
 
     if EHR.Disease and EHR.Disease.CheckFoodRisk then

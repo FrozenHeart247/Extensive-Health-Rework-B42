@@ -13,4 +13,7 @@ Recipes_EN = {
     MakeHomemadeMuscleRelaxant = "Make Homemade Muscle Relaxant",
     MakeHomemadePainkillers = "Make Homemade Painkillers",
     MakeHomemadeSleepingPills = "Make Homemade Sleeping Pills",
+    MakeCommonColdTea = "Prepare Herbal Tea",
+    MakeAntipyreticTea = "Prepare Antipyretic Tea",
+    MakeRelaxantTea = "Prepare Relaxant Tea",
 }

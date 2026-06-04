@@ -98,5 +98,8 @@
     "ExtensiveHealth.HomemadeCoughSyrup": "自家製咳止めシロップ",
     "ExtensiveHealth.HomemadeMuscleRelaxant": "自家製筋弛緩薬",
     "ExtensiveHealth.HomemadePainkillers": "自家製鎮痛薬",
-    "ExtensiveHealth.HomemadeSleepingPills": "自家製睡眠薬"
+    "ExtensiveHealth.HomemadeSleepingPills": "自家製睡眠薬",
+    "ExtensiveHealth.CommonColdTea": "ハーブティー",
+    "ExtensiveHealth.AntipyreticTea": "解熱ハーブティー",
+    "ExtensiveHealth.RelaxantTea": "リラックスティー"
 }

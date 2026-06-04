@@ -1585,5 +1585,9 @@
     "UI_EHR_Med_HomemadeCoughSyrup": "Xarope caseiro para tosse",
     "UI_EHR_Med_HomemadeMuscleRelaxant": "Relaxante muscular caseiro",
     "UI_EHR_Med_HomemadePainkillers": "Analgésicos caseiros",
-    "UI_EHR_Med_HomemadeSleepingPills": "Pílulas caseiras para dormir"
+    "UI_EHR_Med_HomemadeSleepingPills": "Pílulas caseiras para dormir",
+    "UI_EHR_Med_HerbalTea": "Chá de ervas",
+    "UI_EHR_Med_CommonColdTea": "Chá de ervas",
+    "UI_EHR_Med_AntipyreticTea": "Chá antitérmico",
+    "UI_EHR_Med_RelaxantTea": "Chá relaxante"
 }

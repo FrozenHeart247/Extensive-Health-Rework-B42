@@ -1585,5 +1585,9 @@
     "UI_EHR_Med_HomemadeCoughSyrup": "Jarabe casero para la tos",
     "UI_EHR_Med_HomemadeMuscleRelaxant": "Relajante muscular casero",
     "UI_EHR_Med_HomemadePainkillers": "Analgésicos caseros",
-    "UI_EHR_Med_HomemadeSleepingPills": "Pastillas para dormir caseras"
+    "UI_EHR_Med_HomemadeSleepingPills": "Pastillas para dormir caseras",
+    "UI_EHR_Med_HerbalTea": "Té herbal",
+    "UI_EHR_Med_CommonColdTea": "Té herbal",
+    "UI_EHR_Med_AntipyreticTea": "Té antipirético",
+    "UI_EHR_Med_RelaxantTea": "Té relajante"
 }

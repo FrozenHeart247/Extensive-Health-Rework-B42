@@ -98,4 +98,7 @@ ItemName_FR = {
     ExtensiveHealth.HomemadeMuscleRelaxant = "Relaxant musculaire maison",
     ExtensiveHealth.HomemadePainkillers = "Antidouleurs maison",
     ExtensiveHealth.HomemadeSleepingPills = "Somnifères maison",
+    ExtensiveHealth.CommonColdTea = "Tisane",
+    ExtensiveHealth.AntipyreticTea = "Tisane antipyrétique",
+    ExtensiveHealth.RelaxantTea = "Tisane relaxante",
 }

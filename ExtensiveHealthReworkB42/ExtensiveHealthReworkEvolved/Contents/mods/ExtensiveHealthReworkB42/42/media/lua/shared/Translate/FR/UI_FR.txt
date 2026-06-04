@@ -1586,4 +1586,8 @@ UI_FR = {
     UI_EHR_Med_HomemadeMuscleRelaxant = "Relaxant musculaire maison",
     UI_EHR_Med_HomemadePainkillers = "Antidouleurs maison",
     UI_EHR_Med_HomemadeSleepingPills = "Somnifères maison",
+    UI_EHR_Med_HerbalTea = "Tisane",
+    UI_EHR_Med_CommonColdTea = "Tisane",
+    UI_EHR_Med_AntipyreticTea = "Tisane antipyrétique",
+    UI_EHR_Med_RelaxantTea = "Tisane relaxante",
 }

@@ -1598,5 +1598,9 @@
     "UI_EHR_Med_HomemadeCoughSyrup": "Homemade Cough Syrup",
     "UI_EHR_Med_HomemadeMuscleRelaxant": "Homemade Muscle Relaxant",
     "UI_EHR_Med_HomemadePainkillers": "Homemade Painkillers",
-    "UI_EHR_Med_HomemadeSleepingPills": "Homemade Sleeping Pills"
+    "UI_EHR_Med_HomemadeSleepingPills": "Homemade Sleeping Pills",
+    "UI_EHR_Med_HerbalTea": "Herbal Tea",
+    "UI_EHR_Med_CommonColdTea": "Herbal Tea",
+    "UI_EHR_Med_AntipyreticTea": "Antipyretic Tea",
+    "UI_EHR_Med_RelaxantTea": "Relaxant Tea"
 }

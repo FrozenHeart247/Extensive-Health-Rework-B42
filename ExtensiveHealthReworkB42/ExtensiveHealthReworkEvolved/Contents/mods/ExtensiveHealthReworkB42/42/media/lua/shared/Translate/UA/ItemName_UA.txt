@@ -98,4 +98,7 @@ ItemName_UA = {
     ExtensiveHealth.HomemadeMuscleRelaxant = "Домашній міорелаксант",
     ExtensiveHealth.HomemadePainkillers = "Домашні знеболювальні",
     ExtensiveHealth.HomemadeSleepingPills = "Домашні снодійні",
+    ExtensiveHealth.CommonColdTea = "Трав'яний чай",
+    ExtensiveHealth.AntipyreticTea = "Жарознижувальний чай",
+    ExtensiveHealth.RelaxantTea = "Заспокійливий чай",
 }

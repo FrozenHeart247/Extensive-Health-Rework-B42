@@ -100,5 +100,8 @@
     "ExtensiveHealth.HomemadeCoughSyrup": "Homemade Cough Syrup",
     "ExtensiveHealth.HomemadeMuscleRelaxant": "Homemade Muscle Relaxant",
     "ExtensiveHealth.HomemadePainkillers": "Homemade Painkillers",
-    "ExtensiveHealth.HomemadeSleepingPills": "Homemade Sleeping Pills"
+    "ExtensiveHealth.HomemadeSleepingPills": "Homemade Sleeping Pills",
+    "ExtensiveHealth.CommonColdTea": "Herbal Tea",
+    "ExtensiveHealth.AntipyreticTea": "Antipyretic Tea",
+    "ExtensiveHealth.RelaxantTea": "Relaxant Tea"
 }

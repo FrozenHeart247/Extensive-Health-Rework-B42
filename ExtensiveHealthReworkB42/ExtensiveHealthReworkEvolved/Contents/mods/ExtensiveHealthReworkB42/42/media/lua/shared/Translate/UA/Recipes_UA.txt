@@ -13,4 +13,7 @@ Recipes_UA = {
     MakeHomemadeMuscleRelaxant = "Make Homemade Muscle Relaxant",
     MakeHomemadePainkillers = "Make Homemade Painkillers",
     MakeHomemadeSleepingPills = "Make Homemade Sleeping Pills",
+    MakeCommonColdTea = "Приготувати трав'яний чай",
+    MakeAntipyreticTea = "Приготувати жарознижувальний чай",
+    MakeRelaxantTea = "Приготувати заспокійливий чай",
 }

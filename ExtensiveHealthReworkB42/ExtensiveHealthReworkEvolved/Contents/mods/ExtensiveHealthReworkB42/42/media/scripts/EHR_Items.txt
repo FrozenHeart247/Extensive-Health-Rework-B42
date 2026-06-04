@@ -488,6 +488,87 @@ module ExtensiveHealth
         Tags = base:consumable,
     }
 
+    item CommonColdTea
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:food,
+        DisplayName = Herbal Tea,
+        Icon = CommonColdTea,
+        Weight = 0.5,
+        Tooltip = Tooltip_CommonColdTea,
+        EatType = Popcan,
+        PourType = Mug,
+        GoodHot = true,
+        IsCookable = true,
+        ReplaceOnUse = Base.MugWhite,
+        MinutesToCook = 10,
+        MinutesToBurn = 50,
+        ThirstChange = -10.0,
+        UnhappyChange = -5,
+        CustomContextMenu = Drink,
+        CustomEatSound = DrinkingFromMug,
+        StaticModel = MugWhite,
+        WorldStaticModel = MugWhite,
+        Tags = base:herbaltea,
+        CookingSound = BoilingFood,
+        Eattime = 160,
+        Medical = true,
+    }
+
+    item AntipyreticTea
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:food,
+        DisplayName = Antipyretic Tea,
+        Icon = AntipyreticTea,
+        Weight = 0.5,
+        Tooltip = Tooltip_AntipyreticTea,
+        EatType = Popcan,
+        PourType = Mug,
+        GoodHot = true,
+        IsCookable = true,
+        ReplaceOnUse = Base.MugWhite,
+        MinutesToCook = 10,
+        MinutesToBurn = 50,
+        ThirstChange = -10.0,
+        UnhappyChange = -5,
+        CustomContextMenu = Drink,
+        CustomEatSound = DrinkingFromMug,
+        StaticModel = MugWhite,
+        WorldStaticModel = MugWhite,
+        Tags = base:herbaltea,
+        CookingSound = BoilingFood,
+        Eattime = 160,
+        Medical = true,
+    }
+
+    item RelaxantTea
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:food,
+        DisplayName = Relaxant Tea,
+        Icon = RelaxantTea,
+        Weight = 0.5,
+        Tooltip = Tooltip_RelaxantTea,
+        EatType = Popcan,
+        PourType = Mug,
+        GoodHot = true,
+        IsCookable = true,
+        ReplaceOnUse = Base.MugWhite,
+        MinutesToCook = 10,
+        MinutesToBurn = 50,
+        ThirstChange = -10.0,
+        UnhappyChange = -10,
+        CustomContextMenu = Drink,
+        CustomEatSound = DrinkingFromMug,
+        StaticModel = MugWhite,
+        WorldStaticModel = MugWhite,
+        Tags = base:herbaltea,
+        CookingSound = BoilingFood,
+        Eattime = 160,
+        Medical = true,
+    }
+
     item NitricOxideBooster
     {
         DisplayCategory = FirstAid,

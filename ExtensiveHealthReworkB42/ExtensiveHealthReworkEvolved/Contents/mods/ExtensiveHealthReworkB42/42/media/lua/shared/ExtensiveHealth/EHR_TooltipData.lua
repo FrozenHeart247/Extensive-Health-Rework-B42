@@ -265,6 +265,19 @@ EHR.Tooltips.Data = {
         cures = {"Common Cold"},
         warning = "Requires full dose course",
     },
+    ["ExtensiveHealth.CommonColdTea"] = {
+        category = "Herbal Medicine",
+        tier = 1,
+        description = "Warm herbal tea for common cold recovery.",
+        relieves = {"Mild thirst", "Fever", "Fatigue", "Minor pain"},
+        effects = {
+            "CURES common cold with an 8-dose course",
+            "Small immediate hydration boost",
+            "Returns an empty mug after drinking",
+        },
+        cures = {"Common Cold"},
+        warning = "Requires full dose course",
+    },
     ["ExtensiveHealth.AntipyreticTablets"] = {
         category = "OTC Medication",
         tier = 1,
@@ -274,6 +287,19 @@ EHR.Tooltips.Data = {
             "60% fever relief",
             "Can normalize illness fever to 37.0 C",
             "Works against illness-related fever",
+        },
+        cures = {},
+        warning = "Does NOT cool environmental overheating",
+    },
+    ["ExtensiveHealth.AntipyreticTea"] = {
+        category = "Herbal Medicine",
+        tier = 1,
+        description = "Herbal fever-reducing tea.",
+        relieves = {"Disease fever", "Mild thirst"},
+        effects = {
+            "60% fever relief",
+            "Can normalize illness fever to 37.0 C",
+            "Returns an empty mug after drinking",
         },
         cures = {},
         warning = "Does NOT cool environmental overheating",
@@ -367,6 +393,18 @@ EHR.Tooltips.Data = {
             "Crafted from black sage, chamomile, comfrey and honey",
         },
         warning = "Does NOT cure tetanus/parasites",
+    },
+    ["ExtensiveHealth.RelaxantTea"] = {
+        category = "Herbal Medicine",
+        tier = 1,
+        description = "Calming herbal tea for stress relief.",
+        relieves = {"Stress", "Panic", "Unhappiness", "Mild thirst"},
+        effects = {
+            "Gradually reduces stress toward zero over 3 hours",
+            "Small immediate calming effect",
+            "Returns an empty mug after drinking",
+        },
+        warning = "Does NOT cure mental illness",
     },
     ["ExtensiveHealth.NitricOxideBooster"] = {
         category = "OTC Medication",

@@ -1586,4 +1586,8 @@ UI_CH = {
     UI_EHR_Med_HomemadeMuscleRelaxant = "自製肌肉鬆弛劑",
     UI_EHR_Med_HomemadePainkillers = "自製止痛藥",
     UI_EHR_Med_HomemadeSleepingPills = "自製安眠藥",
+    UI_EHR_Med_HerbalTea = "草藥茶",
+    UI_EHR_Med_CommonColdTea = "草藥茶",
+    UI_EHR_Med_AntipyreticTea = "退燒茶",
+    UI_EHR_Med_RelaxantTea = "舒緩茶",
 }

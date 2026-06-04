@@ -1585,5 +1585,9 @@
     "UI_EHR_Med_HomemadeCoughSyrup": "自家製咳止めシロップ",
     "UI_EHR_Med_HomemadeMuscleRelaxant": "自家製筋弛緩薬",
     "UI_EHR_Med_HomemadePainkillers": "自家製鎮痛薬",
-    "UI_EHR_Med_HomemadeSleepingPills": "自家製睡眠薬"
+    "UI_EHR_Med_HomemadeSleepingPills": "自家製睡眠薬",
+    "UI_EHR_Med_HerbalTea": "ハーブティー",
+    "UI_EHR_Med_CommonColdTea": "ハーブティー",
+    "UI_EHR_Med_AntipyreticTea": "解熱ハーブティー",
+    "UI_EHR_Med_RelaxantTea": "リラックスティー"
 }

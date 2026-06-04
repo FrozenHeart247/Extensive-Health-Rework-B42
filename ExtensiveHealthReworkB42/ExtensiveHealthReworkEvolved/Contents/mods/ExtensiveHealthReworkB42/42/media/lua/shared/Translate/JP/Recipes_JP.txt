@@ -13,4 +13,7 @@ Recipes_JP = {
     MakeHomemadeMuscleRelaxant = "Make Homemade Muscle Relaxant",
     MakeHomemadePainkillers = "Make Homemade Painkillers",
     MakeHomemadeSleepingPills = "Make Homemade Sleeping Pills",
+    MakeCommonColdTea = "ハーブティーを作る",
+    MakeAntipyreticTea = "解熱ハーブティーを作る",
+    MakeRelaxantTea = "リラックスティーを作る",
 }

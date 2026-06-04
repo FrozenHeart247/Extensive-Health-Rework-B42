@@ -1585,5 +1585,9 @@
     "UI_EHR_Med_HomemadeCoughSyrup": "Домашній сироп від кашлю",
     "UI_EHR_Med_HomemadeMuscleRelaxant": "Домашній міорелаксант",
     "UI_EHR_Med_HomemadePainkillers": "Домашні знеболювальні",
-    "UI_EHR_Med_HomemadeSleepingPills": "Домашні снодійні"
+    "UI_EHR_Med_HomemadeSleepingPills": "Домашні снодійні",
+    "UI_EHR_Med_HerbalTea": "Трав'яний чай",
+    "UI_EHR_Med_CommonColdTea": "Трав'яний чай",
+    "UI_EHR_Med_AntipyreticTea": "Жарознижувальний чай",
+    "UI_EHR_Med_RelaxantTea": "Заспокійливий чай"
 }

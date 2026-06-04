@@ -98,4 +98,7 @@ ItemName_CH = {
     ExtensiveHealth.HomemadeMuscleRelaxant = "自製肌肉鬆弛劑",
     ExtensiveHealth.HomemadePainkillers = "自製止痛藥",
     ExtensiveHealth.HomemadeSleepingPills = "自製安眠藥",
+    ExtensiveHealth.CommonColdTea = "草藥茶",
+    ExtensiveHealth.AntipyreticTea = "退燒茶",
+    ExtensiveHealth.RelaxantTea = "舒緩茶",
 }

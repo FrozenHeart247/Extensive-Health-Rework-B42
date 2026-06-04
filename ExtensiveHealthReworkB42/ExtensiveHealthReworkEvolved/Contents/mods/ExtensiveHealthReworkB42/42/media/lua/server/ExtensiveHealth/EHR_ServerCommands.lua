@@ -1232,6 +1232,23 @@ function EHR.ServerCommands.UseMedication(player, args)
     syncModDataToClient(player)
 end
 
+function EHR.ServerCommands.UseConsumedMedication(player, args)
+    if not player or not args or not args.itemFullType then return end
+    if not EHR.Medication or not EHR.Medication.UseConsumedMedication then
+        log("[EHR Server] UseConsumedMedication rejected: medication module unavailable")
+        return
+    end
+
+    local ok, result = pcall(function()
+        return EHR.Medication.UseConsumedMedication(player, tostring(args.itemFullType))
+    end)
+    if not ok then
+        log("[EHR Server] UseConsumedMedication failed: " .. tostring(result))
+    end
+
+    syncModDataToClient(player)
+end
+
 function EHR.ServerCommands.DrinkWaterRisk(player, args)
     if not player then return end
     if not EHR.Environmental or not EHR.Environmental.OnDrinkWater then
@@ -2892,6 +2909,9 @@ local function OnClientCommand(module, command, player, args)
     if module == "EHR" then
         if command == "UseMedication" then
             EHR.ServerCommands.UseMedication(player, args)
+            return
+        elseif command == "UseConsumedMedication" then
+            EHR.ServerCommands.UseConsumedMedication(player, args)
             return
         elseif command == "DrinkWaterRisk" then
             EHR.ServerCommands.DrinkWaterRisk(player, args)

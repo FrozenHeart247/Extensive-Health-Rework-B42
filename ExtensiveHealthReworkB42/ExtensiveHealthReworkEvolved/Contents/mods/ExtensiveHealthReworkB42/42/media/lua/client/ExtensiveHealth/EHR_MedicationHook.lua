@@ -77,6 +77,11 @@ local function trackMedicationDose(character, item, medData, itemFullType)
     if not character or not item then return end
     if not character:isLocalPlayer() then return end
 
+    if medData and medData.consumeViaFoodHook == true then
+        log("Skipping food-hook medication in generic medication hook: " .. tostring(itemFullType))
+        return
+    end
+
     local modData = character:getModData()
     if not modData then return end
 

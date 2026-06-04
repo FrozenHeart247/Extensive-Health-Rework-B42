@@ -1585,5 +1585,9 @@
     "UI_EHR_Med_HomemadeCoughSyrup": "自制止咳糖浆",
     "UI_EHR_Med_HomemadeMuscleRelaxant": "自制肌肉松弛剂",
     "UI_EHR_Med_HomemadePainkillers": "自制止痛药",
-    "UI_EHR_Med_HomemadeSleepingPills": "自制安眠药"
+    "UI_EHR_Med_HomemadeSleepingPills": "自制安眠药",
+    "UI_EHR_Med_HerbalTea": "草药茶",
+    "UI_EHR_Med_CommonColdTea": "草药茶",
+    "UI_EHR_Med_AntipyreticTea": "退烧茶",
+    "UI_EHR_Med_RelaxantTea": "舒缓茶"
 }

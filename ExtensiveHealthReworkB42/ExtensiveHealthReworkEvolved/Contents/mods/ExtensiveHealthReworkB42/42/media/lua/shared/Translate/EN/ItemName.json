@@ -93,5 +93,8 @@
     "ExtensiveHealth.SpiderwebBandage": "Spiderweb Bandage",
     "ExtensiveHealth.PreparedTallowMixture": "Prepared Tallow Mixture",
     "ExtensiveHealth.RenderedTallowMixture": "Rendered Tallow Mixture",
-    "ExtensiveHealth.Tallow": "Tallow"
+    "ExtensiveHealth.Tallow": "Tallow",
+    "ExtensiveHealth.HomemadeAntisepticCream": "Homemade Antiseptic Cream",
+    "ExtensiveHealth.HomemadeAntibioticOintment": "Homemade Antibiotic Ointment",
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "Homemade Topical Permethrin"
 }

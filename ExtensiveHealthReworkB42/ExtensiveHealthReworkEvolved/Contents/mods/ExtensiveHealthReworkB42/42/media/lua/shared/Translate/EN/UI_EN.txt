@@ -1592,4 +1592,7 @@ UI_EN = {
     UI_EHR_HiveWebSearch_FoundHoneycomb = "Found: Honeycomb",
     UI_EHR_HiveWebSearch_FoundSpiderweb = "Found: Spiderweb",
     UI_EHR_HiveWebSearch_GlovesLine = "The glove takes the sting.",
+    UI_EHR_Med_HomemadeAntisepticCream = "Homemade Antiseptic Cream",
+    UI_EHR_Med_HomemadeAntibioticOintment = "Homemade Antibiotic Ointment",
+    UI_EHR_Med_HomemadeTopicalPermethrin = "Homemade Topical Permethrin",
 }

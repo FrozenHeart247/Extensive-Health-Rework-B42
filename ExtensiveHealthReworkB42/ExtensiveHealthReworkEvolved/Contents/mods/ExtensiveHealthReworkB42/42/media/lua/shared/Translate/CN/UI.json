@@ -1524,8 +1524,7 @@
     "UI_EHR_WoundHook_AntibioticsHelpWound": "将有助于治疗您的伤口感染。",
     "UI_EHR_KnoxCure_RunningTest": "Running the test...",
     "UI_EHR_Transfusion_NotEnoughBloodSafe": "I don't have enough blood to do that safely.",
-    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong..."
-,
+    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong...",
     "UI_EHR_PrimaryHealthPanel": "Use EHR as primary health panel",
     "UI_EHR_PrimaryHealthPanel_tt": "When enabled, the EHR hotkey opens EHR and the heart button opens vanilla health. Disable to swap them.",
     "UI_EHR_Codex_insomnia_Prevention": "在疲劳持续恶化前睡觉，并避免叠加强力兴奋剂。",
@@ -1579,5 +1578,8 @@
     "UI_EHR_HerbalSearch_Target": "Find promising plants",
     "UI_EHR_HerbalSearch_HintLine1": "Inspect covered plant signs.",
     "UI_EHR_HerbalSearch_HintLine2": "Some hide thorns or dead growth.",
-    "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn."
+    "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn.",
+    "UI_EHR_Med_HomemadeAntisepticCream": "自制抗菌霜",
+    "UI_EHR_Med_HomemadeAntibioticOintment": "自制抗生素软膏",
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "自制外用氯菊酯"
 }

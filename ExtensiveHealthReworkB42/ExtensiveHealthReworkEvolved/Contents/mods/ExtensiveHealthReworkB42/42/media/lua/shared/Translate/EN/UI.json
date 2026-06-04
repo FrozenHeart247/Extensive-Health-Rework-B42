@@ -1532,8 +1532,7 @@
     "UI_EHR_WoundHook_AntibioticsHelpWound": "Will help treat your wound infection.",
     "UI_EHR_KnoxCure_RunningTest": "Running the test...",
     "UI_EHR_Transfusion_NotEnoughBloodSafe": "I don't have enough blood to do that safely.",
-    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong..."
-,
+    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong...",
     "UI_EHR_PrimaryHealthPanel": "Use EHR as primary health panel",
     "UI_EHR_PrimaryHealthPanel_tt": "When enabled, the EHR hotkey opens EHR and the heart button opens vanilla health. Disable to swap them.",
     "UI_EHR_OpenHealthPanelCompact": "Open EHR panels compact",
@@ -1592,5 +1591,8 @@
     "UI_EHR_HiveWebSearch_Depleted": "This tree has already been harvested recently.",
     "UI_EHR_HiveWebSearch_FoundHoneycomb": "Found: Honeycomb",
     "UI_EHR_HiveWebSearch_FoundSpiderweb": "Found: Spiderweb",
-    "UI_EHR_HiveWebSearch_GlovesLine": "The glove takes the sting."
+    "UI_EHR_HiveWebSearch_GlovesLine": "The glove takes the sting.",
+    "UI_EHR_Med_HomemadeAntisepticCream": "Homemade Antiseptic Cream",
+    "UI_EHR_Med_HomemadeAntibioticOintment": "Homemade Antibiotic Ointment",
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "Homemade Topical Permethrin"
 }

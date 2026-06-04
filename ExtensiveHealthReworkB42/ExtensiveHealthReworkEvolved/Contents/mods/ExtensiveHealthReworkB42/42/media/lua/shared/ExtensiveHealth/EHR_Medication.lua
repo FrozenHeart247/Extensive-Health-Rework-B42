@@ -406,6 +406,21 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.HomemadeAntisepticCream"] = {
+        tier = 2,
+        treats = {"wound_infection"},
+        displayName = "Homemade Antiseptic Cream",
+        icon = "HomemadeAntisepticCream",
+        usageMessage = "You apply homemade antiseptic cream to the wound.",
+        isTopical = true,
+        requiresActiveWound = true,
+        preventionOnly = true,
+        effectDurationHours = 8,
+        symptomReduction = {
+            infection = 1.00,
+        },
+    },
+
     -- =========================================
     -- TIER 2 - PRESCRIPTION MEDICATION
     -- Uncommon - Clinics, Pharmacies, Hospitals
@@ -489,6 +504,25 @@ EHR.Medication.Database = {
         displayName = "Topical Permethrin",
         icon = "TopicalPermethrin",
         usageMessage = "You apply topical permethrin. The mites should start dying off.",
+        isTopical = true,
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The current permethrin dose is still active. More now will be wasted.",
+        cureTimeHours = 72,
+        treatmentTimeText = "72 hours (6-dose course)",
+        symptomReduction = {
+            pain = 0.45,
+            fever = 0.30,
+            healthDrain = 0.65,
+        },
+    },
+
+    ["ExtensiveHealth.HomemadeTopicalPermethrin"] = {
+        tier = 2,
+        treats = {"hyperkeratotic_scabies"},
+        displayName = "Homemade Topical Permethrin",
+        icon = "HomemadeTopicalPermethrin",
+        usageMessage = "You apply homemade topical permethrin. The mites should start dying off.",
         isTopical = true,
         blockWhileDoseActive = true,
         consumeWhileDoseActive = true,
@@ -624,6 +658,19 @@ EHR.Medication.Database = {
         treats = {"wound_infection", "cellulitis"},
         displayName = "Antibiotic Ointment",
         usageMessage = "You apply antibiotic ointment to the infected area.",
+        isTopical = true,
+        blockWhileDoseActive = true,
+        consumeWhileDoseActive = true,
+        activeDoseMessage = "The current ointment dose is still active. More now will be wasted.",
+        cureTimeHours = 72,
+    },
+
+    ["ExtensiveHealth.HomemadeAntibioticOintment"] = {
+        tier = 2,
+        treats = {"wound_infection", "cellulitis"},
+        displayName = "Homemade Antibiotic Ointment",
+        icon = "AntibioticOitment",
+        usageMessage = "You apply homemade antibiotic ointment to the infected area.",
         isTopical = true,
         blockWhileDoseActive = true,
         consumeWhileDoseActive = true,
@@ -2014,6 +2061,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.CombatStimulants"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CoughSuppressant"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.AntisepticCream"] = { doseInterval = 8, dosesRequired = 3 },
+    ["ExtensiveHealth.HomemadeAntisepticCream"] = { doseInterval = 8, dosesRequired = 3 },
 
     -- Tier 2 - Prescription (every 6-12 hours)
     ["ExtensiveHealth.AntiviralCapsules"] = { doseInterval = 8, dosesRequired = 6 },
@@ -2023,6 +2071,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.HomeMadeActivatedCharcoal"] = { doseInterval = 0, dosesRequired = 1 },  -- Craftable single-dose toxin binder
     ["ExtensiveHealth.AntiparasiticPills"] = { doseInterval = 12, dosesRequired = 14 },
     ["ExtensiveHealth.TopicalPermethrin"] = { doseInterval = 12, dosesRequired = 6 },
+    ["ExtensiveHealth.HomemadeTopicalPermethrin"] = { doseInterval = 12, dosesRequired = 6 },
     ["ExtensiveHealth.OralRehydrationKit"] = { doseInterval = 6, dosesRequired = 8 },  -- Full rehydration course
     ["ExtensiveHealth.InstantIcePack"] = { doseInterval = 1, dosesRequired = 4 },  -- Emergency cooling course
     ["ExtensiveHealth.Furosemide"] = { doseInterval = 8, dosesRequired = 6 },  -- Transfusion reaction support course
@@ -2031,6 +2080,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
+    ["ExtensiveHealth.HomemadeAntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
     ["ExtensiveHealth.PlantBasedAntibiotics"] = { doseInterval = 8, dosesRequired = 6 },
 

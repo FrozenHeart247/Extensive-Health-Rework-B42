@@ -91,5 +91,8 @@
     "ExtensiveHealth.SpiderwebBandage": "Бинт з павутини",
     "ExtensiveHealth.PreparedTallowMixture": "Підготовлена суміш лою",
     "ExtensiveHealth.RenderedTallowMixture": "Витоплена суміш лою",
-    "ExtensiveHealth.Tallow": "Лій"
+    "ExtensiveHealth.Tallow": "Лій",
+    "ExtensiveHealth.HomemadeAntisepticCream": "Домашній антисептичний крем",
+    "ExtensiveHealth.HomemadeAntibioticOintment": "Домашня антибіотична мазь",
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "Домашній місцевий перметрин"
 }

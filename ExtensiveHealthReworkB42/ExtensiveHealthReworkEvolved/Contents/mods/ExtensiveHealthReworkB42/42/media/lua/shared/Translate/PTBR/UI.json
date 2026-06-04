@@ -1524,8 +1524,7 @@
     "UI_EHR_WoundHook_AntibioticsHelpWound": "Ajudará a tratar a infecção da ferida.",
     "UI_EHR_KnoxCure_RunningTest": "Running the test...",
     "UI_EHR_Transfusion_NotEnoughBloodSafe": "I don't have enough blood to do that safely.",
-    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong..."
-,
+    "UI_EHR_Transfusion_SomethingWentWrong": "Something went wrong...",
     "UI_EHR_PrimaryHealthPanel": "Usar EHR como painel de saude principal",
     "UI_EHR_PrimaryHealthPanel_tt": "Quando ativo, a tecla EHR abre o EHR e o botao de coracao abre a saude vanilla. Desative para inverter.",
     "UI_EHR_Codex_insomnia_Prevention": "Durma antes que a exaustÃ£o se prolongue e evite acumular estimulantes fortes.",
@@ -1579,5 +1578,8 @@
     "UI_EHR_HerbalSearch_Target": "Find promising plants",
     "UI_EHR_HerbalSearch_HintLine1": "Inspect covered plant signs.",
     "UI_EHR_HerbalSearch_HintLine2": "Some hide thorns or dead growth.",
-    "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn."
+    "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn.",
+    "UI_EHR_Med_HomemadeAntisepticCream": "Creme antisséptico caseiro",
+    "UI_EHR_Med_HomemadeAntibioticOintment": "Pomada antibiótica caseira",
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "Permetrina tópica caseira"
 }

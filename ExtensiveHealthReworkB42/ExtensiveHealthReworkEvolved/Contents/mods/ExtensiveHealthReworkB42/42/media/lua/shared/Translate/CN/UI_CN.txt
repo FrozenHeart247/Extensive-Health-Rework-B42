@@ -1579,4 +1579,7 @@ UI_CN = {
     UI_EHR_HerbalSearch_HintLine1 = "Inspect covered plant signs.",
     UI_EHR_HerbalSearch_HintLine2 = "Some hide thorns or dead growth.",
     UI_EHR_HerbalSearch_GlovesLine = "The glove catches the thorn.",
+    UI_EHR_Med_HomemadeAntisepticCream = "自制抗菌霜",
+    UI_EHR_Med_HomemadeAntibioticOintment = "自制抗生素软膏",
+    UI_EHR_Med_HomemadeTopicalPermethrin = "自制外用氯菊酯",
 }

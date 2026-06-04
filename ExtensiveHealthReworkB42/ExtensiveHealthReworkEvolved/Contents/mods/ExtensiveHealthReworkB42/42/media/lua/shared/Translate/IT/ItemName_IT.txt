@@ -91,4 +91,7 @@ ItemName_IT = {
     ExtensiveHealth.PreparedTallowMixture = "Miscela di sego preparata",
     ExtensiveHealth.RenderedTallowMixture = "Miscela di sego fuso",
     ExtensiveHealth.Tallow = "Sego",
+    ExtensiveHealth.HomemadeAntisepticCream = "Crema antisettica artigianale",
+    ExtensiveHealth.HomemadeAntibioticOintment = "Unguento antibiotico artigianale",
+    ExtensiveHealth.HomemadeTopicalPermethrin = "Permetrina topica artigianale",
 }

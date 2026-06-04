@@ -6,4 +6,7 @@ Recipes_ES = {
     MakeSutureNeedleFromSpiderweb = "Hacer aguja de sutura",
     PrepareTallowMixture = "Preparar mezcla de sebo",
     StrainRenderedTallow = "Colar sebo derretido",
+    MakeHomemadeAntisepticCream = "Preparar crema antiséptica casera",
+    MakeHomemadeAntibioticOintment = "Preparar ungüento antibiótico casero",
+    MakeHomemadeTopicalPermethrin = "Preparar permetrina tópica casera",
 }

@@ -8,6 +8,9 @@ local freshMedicinalIngredients = {
     ["Base.Thyme"] = true,
     ["Base.Lavender"] = true,
     ["Base.GingerRoot"] = true,
+    ["Base.Plantain"] = true,
+    ["Base.Comfrey"] = true,
+    ["Base.Marigold"] = true,
 }
 
 function RecipeCodeOnTest.EHRFreshMedicinalIngredients(item)

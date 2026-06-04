@@ -91,5 +91,8 @@
     "ExtensiveHealth.SpiderwebBandage": "Vendaje de telaraña",
     "ExtensiveHealth.PreparedTallowMixture": "Mezcla de sebo preparada",
     "ExtensiveHealth.RenderedTallowMixture": "Mezcla de sebo derretida",
-    "ExtensiveHealth.Tallow": "Sebo"
+    "ExtensiveHealth.Tallow": "Sebo",
+    "ExtensiveHealth.HomemadeAntisepticCream": "Crema antiséptica casera",
+    "ExtensiveHealth.HomemadeAntibioticOintment": "Ungüento antibiótico casero",
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "Permetrina tópica casera"
 }

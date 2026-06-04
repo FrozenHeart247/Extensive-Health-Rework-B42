@@ -370,6 +370,17 @@ EHR.Tooltips.Data = {
         },
         warning = "Does NOT cure established infections",
     },
+    ["ExtensiveHealth.HomemadeAntisepticCream"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Homemade topical antiseptic cream.",
+        effects = {
+            "Apply to wounds to prevent infection",
+            "100% wound infection prevention while active",
+            "Crafted from tallow, honey and fresh medicinal plants",
+        },
+        warning = "Does NOT cure established infections",
+    },
 
     -- =========================================
     -- TIER 2 - PRESCRIPTION MEDICATION
@@ -433,6 +444,19 @@ EHR.Tooltips.Data = {
         treatmentTime = "72 hours (6-dose course)",
         effects = {"Topical application", "CURES scabies infestation", "Reduces itching, fever and skin-trauma health loss"},
     },
+    ["ExtensiveHealth.HomemadeTopicalPermethrin"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Homemade topical permethrin preparation.",
+        cures = {"Hyperkeratotic Scabies"},
+        treatmentTime = "72 hours (6-dose course)",
+        effects = {
+            "Topical application",
+            "CURES scabies infestation",
+            "Reduces itching, fever and skin-trauma health loss",
+            "Crafted from marigold, honey, garlic and disinfectant",
+        },
+    },
     ["ExtensiveHealth.OralRehydrationKit"] = {
         category = "Prescription",
         tier = 2,
@@ -477,6 +501,18 @@ EHR.Tooltips.Data = {
         cures = {"Wound Infection", "Cellulitis"},
         treatmentTime = "72 hours",
         effects = {"Topical application", "CURES skin infections"},
+    },
+    ["ExtensiveHealth.HomemadeAntibioticOintment"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Homemade antibiotic ointment.",
+        cures = {"Wound Infection", "Cellulitis"},
+        treatmentTime = "72 hours",
+        effects = {
+            "Topical application",
+            "CURES skin infections",
+            "Crafted from tallow, honey and fresh medicinal plants",
+        },
     },
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = {
         category = "Prescription",

@@ -91,4 +91,7 @@ ItemName_CH = {
     ExtensiveHealth.PreparedTallowMixture = "備好的牛羊脂混合物",
     ExtensiveHealth.RenderedTallowMixture = "熬好的牛羊脂混合物",
     ExtensiveHealth.Tallow = "牛羊脂",
+    ExtensiveHealth.HomemadeAntisepticCream = "自製抗菌霜",
+    ExtensiveHealth.HomemadeAntibioticOintment = "自製抗生素軟膏",
+    ExtensiveHealth.HomemadeTopicalPermethrin = "自製外用氯菊酯",
 }

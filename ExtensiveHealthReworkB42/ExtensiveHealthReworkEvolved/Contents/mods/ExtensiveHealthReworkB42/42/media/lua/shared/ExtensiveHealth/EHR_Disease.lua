@@ -233,7 +233,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {},
             tier1 = {},
-            tier2 = {"ExtensiveHealth.AntiparasiticPills", "ExtensiveHealth.TopicalPermethrin"},
+            tier2 = {"ExtensiveHealth.AntiparasiticPills", "ExtensiveHealth.TopicalPermethrin", "ExtensiveHealth.HomemadeTopicalPermethrin"},
             tier3 = {},
         },
         stageEntryDialogue = {
@@ -455,8 +455,8 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.Antibiotics"},
-            tier1 = {"ExtensiveHealth.AntisepticCream", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
-            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
+            tier1 = {"ExtensiveHealth.AntisepticCream", "ExtensiveHealth.HomemadeAntisepticCream", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
+            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.HomemadeAntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
             tier3 = {"ExtensiveHealth.IVAntibiotics"},  -- Fast cure 36h
         },
         stageEntryDialogue = {
@@ -517,7 +517,7 @@ EHR.Disease.Diseases = {
         treatments = {
             tier0 = {"Base.Antibiotics"},
             tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},
-            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
+            tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.AntibioticOintment", "ExtensiveHealth.HomemadeAntibioticOintment", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
             tier3 = {"ExtensiveHealth.IVAntibiotics", "ExtensiveHealth.IVVancomycin"},
         },
         stageEntryDialogue = {

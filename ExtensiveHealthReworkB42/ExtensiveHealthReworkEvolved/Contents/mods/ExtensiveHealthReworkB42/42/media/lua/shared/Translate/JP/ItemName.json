@@ -91,5 +91,8 @@
     "ExtensiveHealth.SpiderwebBandage": "クモの巣包帯",
     "ExtensiveHealth.PreparedTallowMixture": "下ごしらえした獣脂の混合物",
     "ExtensiveHealth.RenderedTallowMixture": "加熱済み獣脂の混合物",
-    "ExtensiveHealth.Tallow": "獣脂"
+    "ExtensiveHealth.Tallow": "獣脂",
+    "ExtensiveHealth.HomemadeAntisepticCream": "自家製消毒クリーム",
+    "ExtensiveHealth.HomemadeAntibioticOintment": "自家製抗生物質軟膏",
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "自家製外用ペルメトリン"
 }

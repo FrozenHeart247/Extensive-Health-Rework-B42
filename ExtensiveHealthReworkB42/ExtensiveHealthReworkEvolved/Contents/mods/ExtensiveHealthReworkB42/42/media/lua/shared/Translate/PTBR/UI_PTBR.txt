@@ -1579,4 +1579,7 @@ UI_PTBR = {
     UI_EHR_HerbalSearch_HintLine1 = "Inspect covered plant signs.",
     UI_EHR_HerbalSearch_HintLine2 = "Some hide thorns or dead growth.",
     UI_EHR_HerbalSearch_GlovesLine = "The glove catches the thorn.",
+    UI_EHR_Med_HomemadeAntisepticCream = "Creme antisséptico caseiro",
+    UI_EHR_Med_HomemadeAntibioticOintment = "Pomada antibiótica caseira",
+    UI_EHR_Med_HomemadeTopicalPermethrin = "Permetrina tópica caseira",
 }

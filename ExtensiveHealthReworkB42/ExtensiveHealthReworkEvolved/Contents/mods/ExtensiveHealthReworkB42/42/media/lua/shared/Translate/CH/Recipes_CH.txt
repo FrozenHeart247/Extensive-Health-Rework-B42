@@ -6,4 +6,7 @@ Recipes_CH = {
     MakeSutureNeedleFromSpiderweb = "製作縫合針",
     PrepareTallowMixture = "準備牛羊脂混合物",
     StrainRenderedTallow = "過濾熬好的牛羊脂",
+    MakeHomemadeAntisepticCream = "製作自製抗菌霜",
+    MakeHomemadeAntibioticOintment = "製作自製抗生素軟膏",
+    MakeHomemadeTopicalPermethrin = "製作自製外用氯菊酯",
 }

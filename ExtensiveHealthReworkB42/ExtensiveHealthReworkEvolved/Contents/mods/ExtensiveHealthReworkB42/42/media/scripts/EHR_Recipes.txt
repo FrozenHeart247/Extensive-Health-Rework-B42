@@ -42,6 +42,71 @@ module ExtensiveHealth
         }
     }
 
+    craftRecipe MakeHomemadeAntisepticCream
+    {
+        timedAction = MixingMortarPestle,
+        time = 150,
+        Tags = AnySurfaceCraft;Health,
+        category = EHRMedicine,
+        OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
+        inputs
+        {
+            item 1 tags[base:mortarpestle] mode:keep,
+            item 1 [ExtensiveHealth.Tallow;Base.Lard] flags[ItemCount],
+            item 1 [Base.Honey] flags[ItemCount],
+            item 1 [Base.Garlic;Base.WildGarlic2] flags[ItemCount],
+            item 3 [Base.Plantain] flags[ItemCount],
+        }
+        outputs
+        {
+            item 1 ExtensiveHealth.HomemadeAntisepticCream,
+        }
+    }
+
+    craftRecipe MakeHomemadeAntibioticOintment
+    {
+        timedAction = MixingMortarPestle,
+        time = 180,
+        Tags = AnySurfaceCraft;Health,
+        category = EHRMedicine,
+        OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
+        inputs
+        {
+            item 1 tags[base:mortarpestle] mode:keep,
+            item 1 [ExtensiveHealth.Tallow;Base.Lard] flags[ItemCount],
+            item 1 [Base.Honey] flags[ItemCount],
+            item 1 [Base.Lavender] flags[ItemCount],
+            item 3 [Base.Garlic;Base.WildGarlic2] flags[ItemCount],
+            item 2 [Base.Plantain] flags[ItemCount],
+            item 3 [Base.Comfrey] flags[ItemCount],
+        }
+        outputs
+        {
+            item 1 ExtensiveHealth.HomemadeAntibioticOintment,
+        }
+    }
+
+    craftRecipe MakeHomemadeTopicalPermethrin
+    {
+        timedAction = MixingMortarPestle,
+        time = 180,
+        Tags = AnySurfaceCraft;Health,
+        category = EHRMedicine,
+        OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
+        inputs
+        {
+            item 1 tags[base:mortarpestle] mode:keep,
+            item 4 [Base.Marigold] flags[ItemCount],
+            item 1 [Base.AlcoholWipes;Base.Disinfectant] flags[ItemCount],
+            item 1 [Base.Garlic;Base.WildGarlic2] flags[ItemCount],
+            item 1 [Base.Honey] flags[ItemCount],
+        }
+        outputs
+        {
+            item 1 ExtensiveHealth.HomemadeTopicalPermethrin,
+        }
+    }
+
     craftRecipe MakeSpiderwebBandage
     {
         time = 90,
@@ -98,8 +163,8 @@ module ExtensiveHealth
         inputs
         {
             item 1 [Base.Pot;Base.PotForged;Base.Saucepan;Base.SaucepanCopper] mode:keep flags[ItemCount],
+            -fluid 0.6 categories[Water] mode:mixture,
             item 1 [Base.Beef;Base.MuttonChop] flags[ItemCount],
-            -fluid 0.6 [Water],
         }
         outputs
         {

@@ -486,6 +486,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item HomemadeAntisepticCream
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Antiseptic Cream,
+        Icon = HomemadeAntisepticCream,
+        Weight = 0.1,
+        Tooltip = Tooltip_HomemadeAntisepticCream,
+        UseDelta = 0.1667,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     /** =========================================
         TIER 2 - PRESCRIPTION MEDICATION
         Balanced prescription package sizes
@@ -581,6 +594,19 @@ module ExtensiveHealth
         Icon = TopicalPermethrin,
         Weight = 0.1,
         Tooltip = Tooltip_TopicalPermethrin,
+        UseDelta = 0.1667,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
+    item HomemadeTopicalPermethrin
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Topical Permethrin,
+        Icon = HomemadeTopicalPermethrin,
+        Weight = 0.1,
+        Tooltip = Tooltip_HomemadeTopicalPermethrin,
         UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,
@@ -690,6 +716,21 @@ module ExtensiveHealth
         Tooltip = Tooltip_AntibioticOintment,
         UseDelta = 0.1667,
 
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
+    item HomemadeAntibioticOintment
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Antibiotic Ointment,
+        Icon = AntibioticOitment,
+        Weight = 0.1,
+        StaticModel = EHR_AntibioticOintment,
+        WorldStaticModel = EHR_AntibioticOintment,
+        Tooltip = Tooltip_HomemadeAntibioticOintment,
+        UseDelta = 0.1667,
         UseWhileEquipped = false,
         Medical = true,
     }
@@ -923,15 +964,26 @@ module ExtensiveHealth
     item PreparedTallowMixture
     {
         DisplayCategory = Food,
-        ItemType = base:normal,
+        ItemType = base:food,
         DisplayName = Prepared Tallow Mixture,
         Icon = RenderedTallowMixture,
         Weight = 0.8,
         Tooltip = Tooltip_PreparedTallowMixture,
+        CantEat = true,
+        BadInMicrowave = true,
+        GoodHot = true,
         IsCookable = true,
         MinutesToCook = 90,
         MinutesToBurn = 180,
         ReplaceOnCooked = ExtensiveHealth.RenderedTallowMixture,
+        HungerChange = 0.0,
+        UnhappyChange = 30,
+        Calories = 0.0,
+        Carbohydrates = 0.0,
+        Lipids = 0.0,
+        Proteins = 0.0,
+        FoodType = NoExplicit,
+        CookingSound = BoilingFood,
         StaticModel = Lard_Ground,
         WorldStaticModel = Lard_Ground,
     }

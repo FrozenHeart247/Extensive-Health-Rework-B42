@@ -91,5 +91,8 @@
     "ExtensiveHealth.SpiderwebBandage": "蛛网绷带",
     "ExtensiveHealth.PreparedTallowMixture": "备好的牛羊脂混合物",
     "ExtensiveHealth.RenderedTallowMixture": "熬好的牛羊脂混合物",
-    "ExtensiveHealth.Tallow": "牛羊脂"
+    "ExtensiveHealth.Tallow": "牛羊脂",
+    "ExtensiveHealth.HomemadeAntisepticCream": "自制抗菌霜",
+    "ExtensiveHealth.HomemadeAntibioticOintment": "自制抗生素软膏",
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "自制外用氯菊酯"
 }

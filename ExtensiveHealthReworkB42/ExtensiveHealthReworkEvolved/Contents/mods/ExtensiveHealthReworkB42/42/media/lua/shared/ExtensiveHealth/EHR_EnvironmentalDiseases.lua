@@ -65,6 +65,9 @@ EHR.Environmental.Config = {
     heatStrokePreHighChance = 0.10,
     heatStrokeHighChance = 0.35,
     heatStrokeFullChance = 0.95,
+    heatStrokeAmbientCoolingTemp = 10.0,
+    heatStrokeAmbientCoolingHours = 3.0,
+    heatStrokeAmbientCoolingDecay = 0.5,
 
     -- Water contamination risk
     untreatedWaterRisk = 0.25,      -- 25% per drink from contaminated/untreated water
@@ -255,6 +258,33 @@ function EHR.Environmental.GetAirTemperature()
         end
     end
     return 15 -- Default moderate temp if can't read
+end
+
+function EHR.Environmental.GetVehicleInsideTemperature(player)
+    if not player or not player.getVehicle then return nil end
+
+    local okVehicle, vehicle = pcall(function()
+        return player:getVehicle()
+    end)
+    if not okVehicle or not vehicle or not vehicle.getInsideTemperature then return nil end
+
+    local okTemp, temp = pcall(function()
+        return vehicle:getInsideTemperature()
+    end)
+    temp = tonumber(temp)
+    if not okTemp or not temp then return nil end
+    if temp < -80 or temp > 90 then return nil end
+
+    return temp
+end
+
+function EHR.Environmental.GetEffectiveHeatAirTemperature(player, fallbackAirTemp)
+    local vehicleTemp = EHR.Environmental.GetVehicleInsideTemperature(player)
+    if vehicleTemp then
+        return vehicleTemp, true
+    end
+
+    return tonumber(fallbackAirTemp) or EHR.Environmental.GetAirTemperature(), false
 end
 
 local function EHR_EnvironmentalNormalizeBodyTempStat(value)
@@ -834,9 +864,14 @@ end
 function EHR.Environmental.BuildClientSnapshot(player)
     if not player then return nil end
 
+    local airTemp = EHR.Environmental.GetAirTemperature()
+    local heatAirTemp, isInVehicle = EHR.Environmental.GetEffectiveHeatAirTemperature(player, airTemp)
+
     return {
         hour = getGameTime() and getGameTime():getWorldAgeHours() or 0,
-        airTemp = EHR.Environmental.GetAirTemperature(),
+        airTemp = airTemp,
+        heatAirTemp = heatAirTemp,
+        isInVehicle = isInVehicle == true,
         bodyTemp = EHR.Environmental.GetBodyTemperature(player),
         wetness = EHR.Environmental.GetWetness(player),
         isIndoors = EHR.Environmental.IsIndoors(player) == true,
@@ -859,6 +894,8 @@ function EHR.Environmental.StoreClientSnapshot(player, args)
         hour = EHR_EnvironmentalClampNumber(args.hour, currentHour - 1.0, currentHour + 1.0, currentHour),
         receivedHour = currentHour,
         airTemp = EHR_EnvironmentalClampNumber(args.airTemp, -80, 80, EHR.Environmental.GetAirTemperature()),
+        heatAirTemp = EHR_EnvironmentalClampNumber(args.heatAirTemp, -80, 90, args.airTemp),
+        isInVehicle = args.isInVehicle == true,
         bodyTemp = EHR_EnvironmentalClampNumber(args.bodyTemp, 0, 1.5, 0.5),
         wetness = EHR_EnvironmentalClampNumber(args.wetness, 0, 1.5, 0),
         isIndoors = args.isIndoors == true,
@@ -1086,7 +1123,7 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     end
 
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
     local isIndoors = env.isIndoors == true
     local isExerting = env.isExerting == true
     local thirst = tonumber(env.thirst) or 0
@@ -1123,8 +1160,9 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     exposure.heatExposure = math.max(0, exposure.heatExposure + (deltaHours * heatMultiplier))
 
     if EHR.DEBUG then
-        EHR.Log(string.format("Heat exposure: %.2f hours (world temp=%.1f, mult=%.2f, exert=%s, thirst=%.2f)",
-            exposure.heatExposure, airTemp, heatMultiplier, tostring(isExerting), thirst))
+        local source = env.isInVehicle and "vehicle" or "world"
+        EHR.Log(string.format("Heat exposure: %.2f hours (%s temp=%.1f, mult=%.2f, exert=%s, thirst=%.2f)",
+            exposure.heatExposure, source, airTemp, heatMultiplier, tostring(isExerting), thirst))
     end
 
     exposure.heatStrokeExposure = exposure.heatExposure
@@ -1286,7 +1324,7 @@ function EHR.Environmental.CheckHeatProgression(player, exposure)
 
     -- Check if player is still in heat
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
     local isInShade = env.isInShade == true
 
     if isInShade and airTemp < EHR.Environmental.Config.veryHotTemp then
@@ -1326,9 +1364,12 @@ end
 --[[
     Check if heat disease should be blocked from recovering
 ]]--
-function EHR.Environmental.CheckHeatCooling(player)
+function EHR.Environmental.CheckHeatCooling(player, deltaHours)
     local diseaseData = EHR.Disease.GetDiseaseData(player)
     if not diseaseData or not diseaseData.active then return end
+
+    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
 
     -- Check both heat exhaustion and heat stroke
     for _, diseaseId in ipairs({"heat_exhaustion", "heat_stroke"}) do
@@ -1336,8 +1377,7 @@ function EHR.Environmental.CheckHeatCooling(player)
         if disease then
             local def = EHR.Disease.Diseases[diseaseId]
             if def and def.requiresCoolingForRecovery then
-                local airTemp = EHR.Environmental.GetAirTemperature()
-                local isInShade = EHR.Environmental.IsInShade(player)
+                local isInShade = env.isInShade == true
                 local isCool = isInShade or airTemp < EHR.Environmental.Config.hotTemp
 
                 -- If in recovery (stage 4) but not cool, regress
@@ -1353,6 +1393,10 @@ function EHR.Environmental.CheckHeatCooling(player)
                 end
 
                 disease.coolingBlocked = not isCool
+            end
+
+            if diseaseId == "heat_stroke" and EHR.Environmental.UpdateHeatStrokeAmbientCooling then
+                EHR.Environmental.UpdateHeatStrokeAmbientCooling(player, disease, deltaHours or 0, airTemp)
             end
         end
     end
@@ -1907,6 +1951,55 @@ function EHR.Environmental.ApplyHeatStrokeColdBathStabilization(player, disease)
     elseif EHR.BodyTemp and EHR.BodyTemp.WriteDiseaseBodyTemperature then
         EHR.BodyTemp.WriteDiseaseBodyTemperature(player, 37.2)
     end
+end
+
+function EHR.Environmental.IsHeatStrokeAmbientCoolingActive(player, disease)
+    return disease ~= nil and disease.heatStrokeAmbientCoolingActive == true
+end
+
+function EHR.Environmental.UpdateHeatStrokeAmbientCooling(player, disease, deltaHours, airTemp)
+    if not player or not disease then return false end
+
+    local config = EHR.Environmental.Config or {}
+    local threshold = tonumber(config.heatStrokeAmbientCoolingTemp) or 10.0
+    local requiredHours = tonumber(config.heatStrokeAmbientCoolingHours) or 3.0
+    local decay = tonumber(config.heatStrokeAmbientCoolingDecay) or 0.5
+    local currentTemp = tonumber(airTemp)
+    if not currentTemp then
+        local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+        currentTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    end
+
+    local elapsed = tonumber(deltaHours) or 0
+    if elapsed < 0 or elapsed > 0.5 then elapsed = 0 end
+
+    local progress = tonumber(disease.heatStrokeAmbientCoolingHours) or 0
+    if currentTemp <= threshold then
+        progress = math.min(requiredHours, progress + elapsed)
+        disease.heatStrokeAmbientCoolingHours = progress
+        disease.heatStrokeAmbientCoolingActive = true
+        disease.coolingBlocked = false
+        disease.heatStrokeLastDamageHour = EHR_EnvironmentalGetCurrentHour()
+
+        if EHR.DEBUG then
+            EHR.Log(string.format("Heat stroke ambient cooling: %.2f/%.2fh at %.1fC",
+                progress, requiredHours, currentTemp))
+        end
+
+        if progress >= requiredHours and EHR.Disease and EHR.Disease.Cure then
+            EHR.Log("Heat stroke cured by sustained cold exposure")
+            EHR.Disease.Cure(player, "heat_stroke")
+        end
+
+        return true
+    end
+
+    if progress > 0 then
+        progress = math.max(0, progress - (elapsed * decay))
+        disease.heatStrokeAmbientCoolingHours = progress > 0 and progress or nil
+    end
+    disease.heatStrokeAmbientCoolingActive = nil
+    return false
 end
 
 local function EHR_EnvironmentalIsPlayerAsleep(player)
@@ -2820,7 +2913,10 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
     local stats = player:getStats()
     if not stats then return end
 
-    if diseaseId == "heat_stroke" and EHR.Environmental.IsHeatStrokeColdBathActive(player) then
+    if diseaseId == "heat_stroke" and (
+        EHR.Environmental.IsHeatStrokeColdBathActive(player) or
+        EHR.Environmental.IsHeatStrokeAmbientCoolingActive(player, disease)
+    ) then
         EHR.Environmental.ApplyHeatStrokeColdBathStabilization(player, disease)
         return
     end
@@ -3934,7 +4030,7 @@ local function processPlayerTick(player)
     EHR.Environmental.CheckHypothermiaWarmth(player)
 
     -- Check heat cooling requirement
-    EHR.Environmental.CheckHeatCooling(player)
+    EHR.Environmental.CheckHeatCooling(player, deltaHours)
 
     -- Apply disease-specific effects for active diseases
     local diseaseData = EHR.Disease.GetDiseaseData(player)

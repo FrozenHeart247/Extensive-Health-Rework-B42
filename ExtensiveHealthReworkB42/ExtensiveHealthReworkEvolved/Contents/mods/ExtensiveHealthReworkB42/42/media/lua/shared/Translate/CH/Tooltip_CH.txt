@@ -547,4 +547,8 @@ Tooltip_CH = {
     Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1 = "Food Poisoning",
     Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2 = "Toxin Poisoning",
     Tooltip_MedicalWildPlants = "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    Tooltip_SpiderwebBandage = "用收集的蛛網製成的乾淨繃帶。效果類似普通繃帶。",
+    Tooltip_PreparedTallowMixture = "生脂肪和水的混合物。過濾成牛羊脂前需要先加熱烹煮。",
+    Tooltip_RenderedTallowMixture = "已經熬煮好的脂肪混合物，可用布過濾到空罐中。",
+    Tooltip_Tallow = "熬製的動物脂肪。可用於烹飪和未來的醫療製作。",
 }

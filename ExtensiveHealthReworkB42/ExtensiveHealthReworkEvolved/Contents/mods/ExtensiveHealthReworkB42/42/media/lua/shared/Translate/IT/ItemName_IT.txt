@@ -87,4 +87,8 @@ ItemName_IT = {
     ExtensiveHealth.TopicalPermethrin = "Permetrina topica",
     ExtensiveHealth.DualOrexinReceptor = "Antagonista duale dell'orexina",
     ExtensiveHealth.MedicalWildPlants = "Medical Guide: Wild Medicinal Plants",
+    ExtensiveHealth.SpiderwebBandage = "Benda di ragnatela",
+    ExtensiveHealth.PreparedTallowMixture = "Miscela di sego preparata",
+    ExtensiveHealth.RenderedTallowMixture = "Miscela di sego fuso",
+    ExtensiveHealth.Tallow = "Sego",
 }

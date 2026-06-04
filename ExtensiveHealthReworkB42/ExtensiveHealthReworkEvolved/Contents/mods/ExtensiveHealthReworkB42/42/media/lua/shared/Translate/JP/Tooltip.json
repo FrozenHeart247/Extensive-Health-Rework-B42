@@ -546,5 +546,9 @@
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning",
-    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low."
+    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    "Tooltip_SpiderwebBandage": "集めたクモの巣で作った清潔な包帯。通常の包帯と同じように使える。",
+    "Tooltip_PreparedTallowMixture": "脂肪と水を混ぜた未加熱のもの。獣脂をこす前に加熱する必要がある。",
+    "Tooltip_RenderedTallowMixture": "布で缶にこす準備ができた加熱済みの脂肪混合物。",
+    "Tooltip_Tallow": "精製した動物性脂肪。料理や今後の医療クラフトに使える。"
 }

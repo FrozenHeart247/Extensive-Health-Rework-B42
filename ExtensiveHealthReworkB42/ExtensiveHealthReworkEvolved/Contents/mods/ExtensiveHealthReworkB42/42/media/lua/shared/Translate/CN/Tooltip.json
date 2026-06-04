@@ -546,5 +546,9 @@
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning",
-    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low."
+    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    "Tooltip_SpiderwebBandage": "用收集的蛛网制成的干净绷带。效果类似普通绷带。",
+    "Tooltip_PreparedTallowMixture": "生脂肪和水的混合物。过滤成牛羊脂前需要先加热烹煮。",
+    "Tooltip_RenderedTallowMixture": "已经熬煮好的脂肪混合物，可用布过滤到空罐中。",
+    "Tooltip_Tallow": "熬制的动物脂肪。可用于烹饪和未来的医疗制作。"
 }

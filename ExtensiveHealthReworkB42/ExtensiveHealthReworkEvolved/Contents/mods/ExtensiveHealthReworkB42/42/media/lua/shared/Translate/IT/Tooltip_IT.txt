@@ -547,4 +547,8 @@ Tooltip_IT = {
     Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1 = "Food Poisoning",
     Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2 = "Toxin Poisoning",
     Tooltip_MedicalWildPlants = "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    Tooltip_SpiderwebBandage = "Una benda pulita intrecciata con ragnatele raccolte. Funziona come una benda normale.",
+    Tooltip_PreparedTallowMixture = "Miscela grezza di grasso e acqua. Cuocila prima di filtrare il sego.",
+    Tooltip_RenderedTallowMixture = "Miscela di grasso cotta, pronta da filtrare con un panno in una lattina.",
+    Tooltip_Tallow = "Grasso animale fuso. Utile in cucina e per futuri crafting medici.",
 }

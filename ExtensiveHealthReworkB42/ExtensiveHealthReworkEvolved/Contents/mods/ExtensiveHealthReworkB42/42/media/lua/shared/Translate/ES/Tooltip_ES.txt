@@ -547,4 +547,8 @@ Tooltip_ES = {
     Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1 = "Food Poisoning",
     Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2 = "Toxin Poisoning",
     Tooltip_MedicalWildPlants = "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    Tooltip_SpiderwebBandage = "Un vendaje limpio tejido con telaraña recogida. Funciona como un vendaje normal.",
+    Tooltip_PreparedTallowMixture = "Mezcla cruda de grasa y agua. Cocinala antes de colar el sebo.",
+    Tooltip_RenderedTallowMixture = "Mezcla de grasa cocida lista para colarse con tela en una lata.",
+    Tooltip_Tallow = "Grasa animal derretida. Util para cocinar y para futuros crafteos medicos.",
 }

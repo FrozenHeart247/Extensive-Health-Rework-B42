@@ -87,4 +87,8 @@ ItemName_FR = {
     ExtensiveHealth.TopicalPermethrin = "Perméthrine topique",
     ExtensiveHealth.DualOrexinReceptor = "Antagoniste orexine double",
     ExtensiveHealth.MedicalWildPlants = "Medical Guide: Wild Medicinal Plants",
+    ExtensiveHealth.SpiderwebBandage = "Bandage en toile d'araignée",
+    ExtensiveHealth.PreparedTallowMixture = "Melange de suif prepare",
+    ExtensiveHealth.RenderedTallowMixture = "Melange de suif fondu",
+    ExtensiveHealth.Tallow = "Suif",
 }

@@ -87,4 +87,8 @@ ItemName_PTBR = {
     ExtensiveHealth.TopicalPermethrin = "Permetrina Tópica",
     ExtensiveHealth.DualOrexinReceptor = "Antagonista dual de orexina",
     ExtensiveHealth.MedicalWildPlants = "Medical Guide: Wild Medicinal Plants",
+    ExtensiveHealth.SpiderwebBandage = "Bandagem de teia de aranha",
+    ExtensiveHealth.PreparedTallowMixture = "Mistura de sebo preparada",
+    ExtensiveHealth.RenderedTallowMixture = "Mistura de sebo derretida",
+    ExtensiveHealth.Tallow = "Sebo",
 }

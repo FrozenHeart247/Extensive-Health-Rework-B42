@@ -546,5 +546,9 @@
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning",
-    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low."
+    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    "Tooltip_SpiderwebBandage": "Uma bandagem limpa feita com teias de aranha coletadas. Funciona como uma bandagem normal.",
+    "Tooltip_PreparedTallowMixture": "Mistura crua de gordura e agua. Cozinhe antes de coar o sebo.",
+    "Tooltip_RenderedTallowMixture": "Mistura de gordura cozida pronta para ser coada com pano em uma lata.",
+    "Tooltip_Tallow": "Gordura animal derretida. Util para cozinhar e para futuros artesanatos medicos."
 }

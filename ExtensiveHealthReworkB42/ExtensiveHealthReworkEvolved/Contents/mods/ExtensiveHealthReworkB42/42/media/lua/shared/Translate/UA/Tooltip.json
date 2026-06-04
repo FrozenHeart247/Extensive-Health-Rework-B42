@@ -546,5 +546,9 @@
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning",
-    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low."
+    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    "Tooltip_SpiderwebBandage": "Чистий бинт, сплетений із зібраної павутини. Працює як звичайний бинт.",
+    "Tooltip_PreparedTallowMixture": "Сира суміш жиру й води. Зваріть її перед проціджуванням лою.",
+    "Tooltip_RenderedTallowMixture": "Зварена жирова суміш, готова до проціджування крізь тканину в бляшанку.",
+    "Tooltip_Tallow": "Витоплений тваринний жир. Корисний для готування та майбутніх медичних рецептів."
 }

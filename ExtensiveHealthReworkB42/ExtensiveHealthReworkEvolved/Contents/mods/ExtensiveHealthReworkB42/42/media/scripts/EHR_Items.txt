@@ -282,6 +282,25 @@ module ExtensiveHealth
         Tags = base:nopour,
     }
 
+    item SpiderwebBandage
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:normal,
+        DisplayName = Spiderweb Bandage,
+        Icon = SpiderwebBandage,
+        Weight = 0.1,
+        Tooltip = Tooltip_SpiderwebBandage,
+        AlwaysWelcomeGift = true,
+        BandagePower = 4.0,
+        CanBandage = true,
+        count = 1,
+        Medical = true,
+        ReplaceOnUse = Base.BandageDirty,
+        WorldStaticModel = Bandage,
+        Tags = base:isfirefuel;base:isfiretinder;base:nopour,
+        FireFuelRatio = 0.25,
+    }
+
     item Epinephrine
     {
         DisplayCategory = FirstAid,
@@ -899,6 +918,57 @@ module ExtensiveHealth
         StaticModel = Honey,
         WorldStaticModel = Honey,
         Tags = base:boostsflurecovery;base:herbaltea;base:wetbeverageingredient,
+    }
+
+    item PreparedTallowMixture
+    {
+        DisplayCategory = Food,
+        ItemType = base:normal,
+        DisplayName = Prepared Tallow Mixture,
+        Icon = RenderedTallowMixture,
+        Weight = 0.8,
+        Tooltip = Tooltip_PreparedTallowMixture,
+        IsCookable = true,
+        MinutesToCook = 90,
+        MinutesToBurn = 180,
+        ReplaceOnCooked = ExtensiveHealth.RenderedTallowMixture,
+        StaticModel = Lard_Ground,
+        WorldStaticModel = Lard_Ground,
+    }
+
+    item RenderedTallowMixture
+    {
+        DisplayCategory = Food,
+        ItemType = base:normal,
+        DisplayName = Rendered Tallow Mixture,
+        Icon = RenderedTallowMixture,
+        Weight = 0.6,
+        Tooltip = Tooltip_RenderedTallowMixture,
+        StaticModel = Lard_Ground,
+        WorldStaticModel = Lard_Ground,
+    }
+
+    item Tallow
+    {
+        DisplayCategory = Food,
+        ItemType = base:food,
+        DisplayName = Tallow,
+        Icon = Tallow,
+        Weight = 0.3,
+        Tooltip = Tooltip_Tallow,
+        EvolvedRecipe = Sandwich:2;Stir fry:4;Pasta:4;Taco:2;Burrito:2;Toast:2;Soup:4;Stew:4,
+        FoodType = NoExplicit,
+        Spice = true,
+        Packaged = true,
+        HungerChange = -22.0,
+        UnhappyChange = 30,
+        Calories = 3900.0,
+        Carbohydrates = 0.0,
+        Lipids = 430.0,
+        Proteins = 0.0,
+        StaticModel = Lard_Ground,
+        WorldStaticModel = Lard_Ground,
+        Tags = base:bakingfat,
     }
 
     item Spiderweb

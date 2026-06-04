@@ -87,4 +87,8 @@ ItemName_CH = {
     ExtensiveHealth.TopicalPermethrin = "外用氯菊酯",
     ExtensiveHealth.DualOrexinReceptor = "雙重食慾素受體藥",
     ExtensiveHealth.MedicalWildPlants = "Medical Guide: Wild Medicinal Plants",
+    ExtensiveHealth.SpiderwebBandage = "蛛網繃帶",
+    ExtensiveHealth.PreparedTallowMixture = "備好的牛羊脂混合物",
+    ExtensiveHealth.RenderedTallowMixture = "熬好的牛羊脂混合物",
+    ExtensiveHealth.Tallow = "牛羊脂",
 }

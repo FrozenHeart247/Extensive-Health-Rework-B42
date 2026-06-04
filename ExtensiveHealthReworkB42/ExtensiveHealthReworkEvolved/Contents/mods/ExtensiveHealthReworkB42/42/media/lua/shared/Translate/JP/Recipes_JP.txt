@@ -1,4 +1,9 @@
 Recipes_JP = {
     MakePlantBasedAntibiotics = "植物性抗生物質を調合",
     MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
+    MakeSpiderwebBandage = "クモの巣包帯を作る",
+    MakeHoneyFromHoneycomb = "ハチミツを作る",
+    MakeSutureNeedleFromSpiderweb = "縫合針を作る",
+    PrepareTallowMixture = "獣脂の混合物を準備する",
+    StrainRenderedTallow = "加熱済み獣脂をこす",
 }

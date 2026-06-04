@@ -1,4 +1,9 @@
 Recipes_CH = {
     MakePlantBasedAntibiotics = "製備植物性抗生素",
     MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
+    MakeSpiderwebBandage = "製作蛛網繃帶",
+    MakeHoneyFromHoneycomb = "製作蜂蜜",
+    MakeSutureNeedleFromSpiderweb = "製作縫合針",
+    PrepareTallowMixture = "準備牛羊脂混合物",
+    StrainRenderedTallow = "過濾熬好的牛羊脂",
 }

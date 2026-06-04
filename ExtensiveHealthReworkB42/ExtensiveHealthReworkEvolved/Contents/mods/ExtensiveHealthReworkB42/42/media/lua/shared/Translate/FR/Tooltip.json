@@ -546,5 +546,9 @@
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Effect_3": "Crafted with charcoal and lemon",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_1": "Food Poisoning",
     "Tooltip_EHR_HomeMadeActivatedCharcoal_Cure_2": "Toxin Poisoning",
-    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low."
+    "Tooltip_MedicalWildPlants": "Field notes for identifying medicinal wild plants. <LINE> Unlocks EHR medicinal plant search if your First Aid or Foraging skill is too low.",
+    "Tooltip_SpiderwebBandage": "Un bandage propre tissé avec de la toile d'araignée récoltée. Fonctionne comme un bandage normal.",
+    "Tooltip_PreparedTallowMixture": "Melange cru de graisse et d'eau. Faites-le cuire avant de filtrer le suif.",
+    "Tooltip_RenderedTallowMixture": "Melange de graisse cuit, pret a etre filtre avec un tissu dans une boite.",
+    "Tooltip_Tallow": "Graisse animale fondue. Utile en cuisine et pour de futurs crafts medicaux."
 }

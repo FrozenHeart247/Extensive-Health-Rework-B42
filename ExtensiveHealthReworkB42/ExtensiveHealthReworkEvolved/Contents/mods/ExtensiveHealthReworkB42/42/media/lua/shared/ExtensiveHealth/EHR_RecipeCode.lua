@@ -3,6 +3,7 @@ RecipeCodeOnTest = RecipeCodeOnTest or {}
 
 local freshMedicinalIngredients = {
     ["Base.Garlic"] = true,
+    ["Base.WildGarlic2"] = true,
     ["Base.Oregano"] = true,
     ["Base.Thyme"] = true,
     ["Base.Lavender"] = true,

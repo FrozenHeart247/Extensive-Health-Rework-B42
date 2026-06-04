@@ -1,4 +1,9 @@
 Recipes_PTBR = {
     MakePlantBasedAntibiotics = "Preparar antibioticos vegetais",
     MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
+    MakeSpiderwebBandage = "Fazer bandagem de teia de aranha",
+    MakeHoneyFromHoneycomb = "Fazer mel",
+    MakeSutureNeedleFromSpiderweb = "Fazer agulha de sutura",
+    PrepareTallowMixture = "Preparar mistura de sebo",
+    StrainRenderedTallow = "Coar sebo derretido",
 }

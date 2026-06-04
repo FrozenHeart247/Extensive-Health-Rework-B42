@@ -89,5 +89,9 @@
     "ExtensiveHealth.TopicalPermethrin": "Topical Permethrin",
     "ExtensiveHealth.Honeycomb": "Honeycomb",
     "ExtensiveHealth.Spiderweb": "Spiderweb",
-    "ExtensiveHealth.MedicalWildPlants": "Medical Guide: Wild Medicinal Plants"
+    "ExtensiveHealth.MedicalWildPlants": "Medical Guide: Wild Medicinal Plants",
+    "ExtensiveHealth.SpiderwebBandage": "Spiderweb Bandage",
+    "ExtensiveHealth.PreparedTallowMixture": "Prepared Tallow Mixture",
+    "ExtensiveHealth.RenderedTallowMixture": "Rendered Tallow Mixture",
+    "ExtensiveHealth.Tallow": "Tallow"
 }

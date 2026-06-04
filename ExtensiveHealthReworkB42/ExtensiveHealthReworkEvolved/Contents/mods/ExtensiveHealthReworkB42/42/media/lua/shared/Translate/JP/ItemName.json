@@ -87,5 +87,9 @@
     "ExtensiveHealth.TopicalPermethrin": "局所ペルメトリン",
     "ExtensiveHealth.DualOrexinReceptor": "デュアルオレキシン受容体薬",
     "ExtensiveHealth.HomeMadeActivatedCharcoal": "Homemade Activated Charcoal",
-    "ExtensiveHealth.MedicalWildPlants": "Medical Guide: Wild Medicinal Plants"
+    "ExtensiveHealth.MedicalWildPlants": "Medical Guide: Wild Medicinal Plants",
+    "ExtensiveHealth.SpiderwebBandage": "クモの巣包帯",
+    "ExtensiveHealth.PreparedTallowMixture": "下ごしらえした獣脂の混合物",
+    "ExtensiveHealth.RenderedTallowMixture": "加熱済み獣脂の混合物",
+    "ExtensiveHealth.Tallow": "獣脂"
 }

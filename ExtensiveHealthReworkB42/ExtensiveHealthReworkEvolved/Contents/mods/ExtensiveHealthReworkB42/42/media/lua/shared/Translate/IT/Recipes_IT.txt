@@ -1,4 +1,9 @@
 Recipes_IT = {
     MakePlantBasedAntibiotics = "Preparare antibiotici vegetali",
     MakeHomemadeActivatedCharcoal = "Prepare Homemade Activated Charcoal",
+    MakeSpiderwebBandage = "Preparare benda di ragnatela",
+    MakeHoneyFromHoneycomb = "Preparare miele",
+    MakeSutureNeedleFromSpiderweb = "Preparare ago da sutura",
+    PrepareTallowMixture = "Prepara miscela di sego",
+    StrainRenderedTallow = "Filtra sego fuso",
 }

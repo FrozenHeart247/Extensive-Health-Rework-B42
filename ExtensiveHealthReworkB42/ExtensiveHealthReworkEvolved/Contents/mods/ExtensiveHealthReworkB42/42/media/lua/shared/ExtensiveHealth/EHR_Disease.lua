@@ -1302,8 +1302,8 @@ function EHR.Disease.UpdateProgression(player, data)
             end
             -- HIGH FIX: Also validate stage and severity (prevent nil access errors)
             if disease.stage == nil then
-                disease.stage = 2  -- Default to early stage
-                EHR.Log(string.format("WARNING: Disease %s missing stage - defaulted to 2", diseaseId))
+                disease.stage = diseaseId == "tetanus" and 1 or 2  -- Tetanus must not skip incubation after sync/repair.
+                EHR.Log(string.format("WARNING: Disease %s missing stage - defaulted to %d", diseaseId, disease.stage))
             end
             if disease.severity == nil then
                 disease.severity = def.baseSeverity or 0.5  -- Default severity from definition
@@ -1347,7 +1347,12 @@ function EHR.Disease.UpdateProgression(player, data)
                             EHR.Log(string.format("%s recovered down to stage %d", def.name, disease.stage))
                         end
 
-                        if def.stageEntryDialogue and def.stageEntryDialogue[disease.stage] then
+                        local allowStageDialogue = true
+                        if diseaseId == "tetanus" and (tonumber(disease.stage) or 1) > 1 then
+                            local incubationEnd = tonumber(disease.incubationEnd)
+                            allowStageDialogue = incubationEnd == nil or currentHour >= incubationEnd
+                        end
+                        if allowStageDialogue and def.stageEntryDialogue and def.stageEntryDialogue[disease.stage] then
                             EHR.Dialogue.SayStageChange(player, def.stageEntryDialogue[disease.stage])
                         end
                     end
@@ -2186,6 +2191,11 @@ function EHR.Disease.HasActiveTetanusLockjaw(player)
     local stage = tonumber(tetanus.stage) or 1
     if stage ~= 2 and stage ~= 3 then return false end
 
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local incubationEnd = tonumber(tetanus.incubationEnd)
+    if incubationEnd and currentHour < incubationEnd then return false end
+
     -- Muscle relaxants are the explicit window where the character can eat despite lockjaw.
     local muscleRelief = EHR_DiseaseGetActiveSymptomReduction(player, "tetanus", "muscleSpasms")
     return muscleRelief <= 0
@@ -2825,6 +2835,17 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
 
     local severity = disease.severity or (def and def.baseSeverity) or 0.5
     local stage = disease.stage or 1
+    if diseaseId == "tetanus" then
+        local gameTime = getGameTime and getGameTime() or nil
+        local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+        local incubationEnd = tonumber(disease.incubationEnd)
+        if incubationEnd and currentHour < incubationEnd then
+            disease.stage = 1
+            disease.tetanusHealthCap = nil
+            disease.tetanusSevereHealthCap = nil
+            return
+        end
+    end
     local stageMult = 0.0
 
     if stage == 2 then

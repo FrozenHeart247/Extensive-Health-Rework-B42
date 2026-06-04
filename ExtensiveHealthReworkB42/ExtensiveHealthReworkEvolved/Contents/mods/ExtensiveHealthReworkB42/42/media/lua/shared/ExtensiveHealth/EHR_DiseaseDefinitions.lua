@@ -1174,7 +1174,6 @@ EHR.Disease.Diseases["tetanus"] = {
     },
     -- Stage entry dialogue
     stageEntryDialogue = {
-        [1] = "Jaw feels a bit stiff... that wound is taking a while to heal.",
         [2] = "*tries to open mouth* Can barely open my jaw... something's wrong.",
         [3] = "*muscles lock up* AHHH! Can't... move... can't breathe!",
         [4] = "*gasps* Spasms are... less frequent... I might survive this.",

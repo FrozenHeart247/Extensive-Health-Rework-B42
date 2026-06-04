@@ -54,6 +54,7 @@ ItemName_JP = {
     ExtensiveHealth.EHRMedicalWatch_Left = "医療用モニターウォッチ",
     ExtensiveHealth.EHRMedicalWatch_Right = "医療用モニターウォッチ",
     ExtensiveHealth.EhrRecipePlantBasedAntibiotics = "レシピ: 植物ベースの抗生物質",
+    ExtensiveHealth.EhrRecipeUltimateCraftGuide = "レシピ: EHR医薬品クラフトガイド",
     ExtensiveHealth.ElectrolytePowder = "電解質粉末（箱）",
     ExtensiveHealth.EmergencySepsisKit = "緊急敗血症キット",
     ExtensiveHealth.EmptyBloodBag = "空の血液バッグ",

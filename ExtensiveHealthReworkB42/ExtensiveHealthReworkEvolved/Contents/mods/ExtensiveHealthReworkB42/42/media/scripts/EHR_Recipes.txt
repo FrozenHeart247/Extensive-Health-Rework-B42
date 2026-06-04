@@ -7,7 +7,7 @@ module ExtensiveHealth
         NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
-        AutoLearnAny = Doctor:8,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -28,8 +28,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 120,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         inputs
         {
             item 1 tags[base:mortarpestle] mode:keep,
@@ -46,8 +48,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 150,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -67,8 +71,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 180,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -90,8 +96,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 180,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -111,8 +119,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 150,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -135,8 +145,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 150,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -156,8 +168,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 150,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -176,8 +190,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 150,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -196,8 +212,10 @@ module ExtensiveHealth
     {
         timedAction = MixingBowl,
         time = 90,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -219,8 +237,10 @@ module ExtensiveHealth
     {
         timedAction = MixingBowl,
         time = 90,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -242,8 +262,10 @@ module ExtensiveHealth
     {
         timedAction = MixingMortarPestle,
         time = 120,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
@@ -265,8 +287,10 @@ module ExtensiveHealth
     craftRecipe MakeSpiderwebBandage
     {
         time = 90,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         inputs
         {
             item 15 [ExtensiveHealth.Spiderweb],
@@ -280,8 +304,10 @@ module ExtensiveHealth
     craftRecipe MakeHoneyFromHoneycomb
     {
         time = 60,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         inputs
         {
             item 1 [Base.HammerStone;Base.WoodenMallet;Base.MortarPestle;Base.CeramicMortarandPestle] mode:keep,
@@ -296,8 +322,10 @@ module ExtensiveHealth
     craftRecipe MakeSutureNeedleFromSpiderweb
     {
         time = 60,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         inputs
         {
             item 5 [ExtensiveHealth.Spiderweb],
@@ -313,8 +341,10 @@ module ExtensiveHealth
     {
         timedAction = MixingBowl,
         time = 180,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         inputs
         {
             item 1 [Base.Pot;Base.PotForged;Base.Saucepan;Base.SaucepanCopper] mode:keep flags[ItemCount],
@@ -330,8 +360,10 @@ module ExtensiveHealth
     craftRecipe StrainRenderedTallow
     {
         time = 120,
+        NeedToBeLearn = true,
         Tags = AnySurfaceCraft;Health,
         category = EHRMedicine,
+        AutoLearnAll = Doctor:6;PlantScavenging:4,
         inputs
         {
             item 1 [ExtensiveHealth.RenderedTallowMixture] flags[ItemCount],

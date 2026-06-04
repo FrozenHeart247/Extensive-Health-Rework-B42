@@ -54,6 +54,7 @@ ItemName_UA = {
     ExtensiveHealth.EHRMedicalWatch_Left = "Медичний монітор",
     ExtensiveHealth.EHRMedicalWatch_Right = "Медичний монітор",
     ExtensiveHealth.EhrRecipePlantBasedAntibiotics = "Рецепт: антибіотики рослинного походження",
+    ExtensiveHealth.EhrRecipeUltimateCraftGuide = "Рецепт: посібник з медичного крафту EHR",
     ExtensiveHealth.ElectrolytePowder = "Порошок електроліту (коробка)",
     ExtensiveHealth.EmergencySepsisKit = "Набір для невідкладної допомоги при сепсисі",
     ExtensiveHealth.EmptyBloodBag = "Порожній мішок для крові",

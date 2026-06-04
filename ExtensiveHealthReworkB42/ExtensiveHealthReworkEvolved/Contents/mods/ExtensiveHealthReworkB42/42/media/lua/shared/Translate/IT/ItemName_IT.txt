@@ -54,6 +54,7 @@ ItemName_IT = {
     ExtensiveHealth.EHRMedicalWatch_Left = "Orologio monitor medico",
     ExtensiveHealth.EHRMedicalWatch_Right = "Orologio monitor medico",
     ExtensiveHealth.EhrRecipePlantBasedAntibiotics = "Ricetta: antibiotici di origine vegetale",
+    ExtensiveHealth.EhrRecipeUltimateCraftGuide = "Ricetta: guida alla preparazione medica EHR",
     ExtensiveHealth.ElectrolytePowder = "Polvere elettrolitica (scatola)",
     ExtensiveHealth.EmergencySepsisKit = "Kit di emergenza per la sepsi",
     ExtensiveHealth.EmptyBloodBag = "Sacca di sangue vuota",

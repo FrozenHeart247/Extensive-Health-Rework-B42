@@ -54,6 +54,7 @@ ItemName_CN = {
     ExtensiveHealth.EHRMedicalWatch_Left = "医疗监视器手表",
     ExtensiveHealth.EHRMedicalWatch_Right = "医疗监视器手表",
     ExtensiveHealth.EhrRecipePlantBasedAntibiotics = "配方：植物性抗生素",
+    ExtensiveHealth.EhrRecipeUltimateCraftGuide = "配方：EHR 医疗制作指南",
     ExtensiveHealth.ElectrolytePowder = "电解粉（盒）",
     ExtensiveHealth.EmergencySepsisKit = "脓毒症急救包",
     ExtensiveHealth.EmptyBloodBag = "空血袋",

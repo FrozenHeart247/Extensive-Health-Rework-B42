@@ -406,6 +406,11 @@ local function EHR_InitDistributions()
     tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
     tryAdd("PharmacyShelfMeds", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
     tryAdd("DrugStoreMagazines", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.8)
+    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.35)
+    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.25)
+    tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.08)
+    tryAdd("PharmacyShelfMeds", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.08)
+    tryAdd("DrugStoreMagazines", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.35)
 
     -- =========================================
     -- TIER 1 - OTC (OVER THE COUNTER)

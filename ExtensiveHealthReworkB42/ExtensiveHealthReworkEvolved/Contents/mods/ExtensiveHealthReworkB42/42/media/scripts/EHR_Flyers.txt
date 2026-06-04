@@ -333,6 +333,21 @@ module ExtensiveHealth
         StressChange = -5,
         UnhappyChange = -5,
     }
+    item EhrRecipeUltimateCraftGuide
+    {
+        DisplayCategory = RecipeResource,
+        ItemType = base:literature,
+        DisplayName = Recipe: EHR Medicine Crafting Guide,
+        Weight = 0.2,
+        Icon = EhrRecipeUltimateCraftGuide,
+        Tooltip = Tooltip_EhrRecipeUltimateCraftGuide,
+        LearnedRecipes = MakePlantBasedAntibiotics;MakeHomemadeActivatedCharcoal;MakeHomemadeAntisepticCream;MakeHomemadeAntibioticOintment;MakeHomemadeTopicalPermethrin;MakeHomemadeCoughSyrup;MakeHomemadeMuscleRelaxant;MakeHomemadePainkillers;MakeHomemadeSleepingPills;MakeCommonColdTea;MakeAntipyreticTea;MakeRelaxantTea;MakeSpiderwebBandage;MakeHoneyFromHoneycomb;MakeSutureNeedleFromSpiderweb;PrepareTallowMixture;StrainRenderedTallow,
+        WorldStaticModel = Magazine_Ground,
+        NumberOfPages = 24,
+        BoredomChange = -15,
+        StressChange = -5,
+        UnhappyChange = -5,
+    }
     item MedicalWildPlants
     {
         DisplayCategory = Literature,

@@ -94,5 +94,9 @@
     "ExtensiveHealth.Tallow": "Sego",
     "ExtensiveHealth.HomemadeAntisepticCream": "Crema antisettica artigianale",
     "ExtensiveHealth.HomemadeAntibioticOintment": "Unguento antibiotico artigianale",
-    "ExtensiveHealth.HomemadeTopicalPermethrin": "Permetrina topica artigianale"
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "Permetrina topica artigianale",
+    "ExtensiveHealth.HomemadeCoughSyrup": "Sciroppo per la tosse artigianale",
+    "ExtensiveHealth.HomemadeMuscleRelaxant": "Miorilassante artigianale",
+    "ExtensiveHealth.HomemadePainkillers": "Antidolorifici artigianali",
+    "ExtensiveHealth.HomemadeSleepingPills": "Sonniferi artigianali"
 }

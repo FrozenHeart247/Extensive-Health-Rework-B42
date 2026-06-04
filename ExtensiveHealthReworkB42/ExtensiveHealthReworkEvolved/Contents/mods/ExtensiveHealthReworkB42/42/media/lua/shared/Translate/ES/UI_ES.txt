@@ -1582,4 +1582,8 @@ UI_ES = {
     UI_EHR_Med_HomemadeAntisepticCream = "Crema antiséptica casera",
     UI_EHR_Med_HomemadeAntibioticOintment = "Ungüento antibiótico casero",
     UI_EHR_Med_HomemadeTopicalPermethrin = "Permetrina tópica casera",
+    UI_EHR_Med_HomemadeCoughSyrup = "Jarabe casero para la tos",
+    UI_EHR_Med_HomemadeMuscleRelaxant = "Relajante muscular casero",
+    UI_EHR_Med_HomemadePainkillers = "Analgésicos caseros",
+    UI_EHR_Med_HomemadeSleepingPills = "Pastillas para dormir caseras",
 }

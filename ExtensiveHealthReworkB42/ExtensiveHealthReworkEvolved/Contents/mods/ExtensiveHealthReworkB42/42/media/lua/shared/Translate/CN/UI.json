@@ -1581,5 +1581,9 @@
     "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn.",
     "UI_EHR_Med_HomemadeAntisepticCream": "自制抗菌霜",
     "UI_EHR_Med_HomemadeAntibioticOintment": "自制抗生素软膏",
-    "UI_EHR_Med_HomemadeTopicalPermethrin": "自制外用氯菊酯"
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "自制外用氯菊酯",
+    "UI_EHR_Med_HomemadeCoughSyrup": "自制止咳糖浆",
+    "UI_EHR_Med_HomemadeMuscleRelaxant": "自制肌肉松弛剂",
+    "UI_EHR_Med_HomemadePainkillers": "自制止痛药",
+    "UI_EHR_Med_HomemadeSleepingPills": "自制安眠药"
 }

@@ -11,6 +11,17 @@ local freshMedicinalIngredients = {
     ["Base.Plantain"] = true,
     ["Base.Comfrey"] = true,
     ["Base.Marigold"] = true,
+    ["Base.CommonMallow"] = true,
+    ["Base.Chamomile"] = true,
+    ["Base.BlackSage"] = true,
+    ["Base.LemonGrass"] = true,
+    ["Base.BerryBlack"] = true,
+    ["Base.BerryBlue"] = true,
+    ["Base.BerryGeneric1"] = true,
+    ["Base.BerryGeneric2"] = true,
+    ["Base.BerryGeneric3"] = true,
+    ["Base.BerryGeneric4"] = true,
+    ["Base.BerryGeneric5"] = true,
 }
 
 function RecipeCodeOnTest.EHRFreshMedicinalIngredients(item)

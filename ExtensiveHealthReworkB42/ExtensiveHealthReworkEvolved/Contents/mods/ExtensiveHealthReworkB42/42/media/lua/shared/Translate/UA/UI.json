@@ -1581,5 +1581,9 @@
     "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn.",
     "UI_EHR_Med_HomemadeAntisepticCream": "Домашній антисептичний крем",
     "UI_EHR_Med_HomemadeAntibioticOintment": "Домашня антибіотична мазь",
-    "UI_EHR_Med_HomemadeTopicalPermethrin": "Домашній місцевий перметрин"
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "Домашній місцевий перметрин",
+    "UI_EHR_Med_HomemadeCoughSyrup": "Домашній сироп від кашлю",
+    "UI_EHR_Med_HomemadeMuscleRelaxant": "Домашній міорелаксант",
+    "UI_EHR_Med_HomemadePainkillers": "Домашні знеболювальні",
+    "UI_EHR_Med_HomemadeSleepingPills": "Домашні снодійні"
 }

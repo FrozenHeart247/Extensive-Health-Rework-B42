@@ -1594,5 +1594,9 @@
     "UI_EHR_HiveWebSearch_GlovesLine": "The glove takes the sting.",
     "UI_EHR_Med_HomemadeAntisepticCream": "Homemade Antiseptic Cream",
     "UI_EHR_Med_HomemadeAntibioticOintment": "Homemade Antibiotic Ointment",
-    "UI_EHR_Med_HomemadeTopicalPermethrin": "Homemade Topical Permethrin"
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "Homemade Topical Permethrin",
+    "UI_EHR_Med_HomemadeCoughSyrup": "Homemade Cough Syrup",
+    "UI_EHR_Med_HomemadeMuscleRelaxant": "Homemade Muscle Relaxant",
+    "UI_EHR_Med_HomemadePainkillers": "Homemade Painkillers",
+    "UI_EHR_Med_HomemadeSleepingPills": "Homemade Sleeping Pills"
 }

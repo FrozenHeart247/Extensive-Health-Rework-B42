@@ -1582,4 +1582,8 @@ UI_FR = {
     UI_EHR_Med_HomemadeAntisepticCream = "Crème antiseptique maison",
     UI_EHR_Med_HomemadeAntibioticOintment = "Pommade antibiotique maison",
     UI_EHR_Med_HomemadeTopicalPermethrin = "Perméthrine topique maison",
+    UI_EHR_Med_HomemadeCoughSyrup = "Sirop contre la toux maison",
+    UI_EHR_Med_HomemadeMuscleRelaxant = "Relaxant musculaire maison",
+    UI_EHR_Med_HomemadePainkillers = "Antidouleurs maison",
+    UI_EHR_Med_HomemadeSleepingPills = "Somnifères maison",
 }

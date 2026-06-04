@@ -9,4 +9,8 @@ Recipes_PTBR = {
     MakeHomemadeAntisepticCream = "Preparar creme antisséptico caseiro",
     MakeHomemadeAntibioticOintment = "Preparar pomada antibiótica caseira",
     MakeHomemadeTopicalPermethrin = "Preparar permetrina tópica caseira",
+    MakeHomemadeCoughSyrup = "Make Homemade Cough Syrup",
+    MakeHomemadeMuscleRelaxant = "Make Homemade Muscle Relaxant",
+    MakeHomemadePainkillers = "Make Homemade Painkillers",
+    MakeHomemadeSleepingPills = "Make Homemade Sleeping Pills",
 }

@@ -256,6 +256,17 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.HomemadeCoughSyrup"] = {
+        tier = 1,
+        treats = {"common_cold", "pneumonia", "cadaveric_aspergillosis"},
+        displayName = "Homemade Cough Syrup",
+        icon = "HomemadeCoughSyrup",
+        usageMessage = "You drink the homemade cough syrup. The coughing subsides.",
+        symptomReduction = {
+            coughing = 0.50,
+        },
+    },
+
     ["ExtensiveHealth.ElectrolytePowder"] = {
         tier = 1,
         treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_exhaustion", "heat_stroke"},
@@ -342,6 +353,47 @@ EHR.Medication.Database = {
             muscleSpasms = 0.40,
             pain = 0.30,
         },
+    },
+
+    ["ExtensiveHealth.HomemadeMuscleRelaxant"] = {
+        tier = 1,
+        treats = {"tetanus", "trichinosis"},
+        displayName = "Homemade Muscle Relaxant",
+        icon = "HomemadeMuscleRelaxant",
+        usageMessage = "You take the homemade muscle relaxant. The cramping eases.",
+        appliesWithoutDisease = true,
+        symptomReduction = {
+            muscleSpasms = 0.40,
+            pain = 0.30,
+        },
+    },
+
+    ["ExtensiveHealth.HomemadePainkillers"] = {
+        tier = 0,
+        treats = {},
+        displayName = "Homemade Painkillers",
+        icon = "HomemadePainkillers",
+        usageMessage = "You take homemade painkillers. The pain eases slightly.",
+        appliesWithoutDisease = true,
+        skipDrugInteractions = true,
+        symptomReduction = {
+            pain = 0.35,
+        },
+    },
+
+    ["ExtensiveHealth.HomemadeSleepingPills"] = {
+        tier = 0,
+        treats = {"insomnia"},
+        displayName = "Homemade Sleeping Pills",
+        icon = "HomemadeSleepingPills",
+        skipDrugInteractions = true,
+        appliesWithoutDisease = true,
+        effectDurationHours = 8,
+        canCure = false,
+        sleepAid = {
+            durationHours = 8,
+        },
+        usageMessage = "You take homemade sleeping pills. Drowsiness settles in.",
     },
 
     ["ExtensiveHealth.NitricOxideBooster"] = {
@@ -2042,8 +2094,10 @@ EHR.Medication.DosingSchedules = {
     -- Tier 0 - Basic (every 4 hours)
     ["Base.Antibiotics"] = { doseInterval = 4, dosesRequired = 6 },
     ["Base.Pills"] = { doseInterval = 4, dosesRequired = 3 },
+    ["ExtensiveHealth.HomemadePainkillers"] = { doseInterval = 4, dosesRequired = 3 },
     ["Base.PillsVitamins"] = { doseInterval = 12, dosesRequired = 1 },
     ["Base.PillsSleepingTablets"] = { doseInterval = 8, dosesRequired = 1 },
+    ["ExtensiveHealth.HomemadeSleepingPills"] = { doseInterval = 8, dosesRequired = 1 },
     ["Base.PillsAntiDep"] = { doseInterval = 12, dosesRequired = 14 },
     ["Base.PillsBeta"] = { doseInterval = 8, dosesRequired = 3 },
 
@@ -2051,12 +2105,14 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.ColdFluTablets"] = { doseInterval = 4, dosesRequired = 8 },
     ["ExtensiveHealth.AntipyreticTablets"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.CoughSyrup"] = { doseInterval = 6, dosesRequired = 3 },
+    ["ExtensiveHealth.HomemadeCoughSyrup"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.ElectrolytePowder"] = { doseInterval = 4, dosesRequired = 4 },
     ["ExtensiveHealth.BronchodilatorInhaler"] = { doseInterval = 4, dosesRequired = 4 },
     ["ExtensiveHealth.AntiNauseaTablets"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.AntiInflammatory"] = { doseInterval = 6, dosesRequired = 4 },
     ["ExtensiveHealth.AntiDiarrheal"] = { doseInterval = 6, dosesRequired = 3 },
     ["ExtensiveHealth.MuscleRelaxants"] = { doseInterval = 8, dosesRequired = 3 },
+    ["ExtensiveHealth.HomemadeMuscleRelaxant"] = { doseInterval = 8, dosesRequired = 3 },
     ["ExtensiveHealth.NitricOxideBooster"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CombatStimulants"] = { doseInterval = 3, dosesRequired = 1 },
     ["ExtensiveHealth.CoughSuppressant"] = { doseInterval = 6, dosesRequired = 3 },
@@ -2523,19 +2579,23 @@ EHR.Medication.DrugCategories = {
     -- Tier 0 - Vanilla
     ["Antibiotics"] = "antibiotic",
     ["Painkillers"] = "painkiller",
+    ["Homemade Painkillers"] = "painkiller",
     ["Caffeine Pills"] = "stimulant",
+    ["Homemade Sleeping Pills"] = "sleep aid",
     ["Antidepressants"] = "antidepressant",
     ["Beta Blockers"] = "beta blocker",
 
     -- Tier 1 - OTC
     ["Cold & Flu Tablets"] = "cold flu",
     ["Cough Syrup"] = "cough suppressant",
+    ["Homemade Cough Syrup"] = "cough suppressant",
     ["Electrolyte Powder"] = "electrolyte",
     ["Bronchodilator Inhaler"] = "bronchodilator",
     ["Anti-Nausea Tablets"] = "anti-nausea",
     ["Anti-Inflammatory Pills"] = "anti-inflammatory",
     ["Anti-Diarrheal Tablets"] = "anti-diarrheal",
     ["Muscle Relaxants"] = "muscle relaxant",
+    ["Homemade Muscle Relaxant"] = "muscle relaxant",
     ["Nitric Oxide Boosters"] = "stimulant",
     ["Combat Stimulants"] = "stimulant",
     ["Cough Suppressant"] = "cough suppressant",

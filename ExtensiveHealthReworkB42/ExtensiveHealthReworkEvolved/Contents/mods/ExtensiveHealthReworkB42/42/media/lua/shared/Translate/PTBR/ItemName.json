@@ -94,5 +94,9 @@
     "ExtensiveHealth.Tallow": "Sebo",
     "ExtensiveHealth.HomemadeAntisepticCream": "Creme antisséptico caseiro",
     "ExtensiveHealth.HomemadeAntibioticOintment": "Pomada antibiótica caseira",
-    "ExtensiveHealth.HomemadeTopicalPermethrin": "Permetrina tópica caseira"
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "Permetrina tópica caseira",
+    "ExtensiveHealth.HomemadeCoughSyrup": "Xarope caseiro para tosse",
+    "ExtensiveHealth.HomemadeMuscleRelaxant": "Relaxante muscular caseiro",
+    "ExtensiveHealth.HomemadePainkillers": "Analgésicos caseiros",
+    "ExtensiveHealth.HomemadeSleepingPills": "Pílulas caseiras para dormir"
 }

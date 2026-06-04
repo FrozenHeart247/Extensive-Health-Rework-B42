@@ -94,4 +94,8 @@ ItemName_CN = {
     ExtensiveHealth.HomemadeAntisepticCream = "自制抗菌霜",
     ExtensiveHealth.HomemadeAntibioticOintment = "自制抗生素软膏",
     ExtensiveHealth.HomemadeTopicalPermethrin = "自制外用氯菊酯",
+    ExtensiveHealth.HomemadeCoughSyrup = "自制止咳糖浆",
+    ExtensiveHealth.HomemadeMuscleRelaxant = "自制肌肉松弛剂",
+    ExtensiveHealth.HomemadePainkillers = "自制止痛药",
+    ExtensiveHealth.HomemadeSleepingPills = "自制安眠药",
 }

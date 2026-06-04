@@ -94,4 +94,8 @@ ItemName_UA = {
     ExtensiveHealth.HomemadeAntisepticCream = "Домашній антисептичний крем",
     ExtensiveHealth.HomemadeAntibioticOintment = "Домашня антибіотична мазь",
     ExtensiveHealth.HomemadeTopicalPermethrin = "Домашній місцевий перметрин",
+    ExtensiveHealth.HomemadeCoughSyrup = "Домашній сироп від кашлю",
+    ExtensiveHealth.HomemadeMuscleRelaxant = "Домашній міорелаксант",
+    ExtensiveHealth.HomemadePainkillers = "Домашні знеболювальні",
+    ExtensiveHealth.HomemadeSleepingPills = "Домашні снодійні",
 }

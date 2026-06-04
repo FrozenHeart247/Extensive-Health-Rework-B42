@@ -96,5 +96,9 @@
     "ExtensiveHealth.Tallow": "Tallow",
     "ExtensiveHealth.HomemadeAntisepticCream": "Homemade Antiseptic Cream",
     "ExtensiveHealth.HomemadeAntibioticOintment": "Homemade Antibiotic Ointment",
-    "ExtensiveHealth.HomemadeTopicalPermethrin": "Homemade Topical Permethrin"
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "Homemade Topical Permethrin",
+    "ExtensiveHealth.HomemadeCoughSyrup": "Homemade Cough Syrup",
+    "ExtensiveHealth.HomemadeMuscleRelaxant": "Homemade Muscle Relaxant",
+    "ExtensiveHealth.HomemadePainkillers": "Homemade Painkillers",
+    "ExtensiveHealth.HomemadeSleepingPills": "Homemade Sleeping Pills"
 }

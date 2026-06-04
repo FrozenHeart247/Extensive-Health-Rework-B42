@@ -1581,5 +1581,9 @@
     "UI_EHR_HerbalSearch_GlovesLine": "The glove catches the thorn.",
     "UI_EHR_Med_HomemadeAntisepticCream": "Creme antisséptico caseiro",
     "UI_EHR_Med_HomemadeAntibioticOintment": "Pomada antibiótica caseira",
-    "UI_EHR_Med_HomemadeTopicalPermethrin": "Permetrina tópica caseira"
+    "UI_EHR_Med_HomemadeTopicalPermethrin": "Permetrina tópica caseira",
+    "UI_EHR_Med_HomemadeCoughSyrup": "Xarope caseiro para tosse",
+    "UI_EHR_Med_HomemadeMuscleRelaxant": "Relaxante muscular caseiro",
+    "UI_EHR_Med_HomemadePainkillers": "Analgésicos caseiros",
+    "UI_EHR_Med_HomemadeSleepingPills": "Pílulas caseiras para dormir"
 }

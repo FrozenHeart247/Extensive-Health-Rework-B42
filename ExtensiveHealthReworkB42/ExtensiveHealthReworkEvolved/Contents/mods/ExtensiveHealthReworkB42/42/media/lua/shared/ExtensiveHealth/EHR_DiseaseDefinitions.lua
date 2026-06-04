@@ -567,7 +567,7 @@ EHR.Disease.Diseases["cadaveric_aspergillosis"] = {
     stageCount = 4,
     treatments = {
         tier0 = {},
-        tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler"},
+        tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.HomemadeCoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler"},
         tier2 = {"ExtensiveHealth.AntifungalTablets"},
         tier3 = {"ExtensiveHealth.IVAmphotericin"},
     },
@@ -1435,7 +1435,7 @@ EHR.Disease.Diseases["insomnia"] = {
     symptoms = {"sleeplessness", "fatigue", "stress", "headache"},
 
     treatments = {
-        tier0 = {"Base.PillsSleepingTablets"},
+        tier0 = {"Base.PillsSleepingTablets", "ExtensiveHealth.HomemadeSleepingPills"},
         tier1 = {},
         tier2 = {"ExtensiveHealth.DualOrexinReceptor", "Base.PillsAntiDep"},
         tier3 = {},

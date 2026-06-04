@@ -195,6 +195,17 @@ EHR.Tooltips.Data = {
             "Multi-dose bottle",
         },
     },
+    ["ExtensiveHealth.HomemadePainkillers"] = {
+        category = "Vanilla Medication",
+        tier = 0,
+        description = "Homemade painkiller preparation.",
+        relieves = {"Pain"},
+        effects = {
+            "Reduces body-part pain",
+            "Multi-dose bottle",
+            "Crafted from black sage, chamomile and lemongrass",
+        },
+    },
     ["Base.PillsVitamins"] = {
         category = "Stimulant",
         tier = 0,
@@ -218,6 +229,18 @@ EHR.Tooltips.Data = {
             "Uses vanilla sleeping pill behavior",
             "Tracked by EHR medication monitoring",
             "Multi-dose bottle",
+        },
+    },
+    ["ExtensiveHealth.HomemadeSleepingPills"] = {
+        category = "Vanilla Medication",
+        tier = 0,
+        description = "Homemade sleeping pill bottle.",
+        relieves = {"Insomnia"},
+        effects = {
+            "Allows sleep while active",
+            "Tracked by EHR medication monitoring",
+            "Multi-dose bottle",
+            "Crafted from chamomile, black sage and honey",
         },
     },
     ["Base.PillsAntiDep"] = {
@@ -263,6 +286,18 @@ EHR.Tooltips.Data = {
         effects = {
             "50% cough reduction",
             "Good for stealth - less noise!",
+        },
+        warning = "Does NOT cure",
+    },
+    ["ExtensiveHealth.HomemadeCoughSyrup"] = {
+        category = "OTC Medication",
+        tier = 1,
+        description = "Homemade liquid cough medicine.",
+        relieves = {"Coughing"},
+        effects = {
+            "50% cough reduction",
+            "Good for stealth - less noise!",
+            "Crafted from honey, mallow, chamomile and berries",
         },
         warning = "Does NOT cure",
     },
@@ -320,6 +355,17 @@ EHR.Tooltips.Data = {
         description = "Over-the-counter muscle relaxants.",
         relieves = {"Muscle spasms", "Muscle pain"},
         effects = {"40% spasm reduction"},
+        warning = "Does NOT cure tetanus/parasites",
+    },
+    ["ExtensiveHealth.HomemadeMuscleRelaxant"] = {
+        category = "OTC Medication",
+        tier = 1,
+        description = "Homemade muscle relaxant preparation.",
+        relieves = {"Muscle spasms", "Muscle pain"},
+        effects = {
+            "40% spasm reduction",
+            "Crafted from black sage, chamomile, comfrey and honey",
+        },
         warning = "Does NOT cure tetanus/parasites",
     },
     ["ExtensiveHealth.NitricOxideBooster"] = {

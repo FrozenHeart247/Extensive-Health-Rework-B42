@@ -1582,4 +1582,8 @@ UI_IT = {
     UI_EHR_Med_HomemadeAntisepticCream = "Crema antisettica artigianale",
     UI_EHR_Med_HomemadeAntibioticOintment = "Unguento antibiotico artigianale",
     UI_EHR_Med_HomemadeTopicalPermethrin = "Permetrina topica artigianale",
+    UI_EHR_Med_HomemadeCoughSyrup = "Sciroppo per la tosse artigianale",
+    UI_EHR_Med_HomemadeMuscleRelaxant = "Miorilassante artigianale",
+    UI_EHR_Med_HomemadePainkillers = "Antidolorifici artigianali",
+    UI_EHR_Med_HomemadeSleepingPills = "Sonniferi artigianali",
 }

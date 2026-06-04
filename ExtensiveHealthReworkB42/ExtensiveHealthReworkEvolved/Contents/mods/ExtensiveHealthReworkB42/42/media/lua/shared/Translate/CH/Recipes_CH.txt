@@ -9,4 +9,8 @@ Recipes_CH = {
     MakeHomemadeAntisepticCream = "製作自製抗菌霜",
     MakeHomemadeAntibioticOintment = "製作自製抗生素軟膏",
     MakeHomemadeTopicalPermethrin = "製作自製外用氯菊酯",
+    MakeHomemadeCoughSyrup = "Make Homemade Cough Syrup",
+    MakeHomemadeMuscleRelaxant = "Make Homemade Muscle Relaxant",
+    MakeHomemadePainkillers = "Make Homemade Painkillers",
+    MakeHomemadeSleepingPills = "Make Homemade Sleeping Pills",
 }

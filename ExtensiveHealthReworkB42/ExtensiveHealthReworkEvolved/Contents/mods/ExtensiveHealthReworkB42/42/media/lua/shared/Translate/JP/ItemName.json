@@ -94,5 +94,9 @@
     "ExtensiveHealth.Tallow": "獣脂",
     "ExtensiveHealth.HomemadeAntisepticCream": "自家製消毒クリーム",
     "ExtensiveHealth.HomemadeAntibioticOintment": "自家製抗生物質軟膏",
-    "ExtensiveHealth.HomemadeTopicalPermethrin": "自家製外用ペルメトリン"
+    "ExtensiveHealth.HomemadeTopicalPermethrin": "自家製外用ペルメトリン",
+    "ExtensiveHealth.HomemadeCoughSyrup": "自家製咳止めシロップ",
+    "ExtensiveHealth.HomemadeMuscleRelaxant": "自家製筋弛緩薬",
+    "ExtensiveHealth.HomemadePainkillers": "自家製鎮痛薬",
+    "ExtensiveHealth.HomemadeSleepingPills": "自家製睡眠薬"
 }

@@ -9,4 +9,8 @@ Recipes_JP = {
     MakeHomemadeAntisepticCream = "自家製消毒クリームを作る",
     MakeHomemadeAntibioticOintment = "自家製抗生物質軟膏を作る",
     MakeHomemadeTopicalPermethrin = "自家製外用ペルメトリンを作る",
+    MakeHomemadeCoughSyrup = "Make Homemade Cough Syrup",
+    MakeHomemadeMuscleRelaxant = "Make Homemade Muscle Relaxant",
+    MakeHomemadePainkillers = "Make Homemade Painkillers",
+    MakeHomemadeSleepingPills = "Make Homemade Sleeping Pills",
 }

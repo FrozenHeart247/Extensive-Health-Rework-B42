@@ -356,6 +356,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item HomemadeCoughSyrup
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Cough Syrup,
+        Icon = HomemadeCoughSyrup,
+        Weight = 0.3,
+        Tooltip = Tooltip_HomemadeCoughSyrup,
+        UseDelta = 0.1667,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item ElectrolytePowder
     {
         DisplayCategory = FirstAid,
@@ -432,6 +445,47 @@ module ExtensiveHealth
         UseDelta = 0.0833,
         UseWhileEquipped = false,
         Medical = true,
+    }
+
+    item HomemadeMuscleRelaxant
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Muscle Relaxant,
+        Icon = HomemadeMuscleRelaxant,
+        Weight = 0.1,
+        Tooltip = Tooltip_HomemadeMuscleRelaxant,
+        UseDelta = 0.0833,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
+    item HomemadePainkillers
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Painkillers,
+        Icon = HomemadePainkillers,
+        Weight = 0.2,
+        Tooltip = Tooltip_HomemadePainkillers,
+        UseDelta = 0.0625,
+        UseWhileEquipped = false,
+        Medical = true,
+        Tags = base:consumable,
+    }
+
+    item HomemadeSleepingPills
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Homemade Sleeping Pills,
+        Icon = HomemadeSleepingPills,
+        Weight = 0.2,
+        Tooltip = Tooltip_HomemadeSleepingPills,
+        UseDelta = 0.0833,
+        UseWhileEquipped = false,
+        Medical = true,
+        Tags = base:consumable,
     }
 
     item NitricOxideBooster

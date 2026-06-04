@@ -94,4 +94,8 @@ ItemName_FR = {
     ExtensiveHealth.HomemadeAntisepticCream = "Crème antiseptique maison",
     ExtensiveHealth.HomemadeAntibioticOintment = "Pommade antibiotique maison",
     ExtensiveHealth.HomemadeTopicalPermethrin = "Perméthrine topique maison",
+    ExtensiveHealth.HomemadeCoughSyrup = "Sirop contre la toux maison",
+    ExtensiveHealth.HomemadeMuscleRelaxant = "Relaxant musculaire maison",
+    ExtensiveHealth.HomemadePainkillers = "Antidouleurs maison",
+    ExtensiveHealth.HomemadeSleepingPills = "Somnifères maison",
 }

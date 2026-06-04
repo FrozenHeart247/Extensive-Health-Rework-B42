@@ -202,7 +202,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},
-            tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief only
+            tier1 = {"ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.HomemadeMuscleRelaxant", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief only
             tier2 = {"ExtensiveHealth.AntiparasiticPills"},  -- Cures in 7 days
             tier3 = {"ExtensiveHealth.AlbendazoleInjection"},  -- Fast cure 72h
         },
@@ -299,7 +299,7 @@ EHR.Disease.Diseases = {
         canProgress = "pneumonia",  -- Can progress to pneumonia if untreated
         treatments = {
             tier0 = {},
-            tier1 = {"ExtensiveHealth.ColdFluTablets", "ExtensiveHealth.AntipyreticTablets", "ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant"},
+            tier1 = {"ExtensiveHealth.ColdFluTablets", "ExtensiveHealth.AntipyreticTablets", "ExtensiveHealth.CoughSyrup", "ExtensiveHealth.HomemadeCoughSyrup", "ExtensiveHealth.CoughSuppressant"},
             tier2 = {"ExtensiveHealth.AntiviralCapsules"},  -- Cures in 48h
             tier3 = {},
         },
@@ -329,7 +329,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {"Base.Antibiotics"},
-            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},
+            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.HomemadeCoughSyrup", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.PrescriptionAntibiotics", "ExtensiveHealth.BroadSpectrumAntibiotics", "ExtensiveHealth.PlantBasedAntibiotics"},
             tier3 = {"ExtensiveHealth.IVCiprofloxacin"},
         },
@@ -576,7 +576,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},
-            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.AntipyreticTablets"},
+            tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.HomemadeCoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.AntipyreticTablets"},
             tier2 = {"ExtensiveHealth.AntifungalTablets"},
             tier3 = {"ExtensiveHealth.IVAmphotericin"},
         },
@@ -669,7 +669,7 @@ EHR.Disease.Diseases = {
         stageCount = 4,
         treatments = {
             tier0 = {},  -- No vanilla treatment
-            tier1 = {"ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief
+            tier1 = {"ExtensiveHealth.MuscleRelaxants", "ExtensiveHealth.HomemadeMuscleRelaxant", "ExtensiveHealth.AntiInflammatory", "ExtensiveHealth.AntipyreticTablets"},  -- Symptom relief
             tier2 = {"ExtensiveHealth.TetanusAntitoxin"},  -- Cures in 5 days
             tier3 = {"ExtensiveHealth.TetanusImmunoglobulin"},  -- Fast cure 48h
         },

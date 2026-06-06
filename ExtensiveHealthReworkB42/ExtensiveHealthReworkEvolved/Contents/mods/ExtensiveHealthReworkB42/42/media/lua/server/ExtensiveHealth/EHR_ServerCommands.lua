@@ -39,64 +39,6 @@ local function log(msg)
     return
 end
 
-local function clamp(value, minValue, maxValue)
-    value = tonumber(value) or 0
-    if value < minValue then return minValue end
-    if value > maxValue then return maxValue end
-    return value
-end
-
-local MEDICAL_MONITOR_WATCH_ITEMS = {
-    ["ExtensiveHealth.EHRMedicalWatch_Left"] = true,
-    ["ExtensiveHealth.EHRMedicalWatch_Right"] = true,
-    EHRMedicalWatch_Left = true,
-    EHRMedicalWatch_Right = true,
-}
-
-local function itemIsMedicalMonitorWatch(item)
-    if not item then return false end
-
-    if item.getFullType then
-        local ok, fullType = pcall(function() return item:getFullType() end)
-        if ok and MEDICAL_MONITOR_WATCH_ITEMS[fullType] then
-            return true
-        end
-    end
-
-    if item.getType then
-        local ok, itemType = pcall(function() return item:getType() end)
-        if ok and MEDICAL_MONITOR_WATCH_ITEMS[itemType] then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function playerHasMedicalMonitorWatch(player)
-    if not player or not player.getWornItems then return false end
-
-    local okWorn, wornItems = pcall(function() return player:getWornItems() end)
-    if okWorn and wornItems and wornItems.size then
-        for i = 0, wornItems:size() - 1 do
-            local item = nil
-            if wornItems.getItemByIndex then
-                pcall(function() item = wornItems:getItemByIndex(i) end)
-            elseif wornItems.get then
-                pcall(function()
-                    local worn = wornItems:get(i)
-                    item = worn and worn.getItem and worn:getItem() or worn
-                end)
-            end
-            if itemIsMedicalMonitorWatch(item) then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
 local function serverText(key, fallback)
     if EHR and EHR.Locale and EHR.Locale.Text then
         return EHR.Locale.Text(key, fallback)
@@ -127,31 +69,6 @@ local function getBodyPartName(bodyPart)
     return nil
 end
 
-local function getOverallHealthPercent(bodyDamage)
-    if not bodyDamage then return nil end
-
-    local directMethods = {
-        "getOverallBodyHealth",
-        "getOverallHealth",
-    }
-
-    for _, methodName in ipairs(directMethods) do
-        local method = bodyDamage[methodName]
-        if method then
-            local ok, value = pcall(function()
-                return method(bodyDamage)
-            end)
-            value = ok and tonumber(value) or nil
-            if value then
-                if value <= 1 then value = value * 100 end
-                return clamp(value, 0, 100)
-            end
-        end
-    end
-
-    return nil
-end
-
 local function buildBodyStatusSnapshot(player)
     local snapshot = {
         parts = {},
@@ -166,10 +83,6 @@ local function buildBodyStatusSnapshot(player)
         return snapshot
     end
 
-<<<<<<< Updated upstream
-    snapshot.overallHealth = getOverallHealthPercent(bodyDamage)
-    snapshot.hasMedicalMonitorWatch = playerHasMedicalMonitorWatch(player)
-=======
     local directHealthMethods = {
         "getOverallBodyHealth",
         "getOverallHealth",
@@ -189,7 +102,6 @@ local function buildBodyStatusSnapshot(player)
             end
         end
     end
->>>>>>> Stashed changes
 
     local okParts, bodyParts = pcall(function()
         return bodyDamage:getBodyParts()
@@ -292,27 +204,17 @@ local DEBUG_WOUND_BODY_PARTS = {
     "Torso_Upper", "Torso_Lower", "Head", "Neck", "Groin",
 }
 
-local function resolveBodyPartType(partName)
-    if not partName or not BodyPartType then return nil end
-
-    local partType = BodyPartType[partName]
-    if partType then return partType end
-
-    if BodyPartType.FromString then
-        local okString, result = pcall(function() return BodyPartType.FromString(partName) end)
-        if okString and result then return result end
-    end
-
-    return nil
-end
-
 local function getDebugBodyPart(player, partName)
     if not player or not partName or not BodyPartType then return nil end
 
     local bodyDamage = player:getBodyDamage()
     if not bodyDamage then return nil end
 
-    local partType = resolveBodyPartType(partName)
+    local partType = BodyPartType[partName]
+    if not partType and BodyPartType.FromString then
+        local okString, result = pcall(function() return BodyPartType.FromString(partName) end)
+        if okString then partType = result end
+    end
     if not partType then return nil end
 
     local okPart, bodyPart = pcall(function()
@@ -3050,91 +2952,6 @@ end
 -- SERVER COMMAND HANDLER
 -- ============================================
 
-local function findOnlinePlayerByExamArgs(args)
-    if not args then return nil end
-
-    local targetUsername = args.targetUsername and tostring(args.targetUsername) or nil
-    local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
-    local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
-    local onlinePlayers = getOnlinePlayers and getOnlinePlayers() or nil
-    if not onlinePlayers then return nil end
-
-    for i = 0, onlinePlayers:size() - 1 do
-        local p = onlinePlayers:get(i)
-        local username = nil
-        local onlineID = nil
-        local displayName = nil
-        if p then
-            pcall(function() username = p:getUsername() end)
-            pcall(function()
-                if p.getOnlineID then onlineID = tostring(p:getOnlineID()) end
-            end)
-            pcall(function()
-                if p.getDisplayName then displayName = tostring(p:getDisplayName()) end
-            end)
-        end
-
-        if p and (
-                (targetUsername and username == targetUsername) or
-                (targetOnlineID and onlineID == targetOnlineID) or
-                (targetDisplayName and displayName == targetDisplayName)
-        ) then
-            return p
-        end
-    end
-
-    return nil
-end
-
-local function playersAreClose(a, b, maxDistance)
-    if not a or not b then return false end
-    maxDistance = tonumber(maxDistance) or 6
-
-    local ax, ay, az = nil, nil, nil
-    local bx, by, bz = nil, nil, nil
-    pcall(function() ax, ay, az = a:getX(), a:getY(), a:getZ() end)
-    pcall(function() bx, by, bz = b:getX(), b:getY(), b:getZ() end)
-    if not ax or not ay or not bx or not by then return false end
-    if az ~= nil and bz ~= nil and math.abs(az - bz) > 1 then return false end
-
-    local dx = ax - bx
-    local dy = ay - by
-    return (dx * dx + dy * dy) <= (maxDistance * maxDistance)
-end
-
-local function applyRemoteDisinfectConfirmation(doctor, args)
-    if not doctor or not args then return false end
-
-    local targetPlayer = findOnlinePlayerByExamArgs(args)
-    if not targetPlayer or not playersAreClose(doctor, targetPlayer, 6) then
-        return false
-    end
-
-    local partType = resolveBodyPartType(args.bodyPartType)
-    if not partType then return false end
-
-    local okDisinfect = false
-    if EHR and EHR.WoundInfection and EHR.WoundInfection.OnDisinfect then
-        okDisinfect = pcall(function()
-            EHR.WoundInfection.OnDisinfect(targetPlayer, partType)
-        end)
-    end
-
-    local bodyPart = nil
-    pcall(function()
-        local bodyDamage = targetPlayer:getBodyDamage()
-        bodyPart = bodyDamage and bodyDamage:getBodyPart(partType) or nil
-    end)
-    if bodyPart and syncBodyPart then
-        pcall(function()
-            syncBodyPart(bodyPart, 0x00608200)
-        end)
-    end
-
-    syncModDataToClient(targetPlayer)
-    return okDisinfect == true
-end
-
 local function OnClientCommand(module, command, player, args)
     local isEHRCommand = module == "EHR" or module == "EHR_Flyers"
     local quietCommand = module == "EHR" and command == "EnvironmentalSnapshot"
@@ -3198,9 +3015,6 @@ local function OnClientCommand(module, command, player, args)
             return
         elseif command == "ApplyBandagePack" then
             EHR.ServerCommands.ApplyBandagePack(player, args)
-            return
-        elseif command == "RemoteDisinfectApplied" then
-            applyRemoteDisinfectConfirmation(player, args)
             return
         elseif command == "UpdateItemDelta" and args and args.itemID and args.usedDelta then
             -- Sync drainable item usedDelta from client

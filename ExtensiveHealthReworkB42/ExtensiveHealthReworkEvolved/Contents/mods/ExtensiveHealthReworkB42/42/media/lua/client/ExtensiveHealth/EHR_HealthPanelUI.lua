@@ -117,69 +117,6 @@ local MEDICAL_MONITOR_WATCH_ITEMS = {
     EHRMedicalWatch_Right = true,
 }
 
-local function itemIsMedicalMonitorWatch(item)
-    if not item then return false end
-
-    if item.getFullType then
-        local ok, fullType = pcall(function() return item:getFullType() end)
-        if ok and MEDICAL_MONITOR_WATCH_ITEMS[fullType] then
-            return true
-        end
-    end
-
-    if item.getType then
-        local ok, itemType = pcall(function() return item:getType() end)
-        if ok and MEDICAL_MONITOR_WATCH_ITEMS[itemType] then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function playerHasMedicalMonitorWatch(player)
-    if not player then return false end
-
-    if player.getWornItems then
-        local okWorn, wornItems = pcall(function() return player:getWornItems() end)
-        if okWorn and wornItems and wornItems.size then
-            for i = 0, wornItems:size() - 1 do
-                local item = nil
-                if wornItems.getItemByIndex then
-                    pcall(function() item = wornItems:getItemByIndex(i) end)
-                elseif wornItems.get then
-                    pcall(function()
-                        local worn = wornItems:get(i)
-                        item = worn and worn.getItem and worn:getItem() or worn
-                    end)
-                end
-                if itemIsMedicalMonitorWatch(item) then
-                    return true
-                end
-            end
-        end
-    end
-
-    local inventory = player.getInventory and player:getInventory() or nil
-    local items = inventory and inventory.getItems and inventory:getItems() or nil
-    if items and items.size then
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if itemIsMedicalMonitorWatch(item) then
-                local equipped = false
-                if item.isEquipped then
-                    pcall(function() equipped = item:isEquipped() == true end)
-                end
-                if equipped then
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
-end
-
 local suppressVanillaTicks = 0
 
 local function clamp(value, minValue, maxValue)
@@ -2874,12 +2811,6 @@ function EHR_HealthPanelUI:getBloodSummary()
 end
 
 function EHR_HealthPanelUI:hasMedicalMonitorWatch()
-<<<<<<< Updated upstream
-    if self.isRemoteHealthPanel and type(self.cachedData) == "table" and type(self.cachedData.bodyStatus) == "table" then
-        local snapshotValue = self.cachedData.bodyStatus.hasMedicalMonitorWatch
-        if snapshotValue ~= nil then
-            return snapshotValue == true
-=======
     if self.isRemoteHealthPanel and type(self.remoteExamData) == "table" then
         if self.remoteExamData.EHR_HasMedicalMonitorWatch ~= nil then
             return self.remoteExamData.EHR_HasMedicalMonitorWatch == true
@@ -2907,13 +2838,10 @@ function EHR_HealthPanelUI:hasMedicalMonitorWatch()
             if item.getType and MEDICAL_MONITOR_WATCH_ITEMS[item:getType()] then
                 return true
             end
->>>>>>> Stashed changes
         end
     end
 
-    local player = self.isRemoteHealthPanel and (self.remotePatient or self.player) or self.player
-    player = player or (getSpecificPlayer and getSpecificPlayer(self.playerNum or 0)) or (getPlayer and getPlayer())
-    return playerHasMedicalMonitorWatch(player)
+    return false
 end
 
 function EHR_HealthPanelUI:isMedicalWatchRequired()
@@ -4103,33 +4031,6 @@ function EHR_HealthPanelUI:onRemoteApplyPoultice(bodyPart, item, actionClass)
     end, bodyPart, item)
 end
 
-function EHR_HealthPanelUI:sendRemoteDisinfectConfirmation(bodyPartType)
-    if not self.isRemoteHealthPanel or not self.remoteDoctor or not self.remotePatient then return end
-    if not isClient or not isClient() or not sendClientCommand then return end
-
-    local args = {
-        bodyPartType = tostring(bodyPartType or ""),
-    }
-
-    pcall(function()
-        if self.remotePatient.getUsername then
-            args.targetUsername = self.remotePatient:getUsername()
-        end
-    end)
-    pcall(function()
-        if self.remotePatient.getOnlineID then
-            args.targetOnlineID = tostring(self.remotePatient:getOnlineID())
-        end
-    end)
-    pcall(function()
-        if self.remotePatient.getDisplayName then
-            args.targetDisplayName = self.remotePatient:getDisplayName()
-        end
-    end)
-
-    sendClientCommand(self.remoteDoctor, "EHR", "RemoteDisinfectApplied", args)
-end
-
 function EHR_HealthPanelUI:onRemoteDisinfect(bodyPart, item)
     healthPanelDisinfectDebug(string.format("onRemoteDisinfect clicked ISDisinfect=%s bodyPart=%s item=%s",
         tostring(ISDisinfect ~= nil), tostring(bodyPart), debugItemName(item)))
@@ -4152,21 +4053,7 @@ function EHR_HealthPanelUI:onRemoteDisinfect(bodyPart, item)
             return
         end
         local action = ISDisinfect:new(panel.remoteDoctor, panel.remotePatient or panel.player, disinfectant, actionBodyPart)
-<<<<<<< Updated upstream
-        if action then
-            local originalPerform = action.perform
-            action.perform = function(actionSelf)
-                if originalPerform then
-                    originalPerform(actionSelf)
-                end
-                if panel.sendRemoteDisinfectConfirmation then
-                    panel:sendRemoteDisinfectConfirmation(bodyPartType)
-                end
-            end
-        end
-=======
         healthPanelDisinfectDebug("onRemoteDisinfect factory created action=" .. tostring(action))
->>>>>>> Stashed changes
         panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
     end, bodyPart, item)
 end
@@ -4604,16 +4491,11 @@ function EHR_HealthPanelUI:getOverallHealthPercent()
 
     if self.isRemoteHealthPanel and type(self.remoteExamData) == "table" then
         local bodyStatus = self.remoteExamData.EHR_BodyStatus
-<<<<<<< Updated upstream
-        if type(bodyStatus) == "table" and bodyStatus.overallHealth ~= nil then
-            return clamp(tonumber(bodyStatus.overallHealth) or 100, 0, 100)
-=======
         local snapshotHealth = bodyStatus and (bodyStatus.overallHealth or bodyStatus.health or bodyStatus.bodyHealth)
         snapshotHealth = tonumber(snapshotHealth)
         if snapshotHealth then
             if snapshotHealth <= 1 then snapshotHealth = snapshotHealth * 100 end
             return clamp(snapshotHealth, 0, 100)
->>>>>>> Stashed changes
         end
 
         local parts = bodyStatus and bodyStatus.parts

@@ -319,12 +319,7 @@ function EHR.WoundHook.HookBandageAction()
         WoundHookDisinfectDebug(string.format("ISApplyBandage.perform after vanilla item=%s disinfectant=%s %s",
             WoundHookItemName(item), tostring(isDisinfectant), WoundHookBodyPartState(bodyPart)))
 
-<<<<<<< Updated upstream
-        local patient = self.otherPlayer or self.character
-        if player and patient == player and player == getSpecificPlayer(0) then
-=======
         if WoundHookIsLocalDoctor(doctor) then
->>>>>>> Stashed changes
             -- Check if used disinfectant
             if isDisinfectant then
                 EHR.Log("WoundHook: Disinfectant applied to " .. tostring(bodyPart))
@@ -519,31 +514,9 @@ function EHR.WoundHook.HookDisinfectAction()
         -- Call original first
         originalPerform(self)
 
-<<<<<<< Updated upstream
-        local player = self.character
-        local bodyPart = self.bodyPart
-
-        local patient = self.otherPlayer or self.character
-        if player and patient == player and player == getSpecificPlayer(0) and bodyPart then
-            EHR.Log("WoundHook: ISDisinfect performed")
-
-            local bodyPartType = nil
-            if bodyPart.getType then
-                local success2, partType = pcall(function() return bodyPart:getType() end)
-                if success2 then bodyPartType = partType end
-            else
-                bodyPartType = bodyPart
-            end
-
-            if bodyPartType and EHR.WoundInfection and EHR.WoundInfection.OnDisinfect then
-                EHR.WoundInfection.OnDisinfect(player, bodyPartType)
-            end
-        end
-=======
         -- Fallback for action variants that do not call complete().
         WoundHookDisinfectDebug("perform fallback after vanilla " .. WoundHookBodyPartState(self and self.bodyPart))
         WoundHookProcessDisinfect(self, "perform")
->>>>>>> Stashed changes
     end
 
     EHR.Log("WoundHook: ISDisinfect complete/perform hooked")

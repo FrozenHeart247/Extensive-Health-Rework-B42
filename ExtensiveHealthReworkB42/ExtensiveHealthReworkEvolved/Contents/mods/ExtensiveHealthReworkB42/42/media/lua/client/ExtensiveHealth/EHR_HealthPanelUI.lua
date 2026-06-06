@@ -207,6 +207,39 @@ local function formatHours(hours)
     return string.format("%.1fh", hours)
 end
 
+local function healthPanelDisinfectDebug(message)
+    if not EHR or EHR.DISINFECT_DEBUG ~= true then return end
+    print("[EHR][DisinfectDebug][HealthPanel] " .. tostring(message))
+end
+
+local function debugItemName(item)
+    if not item then return "nil" end
+    local name = nil
+    pcall(function()
+        if item.getFullType then name = item:getFullType() end
+    end)
+    if name and name ~= "" then return tostring(name) end
+    pcall(function()
+        if item.getType then name = item:getType() end
+    end)
+    return tostring(name or item)
+end
+
+local function debugPlayerName(player)
+    if not player then return "nil" end
+    local name = nil
+    pcall(function()
+        if player.getUsername then name = player:getUsername() end
+    end)
+    if name and name ~= "" then return tostring(name) end
+    pcall(function()
+        if player.getDescriptor and player:getDescriptor() and player:getDescriptor().getForename then
+            name = player:getDescriptor():getForename()
+        end
+    end)
+    return tostring(name or player)
+end
+
 local function formatShortHours(hours)
     hours = tonumber(hours) or 0
     if hours < 1 then
@@ -468,13 +501,15 @@ function EHR_RemoteMedicalAction:stop()
 end
 
 function EHR_RemoteMedicalAction:perform()
+    healthPanelDisinfectDebug(string.format("RemoteMedicalAction.perform start doctor=%s panel=%s factory=%s",
+        debugPlayerName(self.character), tostring(self.panel), tostring(self.factory)))
     if self.panel and self.factory then
-        if self.panel.beginRemoteBodyDamageAccess then
-            self.panel:beginRemoteBodyDamageAccess(900)
+        if self.panel.syncBodyPartPanelBodyParts then
             self.panel:syncBodyPartPanelBodyParts()
         end
         self.factory(self.panel, self)
     end
+    healthPanelDisinfectDebug("RemoteMedicalAction.perform end")
     ISBaseTimedAction.perform(self)
 end
 
@@ -686,11 +721,15 @@ local function tableValuesSortedByName(tbl, nameGetter)
 end
 
 function EHR_HealthBodyPartPanel:onRightMouseUp(x, y)
+    healthPanelDisinfectDebug(string.format("BodyPartPanel.onRightMouseUp x=%s y=%s parent=%s",
+        tostring(x), tostring(y), tostring(self.parent)))
     if UIManager and UIManager.getSpeedControls and UIManager.getSpeedControls():getCurrentGameSpeed() == 0 then
         if not getDebug() then return false end
     end
 
     local selected = self:getPartForCoordinate(x, y)
+    healthPanelDisinfectDebug(string.format("BodyPartPanel selected=%s bodyPart=%s bodyPartType=%s",
+        tostring(selected), tostring(selected and selected.bodyPart), tostring(selected and selected.bodyPartType)))
     if selected and selected.bodyPart then
         self:setSelected(x, y, true)
         if self.parent and self.parent.openBodyPartContextMenu then
@@ -820,12 +859,13 @@ end
 
 function EHR_HealthPanelUI:beginRemoteBodyDamageAccess(ticks)
     if not self.isRemoteHealthPanel or not self.remoteDoctor or not self.remotePatient then return end
-    if not self.remoteDoctor.startReceivingBodyDamageUpdates then return end
 
-    self.remoteBodyDamageAccessTicks = math.max(tonumber(self.remoteBodyDamageAccessTicks) or 0, tonumber(ticks) or 240)
-    pcall(function()
-        self.remoteDoctor:startReceivingBodyDamageUpdates(self.remotePatient)
-    end)
+    -- EHR remote panels are driven by server snapshots. B42's vanilla remote
+    -- BodyDamage stream may initialize as a full-health/full-stats object, and
+    -- starting it from EHR medical actions can heal/refill the patient. Vanilla
+    -- timed actions can operate on patient:getBodyDamage() directly, so keep
+    -- this as a no-op for EHR.
+    self.remoteBodyDamageAccessTicks = 0
 end
 
 function EHR_HealthPanelUI:ensureRemoteBodyDamageUpdates(ticks)
@@ -2834,10 +2874,40 @@ function EHR_HealthPanelUI:getBloodSummary()
 end
 
 function EHR_HealthPanelUI:hasMedicalMonitorWatch()
+<<<<<<< Updated upstream
     if self.isRemoteHealthPanel and type(self.cachedData) == "table" and type(self.cachedData.bodyStatus) == "table" then
         local snapshotValue = self.cachedData.bodyStatus.hasMedicalMonitorWatch
         if snapshotValue ~= nil then
             return snapshotValue == true
+=======
+    if self.isRemoteHealthPanel and type(self.remoteExamData) == "table" then
+        if self.remoteExamData.EHR_HasMedicalMonitorWatch ~= nil then
+            return self.remoteExamData.EHR_HasMedicalMonitorWatch == true
+        end
+
+        local bodyStatus = self.remoteExamData.EHR_BodyStatus
+        if type(bodyStatus) == "table" and bodyStatus.hasMedicalMonitorWatch ~= nil then
+            return bodyStatus.hasMedicalMonitorWatch == true
+        end
+    end
+
+    local player = self.player or (getSpecificPlayer and getSpecificPlayer(self.playerNum or 0)) or (getPlayer and getPlayer())
+    if not player or not player.getWornItems then return false end
+
+    local wornItems = player:getWornItems()
+    if not wornItems then return false end
+
+    for i = 0, wornItems:size() - 1 do
+        local item = wornItems:getItemByIndex(i)
+        if item and item.getFullType then
+            local fullType = item:getFullType()
+            if MEDICAL_MONITOR_WATCH_ITEMS[fullType] then
+                return true
+            end
+            if item.getType and MEDICAL_MONITOR_WATCH_ITEMS[item:getType()] then
+                return true
+            end
+>>>>>>> Stashed changes
         end
     end
 
@@ -3280,9 +3350,6 @@ function EHR_HealthPanelUI:resolveBodyPartForAction(bodyPart, bodyPartType)
         return bodyPart
     end
 
-    if self.isRemoteHealthPanel and self.beginRemoteBodyDamageAccess then
-        self:beginRemoteBodyDamageAccess(360)
-    end
     local bodyDamage = self:getPatientBodyDamage()
     if bodyDamage and bodyDamage.getBodyPart and bodyPartType then
         local ok, currentBodyPart = pcall(function()
@@ -3315,9 +3382,6 @@ function EHR_HealthPanelUI:getBodyPartForActionType(bodyPart, bodyPartType)
         bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
     end
 
-    if self.isRemoteHealthPanel and self.beginRemoteBodyDamageAccess then
-        self:beginRemoteBodyDamageAccess(360)
-    end
     local bodyDamage = self:getPatientBodyDamage()
     if bodyDamage and bodyDamage.getBodyPart and bodyPartType then
         local ok, currentBodyPart = pcall(function()
@@ -3589,7 +3653,13 @@ function EHR_HealthPanelUI:findDoctorInventoryItem(ref, predicate)
 end
 
 function EHR_HealthPanelUI:queueActualMedicalAction(previousAction, action, bodyPart)
-    if not action then return false end
+    if not action then
+        healthPanelDisinfectDebug("queueActualMedicalAction skipped action=nil")
+        return false
+    end
+
+    healthPanelDisinfectDebug(string.format("queueActualMedicalAction action=%s previous=%s bodyPart=%s",
+        tostring(action), tostring(previousAction), tostring(bodyPart)))
 
     if previousAction then
         ISTimedActionQueue.addAfter(previousAction, action)
@@ -3610,10 +3680,16 @@ function EHR_HealthPanelUI:queueActualMedicalAction(previousAction, action, body
 end
 
 function EHR_HealthPanelUI:queueRemoteMedicalAction(factory, bodyPart, itemA, itemB)
-    if not factory then return false end
+    if not factory then
+        healthPanelDisinfectDebug("queueRemoteMedicalAction skipped factory=nil")
+        return false
+    end
 
     local doctor = self.remoteDoctor or self.player
     local previousAction = nil
+    healthPanelDisinfectDebug(string.format("queueRemoteMedicalAction start doctor=%s patient=%s bodyPart=%s itemA=%s itemB=%s",
+        debugPlayerName(doctor), debugPlayerName(self.remotePatient or self.player), tostring(bodyPart),
+        debugItemName(itemA), debugItemName(itemB)))
 
     local function moveItem(item)
         if not item or not doctor or not doctor.getInventory or not item.getContainer then return end
@@ -3651,6 +3727,8 @@ function EHR_HealthPanelUI:queueRemoteMedicalAction(factory, bodyPart, itemA, it
     if self.queueRemoteExamRefreshBurst then
         self:queueRemoteExamRefreshBurst()
     end
+    healthPanelDisinfectDebug(string.format("queueRemoteMedicalAction end previous=%s deferred=%s",
+        tostring(previousAction), tostring(deferredAction)))
     return true
 end
 
@@ -3768,11 +3846,14 @@ function EHR_HealthPanelUI:addRemotePoulticeOptions(context, bodyPart, snapshot)
 end
 
 function EHR_HealthPanelUI:addRemoteDisinfectOptions(context, bodyPart, snapshot)
+    healthPanelDisinfectDebug(string.format("addRemoteDisinfectOptions bandaged=%s actionable=%s ISDisinfect=%s bodyPart=%s",
+        tostring(snapshot and snapshot.bandaged), tostring(snapshotHasActionableStatus(snapshot)), tostring(ISDisinfect ~= nil), tostring(bodyPart)))
     if snapshot.bandaged == true or not snapshotHasActionableStatus(snapshot) or not ISDisinfect then return end
 
     local items = self:collectDoctorInventoryItems(function(item)
         return self:itemIsDisinfectant(item)
     end)
+    healthPanelDisinfectDebug("addRemoteDisinfectOptions items=" .. tostring(#items))
     if #items <= 0 then return end
 
     local option = context:addOption(getText("ContextMenu_Disinfect"), nil)
@@ -3875,25 +3956,33 @@ function EHR_HealthPanelUI:addRemoteSplintOptions(context, bodyPart, snapshot)
 end
 
 function EHR_HealthPanelUI:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPartType)
+    healthPanelDisinfectDebug(string.format("openRemoteBodyPartContextMenu remote=%s bodyPart=%s bodyPartType=%s",
+        tostring(self.isRemoteHealthPanel), tostring(bodyPart), tostring(bodyPartType)))
     if not self.isRemoteHealthPanel then return false end
     local snapshot = self:getRemoteBodyPartSnapshotByType(bodyPartType) or self:getRemoteBodyPartSnapshot(bodyPart)
+    healthPanelDisinfectDebug(string.format("openRemoteBodyPartContextMenu snapshot=%s actionable=%s",
+        tostring(snapshot), tostring(snapshotHasActionableStatus(snapshot))))
     if not snapshotHasActionableStatus(snapshot) then return false end
 
-    local actionBodyPart = self:getBodyPartForActionType(bodyPart, bodyPartType)
-    if not actionBodyPart then return false end
+    -- Do not resolve the live remote BodyDamage stream while merely opening a
+    -- context menu. On B42 that stream may briefly appear as a full-health
+    -- snapshot and can overwrite the examined player's vitals. Action handlers
+    -- resolve the real body part only after the player chooses an action.
+    local contextBodyPart = bodyPart
+    if not contextBodyPart then return false end
 
     local playerNum = self.playerNum or (self.remoteDoctor and self.remoteDoctor.getPlayerNum and self.remoteDoctor:getPlayerNum()) or 0
     local context = ISContextMenu.get(playerNum, x + self:getAbsoluteX(), y + self:getAbsoluteY())
     context.origin = self.bodyPartPanel or self
 
-    self:addRemotePoulticeOptions(context, actionBodyPart, snapshot)
-    self:addRemoteBandageOptions(context, actionBodyPart, snapshot)
-    self:addRemoteDisinfectOptions(context, actionBodyPart, snapshot)
-    self:addRemoteGlassOptions(context, actionBodyPart, snapshot)
-    self:addRemoteStitchOptions(context, actionBodyPart, snapshot)
-    self:addRemoteSplintOptions(context, actionBodyPart, snapshot)
-    self:addRemoteBulletOptions(context, actionBodyPart, snapshot)
-    self:addRemoteCleanBurnOptions(context, actionBodyPart, snapshot)
+    self:addRemotePoulticeOptions(context, contextBodyPart, snapshot)
+    self:addRemoteBandageOptions(context, contextBodyPart, snapshot)
+    self:addRemoteDisinfectOptions(context, contextBodyPart, snapshot)
+    self:addRemoteGlassOptions(context, contextBodyPart, snapshot)
+    self:addRemoteStitchOptions(context, contextBodyPart, snapshot)
+    self:addRemoteSplintOptions(context, contextBodyPart, snapshot)
+    self:addRemoteBulletOptions(context, contextBodyPart, snapshot)
+    self:addRemoteCleanBurnOptions(context, contextBodyPart, snapshot)
 
     if context:isEmpty() then
         context:setVisible(false)
@@ -4042,16 +4131,28 @@ function EHR_HealthPanelUI:sendRemoteDisinfectConfirmation(bodyPartType)
 end
 
 function EHR_HealthPanelUI:onRemoteDisinfect(bodyPart, item)
-    if not ISDisinfect or not item then return end
+    healthPanelDisinfectDebug(string.format("onRemoteDisinfect clicked ISDisinfect=%s bodyPart=%s item=%s",
+        tostring(ISDisinfect ~= nil), tostring(bodyPart), debugItemName(item)))
+    if not ISDisinfect or not item then
+        healthPanelDisinfectDebug("onRemoteDisinfect skipped missing ISDisinfect/item")
+        return
+    end
     local bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
     local itemRef = self:getMedicalItemRef(item)
     self:queueRemoteMedicalAction(function(panel, previousAction)
         local actionBodyPart = panel:getBodyPartForActionType(bodyPart, bodyPartType)
+        healthPanelDisinfectDebug(string.format("onRemoteDisinfect factory bodyPartType=%s actionBodyPart=%s previous=%s",
+            tostring(bodyPartType), tostring(actionBodyPart), tostring(previousAction)))
         local disinfectant = panel:findDoctorInventoryItem(itemRef, function(candidate)
             return panel:itemIsDisinfectant(candidate)
         end)
-        if not actionBodyPart or not disinfectant then return end
+        healthPanelDisinfectDebug("onRemoteDisinfect factory disinfectant=" .. debugItemName(disinfectant))
+        if not actionBodyPart or not disinfectant then
+            healthPanelDisinfectDebug("onRemoteDisinfect factory skipped missing actionBodyPart/disinfectant")
+            return
+        end
         local action = ISDisinfect:new(panel.remoteDoctor, panel.remotePatient or panel.player, disinfectant, actionBodyPart)
+<<<<<<< Updated upstream
         if action then
             local originalPerform = action.perform
             action.perform = function(actionSelf)
@@ -4063,6 +4164,9 @@ function EHR_HealthPanelUI:onRemoteDisinfect(bodyPart, item)
                 end
             end
         end
+=======
+        healthPanelDisinfectDebug("onRemoteDisinfect factory created action=" .. tostring(action))
+>>>>>>> Stashed changes
         panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
     end, bodyPart, item)
 end
@@ -4213,22 +4317,27 @@ function EHR_HealthPanelUI:onLocalApplyBandagePack(bodyPart, pack)
     return false
 end
 function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
+    healthPanelDisinfectDebug(string.format("openBodyPartContextMenu remote=%s bodyPart=%s bodyPartType=%s x=%s y=%s",
+        tostring(self.isRemoteHealthPanel), tostring(bodyPart), tostring(bodyPartType), tostring(x), tostring(y)))
     if not bodyPart or not ISHealthPanel or not ISHealthPanel.doBodyPartContextMenu then return end
     local adapter = self:getVanillaHealthAdapter()
     if not adapter or not adapter.character then return end
     if self.isRemoteHealthPanel then
-        self:beginRemoteBodyDamageAccess(360)
-        self:syncBodyPartPanelBodyParts()
-        self:markRemoteBodyDamageDirty(120)
         if self:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPartType) then
             return
         end
+        -- Remote EHR panels are snapshot-driven. Falling through into vanilla
+        -- ISHealthPanel here can request BodyDamageRemote and mutate the patient
+        -- toward a default full-health/full-stats state on some MP clients.
+        return
     else
         self:ensureRemoteBodyDamageUpdates()
     end
 
     local actionBodyPart = self:resolveBodyPartForAction(bodyPart, bodyPartType)
     local snapshot = self:getRemoteBodyPartSnapshotByType(bodyPartType) or self:getRemoteBodyPartSnapshot(bodyPart)
+    healthPanelDisinfectDebug(string.format("openBodyPartContextMenu resolved actionBodyPart=%s snapshot=%s actionable=%s vanillaActionable=%s",
+        tostring(actionBodyPart), tostring(snapshot), tostring(snapshotHasActionableStatus(snapshot)), tostring(bodyPartHasActionableStatus(actionBodyPart))))
     if self.isRemoteHealthPanel
             and snapshotHasActionableStatus(snapshot)
             and not bodyPartHasActionableStatus(actionBodyPart)
@@ -4237,6 +4346,7 @@ function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     end
 
     ISHealthPanel.doBodyPartContextMenu(adapter, actionBodyPart or bodyPart, x, y)
+    healthPanelDisinfectDebug("openBodyPartContextMenu delegated to ISHealthPanel.doBodyPartContextMenu")
 end
 
 function EHR_HealthPanelUI:dropItemsOnBodyPart(bodyPart, items, bodyPartType)
@@ -4287,6 +4397,10 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
     local bandageLife = tonumber(bodyValue("bandageLife", "getBandageLife", 1)) or 1
     local infected = bodyValue("infected", "isInfectedWound", false) == true
     local infectionLevel = tonumber(bodyValue("infectionLevel", "getWoundInfectionLevel", 0)) or 0
+    local infectionLevelThreshold = 0.05
+    if EHR and EHR.WoundInfection and EHR.WoundInfection.VANILLA_INFECTION_LEVEL_EPSILON then
+        infectionLevelThreshold = EHR.WoundInfection.VANILLA_INFECTION_LEVEL_EPSILON
+    end
     local additionalPain = tonumber(bodyValue("additionalPain", "getAdditionalPain", 0)) or 0
     local stiffness = tonumber(bodyValue("stiffness", "getStiffness", 0)) or 0
     local hasInjury = bodyValue("hasInjury", "HasInjury", false) == true
@@ -4308,7 +4422,7 @@ function EHR_HealthPanelUI:getBodyPartStatuses(bodyPart)
         add("bleeding", safeText("UI_EHR_BodyLegend_Bleeding", "Bleeding"), c.red, 1.00, 110)
     end
 
-    if infected or infectionLevel > 0 or (type(ehrWoundPartData) == "table" and (tonumber(ehrWoundPartData.stage) or 0) > 0) then
+    if infected or infectionLevel > infectionLevelThreshold or (type(ehrWoundPartData) == "table" and (tonumber(ehrWoundPartData.stage) or 0) > 0) then
         hasLocalizedDamage = true
         add("infected", safeText("UI_EHR_BodyLegend_Infected", "Infected"), c.purple, 0.80, 100)
     end
@@ -4490,8 +4604,16 @@ function EHR_HealthPanelUI:getOverallHealthPercent()
 
     if self.isRemoteHealthPanel and type(self.remoteExamData) == "table" then
         local bodyStatus = self.remoteExamData.EHR_BodyStatus
+<<<<<<< Updated upstream
         if type(bodyStatus) == "table" and bodyStatus.overallHealth ~= nil then
             return clamp(tonumber(bodyStatus.overallHealth) or 100, 0, 100)
+=======
+        local snapshotHealth = bodyStatus and (bodyStatus.overallHealth or bodyStatus.health or bodyStatus.bodyHealth)
+        snapshotHealth = tonumber(snapshotHealth)
+        if snapshotHealth then
+            if snapshotHealth <= 1 then snapshotHealth = snapshotHealth * 100 end
+            return clamp(snapshotHealth, 0, 100)
+>>>>>>> Stashed changes
         end
 
         local parts = bodyStatus and bodyStatus.parts

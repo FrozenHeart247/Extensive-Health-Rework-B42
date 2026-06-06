@@ -144,6 +144,129 @@ function EHR.WoundHook.HasTreatableWoundInfection(player)
     return (tonumber(data.worstStage) or 0) > 0
 end
 
+local function WoundHookIsLocalDoctor(doctor)
+    if not doctor then return false end
+
+    if getSpecificPlayer then
+        local localPlayer = getSpecificPlayer(0)
+        if localPlayer and doctor == localPlayer then return true end
+    end
+
+    if getPlayer then
+        local localPlayer = getPlayer()
+        if localPlayer and doctor == localPlayer then return true end
+    end
+
+    return false
+end
+
+local function WoundHookGetBodyPartType(bodyPart)
+    if not bodyPart then return nil end
+    if bodyPart.getType then
+        local success, partType = pcall(function() return bodyPart:getType() end)
+        if success then return partType end
+    end
+    return bodyPart
+end
+
+local function WoundHookDisinfectDebug(message)
+    if not EHR or EHR.DISINFECT_DEBUG ~= true then return end
+    print("[EHR][DisinfectDebug][Hook] " .. tostring(message))
+end
+
+local function WoundHookPlayerName(player)
+    if not player then return "nil" end
+    local name = nil
+    pcall(function()
+        if player.getUsername then name = player:getUsername() end
+    end)
+    if name and name ~= "" then return tostring(name) end
+    pcall(function()
+        if player.getDescriptor and player:getDescriptor() and player:getDescriptor().getForename then
+            name = player:getDescriptor():getForename()
+        end
+    end)
+    return tostring(name or player)
+end
+
+local function WoundHookItemName(item)
+    if not item then return "nil" end
+    local name = nil
+    pcall(function()
+        if item.getFullType then name = item:getFullType() end
+    end)
+    if name and name ~= "" then return tostring(name) end
+    pcall(function()
+        if item.getType then name = item:getType() end
+    end)
+    return tostring(name or item)
+end
+
+local function WoundHookBodyPartState(bodyPart)
+    if not bodyPart then return "bodyPart=nil" end
+    local infected, level, alcohol, partType = nil, nil, nil, nil
+    pcall(function() if bodyPart.isInfectedWound then infected = bodyPart:isInfectedWound() end end)
+    pcall(function() if bodyPart.getWoundInfectionLevel then level = bodyPart:getWoundInfectionLevel() end end)
+    pcall(function() if bodyPart.getAlcoholLevel then alcohol = bodyPart:getAlcoholLevel() end end)
+    pcall(function() partType = WoundHookGetBodyPartType(bodyPart) end)
+    return string.format("part=%s infected=%s level=%s alcohol=%s",
+        tostring(partType), tostring(infected), tostring(level), tostring(alcohol))
+end
+
+local function WoundHookClearVanillaInfectionMarker(bodyPart)
+    if not bodyPart then return end
+
+    WoundHookDisinfectDebug("clear-marker before " .. WoundHookBodyPartState(bodyPart))
+    local okLevel, errLevel = pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+    local okFlag, errFlag = pcall(function() bodyPart:setInfectedWound(false) end)
+    local okSync, errSync = pcall(function()
+        if syncBodyPart then
+            syncBodyPart(bodyPart, 0x00608200)
+        end
+    end)
+    WoundHookDisinfectDebug(string.format("clear-marker calls level=%s/%s flag=%s/%s sync=%s/%s",
+        tostring(okLevel), tostring(errLevel), tostring(okFlag), tostring(errFlag), tostring(okSync), tostring(errSync)))
+    WoundHookDisinfectDebug("clear-marker after " .. WoundHookBodyPartState(bodyPart))
+end
+
+local function WoundHookProcessDisinfect(action, source)
+    if not action then
+        WoundHookDisinfectDebug("skip source=" .. tostring(source) .. " action=nil")
+        return
+    end
+    if action._ehrDisinfectProcessed then
+        WoundHookDisinfectDebug("skip source=" .. tostring(source) .. " already-processed")
+        return
+    end
+
+    local doctor = action.character
+    local patient = action.otherPlayer or action.character
+    local bodyPart = action.bodyPart
+    WoundHookDisinfectDebug(string.format("process source=%s doctor=%s patient=%s localDoctor=%s %s",
+        tostring(source), WoundHookPlayerName(doctor), WoundHookPlayerName(patient),
+        tostring(WoundHookIsLocalDoctor(doctor)), WoundHookBodyPartState(bodyPart)))
+
+    if not WoundHookIsLocalDoctor(doctor) or not patient or not bodyPart then
+        WoundHookDisinfectDebug("skip source=" .. tostring(source) .. " invalid doctor/patient/bodyPart")
+        return
+    end
+
+    action._ehrDisinfectProcessed = true
+    EHR.Log("WoundHook: ISDisinfect processed")
+
+    local bodyPartType = WoundHookGetBodyPartType(bodyPart)
+    if bodyPartType and EHR.WoundInfection and EHR.WoundInfection.OnDisinfect then
+        WoundHookDisinfectDebug("calling OnDisinfect partType=" .. tostring(bodyPartType))
+        EHR.WoundInfection.OnDisinfect(patient, bodyPartType)
+    else
+        WoundHookDisinfectDebug("OnDisinfect unavailable bodyPartType=" .. tostring(bodyPartType))
+    end
+
+    -- WoundInfection.OnDisinfect is the single source of truth for clearing the
+    -- vanilla infection marker. Keeping the direct client-side clear disabled
+    -- avoids racing vanilla/server state and makes disinfect diagnostics sane.
+end
+
 -- ============================================
 -- BANDAGE/DISINFECT HOOK
 -- ============================================
@@ -159,44 +282,65 @@ function EHR.WoundHook.HookBandageAction()
 
     if not success or not ISApplyBandage then
         EHR.Log("WoundHook: ISApplyBandage not found, trying alternative")
+        WoundHookDisinfectDebug("ISApplyBandage require failed success=" .. tostring(success))
         return false
     end
 
-    -- Store original perform
+    -- Store original action functions
+    local originalStart = ISApplyBandage.start
     local originalPerform = ISApplyBandage.perform
+
+    if originalStart then
+        ISApplyBandage.start = function(self)
+            local item = self and (self.item or self.bandage)
+            WoundHookDisinfectDebug(string.format("ISApplyBandage.start before vanilla item=%s %s",
+                WoundHookItemName(item), WoundHookBodyPartState(self and self.bodyPart)))
+            originalStart(self)
+            WoundHookDisinfectDebug(string.format("ISApplyBandage.start after vanilla item=%s %s",
+                WoundHookItemName(item), WoundHookBodyPartState(self and self.bodyPart)))
+        end
+    end
 
     -- Override perform
     ISApplyBandage.perform = function(self)
+        local doctor = self and self.character
+        local patient = (self and self.otherPlayer) or doctor
+        local item = self and (self.item or self.bandage)
+        local bodyPart = self and self.bodyPart
+        local isDisinfectant = item and EHR.WoundHook.IsDisinfectant(item)
+
+        WoundHookDisinfectDebug(string.format("ISApplyBandage.perform before vanilla item=%s disinfectant=%s doctor=%s patient=%s localDoctor=%s %s",
+            WoundHookItemName(item), tostring(isDisinfectant), WoundHookPlayerName(doctor),
+            WoundHookPlayerName(patient), tostring(WoundHookIsLocalDoctor(doctor)), WoundHookBodyPartState(bodyPart)))
+
         -- Call original first
         originalPerform(self)
 
-        -- Check if this was a disinfect action
-        local player = self.character
-        local item = self.item or self.bandage
-        local bodyPart = self.bodyPart
+        WoundHookDisinfectDebug(string.format("ISApplyBandage.perform after vanilla item=%s disinfectant=%s %s",
+            WoundHookItemName(item), tostring(isDisinfectant), WoundHookBodyPartState(bodyPart)))
 
+<<<<<<< Updated upstream
         local patient = self.otherPlayer or self.character
         if player and patient == player and player == getSpecificPlayer(0) then
+=======
+        if WoundHookIsLocalDoctor(doctor) then
+>>>>>>> Stashed changes
             -- Check if used disinfectant
-            if item and EHR.WoundHook.IsDisinfectant(item) then
+            if isDisinfectant then
                 EHR.Log("WoundHook: Disinfectant applied to " .. tostring(bodyPart))
 
                 -- Get body part type
-                local bodyPartType = nil
-                if bodyPart then
-                    -- bodyPart might be a BodyPart object, get its type
-                    if bodyPart.getType then
-                        local success2, partType = pcall(function() return bodyPart:getType() end)
-                        if success2 then bodyPartType = partType end
-                    else
-                        -- Might already be a BodyPartType
-                        bodyPartType = bodyPart
-                    end
-                end
+                local bodyPartType = WoundHookGetBodyPartType(bodyPart)
 
                 if bodyPartType and EHR.WoundInfection and EHR.WoundInfection.OnDisinfect then
-                    EHR.WoundInfection.OnDisinfect(player, bodyPartType)
+                    WoundHookDisinfectDebug("ISApplyBandage calling OnDisinfect partType=" .. tostring(bodyPartType))
+                    EHR.WoundInfection.OnDisinfect(patient, bodyPartType)
+                else
+                    WoundHookDisinfectDebug("ISApplyBandage OnDisinfect unavailable bodyPartType=" .. tostring(bodyPartType))
                 end
+
+                -- See WoundHookProcessDisinfect: direct marker clearing happens
+                -- only through EHR.WoundInfection.OnDisinfect.
             end
 
             -- Also check if bandaging (updates our tracking)
@@ -211,6 +355,7 @@ function EHR.WoundHook.HookBandageAction()
     end
 
     EHR.Log("WoundHook: ISApplyBandage.perform hooked")
+    WoundHookDisinfectDebug("ISApplyBandage.perform hooked")
     return true
 end
 
@@ -346,14 +491,35 @@ function EHR.WoundHook.HookDisinfectAction()
         return false
     end
 
-    -- Store original perform
+    local originalComplete = ISDisinfect.complete
     local originalPerform = ISDisinfect.perform
+    local originalStart = ISDisinfect.start
+    if originalStart then
+        ISDisinfect.start = function(self)
+            WoundHookDisinfectDebug("ISDisinfect.start before vanilla " .. WoundHookBodyPartState(self and self.bodyPart))
+            originalStart(self)
+            WoundHookDisinfectDebug("ISDisinfect.start after vanilla " .. WoundHookBodyPartState(self and self.bodyPart))
+        end
+    end
+
+    if originalComplete then
+        ISDisinfect.complete = function(self)
+            WoundHookDisinfectDebug("complete before vanilla " .. WoundHookBodyPartState(self and self.bodyPart))
+            local result = originalComplete(self)
+            WoundHookDisinfectDebug("complete after vanilla result=" .. tostring(result) .. " " .. WoundHookBodyPartState(self and self.bodyPart))
+            if result ~= false then
+                WoundHookProcessDisinfect(self, "complete")
+            end
+            return result
+        end
+    end
 
     -- Override perform
     ISDisinfect.perform = function(self)
         -- Call original first
         originalPerform(self)
 
+<<<<<<< Updated upstream
         local player = self.character
         local bodyPart = self.bodyPart
 
@@ -373,9 +539,14 @@ function EHR.WoundHook.HookDisinfectAction()
                 EHR.WoundInfection.OnDisinfect(player, bodyPartType)
             end
         end
+=======
+        -- Fallback for action variants that do not call complete().
+        WoundHookDisinfectDebug("perform fallback after vanilla " .. WoundHookBodyPartState(self and self.bodyPart))
+        WoundHookProcessDisinfect(self, "perform")
+>>>>>>> Stashed changes
     end
 
-    EHR.Log("WoundHook: ISDisinfect.perform hooked")
+    EHR.Log("WoundHook: ISDisinfect complete/perform hooked")
     return true
 end
 
@@ -530,23 +701,27 @@ function EHR.WoundHook.Initialize()
     if EHR.WoundHook.initialized then return end
 
     EHR.Log("WoundHook: Initializing treatment hooks...")
+    WoundHookDisinfectDebug("Initialize start")
 
     -- Hook bandage/disinfect action
-    EHR.WoundHook.HookBandageAction()
+    local bandageHooked = EHR.WoundHook.HookBandageAction()
 
     -- Try alternative disinfect hook
-    EHR.WoundHook.HookDisinfectAction()
+    local disinfectHooked = EHR.WoundHook.HookDisinfectAction()
 
     -- Hook pill action
     local pillHooked = EHR.WoundHook.HookPillAction()
 
     -- If pill hook failed, try eating action
+    local eatHooked = false
     if not pillHooked then
-        EHR.WoundHook.HookEatAction()
+        eatHooked = EHR.WoundHook.HookEatAction()
     end
 
     EHR.WoundHook.initialized = true
     EHR.Log("WoundHook: Initialization complete")
+    WoundHookDisinfectDebug(string.format("Initialize complete bandage=%s disinfect=%s pill=%s eat=%s",
+        tostring(bandageHooked), tostring(disinfectHooked), tostring(pillHooked), tostring(eatHooked)))
 end
 
 -- ============================================
@@ -564,6 +739,7 @@ if Events then
     Events.OnFillInventoryObjectContextMenu.Add(EHR.WoundHook.OnFillInventoryObjectContextMenu)
 
     EHR.Log("WoundHook module loaded")
+    WoundHookDisinfectDebug("module loaded")
 end
 
 -- ============================================

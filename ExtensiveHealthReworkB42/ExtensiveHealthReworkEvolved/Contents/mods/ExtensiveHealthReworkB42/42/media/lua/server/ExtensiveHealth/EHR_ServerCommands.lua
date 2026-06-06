@@ -166,8 +166,30 @@ local function buildBodyStatusSnapshot(player)
         return snapshot
     end
 
+<<<<<<< Updated upstream
     snapshot.overallHealth = getOverallHealthPercent(bodyDamage)
     snapshot.hasMedicalMonitorWatch = playerHasMedicalMonitorWatch(player)
+=======
+    local directHealthMethods = {
+        "getOverallBodyHealth",
+        "getOverallHealth",
+        "getHealth",
+    }
+    for _, methodName in ipairs(directHealthMethods) do
+        local method = bodyDamage[methodName]
+        if method then
+            local okHealth, health = pcall(function()
+                return method(bodyDamage)
+            end)
+            health = okHealth and tonumber(health) or nil
+            if health then
+                if health <= 1 then health = health * 100 end
+                snapshot.overallHealth = math.max(0, math.min(100, health))
+                break
+            end
+        end
+    end
+>>>>>>> Stashed changes
 
     local okParts, bodyParts = pcall(function()
         return bodyDamage:getBodyParts()
@@ -208,6 +230,45 @@ local function buildBodyStatusSnapshot(player)
     end
 
     return snapshot
+end
+
+local MEDICAL_MONITOR_WATCH_ITEMS = {
+    ["ExtensiveHealth.EHRMedicalWatch_Left"] = true,
+    ["ExtensiveHealth.EHRMedicalWatch_Right"] = true,
+    EHRMedicalWatch_Left = true,
+    EHRMedicalWatch_Right = true,
+}
+
+local function playerHasMedicalMonitorWatch(player)
+    if not player or not player.getWornItems then return false end
+
+    local okWorn, wornItems = pcall(function()
+        return player:getWornItems()
+    end)
+    if not okWorn or not wornItems or not wornItems.size then return false end
+
+    for i = 0, wornItems:size() - 1 do
+        local item = nil
+        pcall(function()
+            item = wornItems:getItemByIndex(i)
+        end)
+        if item then
+            local fullType = nil
+            local itemType = nil
+            pcall(function()
+                if item.getFullType then fullType = item:getFullType() end
+            end)
+            pcall(function()
+                if item.getType then itemType = item:getType() end
+            end)
+            if (fullType and MEDICAL_MONITOR_WATCH_ITEMS[fullType])
+                    or (itemType and MEDICAL_MONITOR_WATCH_ITEMS[itemType]) then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 log("=========================================")
@@ -3282,6 +3343,10 @@ local function OnClientCommand(module, command, player, args)
                 end
             end
 
+            local bodyStatusSnapshot = buildBodyStatusSnapshot(targetPlayer)
+            local hasMedicalMonitorWatch = playerHasMedicalMonitorWatch(targetPlayer)
+            bodyStatusSnapshot.hasMedicalMonitorWatch = hasMedicalMonitorWatch
+
             local examData = {
                 targetUsername = requestKey,
                 targetActualUsername = actualUsername,
@@ -3290,7 +3355,8 @@ local function OnClientCommand(module, command, player, args)
                 EHR_Disease = targetData.EHR_Disease,
                 EHR_Sepsis = targetData.EHR_Sepsis,
                 EHR_WoundInfection = targetData.EHR_WoundInfection,
-                EHR_BodyStatus = buildBodyStatusSnapshot(targetPlayer),
+                EHR_BodyStatus = bodyStatusSnapshot,
+                EHR_HasMedicalMonitorWatch = hasMedicalMonitorWatch,
                 EHR_Medication = targetData.EHR_Medication,
                 EHR_MedicationView = medicationView,
                 EHR_MedicalJournal = targetData.EHR_MedicalJournal,

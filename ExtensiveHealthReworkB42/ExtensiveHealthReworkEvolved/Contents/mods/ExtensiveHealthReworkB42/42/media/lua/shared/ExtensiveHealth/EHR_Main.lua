@@ -11,6 +11,8 @@ EHR.VERSION = "2.8.1"  -- Temperature rework, blood spoilage, MP fixes, Lifestyl
 
 -- Debug flag - default value (overridden by sandbox setting)
 EHR.DEBUG = false
+-- Temporary focused debug for wound disinfect flow. Set to false to silence.
+EHR.DISINFECT_DEBUG = true
 
 -- ============================================
 -- DEATH CAUSE TRACKING (for debugging mystery deaths)

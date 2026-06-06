@@ -125,12 +125,22 @@ end
 -- VANILLA API WRAPPERS (with pcall safety)
 -- ============================================
 
+EHR.WoundInfection.VANILLA_INFECTION_LEVEL_EPSILON = 0.05
+
 function EHR.WoundInfection.IsVanillaInfected(bodyPart)
     if not bodyPart then return false end
-    local success, result = pcall(function()
+    local flagOk, flag = pcall(function()
         return bodyPart:isInfectedWound()
     end)
-    return success and result or false
+    if flagOk and flag then return true end
+
+    -- In B42/MP the vanilla wound infection can briefly have a positive level
+    -- while the boolean flag is false or not yet replicated. Ignore tiny
+    -- residue after disinfecting, but still catch meaningful unsynced levels.
+    local levelOk, level = pcall(function()
+        return bodyPart:getWoundInfectionLevel()
+    end)
+    return levelOk and (tonumber(level) or 0) > EHR.WoundInfection.VANILLA_INFECTION_LEVEL_EPSILON or false
 end
 
 function EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
@@ -174,6 +184,31 @@ local function BodyPartHasActiveWound(bodyPart)
     return false
 end
 
+local function WoundInfectionDebug(message)
+    if EHR and EHR.DISINFECT_DEBUG == true then
+        print("[EHR][DisinfectDebug][WoundInfection] " .. tostring(message))
+    end
+end
+
+local function DebugBodyPartState(bodyPart)
+    if not bodyPart then return "bodyPart=nil" end
+    local infected, level, alcohol, partType = nil, nil, nil, nil
+    pcall(function() if bodyPart.isInfectedWound then infected = bodyPart:isInfectedWound() end end)
+    pcall(function() if bodyPart.getWoundInfectionLevel then level = bodyPart:getWoundInfectionLevel() end end)
+    pcall(function() if bodyPart.getAlcoholLevel then alcohol = bodyPart:getAlcoholLevel() end end)
+    pcall(function() if bodyPart.getType then partType = bodyPart:getType() end end)
+    return string.format("part=%s infected=%s level=%s alcohol=%s",
+        tostring(partType), tostring(infected), tostring(level), tostring(alcohol))
+end
+
+local function DebugScanState(data, partName, bodyPart, marker)
+    if not (EHR and EHR.DISINFECT_DEBUG == true) or not data or not partName then return end
+    data._debugVanillaScan = data._debugVanillaScan or {}
+    if data._debugVanillaScan[partName] == marker then return end
+    data._debugVanillaScan[partName] = marker
+    WoundInfectionDebug("scan " .. tostring(marker) .. " " .. DebugBodyPartState(bodyPart))
+end
+
 local function SuppressVanillaInfectionDuringAntiseptic(player, data, partName, bodyPart, vanillaLevel)
     if not data or not partName or not bodyPart then return end
 
@@ -187,7 +222,7 @@ local function SuppressVanillaInfectionDuringAntiseptic(player, data, partName, 
         data.incubating[partName] = nil
     end
 
-    EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+    EHR.WoundInfection.ClearVanillaInfection(bodyPart, "antiseptic-protection")
     EHR.Log("Antiseptic cream suppressed wound infection on " .. tostring(partName))
 end
 
@@ -325,12 +360,19 @@ function EHR.WoundInfection.ClearAllSymptomPain(player)
     return changed
 end
 
-function EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+function EHR.WoundInfection.ClearVanillaInfection(bodyPart, reason)
     if not bodyPart then return end
-    pcall(function()
-        bodyPart:setWoundInfectionLevel(-1)
-        bodyPart:setInfectedWound(false)
+    WoundInfectionDebug("ClearVanillaInfection before reason=" .. tostring(reason or "unspecified") .. " " .. DebugBodyPartState(bodyPart))
+    local okLevel, errLevel = pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+    local okFlag, errFlag = pcall(function() bodyPart:setInfectedWound(false) end)
+    local okSync, errSync = pcall(function()
+        if syncBodyPart then
+            syncBodyPart(bodyPart, 0x00608200)
+        end
     end)
+    WoundInfectionDebug(string.format("ClearVanillaInfection calls reason=%s level=%s/%s flag=%s/%s sync=%s/%s after %s",
+        tostring(reason or "unspecified"), tostring(okLevel), tostring(errLevel), tostring(okFlag), tostring(errFlag),
+        tostring(okSync), tostring(errSync), DebugBodyPartState(bodyPart)))
     EHR.Log("Cleared vanilla infection on body part")
 end
 
@@ -358,7 +400,7 @@ function EHR.WoundInfection.ClearForGodMode(player)
 
             local bodyPart = GetBodyPartByName(player, partName)
             if bodyPart then
-                EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+                EHR.WoundInfection.ClearVanillaInfection(bodyPart, "god-mode-active")
             end
         end
     end
@@ -368,7 +410,7 @@ function EHR.WoundInfection.ClearForGodMode(player)
             changed = true
             local bodyPart = GetBodyPartByName(player, partName)
             if bodyPart then
-                EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+                EHR.WoundInfection.ClearVanillaInfection(bodyPart, "god-mode-incubating")
             end
         end
     end
@@ -634,6 +676,11 @@ function EHR.WoundInfection.ScanForInfections(player)
                 end
 
                 if vanillaInfected then
+                    local incubationMarker = data.incubating and data.incubating[partName] and "incubating" or "none"
+                    local partStage = partData and partData.stage or "none"
+                    DebugScanState(data, partName, bodyPart, string.format("vanilla-seen level=%s partStage=%s incubation=%s",
+                        tostring(vanillaLevel), tostring(partStage), tostring(incubationMarker)))
+
                     if antisepticProtection and not partData then
                         SuppressVanillaInfectionDuringAntiseptic(player, data, partName, bodyPart, vanillaLevel)
                         return
@@ -703,6 +750,15 @@ function EHR.WoundInfection.ScanForInfections(player)
                         worstStage = math.max(worstStage, partData.stage)
                     end
                 else
+                    local hadTrackedState = (partData and partData.stage and partData.stage > 0)
+                            or (data.incubating and data.incubating[partName] ~= nil)
+                    if hadTrackedState then
+                        local incubationMarker = data.incubating and data.incubating[partName] and "incubating" or "none"
+                        local partStage = partData and partData.stage or "none"
+                        DebugScanState(data, partName, bodyPart, string.format("vanilla-missing partStage=%s incubation=%s",
+                            tostring(partStage), tostring(incubationMarker)))
+                    end
+
                     -- Vanilla infection cleared.
                     -- Once symptoms are tracked by EHR, vanilla flags are no longer authoritative:
                     -- normal bandaging/vanilla cleanup can clear them before the infection is cured.
@@ -810,6 +866,11 @@ function EHR.WoundInfection.ScanForInfections(player)
                     end
 
                     if vanillaInfected then
+                        local incubationMarker = data.incubating and data.incubating[partName] and "incubating" or "none"
+                        local partStage = partData and partData.stage or "none"
+                        DebugScanState(data, partName, bodyPart, string.format("fallback-vanilla-seen level=%s partStage=%s incubation=%s",
+                            tostring(vanillaLevel), tostring(partStage), tostring(incubationMarker)))
+
                         if antisepticProtection and not partData then
                             SuppressVanillaInfectionDuringAntiseptic(player, data, partName, bodyPart, vanillaLevel)
                         else
@@ -845,6 +906,15 @@ function EHR.WoundInfection.ScanForInfections(player)
                         worstStage = math.max(worstStage, partData.stage)
                         end
                     else
+                        local hadTrackedState = (partData and partData.stage and partData.stage > 0)
+                                or (data.incubating and data.incubating[partName] ~= nil)
+                        if hadTrackedState then
+                            local incubationMarker = data.incubating and data.incubating[partName] and "incubating" or "none"
+                            local partStage = partData and partData.stage or "none"
+                            DebugScanState(data, partName, bodyPart, string.format("fallback-vanilla-missing partStage=%s incubation=%s",
+                                tostring(partStage), tostring(incubationMarker)))
+                        end
+
                         if partData and partData.stage > 0 then
                             partData.vanillaLevel = 0
                             partData.vanillaFlagActive = false
@@ -1081,23 +1151,48 @@ end
 -- ============================================
 
 function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
-    if not player or not bodyPartType then return end
+    if not player or not bodyPartType then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] OnDisinfect skip missing player/bodyPartType")
+        end
+        return
+    end
 
     local data = EHR.WoundInfection.GetData(player)
     if not data then
         EHR.WoundInfection.InitializePlayer(player)
         data = EHR.WoundInfection.GetData(player)
     end
-    if not data then return end
+    if not data then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] OnDisinfect skip no data")
+        end
+        return
+    end
 
     local partName = GetPartName(bodyPartType)
-    if not partName then return end
+    if not partName then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] OnDisinfect skip no partName")
+        end
+        return
+    end
 
     local bodyDamage = player:getBodyDamage()
-    if not bodyDamage then return end
+    if not bodyDamage then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] OnDisinfect skip no bodyDamage part=" .. tostring(partName))
+        end
+        return
+    end
 
     local bodyPart = bodyDamage:getBodyPart(bodyPartType)
-    if not bodyPart then return end
+    if not bodyPart then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] OnDisinfect skip no bodyPart part=" .. tostring(partName))
+        end
+        return
+    end
 
     local config = EHR.WoundInfection.Config
     local Stage = EHR.WoundInfection.Stage
@@ -1105,6 +1200,15 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
 
     local vanillaInfected = EHR.WoundInfection.IsVanillaInfected(bodyPart)
     local vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
+    local partData = data.parts[partName]
+    local incubating = data.incubating and data.incubating[partName] ~= nil
+    if EHR and EHR.DISINFECT_DEBUG == true then
+        local alcohol = nil
+        pcall(function() if bodyPart.getAlcoholLevel then alcohol = bodyPart:getAlcoholLevel() end end)
+        print(string.format("[EHR][DisinfectDebug][WoundInfection] OnDisinfect start part=%s vanilla=%s level=%s alcohol=%s incubating=%s partStage=%s",
+            tostring(partName), tostring(vanillaInfected), tostring(vanillaLevel), tostring(alcohol),
+            tostring(incubating), tostring(partData and partData.stage or nil)))
+    end
 
     -- =============================================
     -- INCUBATION PREVENTION: Disinfecting during incubation
@@ -1113,11 +1217,14 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
 
     -- Check if in EHR's incubation tracking
     if data.incubating and data.incubating[partName] then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] branch=incubation-prevention part=" .. tostring(partName))
+        end
         -- Clear the incubating infection - disinfectant caught it early!
         data.incubating[partName] = nil
 
         -- Also clear the vanilla infection since we're preventing it
-        EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+        EHR.WoundInfection.ClearVanillaInfection(bodyPart, "disinfect-incubating")
 
         EHR.Log("Disinfectant prevented wound infection on " .. partName .. " (caught during incubation)")
 
@@ -1132,11 +1239,13 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
 
     -- Check if vanilla has infection but EHR hasn't started tracking yet
     -- (player disinfected VERY quickly after getting wounded)
-    local partData = data.parts[partName]
     if vanillaInfected and not partData then
+        if EHR and EHR.DISINFECT_DEBUG == true then
+            print("[EHR][DisinfectDebug][WoundInfection] branch=early-vanilla part=" .. tostring(partName))
+        end
         -- Vanilla has an infection that EHR hasn't tracked yet
         -- This means it's very early - disinfecting now prevents it
-        EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+        EHR.WoundInfection.ClearVanillaInfection(bodyPart, "disinfect-early-vanilla")
 
         EHR.Log("Disinfectant prevented wound infection on " .. partName .. " (caught before EHR tracking)")
 
@@ -1149,6 +1258,9 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
 
     if not vanillaInfected then
         if partData and partData.stage and partData.stage > 0 then
+            if EHR and EHR.DISINFECT_DEBUG == true then
+                print("[EHR][DisinfectDebug][WoundInfection] branch=active-ehr-no-vanilla part=" .. tostring(partName))
+            end
             -- Active infection is already symptomatic; disinfectant can slow local progression,
             -- but lack of a vanilla flag does not mean the infection is cured.
             partData.vanillaLevel = 0
@@ -1159,12 +1271,19 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
             if player.Say then
                 EHR.Locale.Say(player, "I cleaned it, but the infection is still there...")
             end
+        else
+            if EHR and EHR.DISINFECT_DEBUG == true then
+                print("[EHR][DisinfectDebug][WoundInfection] branch=no-vanilla-no-active part=" .. tostring(partName))
+            end
         end
         return
     end
 
     -- If we get here, there's an active (post-incubation) infection
     -- Disinfecting now won't fully prevent it, but still helps via vanilla mechanics
+    if EHR and EHR.DISINFECT_DEBUG == true then
+        print("[EHR][DisinfectDebug][WoundInfection] branch=active-vanilla part=" .. tostring(partName))
+    end
     if not partData then
         partData = {
             stage = Stage.INFECTED,
@@ -1179,6 +1298,14 @@ function EHR.WoundInfection.OnDisinfect(player, bodyPartType)
     partData.vanillaLevel = vanillaLevel
     partData.vanillaFlagActive = true
     partData.vanillaClearedTime = nil
+
+    -- A disinfect action should clear the vanilla wound infection marker on
+    -- first use. EHR's symptomatic infection remains active and must still be
+    -- treated with the proper medication path.
+    EHR.WoundInfection.ClearVanillaInfection(bodyPart, "disinfect-active-vanilla")
+    partData.vanillaLevel = 0
+    partData.vanillaFlagActive = false
+    partData.vanillaClearedTime = currentHour
 
     local newStage = partData.stage or Stage.INFECTED
 
@@ -1249,7 +1376,7 @@ function EHR.WoundInfection.TreatPart(player, partName, partData)
             if bpType then
                 local bodyPart = bodyDamage:getBodyPart(bpType)
                 if bodyPart then
-                    EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+                    EHR.WoundInfection.ClearVanillaInfection(bodyPart, "antibiotic-cured")
                 end
             end
         end
@@ -1291,7 +1418,7 @@ function EHR.WoundInfection.CureAll(player, source)
                 local bodyPart = nil
                 pcall(function() bodyPart = bodyDamage:getBodyPart(BodyPartType[partName]) end)
                 if bodyPart then
-                    EHR.WoundInfection.ClearVanillaInfection(bodyPart)
+                    EHR.WoundInfection.ClearVanillaInfection(bodyPart, "cure-all")
                 end
             end
 

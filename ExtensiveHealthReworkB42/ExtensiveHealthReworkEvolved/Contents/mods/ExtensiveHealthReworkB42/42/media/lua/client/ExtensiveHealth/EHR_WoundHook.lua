@@ -175,7 +175,8 @@ function EHR.WoundHook.HookBandageAction()
         local item = self.item or self.bandage
         local bodyPart = self.bodyPart
 
-        if player and player == getSpecificPlayer(0) then
+        local patient = self.otherPlayer or self.character
+        if player and patient == player and player == getSpecificPlayer(0) then
             -- Check if used disinfectant
             if item and EHR.WoundHook.IsDisinfectant(item) then
                 EHR.Log("WoundHook: Disinfectant applied to " .. tostring(bodyPart))
@@ -356,7 +357,8 @@ function EHR.WoundHook.HookDisinfectAction()
         local player = self.character
         local bodyPart = self.bodyPart
 
-        if player and player == getSpecificPlayer(0) and bodyPart then
+        local patient = self.otherPlayer or self.character
+        if player and patient == player and player == getSpecificPlayer(0) and bodyPart then
             EHR.Log("WoundHook: ISDisinfect performed")
 
             local bodyPartType = nil

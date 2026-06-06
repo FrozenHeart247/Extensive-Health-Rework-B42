@@ -91,13 +91,20 @@ local function isTreeObject(obj)
     return false
 end
 
+local function spriteLooksTree(name)
+    if not name then return false end
+    if name:find("vegetation_trees", 1, true) ~= nil then return true end
+    if name:find("jumbo_tree", 1, true) ~= nil then return true end
+    if name:match("^trees?[_%-]") then return true end
+    if name:match("[_%-]trees?[_%-]") then return true end
+    return false
+end
+
 local function objectLooksTree(obj)
     if isTreeObject(obj) then return true end
     local name = spriteName(obj)
     if not name then return false end
-    return name:find("tree", 1, true) ~= nil
-        or name:find("vegetation_trees", 1, true) ~= nil
-        or name:find("jumbo_tree", 1, true) ~= nil
+    return spriteLooksTree(name)
 end
 
 local function squareLooksTree(square)

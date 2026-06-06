@@ -1,6 +1,6 @@
 version=1
 id=3726328119
 title=Extensive Health Rework Evolved
-description=description Later
+description=description
 tags=Build 42;Balance;Hardmode;Misc;Pop Culture;Realistic;Skills
 visibility=public

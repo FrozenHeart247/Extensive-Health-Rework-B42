@@ -406,6 +406,10 @@ end
 
 function EHR_RemoteMedicalAction:perform()
     if self.panel and self.factory then
+        if self.panel.beginRemoteBodyDamageAccess then
+            self.panel:beginRemoteBodyDamageAccess(900)
+            self.panel:syncBodyPartPanelBodyParts()
+        end
         self.factory(self.panel, self)
     end
     ISBaseTimedAction.perform(self)
@@ -680,6 +684,7 @@ function EHR_HealthPanelUI:new(x, y, player)
     o.remotePatientOnlineID = nil
     o.remoteExamData = nil
     o.remoteBodyDamageRefreshTicks = 0
+    o.remoteBodyDamageAccessTicks = 0
     o.remoteBodyPartStatusCache = {}
     o.remoteActionBodyPartCache = {}
     o.remoteExamRefreshBurst = nil
@@ -718,11 +723,16 @@ function EHR_HealthPanelUI:getPatientBodyDamage()
     if not self.player or not self.player.getBodyDamage then return nil end
 
     if self.isRemoteHealthPanel and isClient and isClient() and self.player.isLocalPlayer and not self.player:isLocalPlayer() and self.player.getBodyDamageRemote then
-        local ok, remoteBodyDamage = pcall(function()
-            return self.player:getBodyDamageRemote()
-        end)
-        if ok and remoteBodyDamage then
-            return remoteBodyDamage
+        -- B42 can initialize the vanilla remote BodyDamage stream as a full-health
+        -- snapshot. Passive EHR rendering uses server snapshots instead; only
+        -- touch the remote stream briefly while building an actual medical action.
+        if (tonumber(self.remoteBodyDamageAccessTicks) or 0) > 0 then
+            local ok, remoteBodyDamage = pcall(function()
+                return self.player:getBodyDamageRemote()
+            end)
+            if ok and remoteBodyDamage then
+                return remoteBodyDamage
+            end
         end
     end
 
@@ -745,13 +755,18 @@ function EHR_HealthPanelUI:getRemoteBodyPartSnapshot(bodyPart)
     return self:getRemoteBodyPartSnapshotByType(partType)
 end
 
-function EHR_HealthPanelUI:ensureRemoteBodyDamageUpdates()
+function EHR_HealthPanelUI:beginRemoteBodyDamageAccess(ticks)
     if not self.isRemoteHealthPanel or not self.remoteDoctor or not self.remotePatient then return end
     if not self.remoteDoctor.startReceivingBodyDamageUpdates then return end
 
+    self.remoteBodyDamageAccessTicks = math.max(tonumber(self.remoteBodyDamageAccessTicks) or 0, tonumber(ticks) or 240)
     pcall(function()
         self.remoteDoctor:startReceivingBodyDamageUpdates(self.remotePatient)
     end)
+end
+
+function EHR_HealthPanelUI:ensureRemoteBodyDamageUpdates(ticks)
+    self:beginRemoteBodyDamageAccess(ticks)
 end
 
 function EHR_HealthPanelUI:markRemoteBodyDamageDirty(ticks)
@@ -759,17 +774,22 @@ function EHR_HealthPanelUI:markRemoteBodyDamageDirty(ticks)
 
     ticks = tonumber(ticks) or 8
     self.remoteBodyDamageRefreshTicks = math.max(tonumber(self.remoteBodyDamageRefreshTicks) or 0, ticks)
-    self:ensureRemoteBodyDamageUpdates()
-    self:syncBodyPartPanelBodyParts()
+    if (tonumber(self.remoteBodyDamageAccessTicks) or 0) > 0 then
+        self:syncBodyPartPanelBodyParts()
+    end
 end
 
 function EHR_HealthPanelUI:processRemoteBodyDamageRefresh()
     if not self.isRemoteHealthPanel then return end
 
-    local now = getTimestampMs and getTimestampMs() or 0
-    if now > 0 and (not self.lastRemoteBodyDamageEnsureMs or (now - self.lastRemoteBodyDamageEnsureMs) >= 2500) then
-        self.lastRemoteBodyDamageEnsureMs = now
-        self:ensureRemoteBodyDamageUpdates()
+    local accessTicks = tonumber(self.remoteBodyDamageAccessTicks) or 0
+    if accessTicks > 0 then
+        self.remoteBodyDamageAccessTicks = accessTicks - 1
+        if self.remoteBodyDamageAccessTicks <= 0 and self.remoteDoctor and self.remotePatient and self.remoteDoctor.stopReceivingBodyDamageUpdates then
+            pcall(function()
+                self.remoteDoctor:stopReceivingBodyDamageUpdates(self.remotePatient)
+            end)
+        end
     end
 
     if type(self.remoteExamRefreshBurst) == "table" and #self.remoteExamRefreshBurst > 0 then
@@ -790,8 +810,9 @@ function EHR_HealthPanelUI:processRemoteBodyDamageRefresh()
     if ticks <= 0 then return end
 
     self.remoteBodyDamageRefreshTicks = ticks - 1
-    self:ensureRemoteBodyDamageUpdates()
-    self:syncBodyPartPanelBodyParts()
+    if (tonumber(self.remoteBodyDamageAccessTicks) or 0) > 0 then
+        self:syncBodyPartPanelBodyParts()
+    end
 
     if self.remoteBodyDamageRefreshTicks <= 0
             and EHR.MPExamination and EHR.MPExamination.RequestExamData
@@ -988,6 +1009,7 @@ function EHR_HealthPanelUI:destroyPlayerBoundViews()
     self.cachedData = {}
     self.remoteBodyPartStatusCache = {}
     self.remoteActionBodyPartCache = {}
+    self.remoteBodyDamageAccessTicks = 0
     self.remoteExamRefreshBurst = nil
     self.markerBounds = {}
     self.contentScrollY = 0
@@ -3205,6 +3227,9 @@ function EHR_HealthPanelUI:resolveBodyPartForAction(bodyPart, bodyPartType)
         return bodyPart
     end
 
+    if self.isRemoteHealthPanel and self.beginRemoteBodyDamageAccess then
+        self:beginRemoteBodyDamageAccess(360)
+    end
     local bodyDamage = self:getPatientBodyDamage()
     if bodyDamage and bodyDamage.getBodyPart and bodyPartType then
         local ok, currentBodyPart = pcall(function()
@@ -3237,6 +3262,9 @@ function EHR_HealthPanelUI:getBodyPartForActionType(bodyPart, bodyPartType)
         bodyPartType = callBodyPartMethod(bodyPart, "getType", nil)
     end
 
+    if self.isRemoteHealthPanel and self.beginRemoteBodyDamageAccess then
+        self:beginRemoteBodyDamageAccess(360)
+    end
     local bodyDamage = self:getPatientBodyDamage()
     if bodyDamage and bodyDamage.getBodyPart and bodyPartType then
         local ok, currentBodyPart = pcall(function()
@@ -4059,7 +4087,7 @@ function EHR_HealthPanelUI:queueRemoteBodyContextRetry(bodyPartType, x, y)
         end
 
         attemptsLeft = attemptsLeft - 1
-        panel:ensureRemoteBodyDamageUpdates()
+        panel:beginRemoteBodyDamageAccess(360)
         panel:syncBodyPartPanelBodyParts()
 
         local actionBodyPart = panel:resolveBodyPartForAction(nil, bodyPartType)
@@ -4098,6 +4126,8 @@ function EHR_HealthPanelUI:openBodyPartContextMenu(bodyPart, x, y, bodyPartType)
     local adapter = self:getVanillaHealthAdapter()
     if not adapter or not adapter.character then return end
     if self.isRemoteHealthPanel then
+        self:beginRemoteBodyDamageAccess(360)
+        self:syncBodyPartPanelBodyParts()
         self:markRemoteBodyDamageDirty(120)
         if self:openRemoteBodyPartContextMenu(bodyPart, x, y, bodyPartType) then
             return
@@ -4123,6 +4153,8 @@ function EHR_HealthPanelUI:dropItemsOnBodyPart(bodyPart, items, bodyPartType)
     local adapter = self:getVanillaHealthAdapter()
     if not adapter or not adapter.character then return end
     if self.isRemoteHealthPanel then
+        self:beginRemoteBodyDamageAccess(360)
+        self:syncBodyPartPanelBodyParts()
         self:markRemoteBodyDamageDirty(120)
     else
         self:ensureRemoteBodyDamageUpdates()
@@ -5472,9 +5504,6 @@ function EHR.UI.ShowRemoteHealthPanel(doctor, patient, examData)
     panel.ehrRemoteKey = key
     panel.remoteExamData = examData or panel.remoteExamData
     panel:bindRemotePatient(doctor, patient, created or panel.remotePatient ~= patient)
-    if doctor.startReceivingBodyDamageUpdates then
-        pcall(function() doctor:startReceivingBodyDamageUpdates(patient) end)
-    end
     panel.activeTab = "ehr"
     panel.contentScrollY = 0
     panel:applyDefaultOpenMode()

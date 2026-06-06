@@ -167,10 +167,6 @@ local function EHR_PatchVanillaMedicalCheck()
 
             local panel = EHR.UI.ShowRemoteHealthPanel(doctor, patient)
             if panel then
-                if doctor.startReceivingBodyDamageUpdates then
-                    pcall(function() doctor:startReceivingBodyDamageUpdates(patient) end)
-                end
-
                 if EHR.MPExamination and EHR.MPExamination.RequestExamData and isClient and isClient() then
                     EHR.MPExamination.RequestExamData(doctor, patient)
                 end

@@ -192,19 +192,26 @@ local function spriteName(obj)
     return name and tostring(name):lower() or nil
 end
 
+local function spriteLooksSearchableNature(name)
+    if not name then return false end
+    if name:match("^location[_%-]") then return false end
+    if name:match("^street[_%-]") then return false end
+    if name:match("^fixtures[_%-]") then return false end
+    if name:match("^furniture[_%-]") then return false end
+    if name:match("^appliances[_%-]") then return false end
+    if name:match("^crafted[_%-]") then return false end
+    if name:match("^industry[_%-]") then return false end
+    if name:match("^trash[_%-]") then return false end
+
+    return name:match("^vegetation[_%-]") ~= nil
+        or name:match("^blends_natural[_%-]") ~= nil
+        or name:match("^d_floorblends[_%-]") ~= nil
+end
+
 local function objectLooksNatural(obj)
     local name = spriteName(obj)
     if not name then return false end
-    return name:find("vegetation", 1, true) ~= nil
-        or name:find("bush", 1, true) ~= nil
-        or name:find("shrub", 1, true) ~= nil
-        or name:find("tree", 1, true) ~= nil
-        or name:find("grass", 1, true) ~= nil
-        or name:find("flower", 1, true) ~= nil
-        or name:find("natural", 1, true) ~= nil
-        or name:find("foliage", 1, true) ~= nil
-        or name:find("blends_natural", 1, true) ~= nil
-        or name:find("d_floorblends", 1, true) ~= nil
+    return spriteLooksSearchableNature(name)
 end
 
 local function squareLooksNatural(square)

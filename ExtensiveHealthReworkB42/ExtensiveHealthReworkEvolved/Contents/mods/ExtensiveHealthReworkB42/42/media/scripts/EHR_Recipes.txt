@@ -219,7 +219,7 @@ module ExtensiveHealth
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
-            item 1 [Base.Mugl;Base.MugWhite;Base.MugRed;Base.MugSpiffo;Base.Teacup;Base.CeramicTeacup] flags[ItemCount],
+            item 1 [Base.Mugl;Base.MugWhite;Base.MugSpiffo;Base.Teacup;Base.CeramicTeacup] flags[ItemCount],
             item 1 [*],
             -fluid 0.3 categories[Water] mode:mixture,
             item 1 [Base.GingerRoot] flags[ItemCount],
@@ -244,7 +244,7 @@ module ExtensiveHealth
         OnTest = RecipeCodeOnTest.EHRFreshMedicinalIngredients,
         inputs
         {
-            item 1 [Base.Mugl;Base.MugWhite;Base.MugRed;Base.MugSpiffo;Base.Teacup;Base.CeramicTeacup] flags[ItemCount],
+            item 1 [Base.Mugl;Base.MugWhite;Base.MugSpiffo;Base.Teacup;Base.CeramicTeacup] flags[ItemCount],
             item 1 [*],
             -fluid 0.3 categories[Water] mode:mixture,
             item 2 [Base.LemonGrass] flags[ItemCount],
@@ -270,7 +270,7 @@ module ExtensiveHealth
         inputs
         {
             item 1 tags[base:mortarpestle] mode:keep,
-            item 1 [Base.Mugl;Base.MugWhite;Base.MugRed;Base.MugSpiffo;Base.Teacup;Base.CeramicTeacup] flags[ItemCount],
+            item 1 [Base.Mugl;Base.MugWhite;Base.MugSpiffo;Base.Teacup;Base.CeramicTeacup] flags[ItemCount],
             item 1 [*],
             -fluid 0.3 categories[Water] mode:mixture,
             item 2 [Base.Chamomile] flags[ItemCount],

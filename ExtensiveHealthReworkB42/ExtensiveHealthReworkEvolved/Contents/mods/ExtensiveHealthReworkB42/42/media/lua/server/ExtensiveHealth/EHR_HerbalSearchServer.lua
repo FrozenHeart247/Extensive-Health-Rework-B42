@@ -425,12 +425,6 @@ local function punctureGloves(player, gloves)
         if not isBrokenOrHoled(gloves) then
             pcall(function()
                 local visual = gloves.getVisual and gloves:getVisual() or nil
-                if visual and visual.setHole then visual:setHole(part, 1.0) end
-            end)
-        end
-        if not isBrokenOrHoled(gloves) then
-            pcall(function()
-                local visual = gloves.getVisual and gloves:getVisual() or nil
                 if visual and visual.setHole then visual:setHole(part) end
             end)
         end

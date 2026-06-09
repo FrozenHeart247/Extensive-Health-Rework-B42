@@ -256,6 +256,32 @@ EHR.Tooltips.Data = {
             "Multi-dose bottle",
         },
     },
+    ["Base.PillsBeta"] = {
+        category = "Vanilla Medication",
+        tier = 0,
+        description = "Beta blocker tablets.",
+        relieves = {"Panic", "Heart strain"},
+        effects = {
+            "Uses vanilla beta blocker behavior",
+            "Provides minor EHR support during heat or cold stress",
+            "Tracked by EHR medication monitoring",
+            "Multi-dose bottle",
+        },
+    },
+    ["Base.Antibiotics"] = {
+        category = "Vanilla Medication",
+        tier = 0,
+        description = "Basic antibiotics.",
+        relieves = {"Minor infection support"},
+        cures = {"Wound Infection", "Cellulitis", "Sepsis"},
+        treatmentTime = "24 hours / 6-dose course",
+        effects = {
+            "Provides low-tier EHR infection treatment",
+            "Does not replace full prescription or clinical courses",
+            "Tracked by EHR medication monitoring",
+            "Multi-dose bottle",
+        },
+    },
     ["ExtensiveHealth.ColdFluTablets"] = {
         category = "OTC Medication",
         tier = 1,

@@ -197,6 +197,7 @@ EHR.Medication.Database = {
         tier = 0,
         treats = {"heat_exhaustion", "hypothermia"},
         displayName = "Beta Blockers",
+        icon = "PillsBetablocker",
         usageMessage = "You take beta blockers. Your heart rate stabilizes.",
     },
 

@@ -39,18 +39,26 @@ local function log(msg)
     end
 end
 
-local function clearFlyerReadProgress(character, item, itemId)
+local function markFlyerReadProgress(character, item, itemId)
     if not character or not item or not itemId then return end
 
-    pcall(function() item:setAlreadyReadPages(0) end)
-    pcall(function() character:setAlreadyReadPages(itemId, 0) end)
+    local pages = 1
+    if item.getNumberOfPages then
+        local okPages, value = pcall(function() return item:getNumberOfPages() end)
+        if okPages and tonumber(value) and tonumber(value) > 0 then
+            pages = tonumber(value)
+        end
+    end
+
+    pcall(function() item:setAlreadyReadPages(pages) end)
+    pcall(function() character:setAlreadyReadPages(itemId, pages) end)
 
     if sendSyncPlayerFields then
-        pcall(sendSyncPlayerFields, character, 0x00000007)
+        pcall(function() sendSyncPlayerFields(character, 0x00000007) end)
     end
 
     if syncItemFields then
-        pcall(syncItemFields, character, item)
+        pcall(function() syncItemFields(character, item) end)
     end
 end
 
@@ -250,7 +258,7 @@ local function handleFlyerRead(character, item, source)
 
     if isMedicalWildPlantsFlyer(item) then
         unlockMedicalWildPlants(character, item)
-        clearFlyerReadProgress(character, item, itemId)
+        markFlyerReadProgress(character, item, itemId)
         return
     end
 
@@ -283,9 +291,9 @@ local function handleFlyerRead(character, item, source)
         end
     end
 
-    -- Disease flyers use the read action, but should not behave like
-    -- skill books with persistent percentage progress.
-    clearFlyerReadProgress(character, item, itemId)
+    -- Disease flyers are one-shot reads, so mark the whole item complete
+    -- and let vanilla draw the inventory checkmark.
+    markFlyerReadProgress(character, item, itemId)
 end
 
 ISEHRReadFlyerAction = ISBaseTimedAction:derive("ISEHRReadFlyerAction")
@@ -378,6 +386,9 @@ function ISEHRReadHeraldAction:perform()
         pcall(function() self.item:setJobDelta(0.0) end)
     end
     unlockKnoxFromHerald(self.character, self.item, "EHRReadHeraldAction")
+    if self.character and self.item and self.item.getFullType then
+        markFlyerReadProgress(self.character, self.item, self.item:getFullType())
+    end
     ISBaseTimedAction.perform(self)
 end
 

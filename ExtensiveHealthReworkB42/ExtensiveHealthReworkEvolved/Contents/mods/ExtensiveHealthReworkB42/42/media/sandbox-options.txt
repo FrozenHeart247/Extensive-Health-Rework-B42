@@ -175,12 +175,32 @@ option ExtensiveHealthRework.TetanusEnabled
     translation = EHR_TetanusEnabled,
 }
 
+option ExtensiveHealthRework.TetanusChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_TetanusChanceMultiplier,
+}
+
 option ExtensiveHealthRework.FoodPoisoningEnabled
 {
     type = boolean,
     default = true,
     page = EHR_Disease,
     translation = EHR_FoodPoisoningEnabled,
+}
+
+option ExtensiveHealthRework.FoodPoisoningChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_FoodPoisoningChanceMultiplier,
 }
 
 option ExtensiveHealthRework.GastroenteritisEnabled
@@ -191,12 +211,32 @@ option ExtensiveHealthRework.GastroenteritisEnabled
     translation = EHR_GastroenteritisEnabled,
 }
 
+option ExtensiveHealthRework.GastroenteritisChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_GastroenteritisChanceMultiplier,
+}
+
 option ExtensiveHealthRework.TrichinosisEnabled
 {
     type = boolean,
     default = true,
     page = EHR_Disease,
     translation = EHR_TrichinosisEnabled,
+}
+
+option ExtensiveHealthRework.TrichinosisChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_TrichinosisChanceMultiplier,
 }
 
 option ExtensiveHealthRework.ToxinPoisoningEnabled
@@ -215,6 +255,32 @@ option ExtensiveHealthRework.HyperkeratoticScabiesEnabled
     translation = EHR_HyperkeratoticScabiesEnabled,
 }
 
+option ExtensiveHealthRework.ScabiesChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_ScabiesChanceMultiplier,
+}
+
+option ExtensiveHealthRework.ScabiesWinterBlock
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_ScabiesWinterBlock,
+}
+
+option ExtensiveHealthRework.ScabiesSnowBlock
+{
+    type = boolean,
+    default = true,
+    page = EHR_Disease,
+    translation = EHR_ScabiesSnowBlock,
+}
+
 option ExtensiveHealthRework.DysenteryEnabled
 {
     type = boolean,
@@ -223,12 +289,42 @@ option ExtensiveHealthRework.DysenteryEnabled
     translation = EHR_DysenteryEnabled,
 }
 
+option ExtensiveHealthRework.DysenteryChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_DysenteryChanceMultiplier,
+}
+
 option ExtensiveHealthRework.CommonColdEnabled
 {
     type = boolean,
     default = true,
     page = EHR_Disease,
     translation = EHR_CommonColdEnabled,
+}
+
+option ExtensiveHealthRework.CommonColdExposureMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_CommonColdExposureMultiplier,
+}
+
+option ExtensiveHealthRework.CommonColdChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_CommonColdChanceMultiplier,
 }
 
 option ExtensiveHealthRework.PneumoniaEnabled
@@ -269,6 +365,26 @@ option ExtensiveHealthRework.ConcussionEnabled
     default = true,
     page = EHR_Disease,
     translation = EHR_ConcussionEnabled,
+}
+
+option ExtensiveHealthRework.ConcussionFallChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_ConcussionFallChanceMultiplier,
+}
+
+option ExtensiveHealthRework.ConcussionVehicleChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Disease,
+    translation = EHR_ConcussionVehicleChanceMultiplier,
 }
 
 option ExtensiveHealthRework.DeliriumEnabled
@@ -359,6 +475,116 @@ option ExtensiveHealthRework.PreDiseaseEffectsEnabled
     default = true,
     page = EHR_Temperature,
     translation = EHR_PreDiseaseEffectsEnabled,
+}
+
+option ExtensiveHealthRework.HeatExposureTemperatureThreshold
+{
+    type = double,
+    min = 20.0,
+    max = 50.0,
+    default = 30.0,
+    page = EHR_Temperature,
+    translation = EHR_HeatExposureTemperatureThreshold,
+}
+
+option ExtensiveHealthRework.HeatExposureHoursToFull
+{
+    type = double,
+    min = 0.25,
+    max = 24.0,
+    default = 4.0,
+    page = EHR_Temperature,
+    translation = EHR_HeatExposureHoursToFull,
+}
+
+option ExtensiveHealthRework.HeatExposureGainMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Temperature,
+    translation = EHR_HeatExposureGainMultiplier,
+}
+
+option ExtensiveHealthRework.HeatExposureRecoveryMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Temperature,
+    translation = EHR_HeatExposureRecoveryMultiplier,
+}
+
+option ExtensiveHealthRework.HeatStrokeChanceMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 5.0,
+    default = 1.0,
+    page = EHR_Temperature,
+    translation = EHR_HeatStrokeChanceMultiplier,
+}
+
+option ExtensiveHealthRework.HeatHeadwearExposureMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 1.0,
+    default = 0.30,
+    page = EHR_Temperature,
+    translation = EHR_HeatHeadwearExposureMultiplier,
+}
+
+option ExtensiveHealthRework.HypothermiaStage1Temp
+{
+    type = double,
+    min = 30.0,
+    max = 37.0,
+    default = 35.0,
+    page = EHR_Temperature,
+    translation = EHR_HypothermiaStage1Temp,
+}
+
+option ExtensiveHealthRework.HypothermiaStage2Temp
+{
+    type = double,
+    min = 29.0,
+    max = 36.5,
+    default = 34.0,
+    page = EHR_Temperature,
+    translation = EHR_HypothermiaStage2Temp,
+}
+
+option ExtensiveHealthRework.HypothermiaStage3Temp
+{
+    type = double,
+    min = 28.0,
+    max = 36.0,
+    default = 32.0,
+    page = EHR_Temperature,
+    translation = EHR_HypothermiaStage3Temp,
+}
+
+option ExtensiveHealthRework.HypothermiaStage4Temp
+{
+    type = double,
+    min = 27.0,
+    max = 35.5,
+    default = 31.0,
+    page = EHR_Temperature,
+    translation = EHR_HypothermiaStage4Temp,
+}
+
+option ExtensiveHealthRework.HypothermiaClearTemp
+{
+    type = double,
+    min = 31.0,
+    max = 38.0,
+    default = 35.5,
+    page = EHR_Temperature,
+    translation = EHR_HypothermiaClearTemp,
 }
 
 option ExtensiveHealthRework.RealisticTemperatureCompatibility

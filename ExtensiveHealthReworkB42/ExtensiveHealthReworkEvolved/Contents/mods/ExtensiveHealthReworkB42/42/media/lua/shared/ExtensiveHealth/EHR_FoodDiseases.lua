@@ -335,6 +335,16 @@ function EHR.Food.IsGastroenteritisEnabled()
     return options.GastroenteritisEnabled
 end
 
+local function getSandboxNumber(name, default, minValue, maxValue)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework or nil
+    local value = options and options[name] or nil
+    value = tonumber(value)
+    if value == nil then value = tonumber(default) or 0 end
+    if minValue ~= nil and value < minValue then value = minValue end
+    if maxValue ~= nil and value > maxValue then value = maxValue end
+    return value
+end
+
 -- ============================================
 -- FOOD EATING HOOK
 -- ============================================
@@ -352,6 +362,7 @@ function EHR.Food.OnEatFood(player, item)
     -- Check for trichinosis risk (raw meat)
     if EHR.Food.IsTrichinosisEnabled() then
         local trichinRisk = EHR.Food.CheckTrichinosisRisk(item)
+        trichinRisk = math.max(0, math.min(1, trichinRisk * getSandboxNumber("TrichinosisChanceMultiplier", 1.0, 0.0, 5.0)))
         if trichinRisk > 0 then
             EHR.Log(string.format("Trichinosis risk detected: %.0f%%", trichinRisk * 100))
 
@@ -366,6 +377,7 @@ function EHR.Food.OnEatFood(player, item)
     -- Check for gastroenteritis risk (dirty hands)
     if EHR.Food.IsGastroenteritisEnabled() then
         local handRisk = EHR.Food.GetContaminationRisk(player)
+        handRisk = math.max(0, math.min(1, handRisk * getSandboxNumber("GastroenteritisChanceMultiplier", 1.0, 0.0, 5.0)))
         if handRisk > 0.05 then  -- Threshold to avoid constant checks
             EHR.Log(string.format("Gastroenteritis risk from dirty hands: %.0f%%", handRisk * 100))
 
@@ -468,7 +480,7 @@ function EHR.Food.CheckTetanusRisk(player, woundType, woundSource, riskOverride)
         or sourceText:find("shard", 1, true) ~= nil
     if not hasGlass then return false end
 
-    local baseRisk = math.max(0, math.min(1, tonumber(riskOverride) or TETANUS_INITIAL_RISK))
+    local baseRisk = math.max(0, math.min(1, (tonumber(riskOverride) or TETANUS_INITIAL_RISK) * getSandboxNumber("TetanusChanceMultiplier", 1.0, 0.0, 5.0)))
 
     if baseRisk > 0 then
         EHR.Log(string.format("Tetanus risk from deep wound with glass: %.0f%%", baseRisk * 100))

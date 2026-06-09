@@ -88,6 +88,26 @@ local function concussionDebugEnabled()
         and EHR.Concussion.Config.debugConcussion == false
 end
 
+local function getSandboxNumber(name, default, minValue, maxValue)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework or nil
+    local value = options and options[name] or nil
+    value = tonumber(value)
+    if value == nil then value = tonumber(default) or 0 end
+    if minValue ~= nil and value < minValue then value = minValue end
+    if maxValue ~= nil and value > maxValue then value = maxValue end
+    return value
+end
+
+local function getFallChance(cfg)
+    local baseChance = tonumber(cfg and cfg.FALL_CHANCE) or 0.65
+    return math.max(0, math.min(1, baseChance * getSandboxNumber("ConcussionFallChanceMultiplier", 1.0, 0.0, 5.0)))
+end
+
+local function getVehicleChance(cfg)
+    local baseChance = tonumber(cfg and cfg.VEHICLE_CHANCE) or 0.45
+    return math.max(0, math.min(1, baseChance * getSandboxNumber("ConcussionVehicleChanceMultiplier", 1.0, 0.0, 5.0)))
+end
+
 local function debugConcussion(player, state, reason, detail, force)
     if not concussionDebugEnabled() then return end
 
@@ -817,8 +837,10 @@ function EHR.Concussion.UpdateTracking(player)
     local vehicle = getVehicle(player)
     local lastSnapshot = state.lastSnapshot or snapshot
 
-    resolvePendingTrauma(player, state, "pendingCrash", now, cfg, snapshot, cfg.VEHICLE_CHANCE or 0.45)
-    resolvePendingTrauma(player, state, "pendingFall", now, cfg, snapshot, cfg.FALL_CHANCE or 0.65)
+    local vehicleChance = getVehicleChance(cfg)
+    local fallChance = getFallChance(cfg)
+    resolvePendingTrauma(player, state, "pendingCrash", now, cfg, snapshot, vehicleChance)
+    resolvePendingTrauma(player, state, "pendingFall", now, cfg, snapshot, fallChance)
 
     if not vehicle then
         local lastFallZ = tonumber(state.lastFallZ)
@@ -857,14 +879,14 @@ function EHR.Concussion.UpdateTracking(player)
                 x,
                 y,
                 tostring(stairTransition),
-                (cfg.FALL_CHANCE or 0.65) * 100
+                fallChance * 100
             ), true)
             if EHR.DEBUG then
                 EHR.Log(string.format(
                     "Concussion fall trauma window: drop %.2f, stairs=%s, chance %.0f%%",
                     drop,
                     tostring(stairTransition),
-                    (cfg.FALL_CHANCE or 0.65) * 100
+                    fallChance * 100
                 ))
             end
             setPendingTrauma(state, "pendingFall", now, "fall", lastSnapshot, {

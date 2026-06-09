@@ -110,6 +110,63 @@ local function EHR_EnvironmentalWorldHour()
     return 0
 end
 
+local function EHR_EnvironmentalClampNumber(value, minValue, maxValue)
+    value = tonumber(value)
+    if not value then return nil end
+    if minValue ~= nil and value < minValue then value = minValue end
+    if maxValue ~= nil and value > maxValue then value = maxValue end
+    return value
+end
+
+local function EHR_EnvironmentalGetSandboxNumber(name, default, minValue, maxValue)
+    local value = nil
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        value = SandboxVars.ExtensiveHealthRework[name]
+    end
+    value = tonumber(value)
+    if value == nil then value = tonumber(default) or 0 end
+    return EHR_EnvironmentalClampNumber(value, minValue, maxValue) or value
+end
+
+function EHR.Environmental.GetHeatTemperatureThreshold()
+    local config = EHR.Environmental.Config or {}
+    return EHR_EnvironmentalGetSandboxNumber("HeatExposureTemperatureThreshold", config.hotTemp or 30.0, 20.0, 50.0)
+end
+
+function EHR.Environmental.GetHeatExposureHoursToFull()
+    local config = EHR.Environmental.Config or {}
+    return EHR_EnvironmentalGetSandboxNumber("HeatExposureHoursToFull", config.heatExposureForExhaustion or 4.0, 0.25, 24.0)
+end
+
+function EHR.Environmental.GetHeatExposureGainMultiplier()
+    return EHR_EnvironmentalGetSandboxNumber("HeatExposureGainMultiplier", 1.0, 0.0, 5.0)
+end
+
+function EHR.Environmental.GetHeatExposureRecoveryMultiplier()
+    return EHR_EnvironmentalGetSandboxNumber("HeatExposureRecoveryMultiplier", 1.0, 0.0, 5.0)
+end
+
+function EHR.Environmental.GetHeatStrokeChanceMultiplier()
+    return EHR_EnvironmentalGetSandboxNumber("HeatStrokeChanceMultiplier", 1.0, 0.0, 5.0)
+end
+
+function EHR.Environmental.GetHeatHeadwearExposureMultiplier()
+    local config = EHR.Environmental.Config or {}
+    return EHR_EnvironmentalGetSandboxNumber("HeatHeadwearExposureMultiplier", config.heatHeadwearMultiplier or 0.30, 0.0, 1.0)
+end
+
+function EHR.Environmental.GetCommonColdExposureMultiplier()
+    return EHR_EnvironmentalGetSandboxNumber("CommonColdExposureMultiplier", 1.0, 0.0, 5.0)
+end
+
+function EHR.Environmental.GetCommonColdChanceMultiplier()
+    return EHR_EnvironmentalGetSandboxNumber("CommonColdChanceMultiplier", 1.0, 0.0, 5.0)
+end
+
+function EHR.Environmental.GetDysenteryChanceMultiplier()
+    return EHR_EnvironmentalGetSandboxNumber("DysenteryChanceMultiplier", 1.0, 0.0, 5.0)
+end
+
 local function EHR_EnvironmentalPlayerName(player)
     local name = "unknown"
     pcall(function()
@@ -765,13 +822,13 @@ function EHR.Environmental.GetHeatHeadwearMultiplier(player)
                 headItem = player:getClothingItem_Head()
             end
         end)
-        return isHeadwear(headItem) and (EHR.Environmental.Config.heatHeadwearMultiplier or 0.50) or 1.0
+        return isHeadwear(headItem) and EHR.Environmental.GetHeatHeadwearExposureMultiplier() or 1.0
     end
 
     for i = 0, wornItems:size() - 1 do
         local item = wornItems:getItemByIndex(i)
         if isHeadwear(item) then
-            return EHR.Environmental.Config.heatHeadwearMultiplier or 0.50
+            return EHR.Environmental.GetHeatHeadwearExposureMultiplier()
         end
     end
 
@@ -941,6 +998,7 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     local config = EHR.Environmental.Config
     local exposure = EHR.Environmental.GetExposureData(player)
     if not exposure then return end
+    local coldExposureMultiplier = EHR.Environmental.GetCommonColdExposureMultiplier()
 
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
     local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
@@ -1060,14 +1118,14 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
 
     -- Accumulate freezing+wet exposure
     if freezingWetRisk then
-        exposure.coldExposure = exposure.coldExposure + (deltaHours * coldMultiplier)
+        exposure.coldExposure = exposure.coldExposure + (deltaHours * coldMultiplier * coldExposureMultiplier)
     else
         exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours)
     end
 
     -- Accumulate heavy-wetness-only exposure
     if soakedRisk then
-        exposure.soakedColdExposure = (exposure.soakedColdExposure or 0) + deltaHours
+        exposure.soakedColdExposure = (exposure.soakedColdExposure or 0) + (deltaHours * coldExposureMultiplier)
     else
         exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours)
     end
@@ -1127,10 +1185,12 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     local isIndoors = env.isIndoors == true
     local isExerting = env.isExerting == true
     local thirst = tonumber(env.thirst) or 0
+    local hotTemp = EHR.Environmental.GetHeatTemperatureThreshold()
+    local recoveryMultiplier = EHR.Environmental.GetHeatExposureRecoveryMultiplier()
 
     if isIndoors then
-        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatIndoorRecoveryRate or 2.25))
-        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 3)
+        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatIndoorRecoveryRate or 2.25) * recoveryMultiplier)
+        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 3 * recoveryMultiplier)
 
         if EHR.DEBUG and exposure.heatExposure > 0 then
             EHR.Log(string.format("Heat exposure cooling indoors: %.2f hours (world temp=%.1f)",
@@ -1139,9 +1199,9 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
         return
     end
 
-    if airTemp < config.hotTemp then
-        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatCoolRecoveryRate or 1.25))
-        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 2)
+    if airTemp < hotTemp then
+        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatCoolRecoveryRate or 1.25) * recoveryMultiplier)
+        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 2 * recoveryMultiplier)
         return
     end
 
@@ -1151,11 +1211,12 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     -- World-temperature driven heat exposure. 30C+ is enough on its own;
     -- exertion/dehydration only speed it up.
     local heatMultiplier = 1.0
-    heatMultiplier = heatMultiplier * math.min(1.75, 1 + math.max(0, airTemp - config.hotTemp) * 0.06)
+    heatMultiplier = heatMultiplier * math.min(1.75, 1 + math.max(0, airTemp - hotTemp) * 0.06)
     if isExerting then heatMultiplier = heatMultiplier * 1.25 end
     if isDehydrated then heatMultiplier = heatMultiplier * 1.15 end
     if isSeverelyDehydrated then heatMultiplier = heatMultiplier * 1.25 end
     heatMultiplier = heatMultiplier * (tonumber(env.headwearMultiplier) or EHR.Environmental.GetHeatHeadwearMultiplier(player))
+    heatMultiplier = heatMultiplier * EHR.Environmental.GetHeatExposureGainMultiplier()
 
     exposure.heatExposure = math.max(0, exposure.heatExposure + (deltaHours * heatMultiplier))
 
@@ -1194,7 +1255,7 @@ function EHR.Environmental.CheckHeatDiseases(player, exposure)
         end
     end
 
-    local threshold = config.heatExposureForExhaustion or 4.0
+    local threshold = EHR.Environmental.GetHeatExposureHoursToFull()
     if threshold <= 0 then return end
 
     local ratio = exposure.heatExposure / threshold
@@ -1237,6 +1298,7 @@ function EHR.Environmental.CheckHeatDiseases(player, exposure)
     if EHR.Environmental.IsExerting(player) then
         chance = chance * 1.15
     end
+    chance = chance * EHR.Environmental.GetHeatStrokeChanceMultiplier()
     chance = math.min(0.95, chance)
     if skippedChecks > 1 then
         chance = 1 - math.pow(1 - chance, skippedChecks)
@@ -1258,8 +1320,7 @@ function EHR.Environmental.GetHeatExposureRatio(player)
     if options and options.HeatExhaustionEnabled == false then return 0 end
 
     local exposure = EHR.Environmental.GetExposureData(player)
-    local config = EHR.Environmental.Config or {}
-    local threshold = tonumber(config.heatExposureForExhaustion) or 4.0
+    local threshold = EHR.Environmental.GetHeatExposureHoursToFull()
     if not exposure or threshold <= 0 then return 0 end
 
     return math.max(0, math.min(1.25, (tonumber(exposure.heatExposure) or 0) / threshold))
@@ -1331,7 +1392,7 @@ function EHR.Environmental.CheckHeatProgression(player, exposure)
         return  -- Cooling down, won't progress
     end
 
-    local progressChance = def.progressChance or 0.40
+    local progressChance = (def.progressChance or 0.40) * EHR.Environmental.GetHeatStrokeChanceMultiplier()
 
     -- Dehydration increases progression
     local stats = player:getStats()
@@ -1378,7 +1439,7 @@ function EHR.Environmental.CheckHeatCooling(player, deltaHours)
             local def = EHR.Disease.Diseases[diseaseId]
             if def and def.requiresCoolingForRecovery then
                 local isInShade = env.isInShade == true
-                local isCool = isInShade or airTemp < EHR.Environmental.Config.hotTemp
+                local isCool = isInShade or airTemp < EHR.Environmental.GetHeatTemperatureThreshold()
 
                 -- If in recovery (stage 4) but not cool, regress
                 if disease.stage == 4 and not isCool then
@@ -1475,7 +1536,7 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
         local soakedRatio = soakedExposure / (config.soakedExposureForCold or 1.0)
         local freezingChance = freezingReady and math.min(0.35, 0.10 * freezingRatio) or 0
         local soakedChance = soakedReady and math.min(0.25, 0.08 * soakedRatio) or 0
-        local baseChance = math.max(freezingChance, soakedChance)
+        local baseChance = math.min(1.0, math.max(freezingChance, soakedChance) * EHR.Environmental.GetCommonColdChanceMultiplier())
 
         EHR.Log(string.format("Cold exposure check: freezing=%.2fh, soaked=%.2fh, base chance %.0f%%",
             freezingExposure, soakedExposure, baseChance * 100))
@@ -1845,6 +1906,7 @@ function EHR.Environmental.OnDrinkWater(player, waterItem, sourceType)
     EHR.Environmental.InitializePlayer(player)
 
     local risk, reason = EHR.Environmental.GetWaterContaminationRisk(waterItem, sourceType)
+    risk = math.max(0, math.min(1, (tonumber(risk) or 0) * EHR.Environmental.GetDysenteryChanceMultiplier()))
 
     if risk <= 0.01 then
         if EHR.DEBUG then

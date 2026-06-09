@@ -4724,8 +4724,22 @@ function EHR.Disease.CheckFoodRisk(player, item)
 
     local risks = {}
 
+    local function getFoodDiseaseChanceMultiplier(diseaseId)
+        local keyByDisease = {
+            food_poisoning = "FoodPoisoningChanceMultiplier",
+            gastroenteritis = "GastroenteritisChanceMultiplier",
+            trichinosis = "TrichinosisChanceMultiplier",
+        }
+        local key = keyByDisease[diseaseId]
+        if not key then return 1.0 end
+        local value = tonumber(EHR.Disease.GetSetting(key, 1.0)) or 1.0
+        return math.max(0, math.min(5, value))
+    end
+
     local function addRisk(diseaseId, riskReason, chance)
-        if diseaseId and riskReason and chance and chance > 0 then
+        chance = (tonumber(chance) or 0) * getFoodDiseaseChanceMultiplier(diseaseId)
+        chance = math.max(0, math.min(1, chance))
+        if diseaseId and riskReason and chance > 0 then
             table.insert(risks, {
                 diseaseId = diseaseId,
                 reason = riskReason,

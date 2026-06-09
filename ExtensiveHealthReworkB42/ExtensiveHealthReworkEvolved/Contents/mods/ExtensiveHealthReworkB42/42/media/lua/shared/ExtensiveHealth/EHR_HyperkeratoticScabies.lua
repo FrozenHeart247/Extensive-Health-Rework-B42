@@ -41,6 +41,29 @@ local function isSandboxEnabled()
     return true
 end
 
+local function getSandboxNumber(name, default, minValue, maxValue)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework or nil
+    local value = options and options[name] or nil
+    value = tonumber(value)
+    if value == nil then value = tonumber(default) or 0 end
+    if minValue ~= nil and value < minValue then value = minValue end
+    if maxValue ~= nil and value > maxValue then value = maxValue end
+    return value
+end
+
+local function getSandboxBoolean(name, default)
+    local options = SandboxVars and SandboxVars.ExtensiveHealthRework or nil
+    if options and options[name] ~= nil then return options[name] == true end
+    return default == true
+end
+
+local function getGroundChance()
+    local config = EHR.HyperkeratoticScabies.Config or {}
+    local baseChance = tonumber(config.GROUND_CHANCE) or 0.03
+    local multiplier = getSandboxNumber("ScabiesChanceMultiplier", 1.0, 0.0, 5.0)
+    return math.max(0, math.min(1, baseChance * multiplier))
+end
+
 local function isDebugRollsEnabled()
     local config = EHR.HyperkeratoticScabies.Config or {}
     if config.DEBUG_ROLLS == false then return false end
@@ -234,9 +257,8 @@ local function hasSnowCover(square)
 end
 
 function EHR.HyperkeratoticScabies.IsSeasonBlocked(square)
-    local config = EHR.HyperkeratoticScabies.Config or {}
-    if config.BLOCK_WINTER_MONTHS ~= false and isWinterMonth() then return true end
-    if config.BLOCK_SNOW ~= false and hasSnowCover(square) then return true end
+    if getSandboxBoolean("ScabiesWinterBlock", true) and isWinterMonth() then return true end
+    if getSandboxBoolean("ScabiesSnowBlock", true) and hasSnowCover(square) then return true end
     return false
 end
 
@@ -588,7 +610,7 @@ function EHR.HyperkeratoticScabies.UpdatePlayer(player)
         debugRoll(player, state, "started", string.format(
             "sitting on natural ground; interval=%.2fh chance=%.2f%% texture=%s",
             interval,
-            (tonumber(EHR.HyperkeratoticScabies.Config.GROUND_CHANCE) or 0.03) * 100,
+            getGroundChance() * 100,
             tostring(getFloorTextureName(square) or "nil")
         ))
         return
@@ -617,7 +639,7 @@ function EHR.HyperkeratoticScabies.UpdatePlayer(player)
 
     state.lastGroundCheckHour = now
 
-    local chance = EHR.HyperkeratoticScabies.Config.GROUND_CHANCE or 0.03
+    local chance = getGroundChance()
     local didProc, value = rollDetailed(chance)
     debugRoll(player, state, "roll", string.format(
         "chance=%.2f%% roll=%.2f%% result=%s sitting=%.2fh texture=%s",

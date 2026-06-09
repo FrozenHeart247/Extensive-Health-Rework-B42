@@ -221,6 +221,46 @@ function EHR.BodyTemp.PreDiseaseEffectsEnabled()
     return true
 end
 
+local function EHR_BodyTempClampNumber(value, minValue, maxValue)
+    value = tonumber(value)
+    if not value then return nil end
+    if minValue ~= nil and value < minValue then value = minValue end
+    if maxValue ~= nil and value > maxValue then value = maxValue end
+    return value
+end
+
+local function EHR_BodyTempGetSandboxNumber(name, default, minValue, maxValue)
+    local value = nil
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        value = SandboxVars.ExtensiveHealthRework[name]
+    end
+    value = tonumber(value)
+    if value == nil then value = tonumber(default) or 0 end
+    return EHR_BodyTempClampNumber(value, minValue, maxValue) or value
+end
+
+function EHR.BodyTemp.GetHypothermiaThresholds()
+    local cfg = EHR.BodyTemp.Config or {}
+    local stage1 = EHR_BodyTempGetSandboxNumber("HypothermiaStage1Temp", cfg.hypothermiaStage1 or 35.0, 30.0, 37.0)
+    local stage2 = EHR_BodyTempGetSandboxNumber("HypothermiaStage2Temp", cfg.hypothermiaStage2 or 34.0, 29.0, 36.5)
+    local stage3 = EHR_BodyTempGetSandboxNumber("HypothermiaStage3Temp", cfg.hypothermiaStage3 or 32.0, 28.0, 36.0)
+    local stage4 = EHR_BodyTempGetSandboxNumber("HypothermiaStage4Temp", cfg.hypothermiaStage4 or 31.0, 27.0, 35.5)
+    local clear = EHR_BodyTempGetSandboxNumber("HypothermiaClearTemp", cfg.hypothermiaClearTemp or 35.5, 31.0, 38.0)
+
+    stage2 = math.min(stage2, stage1 - 0.1)
+    stage3 = math.min(stage3, stage2 - 0.1)
+    stage4 = math.min(stage4, stage3 - 0.1)
+    clear = math.max(clear, stage1)
+
+    return {
+        stage1 = stage1,
+        stage2 = stage2,
+        stage3 = stage3,
+        stage4 = stage4,
+        clear = clear,
+    }
+end
+
 -- ============================================
 -- DATA INITIALIZATION
 -- ============================================
@@ -442,40 +482,42 @@ end
 
 function EHR.BodyTemp.GetHypothermiaStageFromBodyTemp(bodyTemp, currentStage)
     local cfg = EHR.BodyTemp.Config
+    local thresholds = EHR.BodyTemp.GetHypothermiaThresholds()
     bodyTemp = tonumber(bodyTemp)
     if not bodyTemp then return 0 end
 
     currentStage = tonumber(currentStage) or 0
     local hyst = cfg.hypothermiaStageHysteresis or 0.25
 
-    if bodyTemp <= (cfg.hypothermiaStage4 or 31.0) then return 4 end
-    if bodyTemp <= (cfg.hypothermiaStage3 or 32.0) then return 3 end
-    if bodyTemp <= (cfg.hypothermiaStage2 or 34.0) then return 2 end
-    if bodyTemp <= (cfg.hypothermiaStage1 or 35.0) then return 1 end
+    if bodyTemp <= thresholds.stage4 then return 4 end
+    if bodyTemp <= thresholds.stage3 then return 3 end
+    if bodyTemp <= thresholds.stage2 then return 2 end
+    if bodyTemp <= thresholds.stage1 then return 1 end
 
-    if currentStage >= 4 and bodyTemp <= ((cfg.hypothermiaStage4 or 31.0) + hyst) then return 4 end
-    if currentStage >= 3 and bodyTemp <= ((cfg.hypothermiaStage3 or 32.0) + hyst) then return 3 end
-    if currentStage >= 2 and bodyTemp <= ((cfg.hypothermiaStage2 or 34.0) + hyst) then return 2 end
-    if currentStage >= 1 and bodyTemp <= (cfg.hypothermiaClearTemp or 35.5) then return 1 end
+    if currentStage >= 4 and bodyTemp <= (thresholds.stage4 + hyst) then return 4 end
+    if currentStage >= 3 and bodyTemp <= (thresholds.stage3 + hyst) then return 3 end
+    if currentStage >= 2 and bodyTemp <= (thresholds.stage2 + hyst) then return 2 end
+    if currentStage >= 1 and bodyTemp <= thresholds.clear then return 1 end
 
     return 0
 end
 
 local function EHR_BodyTempGetHypothermiaProgress(stage, bodyTemp)
     local cfg = EHR.BodyTemp.Config
+    local thresholds = EHR.BodyTemp.GetHypothermiaThresholds()
     stage = tonumber(stage) or 0
     bodyTemp = tonumber(bodyTemp) or cfg.normalTemp
 
     if stage <= 0 then return 0 end
     if stage == 1 then
-        local span = math.max(0.1, (cfg.hypothermiaStage1 or 35.0) - (cfg.hypothermiaStage2 or 34.0))
-        return 0.05 + (math.min(1, math.max(0, ((cfg.hypothermiaStage1 or 35.0) - bodyTemp) / span)) * 0.20)
+        local span = math.max(0.1, thresholds.stage1 - thresholds.stage2)
+        return 0.05 + (math.min(1, math.max(0, (thresholds.stage1 - bodyTemp) / span)) * 0.20)
     elseif stage == 2 then
-        local span = math.max(0.1, (cfg.hypothermiaStage2 or 34.0) - (cfg.hypothermiaStage3 or 32.0))
-        return 0.30 + (math.min(1, math.max(0, ((cfg.hypothermiaStage2 or 34.0) - bodyTemp) / span)) * 0.25)
+        local span = math.max(0.1, thresholds.stage2 - thresholds.stage3)
+        return 0.30 + (math.min(1, math.max(0, (thresholds.stage2 - bodyTemp) / span)) * 0.25)
     elseif stage == 3 then
-        local span = math.max(0.1, (cfg.hypothermiaStage3 or 32.0) - (cfg.hypothermiaStage4 or 31.0))
-        return 0.60 + (math.min(1, math.max(0, ((cfg.hypothermiaStage3 or 32.0) - bodyTemp) / span)) * 0.25)
+        local span = math.max(0.1, thresholds.stage3 - thresholds.stage4)
+        return 0.60 + (math.min(1, math.max(0, (thresholds.stage3 - bodyTemp) / span)) * 0.25)
     end
 
     return 0.95
@@ -537,8 +579,8 @@ function EHR.BodyTemp.SyncHypothermiaFromTemperature(player, tempData)
     disease.endTime = currentHour + 9999
     disease.incubationEnd = disease.startTime or currentHour
     disease.peakTime = currentHour
-    local cfg = EHR.BodyTemp.Config
-    disease.severity = math.max(0.55, math.min(1.0, 0.50 + (stage * 0.12) + math.max(0, ((cfg and cfg.hypothermiaStage1 or 35.0) - (tonumber(tempData.bodyTemp) or 35.0)) * 0.04)))
+    local thresholds = EHR.BodyTemp.GetHypothermiaThresholds()
+    disease.severity = math.max(0.55, math.min(1.0, 0.50 + (stage * 0.12) + math.max(0, (thresholds.stage1 - (tonumber(tempData.bodyTemp) or thresholds.stage1)) * 0.04)))
     tempData.hypothermiaStage = stage
 
     if created or oldStage ~= stage then

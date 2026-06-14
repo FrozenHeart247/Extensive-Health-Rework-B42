@@ -125,6 +125,8 @@ Sandbox_CH = {
     Sandbox_EHR_KnoxCureItemsEnabled_tooltip = "允許諾克斯病毒治療物品在世界中生成。<LINE> <LINE>受影響的項目：<LINE>- 方陣丸（減緩感染）<LINE>- 抗體檢測試劑盒（檢測感染階段）<LINE>- 免疫增強劑（增強抵抗力）<LINE>- 基因治療套件（治癒諾克斯病毒）<LINE> <LINE>這些極為稀有的物品僅在羅斯伍德附近的軍事研究設施地下室中生成。<LINE> <LINE>如果您想要更普通的殭屍體驗且無法治愈，請停用此功能。",
     Sandbox_EHR_MedicationLootMultiplier = "藥物戰利品乘數",
     Sandbox_EHR_MedicationLootMultiplier_tooltip = "縮放 EHR 藥物和醫療用品的生成機會。 <LINE> <LINE> 0.0 = 停用，0.5 = 一半，1.0 = 默認，2.0 = 雙倍。",
+    Sandbox_EHR_MedicalWatchLootMultiplier = "醫療手錶戰利品乘數",
+    Sandbox_EHR_MedicalWatchLootMultiplier_tooltip = "縮放從原版紅色數位手錶複製而來的 Medical Monitor Watch 生成機率。 <LINE> <LINE> 0.0 = 停用，0.35 = 稀有，1.0 = 原版手錶機率。",
     Sandbox_EHR_MedicationPackageFill = "藥品包裝填充",
     Sandbox_EHR_MedicationPackageFill_tooltip = "控制生成的多劑量藥物包裝內剩餘的劑量。",
     Sandbox_EHR_MedicationPackageFill_option1 = "稀缺",

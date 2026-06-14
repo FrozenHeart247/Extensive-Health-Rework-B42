@@ -125,6 +125,8 @@
     "Sandbox_EHR_KnoxCureItemsEnabled_tooltip": "Дозвольте Knox Virus Cure з’являтися у світі. <LINE> <LINE> ОБ’ЄКТИ, ЯКІ СТРАЖАЮТЬСЯ: <LINE> – Таблетки Phalanx (уповільнює інфекцію) <LINE> – Набір для тестування на антитіла (виявляє стадію інфекції) <LINE> – Імунопідсилювач (підвищує стійкість) <LINE> – Генна терапія Набір (лікує вірус Knox) <LINE> <LINE> Ці надзвичайно рідкісні предмети з’являються лише в підвалі Військового науково-дослідного центру біля Роузвуда. <LINE> <LINE> Вимкніть це, якщо ви хочете отримати більше ванільного досвіду зомбі без можливості лікування.",
     "Sandbox_EHR_MedicationLootMultiplier": "Множник здобичі ліків",
     "Sandbox_EHR_MedicationLootMultiplier_tooltip": "Шкали EHR шанси появи ліків і медичного постачання. <LINE> <LINE> 0,0 = вимкнено, 0,5 = половина, 1,0 = за замовчуванням, 2,0 = подвійно.",
+    "Sandbox_EHR_MedicalWatchLootMultiplier": "Множник здобичі медичного годинника",
+    "Sandbox_EHR_MedicalWatchLootMultiplier_tooltip": "Масштабує шанс появи Medical Monitor Watch, скопійований із ванільних червоних цифрових годинників. <LINE> <LINE> 0,0 = вимкнено, 0,35 = рідко, 1,0 = ванільний шанс.",
     "Sandbox_EHR_MedicationPackageFill": "Заповнення упаковки ліків",
     "Sandbox_EHR_MedicationPackageFill_tooltip": "Контролює, скільки доз залишається в створених багатодозових упаковках ліків.",
     "Sandbox_EHR_MedicationPackageFill_option1": "дефіцитний",

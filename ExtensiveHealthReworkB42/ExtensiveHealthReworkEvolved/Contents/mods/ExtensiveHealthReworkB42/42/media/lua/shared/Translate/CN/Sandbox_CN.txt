@@ -125,6 +125,8 @@ Sandbox_CN = {
     Sandbox_EHR_KnoxCureItemsEnabled_tooltip = "允许诺克斯病毒治疗物品在世界中生成。 <LINE> <LINE> 受影响的物品： <LINE> - Phalanx 药丸（减缓感染） <LINE> - 抗体测试套件（检测感染阶段） <LINE> - 免疫增强注射（增强抵抗力） <LINE> - 基因治疗套件（治愈诺克斯）病毒）<LINE> <LINE> 这些超稀有物品仅在紫檀镇附近的军事研究设施地下室中生成。 <LINE> <LINE> 如果您想要更普通的僵尸体验且无法治愈，请禁用此选项。",
     Sandbox_EHR_MedicationLootMultiplier = "药物战利品乘数",
     Sandbox_EHR_MedicationLootMultiplier_tooltip = "缩放 EHR 药物和医疗用品的生成机会。 <LINE> <LINE> 0.0 = 禁用，0.5 = 一半，1.0 = 默认，2.0 = 双倍。",
+    Sandbox_EHR_MedicalWatchLootMultiplier = "医疗手表战利品乘数",
+    Sandbox_EHR_MedicalWatchLootMultiplier_tooltip = "缩放从原版红色数字手表复制而来的 Medical Monitor Watch 生成概率。 <LINE> <LINE> 0.0 = 禁用，0.35 = 稀有，1.0 = 原版手表概率。",
     Sandbox_EHR_MedicationPackageFill = "药品包装填充",
     Sandbox_EHR_MedicationPackageFill_tooltip = "控制生成的多剂量药物包装内剩余的剂量。",
     Sandbox_EHR_MedicationPackageFill_option1 = "稀缺",

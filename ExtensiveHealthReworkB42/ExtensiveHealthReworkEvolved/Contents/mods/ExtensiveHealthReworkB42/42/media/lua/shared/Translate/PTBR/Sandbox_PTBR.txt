@@ -125,6 +125,8 @@ Sandbox_PTBR = {
     Sandbox_EHR_KnoxCureItemsEnabled_tooltip = "Permitir que itens Knox Virus Cure apareçam no mundo. <LINE> <LINE> ITENS AFETADOS: <LINE> - Pílulas Phalanx (retarda a infecção) <LINE> - Kit de teste de anticorpos (detecta o estágio da infecção) <LINE> - Immunobooster Shot (aumenta a resistência) <LINE> - Kit de terapia genética (cura Knox Vírus) <LINE> <LINE> Esses itens ultra-raros só aparecem no porão do Centro de Pesquisa Militar perto de Rosewood. <LINE> <LINE> Desative esta opção se quiser uma experiência zumbi mais baunilha, SEM possibilidade de cura.",
     Sandbox_EHR_MedicationLootMultiplier = "Multiplicador de loot medico",
     Sandbox_EHR_MedicationLootMultiplier_tooltip = "Escala chances de spawn de medicamentos e suprimentos EHR. <LINE> <LINE> 0.0 = desativado, 0.5 = metade, 1.0 = padrao, 2.0 = dobro.",
+    Sandbox_EHR_MedicalWatchLootMultiplier = "Multiplicador de loot do relogio medico",
+    Sandbox_EHR_MedicalWatchLootMultiplier_tooltip = "Escala a chance de spawn do Medical Monitor Watch copiada dos relogios digitais vermelhos vanilla. <LINE> <LINE> 0.0 = desativado, 0.35 = raro, 1.0 = chance vanilla.",
     Sandbox_EHR_MedicationPackageFill = "Preenchimento de embalagens",
     Sandbox_EHR_MedicationPackageFill_tooltip = "Controla quantas doses restam em embalagens multidose geradas.",
     Sandbox_EHR_MedicationPackageFill_option1 = "Escasso",

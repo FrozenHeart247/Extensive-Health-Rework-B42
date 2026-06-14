@@ -61,6 +61,17 @@ local function getMedicationLootMultiplier()
     return 1.0
 end
 
+local function getMedicalWatchLootMultiplier()
+    local sandbox = getEHRSandbox()
+    if sandbox and sandbox.MedicalWatchLootMultiplier ~= nil then
+        local value = tonumber(sandbox.MedicalWatchLootMultiplier)
+        if value then
+            return clampNumber(value, 0.0, 1.0)
+        end
+    end
+    return 1.0
+end
+
 local function isHouseholdPrescriptionLootEnabled()
     local sandbox = getEHRSandbox()
     if sandbox and sandbox.HouseholdPrescriptionLoot ~= nil then
@@ -306,6 +317,11 @@ local function EHR_InitDistributions()
     end
 
     local function copyMedicalWatchDistribution()
+        local watchLootMultiplier = getMedicalWatchLootMultiplier()
+        if watchLootMultiplier <= 0 then
+            return
+        end
+
         local sourceToTarget = {
             WristWatch_Left_DigitalRed = "ExtensiveHealth.EHRMedicalWatch_Left",
             ["Base.WristWatch_Left_DigitalRed"] = "ExtensiveHealth.EHRMedicalWatch_Left",
@@ -321,7 +337,7 @@ local function EHR_InitDistributions()
                     local chance = tonumber(items[i + 1])
                     if target and chance and chance > 0 and not itemListContains(items, target) then
                         table.insert(items, target)
-                        table.insert(items, chance)
+                        table.insert(items, chance * watchLootMultiplier)
                         added = added + 1
                     end
                 end

@@ -125,6 +125,8 @@
     "Sandbox_EHR_KnoxCureItemsEnabled_tooltip": "Autorise l'apparition d'objets de cure. <LINE> <LINE> OBJETS: <LINE> - Pilules Phalanx (ralentit) <LINE> - Test d'anticorps (diagnostic) <LINE> - Immunobooster (resistance) <LINE> - Therapie gene (guerison) <LINE> <LINE> Ces objets rares apparaissent au site militaire pres de Rosewood. <LINE> <LINE> Desactivez pour une experience vanilla sans cure.",
     "Sandbox_EHR_MedicationLootMultiplier": "Multiplicateur de butin de médicaments",
     "Sandbox_EHR_MedicationLootMultiplier_tooltip": "Échelle les chances d'apparition de médicaments et de fournitures médicales EHR. <LINE> <LINE> 0,0 = désactivé, 0,5 = moitié, 1,0 = par défaut, 2,0 = double.",
+    "Sandbox_EHR_MedicalWatchLootMultiplier": "Multiplicateur de butin de montre medicale",
+    "Sandbox_EHR_MedicalWatchLootMultiplier_tooltip": "Ajuste les chances d'apparition du Medical Monitor Watch copiées depuis les montres digitales rouges vanilla. <LINE> <LINE> 0,0 = désactivé, 0,35 = rare, 1,0 = taux vanilla.",
     "Sandbox_EHR_MedicationPackageFill": "Remplissage du paquet de médicaments",
     "Sandbox_EHR_MedicationPackageFill_tooltip": "Contrôle le nombre de doses restantes dans les emballages de médicaments multidoses générés.",
     "Sandbox_EHR_MedicationPackageFill_option1": "Rare",

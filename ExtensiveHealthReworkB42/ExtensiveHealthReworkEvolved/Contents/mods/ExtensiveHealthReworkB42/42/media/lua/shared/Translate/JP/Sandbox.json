@@ -125,6 +125,8 @@
     "Sandbox_EHR_KnoxCureItemsEnabled_tooltip": "Knox Virus Cure アイテムがワールドにスポーンできるようにします。 <LINE> <LINE> 影響を受けるアイテム: <LINE> - ファランクス ピル (感染を遅らせる) <LINE> - 抗体検査キット (感染段階を検出) <LINE> - 免疫ブースター ショット (抵抗力を高める) <LINE> - 遺伝子治療キット(ノックスウイルスを治す) <LINE> <LINE> これらの超レアなアイテムは、ローズウッド近くの軍事研究施設の地下でのみ出現します。 <LINE> <LINE> 治療の可能性がなく、よりバニラのゾンビ体験が必要な場合は、これを無効にしてください。",
     "Sandbox_EHR_MedicationLootMultiplier": "薬の戦利品乗数",
     "Sandbox_EHR_MedicationLootMultiplier_tooltip": "スケール EHR の医薬品と医療用品がチャンスを生み出します。 <LINE> <LINE> 0.0 = 無効、0.5 = 半分、1.0 = デフォルト、2.0 = 2 倍。",
+    "Sandbox_EHR_MedicalWatchLootMultiplier": "医療用時計の出現倍率",
+    "Sandbox_EHR_MedicalWatchLootMultiplier_tooltip": "バニラの赤いデジタル時計からコピーされる Medical Monitor Watch の出現率を調整します。 <LINE> <LINE> 0.0 = 無効、0.35 = レア、1.0 = バニラ時計と同じ。",
     "Sandbox_EHR_MedicationPackageFill": "医薬品パッケージの充填",
     "Sandbox_EHR_MedicationPackageFill_tooltip": "生成された複数回投与量の薬剤パッケージ内に何回分の薬剤が残るかを制御します。",
     "Sandbox_EHR_MedicationPackageFill_option1": "希少",

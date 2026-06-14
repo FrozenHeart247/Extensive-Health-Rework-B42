@@ -78,6 +78,7 @@ local distributionAliases = {
     -- Resolve old targets to nearby lists that still exist instead of dropping the item.
     PharmacyShelfMeds = {"MedicalStorageDrugs", "MedicalClinicDrugs"},
     MedicalCabinetDrugs = {"MedicalStorageDrugs", "MedicalClinicDrugs"},
+    MedicalCabinet = {"MedicalClinicDrugs", "MedicalStorageDrugs"},
     DrugStoreMagazines = {"MedicalStorageDrugs", "MedicalClinicDrugs"},
     MedicineCabinet = {"BedroomSidetable", "BedroomDresser"},
     ArmySurplusMedical = {"ArmyStorageMedical", "MedicalStorageOutfit"},
@@ -140,6 +141,55 @@ local function addItemToBagDistribution(bagName, itemName, chance)
         dist = all and all[bagName]
     end
     return addItemToRawDistribution(dist, itemName, chance)
+end
+
+local function procListContains(procList, procName)
+    if not procList or not procName then return false end
+    for _, entry in ipairs(procList) do
+        if entry and entry.name == procName then
+            return true
+        end
+    end
+    return false
+end
+
+local function addProcListToRoomContainer(roomName, containerName, procName, minValue, maxValue, weightChance)
+    if not SuburbsDistributions then return false end
+
+    local room = SuburbsDistributions[roomName]
+    if not room then return false end
+
+    local dist = room[containerName]
+    if not dist then
+        dist = {
+            procedural = true,
+            procList = {},
+        }
+        room[containerName] = dist
+    end
+
+    if not dist.procedural or not dist.procList then
+        if dist.items and #dist.items > 0 then
+            return false
+        end
+        dist.procedural = true
+        dist.procList = {}
+        dist.items = nil
+        dist.rolls = nil
+        dist.junk = nil
+    end
+
+    if procListContains(dist.procList, procName) then
+        return false
+    end
+
+    table.insert(dist.procList, {
+        name = procName,
+        min = minValue or 0,
+        max = maxValue or 99,
+        weightChance = weightChance,
+    })
+    return true
 end
 
 local function setRawDistributionMinRolls(dist, minRolls)
@@ -233,6 +283,18 @@ local function EHR_InitDistributions()
         tryAddVehicle(distributionName, itemName, chance * medicationLootMultiplier)
     end
 
+    local function tryAddRoomProc(roomName, containerName, procName, minValue, maxValue, weightChance)
+        if addProcListToRoomContainer(roomName, containerName, procName, minValue, maxValue, weightChance) then
+            added = added + 1
+        else
+            failed = failed + 1
+            local tableName = tostring(roomName) .. "." .. tostring(containerName)
+            if not failedTables[tableName] then
+                failedTables[tableName] = true
+            end
+        end
+    end
+
     local function itemListContains(items, itemName)
         if not items or not itemName then return false end
         for i = 1, #items, 2 do
@@ -268,6 +330,19 @@ local function EHR_InitDistributions()
     end
 
     copyMedicalWatchDistribution()
+
+    -- B42 medical furniture sometimes uses raw room/container pairs instead of the
+    -- procedural medical drug tables. Keep these room-specific so household
+    -- medicine cabinets stay on their normal loot balance.
+    tryAddRoomProc("medical", "medicine", "MedicalClinicDrugs", 0, 99, 100)
+    tryAddRoomProc("medical", "medicine", "MedicalClinicTools", 0, 1, 25)
+    tryAddRoomProc("medical", "sidetable", "MedicalClinicDrugs", 0, 2, 35)
+    tryAddRoomProc("medicalstorage", "medicine", "MedicalStorageDrugs", 0, 99, 100)
+    tryAddRoomProc("medicalstorage", "medicine", "MedicalClinicTools", 0, 2, 40)
+    tryAddRoomProc("medicalstorage", "sidetable", "MedicalStorageDrugs", 0, 2, 80)
+    tryAddRoomProc("medicalstorage", "sidetable", "MedicalClinicDrugs", 0, 2, 45)
+    tryAddRoomProc("oldmedical", "medicine", "MedicalStorageDrugs", 0, 2, 45)
+    tryAddRoomProc("oldmedical", "medicine", "MedicalClinicTools", 0, 1, 35)
 
     -- =========================================
     -- BLOOD BAGS (based on real-world blood type distribution)
@@ -464,7 +539,21 @@ local function EHR_InitDistributions()
     tryAddMed("GigamartToiletries", "ExtensiveHealth.InstantIcePack", 0.5)
     tryAddMed("GigamartToiletries", "ExtensiveHealth.TopicalPermethrin", 0.5)
 
-    -- Medicine Cabinets (bathroom)
+    -- Medical cabinets in clinics, waiting rooms, and institutional medical areas.
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.ColdFluTablets", 3)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.AntipyreticTablets", 3)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.CoughSyrup", 2)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.AntiNauseaTablets", 2)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.AntiDiarrheal", 2)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.AntiInflammatory", 3)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.ElectrolytePowder", 2)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.AntisepticCream", 3)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.SterilizedBandages", 2)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.InstantIcePack", 1)
+    tryAddMed("MedicalCabinet", "ExtensiveHealth.TopicalPermethrin", 1)
+
+    -- Household medicine cabinets / bedroom fallback.
     tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.AntipyreticTablets", 4)
     tryAddMed("MedicineCabinet", "ExtensiveHealth.CoughSyrup", 3)
@@ -533,6 +622,11 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVFluids", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SalineBag", 6)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TopicalPermethrin", 3)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVAntibiotics", 0.8)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVCiprofloxacin", 0.5)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.CorticosteroidInjection", 0.6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.RespiratorySupportKit", 0.6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.EmergencySepsisKit", 0.35)
 
     -- =========================================
     -- TIER 3 - CLINICAL GRADE
@@ -540,18 +634,18 @@ local function EHR_InitDistributions()
     -- =========================================
 
     -- Medical Storage Outfit (hospital storage)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAntibiotics", 3)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVMetronidazole", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAmphotericin", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVCiprofloxacin", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVVancomycin", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVFluids", 4)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.EmergencySepsisKit", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.CorticosteroidInjection", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RespiratorySupportKit", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.ChelationKit", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2)
-    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAntibiotics", 3.6)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVMetronidazole", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVAmphotericin", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVCiprofloxacin", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVVancomycin", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVFluids", 4.8)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.EmergencySepsisKit", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.CorticosteroidInjection", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RespiratorySupportKit", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.ChelationKit", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2.4)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.DualOrexinReceptor", 2)

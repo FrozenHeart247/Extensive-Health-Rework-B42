@@ -168,6 +168,16 @@ local function isKentuckyHeraldJuly16(item)
 
     local modData = item.getModData and item:getModData() or nil
     local values = {}
+    appendMaybeTranslated(values, fullType)
+    appendMaybeTranslated(values, itemType)
+    if item.getName then
+        local okName, name = pcall(function() return item:getName() end)
+        if okName then appendMaybeTranslated(values, name) end
+    end
+    if item.getDisplayName then
+        local okDisplayName, displayName = pcall(function() return item:getDisplayName() end)
+        if okDisplayName then appendMaybeTranslated(values, displayName) end
+    end
     if modData then
         appendMediaStrings(values, modData.printMedia)
         appendMediaStrings(values, modData.printMediaID)
@@ -178,6 +188,11 @@ local function isKentuckyHeraldJuly16(item)
         appendMediaStrings(values, modData.printText)
         appendMediaStrings(values, modData.printTextID)
         appendMediaStrings(values, modData.printTextId)
+        appendMediaStrings(values, modData.literatureTitle)
+        appendMediaStrings(values, modData.literatureInfo)
+        appendMediaStrings(values, modData.literatureText)
+        appendMediaStrings(values, modData.literatureID)
+        appendMediaStrings(values, modData.literatureId)
         appendMediaStrings(values, modData.title)
         appendMediaStrings(values, modData.info)
         appendMediaStrings(values, modData.text)
@@ -188,7 +203,10 @@ local function isKentuckyHeraldJuly16(item)
         local compact = value:gsub("[%s_%-%p]", "")
         local hasHerald = value:find("kentucky herald", 1, true) ~= nil or compact:find("kentuckyherald", 1, true) ~= nil
         local hasJuly16 = value:find("july 16", 1, true) ~= nil or compact:find("july16", 1, true) ~= nil
-        if hasHerald and hasJuly16 then
+        local hasHeraldJuly16Id = compact:find("printmediakentuckyheraldjuly16", 1, true) ~= nil
+            or compact:find("printtextkentuckyheraldjuly16", 1, true) ~= nil
+            or compact:find("kentuckyheraldjuly16", 1, true) ~= nil
+        if (hasHerald and hasJuly16) or hasHeraldJuly16Id then
             return true
         end
     end
@@ -439,6 +457,7 @@ local function hookInventoryReadItem()
                 if okPages and tonumber(value) then pages = tonumber(value) end
             end
             if isKentuckyHeraldJuly16(item) then
+                unlockKnoxFromHerald(playerObj, item, "ISInventoryPaneContextMenu.readItem")
                 ISTimedActionQueue.add(ISEHRReadHeraldAction:new(playerObj, item, math.max(100, pages * 15)))
             else
                 ISTimedActionQueue.add(ISEHRReadFlyerAction:new(playerObj, item, math.max(80, pages * 15)))

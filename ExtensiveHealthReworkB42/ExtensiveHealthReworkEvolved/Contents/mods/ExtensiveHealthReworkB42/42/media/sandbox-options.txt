@@ -614,6 +614,16 @@ option ExtensiveHealthRework.MedicationLootMultiplier
     translation = EHR_MedicationLootMultiplier,
 }
 
+option ExtensiveHealthRework.MedicalWatchLootMultiplier
+{
+    type = double,
+    min = 0.0,
+    max = 1.0,
+    default = 1.0,
+    page = EHR_Loot,
+    translation = EHR_MedicalWatchLootMultiplier,
+}
+
 option ExtensiveHealthRework.MedicationPackageFill
 {
     type = enum,

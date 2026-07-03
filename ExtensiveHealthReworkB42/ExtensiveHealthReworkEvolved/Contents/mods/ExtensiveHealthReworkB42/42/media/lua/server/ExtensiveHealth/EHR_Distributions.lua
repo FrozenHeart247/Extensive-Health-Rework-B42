@@ -318,16 +318,34 @@ local function EHR_InitDistributions()
 
     local function copyMedicalWatchDistribution()
         local watchLootMultiplier = getMedicalWatchLootMultiplier()
-        if watchLootMultiplier <= 0 then
-            return
-        end
-
         local sourceToTarget = {
             WristWatch_Left_DigitalRed = "ExtensiveHealth.EHRMedicalWatch_Left",
             ["Base.WristWatch_Left_DigitalRed"] = "ExtensiveHealth.EHRMedicalWatch_Left",
             WristWatch_Right_DigitalRed = "ExtensiveHealth.EHRMedicalWatch_Right",
             ["Base.WristWatch_Right_DigitalRed"] = "ExtensiveHealth.EHRMedicalWatch_Right",
         }
+        local ehrWatchItems = {
+            ["ExtensiveHealth.EHRMedicalWatch_Left"] = true,
+            ["ExtensiveHealth.EHRMedicalWatch_Right"] = true,
+            EHRMedicalWatch_Left = true,
+            EHRMedicalWatch_Right = true,
+        }
+
+        for _, dist in pairs(ProceduralDistributions.list) do
+            local items = dist and dist.items
+            if items then
+                for i = #items - 1, 1, -2 do
+                    if ehrWatchItems[items[i]] then
+                        table.remove(items, i + 1)
+                        table.remove(items, i)
+                    end
+                end
+            end
+        end
+
+        if watchLootMultiplier <= 0 then
+            return
+        end
 
         for _, dist in pairs(ProceduralDistributions.list) do
             local items = dist and dist.items

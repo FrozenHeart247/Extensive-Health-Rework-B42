@@ -1,10 +1,10 @@
 --[[
     EHR <-> Realistic Temperature compatibility bridge.
 
-    Realistic Temperature is allowed to keep its world/building temperature
-    simulation, but EHR owns player body temperature. The bridge disables RT's
-    body-temperature simulation/enforcement and filters RT thermal outcomes so
-    they cannot overwrite EHR fever, hypothermia, cold, or sickness state.
+    Realistic Temperature is allowed to own environmental body temperature and
+    body heat generation. EHR owns disease fever and disease logic. The bridge
+    filters RT cold/sickness/damage outcomes so RT can calculate heat without
+    duplicating EHR diseases.
 ]]--
 
 require "ExtensiveHealth/EHR_BodyTemperature"
@@ -81,14 +81,7 @@ local function syncRTRecordToEHR(player)
     local rec = getRTRecord(player)
     if not rec then return false end
 
-    local bodyTemp = getCurrentEHRBodyTemp(player)
-    rec.core = bodyTemp
-    rec._lastBodyTempStatsApplied = bodyTemp
-    rec._bodyTempDirty = false
-    rec._ehrBodyTemperatureDisabled = true
-    rec._ehrDiseaseFeverCore = bodyTemp
-    rec._ehrFeverOverrideActive = false
-    rec._ehrRtBaseCore = nil
+    rec._ehrBodyTemperatureDisabled = false
     return true
 end
 
@@ -172,7 +165,6 @@ local function restoreRTBaseTemperature(player)
 end
 
 local bodyOutcomeFields = {
-    temperature = true,
     sickness = true,
     hasCold = true,
     coldStrength = true,
@@ -200,8 +192,35 @@ function Compat.BuildOutcome(player, outcome, source)
     if type(outcome) ~= "table" then return outcome end
     if not compatModeAllowsBridge() then return outcome end
 
-    syncRTRecordToEHR(player)
-    return stripRTBodyOutcome(outcome)
+    local patched = stripRTBodyOutcome(outcome)
+    local feverTemp = getEHRFeverTemp(player)
+    local rec = getRTRecord(player)
+
+    if feverTemp then
+        if rec then
+            if outcome.temperature ~= nil then
+                rec._ehrRtBaseCore = tonumber(outcome.temperature) or rec._ehrRtBaseCore
+            elseif rec._ehrRtBaseCore == nil and type(rec.core) == "number" then
+                rec._ehrRtBaseCore = rec.core
+            end
+            rec._ehrFeverOverrideActive = true
+            rec._ehrDiseaseFeverCore = feverTemp
+        end
+
+        if patched == outcome then
+            patched = cloneOutcome(outcome)
+        end
+        patched.temperature = feverTemp
+        return patched
+    end
+
+    if rec then
+        rec._ehrFeverOverrideActive = false
+        rec._ehrDiseaseFeverCore = nil
+        rec._ehrRtBaseCore = nil
+    end
+
+    return patched
 end
 
 local function patchThermalAuthority(rt, authority)
@@ -232,9 +251,9 @@ end
 local function patchRTBodyFlags(rt)
     if not rt then return false end
 
-    rt.DEBUG_BODYTEMP_DISABLE_SIMULATION = true
-    rt.DEBUG_DISABLE_BODYTEMP_ENFORCE = true
-    rt._ehrBodyTemperatureDisabled = true
+    rt.DEBUG_BODYTEMP_DISABLE_SIMULATION = false
+    rt.DEBUG_DISABLE_BODYTEMP_ENFORCE = false
+    rt._ehrBodyTemperatureDisabled = false
 
     local normalTemp = getNormalTemp()
     if type(rt.BODY_TEMP_NORMAL_C) == "number" then
@@ -249,40 +268,35 @@ end
 
 local function patchBodyUpdate(rt)
     if not rt then return false end
-    if rt._ehrUpdatePlayerBodyTemperature then return true end
-    if type(rt.updatePlayerBodyTemperature) ~= "function" then return false end
 
-    local original = rt.updatePlayerBodyTemperature
-    rt._ehrUpdatePlayerBodyTemperature = original
-    rt.updatePlayerBodyTemperature = function(player)
-        syncRTRecordToEHR(player)
-        return nil
+    if type(rt._ehrUpdatePlayerBodyTemperature) == "function" then
+        rt.updatePlayerBodyTemperature = rt._ehrUpdatePlayerBodyTemperature
+        rt._ehrUpdatePlayerBodyTemperature = nil
     end
 
-    return true
+    return type(rt.updatePlayerBodyTemperature) == "function"
 end
 
 local function patchBodyEnforcement(rt)
     if not rt then return false end
-    if rt._ehrEnforceBodyTemperatures then return true end
-    if type(rt.enforceBodyTemperatures) ~= "function" then return false end
 
-    local original = rt.enforceBodyTemperatures
-    rt._ehrEnforceBodyTemperatures = original
-
-    if Events and Events.OnTick and Events.OnTick.Remove then
-        pcall(function() Events.OnTick.Remove(original) end)
-    end
-
-    rt.enforceBodyTemperatures = function()
-        local player = getSpecificPlayer and getSpecificPlayer(0) or nil
-        if player then
-            syncRTRecordToEHR(player)
+    if type(rt._ehrEnforceBodyTemperatures) == "function" then
+        local original = rt._ehrEnforceBodyTemperatures
+        local current = rt.enforceBodyTemperatures
+        if Events and Events.OnTick and Events.OnTick.Remove then
+            if current and current ~= original then
+                pcall(function() Events.OnTick.Remove(current) end)
+            end
+            pcall(function() Events.OnTick.Remove(original) end)
         end
-        return nil
+        rt.enforceBodyTemperatures = original
+        rt._ehrEnforceBodyTemperatures = nil
+        if Events and Events.OnTick and Events.OnTick.Add then
+            pcall(function() Events.OnTick.Add(original) end)
+        end
     end
 
-    return true
+    return type(rt.enforceBodyTemperatures) == "function"
 end
 
 function Compat.Install()
@@ -299,12 +313,12 @@ function Compat.Install()
     local enforcePatched = patchBodyEnforcement(rt)
 
     local authorityReady = authority and authority._ehrApplyPersistentOutcome ~= nil
-    local updateReady = rt and rt._ehrUpdatePlayerBodyTemperature ~= nil
-    local enforceReady = rt and rt._ehrEnforceBodyTemperatures ~= nil
+    local updateReady = rt and type(rt.updatePlayerBodyTemperature) == "function"
+    local enforceReady = rt and type(rt.enforceBodyTemperatures) == "function"
     if flagsPatched and authorityReady and updateReady and enforceReady then
         Compat.installed = true
         if EHR and EHR.Log then
-            EHR.Log("Realistic Temperature indoor-only compatibility installed")
+            EHR.Log("Realistic Temperature compatibility installed")
         end
         return true
     end

@@ -1432,12 +1432,18 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
     local environmentTarget = vanillaTemp
 
     if managedEnvironment then
-        -- Realistic Temperature compatibility disables RT's body-temperature
-        -- loop, so EHR must own environmental core changes while still using RT
-        -- air/room samples from CalculateTargetTemp().
-        environmentTarget = EHR.BodyTemp.CalculateTargetTemp(player) or vanillaTemp
+        -- Realistic Temperature owns environmental body heat and core temp.
+        -- EHR only mirrors that value here, then layers disease fever on top.
+        local rec = nil
+        pcall(function()
+            local modData = player and player:getModData()
+            rec = modData and modData.RC_TempSimBodyTemp or nil
+        end)
+        if type(rec) == "table" then
+            environmentTarget = tonumber(rec._ehrRtBaseCore) or tonumber(rec.core) or vanillaTemp
+        end
         environmentTarget = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, environmentTarget))
-        tempData.bodyTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, oldTemp))
+        tempData.bodyTemp = environmentTarget
     else
         -- Without RT compatibility, vanilla owns environmental heating/cooling.
         -- EHR mirrors it for UI and thresholds, and only nudges disease fever.
@@ -1493,14 +1499,9 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
             EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
         end
     elseif managedEnvironment then
-        local change = EHR.BodyTemp.CalculateChangeRate(tempData.bodyTemp, environmentTarget, deltaHours)
-        tempData.bodyTemp = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, tempData.bodyTemp + change))
+        tempData.bodyTemp = environmentTarget
         tempData.targetTemp = environmentTarget
         tempData.diseaseFeverActive = false
-
-        if EHR.BodyTemp.WriteDiseaseBodyTemperature then
-            EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
-        end
     end
 
     -- Update stages (with hysteresis to prevent flickering)

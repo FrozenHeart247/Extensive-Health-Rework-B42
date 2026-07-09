@@ -132,19 +132,17 @@ function EHR.KnoxDistribution.OnFillContainer(roomName, containerType, container
     -- Safety checks
     if not container then return end
 
-    -- B42 safety: Check if container has getParent method (ItemPickerContainer doesn't)
-    if not container.getParent then return end
-
     -- Get container position
-    local parent = container:getParent()
+    local parentOk, parent = pcall(function()
+        return container:getParent()
+    end)
+    if not parentOk then return end
     if not parent then return end
 
-    -- Ensure parent has coordinate methods
-    if not parent.getX then return end
-
-    local x = parent:getX()
-    local y = parent:getY()
-    local z = parent:getZ()
+    local coordsOk, x, y, z = pcall(function()
+        return parent:getX(), parent:getY(), parent:getZ()
+    end)
+    if not coordsOk or not x or not y or not z then return end
 
     -- Must be in the facility
     if not EHR.KnoxDistribution.IsInFacility(x, y) then
@@ -174,7 +172,9 @@ function EHR.KnoxDistribution.OnFillContainer(roomName, containerType, container
     -- Roll for each item
     for _, itemData in ipairs(itemList) do
         if EHR.KnoxDistribution.RollSpawn(itemData.chance) then
-            container:AddItem(itemData.item)
+            pcall(function()
+                container:AddItem(itemData.item)
+            end)
         end
     end
 end

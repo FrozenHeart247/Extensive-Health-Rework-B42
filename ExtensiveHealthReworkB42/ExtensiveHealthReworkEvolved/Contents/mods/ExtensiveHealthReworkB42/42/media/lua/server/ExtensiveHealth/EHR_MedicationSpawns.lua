@@ -273,14 +273,13 @@ end
 function EHR.MedicationSpawns.OnFillContainer(roomType, containerType, container)
     if not container then return end
 
-    -- B42 safety: Check if container has getItems method (ItemPickerContainer doesn't)
-    if not container.getItems then return end
-
     local locationType = EHR.MedicationSpawns.GetLocationType(roomType, containerType)
 
     -- Iterate through items in container
-    local items = container:getItems()
-    if not items then return end
+    local ok, items = pcall(function()
+        return container:getItems()
+    end)
+    if not ok or not items then return end
 
     for i = 0, items:size() - 1 do
         local item = items:get(i)

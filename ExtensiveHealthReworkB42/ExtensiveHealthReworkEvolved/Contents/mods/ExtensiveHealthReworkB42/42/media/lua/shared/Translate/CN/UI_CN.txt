@@ -1590,4 +1590,11 @@ UI_CN = {
     UI_EHR_Med_CommonColdTea = "草药茶",
     UI_EHR_Med_AntipyreticTea = "退烧茶",
     UI_EHR_Med_RelaxantTea = "舒缓茶",
+    UI_EHR_Moodle_MedicalAlert_Title = "Medical Alert",
+    UI_EHR_Moodle_MedicalAlert_Desc = "Something is wrong. Check EHR Monitor.",
+    UI_EHR_Moodle_MedicalAlert_SideEffects = "Medication side effects active. Check EHR Monitor.",
+    UI_EHR_Moodle_MedicalAlert_Multiple = "Multiple active conditions. Check EHR Monitor.",
+    UI_EHR_Moodle_ExposureAlert_Desc = "Exposure level: ",
+    UI_EHR_Moodle_ColdRisk_Title = "Cold Risk",
+    UI_EHR_Moodle_FreezingExposure_Title = "Freezing Exposure",
 }

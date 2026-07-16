@@ -4735,6 +4735,7 @@ function EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEff
     local doseData = medTracking.activeDoses[medKey]
     if not doseData then
         doseData = {
+            firstDoseTime = currentHour,
             lastDoseTime = currentHour,
             doseCount = 1,
             totalDosesNeeded = doseTiming.dosesRequired,
@@ -4749,6 +4750,18 @@ function EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEff
         }
         medTracking.activeDoses[medKey] = doseData
     else
+        if not tonumber(doseData.firstDoseTime) then
+            local previousTreatment = medTracking.activeTreatments[diseaseId]
+            if type(previousTreatment) == "table" and previousTreatment.medKey == medKey then
+                doseData.firstDoseTime = tonumber(previousTreatment.startTime)
+            end
+            if not tonumber(doseData.firstDoseTime) then
+                local previousLastDose = tonumber(doseData.lastDoseTime) or currentHour
+                local previousDoseCount = math.max(1, tonumber(doseData.doseCount) or 1)
+                local intervalHours = math.max(0, tonumber(doseData.intervalHours) or doseTiming.doseInterval or 0)
+                doseData.firstDoseTime = math.max(0, previousLastDose - ((previousDoseCount - 1) * intervalHours))
+            end
+        end
         local sameDoseEvent = math.abs((tonumber(doseData.lastDoseTime) or -999999) - currentHour) < 0.001
         doseData.lastDoseTime = currentHour
         if not sameDoseEvent then
@@ -4781,7 +4794,7 @@ function EHR.Medication.ApplyModuleTreatment(player, diseaseId, medData, tierEff
         existingTreatment.awaitingDoses = nil
     else
         medTracking.activeTreatments[diseaseId] = {
-            startTime = currentHour,
+            startTime = tonumber(doseData.firstDoseTime) or currentHour,
             cureTimeHours = cureTimeHours,
             medicationName = medData.displayName,
             tier = medData.tier,
@@ -4902,6 +4915,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
     if not medTracking.activeDoses[medKey] then
         -- First dose of this medication
         medTracking.activeDoses[medKey] = {
+            firstDoseTime = currentHour,
             lastDoseTime = currentHour,
             doseCount = 1,
             totalDosesNeeded = doseTiming.dosesRequired,
@@ -4916,6 +4930,18 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
     else
         -- Subsequent dose
         local doseData = medTracking.activeDoses[medKey]
+        if not tonumber(doseData.firstDoseTime) then
+            local previousTreatment = medTracking.activeTreatments[diseaseId]
+            if type(previousTreatment) == "table" and previousTreatment.medKey == medKey then
+                doseData.firstDoseTime = tonumber(previousTreatment.startTime)
+            end
+            if not tonumber(doseData.firstDoseTime) then
+                local previousLastDose = tonumber(doseData.lastDoseTime) or currentHour
+                local previousDoseCount = math.max(1, tonumber(doseData.doseCount) or 1)
+                local intervalHours = math.max(0, tonumber(doseData.intervalHours) or doseTiming.doseInterval or 0)
+                doseData.firstDoseTime = math.max(0, previousLastDose - ((previousDoseCount - 1) * intervalHours))
+            end
+        end
         doseData.lastDoseTime = currentHour
         doseData.doseCount = (doseData.doseCount or 0) + 1
         doseData.totalDosesNeeded = doseTiming.dosesRequired
@@ -4946,8 +4972,9 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
                     tostring(doseData.doseCount or 0) .. "/" ..
                     tostring(doseData.totalDosesNeeded or 1))
         else
+            local doseData = medTracking.activeDoses[medKey] or {}
             medTracking.activeTreatments[diseaseId] = {
-                startTime = currentHour,
+                startTime = tonumber(doseData.firstDoseTime) or currentHour,
                 cureTimeHours = cureTimeHours,
                 medicationName = medData.displayName,
                 tier = medData.tier,
@@ -5148,6 +5175,30 @@ function EHR.Medication.IsTreatmentCourseComplete(player, treatment)
     return status.treatmentComplete == true
 end
 
+-- Multi-dose courses finish on their final scheduled dose. Configured cure time
+-- remains authoritative for single-dose treatments that are meant to work over time.
+function EHR.Medication.GetTreatmentCompletionHours(player, treatment)
+    if not treatment then return 0 end
+
+    local configuredHours = math.max(0, tonumber(treatment.cureTimeHours) or 0)
+    if not player or not treatment.medKey then
+        return configuredHours
+    end
+
+    local status = EHR.Medication.GetDoseStatus(player, treatment.medKey)
+    if not status or status.requiresDoseCourse ~= true then
+        return configuredHours
+    end
+
+    local totalDoses = math.max(1, tonumber(status.totalDosesNeeded) or 1)
+    local intervalHours = math.max(0, tonumber(status.intervalHours) or 0)
+    if totalDoses <= 1 or intervalHours <= 0 then
+        return configuredHours
+    end
+
+    return (totalDoses - 1) * intervalHours
+end
+
 function EHR.Medication.ApplySideEffect(player, effectId, options)
     if not player or not effectId then return end
 
@@ -5250,7 +5301,7 @@ function EHR.Medication.Update(player)
             table.insert(treatmentsToRemove, diseaseId)
         else
             local startTime = tonumber(treatment.startTime)
-            local cureTimeHours = tonumber(treatment.cureTimeHours)
+            local cureTimeHours = EHR.Medication.GetTreatmentCompletionHours(player, treatment)
 
             if not startTime or not cureTimeHours or cureTimeHours <= 0 then
                 table.insert(treatmentsToRemove, diseaseId)
@@ -5492,7 +5543,7 @@ function EHR.Medication.GetActiveTreatments(player)
     for diseaseId, treatment in pairs(medTracking.activeTreatments) do
         if type(treatment) == "table" then
             local startTime = tonumber(treatment.startTime)
-            local cureTimeHours = tonumber(treatment.cureTimeHours)
+            local cureTimeHours = EHR.Medication.GetTreatmentCompletionHours(player, treatment)
             if startTime and cureTimeHours and cureTimeHours > 0 then
                 local elapsed = math.max(0, currentHour - startTime)
                 local remaining = cureTimeHours - elapsed

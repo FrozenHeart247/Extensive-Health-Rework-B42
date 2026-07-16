@@ -1608,6 +1608,7 @@
     "UI_EHR_Moodle_MedicalAlert_SideEffects": "Medication side effects active. Check EHR Monitor.",
     "UI_EHR_Moodle_MedicalAlert_Multiple": "Multiple active conditions. Check EHR Monitor.",
     "UI_EHR_Moodle_ExposureAlert_Desc": "Exposure level: ",
+    "UI_EHR_Moodle_HeatExposure_Title": "Heat Exposure",
     "UI_EHR_Moodle_ColdRisk_Title": "Cold Risk",
     "UI_EHR_Moodle_FreezingExposure_Title": "Freezing Exposure"
 }

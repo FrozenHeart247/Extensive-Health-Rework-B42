@@ -18,8 +18,22 @@ pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 local MODULE = EHR.Moodles
 
 local MOODLE_MEDICAL = "EHR_MedicalAlert"
-local MOODLE_EXPOSURE = "EHR_ExposureAlert"
+local LEGACY_MOODLE_EXPOSURE = "EHR_ExposureAlert"
+local MOODLE_CORPSE_EXPOSURE = "EHR_CorpseExposure"
+local MOODLE_CADAVERIC_EXPOSURE = "EHR_CadavericExposure"
+local MOODLE_HEAT_EXPOSURE = "EHR_HeatExposure"
+local MOODLE_COLD_EXPOSURE = "EHR_ColdExposure"
+local MOODLE_FREEZING_EXPOSURE = "EHR_FreezingExposure"
 local UPDATE_TICKS = 90
+
+local MOODLE_NAMES = {
+    MOODLE_MEDICAL,
+    MOODLE_CORPSE_EXPOSURE,
+    MOODLE_CADAVERIC_EXPOSURE,
+    MOODLE_HEAT_EXPOSURE,
+    MOODLE_COLD_EXPOSURE,
+    MOODLE_FREEZING_EXPOSURE,
+}
 
 local BAD = 2
 local LEVEL_VALUE = {
@@ -95,9 +109,13 @@ end
 
 local function ensureMoodlesRegistered()
     if not isMFReady() then return false end
-    registerMoodle(MOODLE_MEDICAL)
-    registerMoodle(MOODLE_EXPOSURE)
-    return registeredNames[MOODLE_MEDICAL] == true and registeredNames[MOODLE_EXPOSURE] == true
+    for _, name in ipairs(MOODLE_NAMES) do
+        registerMoodle(name)
+    end
+    for _, name in ipairs(MOODLE_NAMES) do
+        if registeredNames[name] ~= true then return false end
+    end
+    return true
 end
 
 local function ensureMoodleObject(name, playerNum)
@@ -319,24 +337,29 @@ local function heatExposureLevel(player)
     return level, clamp(ratio, 0, 1)
 end
 
-local function coldExposureLevel(player)
+local function exposureLevelFromRatio(ratio)
+    ratio = math.max(0, tonumber(ratio) or 0)
+    if ratio < 0.05 then return "None", clamp(ratio, 0, 1) end
+    if ratio >= 0.85 then return "High", clamp(ratio, 0, 1) end
+    if ratio >= 0.50 then return "Medium", clamp(ratio, 0, 1) end
+    return "Low", clamp(ratio, 0, 1)
+end
+
+local function coldExposureLevels(player)
     if not (EHR.Environmental and EHR.Environmental.GetExposureData) then
-        return "None", 0, nil, nil, nil
+        return "None", 0, "None", 0
     end
 
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and safeCall(function()
         return EHR.Disease.GetDiseaseData(player)
     end, nil) or nil
     local active = type(diseaseData) == "table" and diseaseData.active or nil
-    if type(active) == "table" and (active.common_cold or active.pneumonia or active.hypothermia) then
-        return "None", 0, nil, nil, nil
-    end
 
     local exposure = safeCall(function()
         return EHR.Environmental.GetExposureData(player)
     end, nil)
     if type(exposure) ~= "table" then
-        return "None", 0, nil, nil, nil
+        return "None", 0, "None", 0
     end
 
     local config = EHR.Environmental.Config or {}
@@ -359,61 +382,31 @@ local function coldExposureLevel(player)
         hypoRatio = (tonumber(exposure.hypothermiaExposure) or 0) / hypoThreshold
     end
 
-    local ratio = math.max(coldRatio, soakedRatio, hypoRatio)
-    if ratio < 0.05 then
-        return "None", clamp(ratio, 0, 1), nil, nil, nil
+    local coldLevel, coldDisplayRatio = exposureLevelFromRatio(math.max(coldRatio, soakedRatio))
+    local freezingLevel, freezingDisplayRatio = exposureLevelFromRatio(hypoRatio)
+
+    if type(active) == "table" then
+        if active.common_cold or active.pneumonia then
+            coldLevel, coldDisplayRatio = "None", 0
+        end
+        if active.hypothermia then
+            freezingLevel, freezingDisplayRatio = "None", 0
+        end
     end
 
-    local level = "Low"
-    if ratio >= 0.85 then
-        level = "High"
-    elseif ratio >= 0.50 then
-        level = "Medium"
-    end
-
-    if hypoRatio >= math.max(coldRatio, soakedRatio) then
-        return level, clamp(ratio, 0, 1), ICONS.freezing,
-            "UI_EHR_Moodle_FreezingExposure_Title", "Freezing Exposure"
-    end
-
-    return level, clamp(ratio, 0, 1), ICONS.cold,
-        "UI_EHR_Moodle_ColdRisk_Title", "Cold Risk"
+    return coldLevel, coldDisplayRatio, freezingLevel, freezingDisplayRatio
 end
 
-local function getExposureAlert(player)
-    if not player then return nil end
-
-    local best = nil
-
-    local function consider(source, sourceLevel, icon, titleKey, titleFallback)
-        local score = levelScore(sourceLevel)
-        if score <= 0 then return end
-        if best and best.score >= score then return end
-        best = {
-            score = score,
-            level = score,
-            exposureLevel = sourceLevel,
-            icon = icon,
-            title = L(titleKey, titleFallback),
-            description = L("UI_EHR_Moodle_ExposureAlert_Desc", "Exposure level: ") .. tostring(sourceLevel),
-            source = source,
-        }
-    end
-
-    local corpseLevel = corpseExposureLevel(player)
-    consider("corpse", corpseLevel, ICONS.corpse, "UI_EHR_CorpseExposure", "Corpse Exposure")
-
-    local fungalLevel = cadavericExposureLevel(player)
-    consider("cadaveric", fungalLevel, ICONS.cadaveric, "UI_EHR_CadavericAspergillosisExposure", "Cadaveric Aspergillosis Exposure")
-
-    local heatLevel = heatExposureLevel(player)
-    consider("heat", heatLevel, ICONS.heat, "UI_EHR_Disease_heat_exhaustion", "Heat Exhaustion")
-
-    local coldLevel, _, coldIcon, coldTitleKey, coldTitleFallback = coldExposureLevel(player)
-    consider("cold", coldLevel, coldIcon or ICONS.cold,
-        coldTitleKey or "UI_EHR_Moodle_ColdRisk_Title", coldTitleFallback or "Cold Risk")
-
-    return best
+local function makeExposureAlert(exposureLevel, icon, titleKey, titleFallback)
+    local level = levelScore(exposureLevel)
+    if level <= 0 then return nil end
+    return {
+        level = level,
+        exposureLevel = exposureLevel,
+        icon = icon,
+        title = L(titleKey, titleFallback),
+        description = L("UI_EHR_Moodle_ExposureAlert_Desc", "Exposure level: ") .. tostring(exposureLevel),
+    }
 end
 
 local function applyMoodle(playerNum, name, alert)
@@ -435,12 +428,37 @@ local function applyMoodle(playerNum, name, alert)
     moodle:setValue(LEVEL_VALUE[level] or LEVEL_VALUE[1])
 end
 
+local function hideLegacyExposureMoodle(playerNum)
+    if not isMFReady() then return end
+    local moodle = safeCall(function()
+        return MF.getMoodle(LEGACY_MOODLE_EXPOSURE, playerNum)
+    end, nil)
+    if moodle then moodle:setValue(0) end
+end
+
 function MODULE.UpdatePlayer(playerNum)
     local player = getSpecificPlayer and getSpecificPlayer(playerNum) or nil
     if not player then return end
 
+    local corpseLevel = corpseExposureLevel(player)
+    local cadavericLevel = cadavericExposureLevel(player)
+    local heatLevel = heatExposureLevel(player)
+    local coldLevel, _, freezingLevel = coldExposureLevels(player)
+
     applyMoodle(playerNum, MOODLE_MEDICAL, getMedicalAlert(player))
-    applyMoodle(playerNum, MOODLE_EXPOSURE, getExposureAlert(player))
+    applyMoodle(playerNum, MOODLE_CORPSE_EXPOSURE,
+        makeExposureAlert(corpseLevel, ICONS.corpse, "UI_EHR_CorpseExposure", "Corpse Exposure"))
+    applyMoodle(playerNum, MOODLE_CADAVERIC_EXPOSURE,
+        makeExposureAlert(cadavericLevel, ICONS.cadaveric,
+            "UI_EHR_CadavericAspergillosisExposure", "Cadaveric Aspergillosis Exposure"))
+    applyMoodle(playerNum, MOODLE_HEAT_EXPOSURE,
+        makeExposureAlert(heatLevel, ICONS.heat, "UI_EHR_Moodle_HeatExposure_Title", "Heat Exposure"))
+    applyMoodle(playerNum, MOODLE_COLD_EXPOSURE,
+        makeExposureAlert(coldLevel, ICONS.cold, "UI_EHR_Moodle_ColdRisk_Title", "Cold Risk"))
+    applyMoodle(playerNum, MOODLE_FREEZING_EXPOSURE,
+        makeExposureAlert(freezingLevel, ICONS.freezing,
+            "UI_EHR_Moodle_FreezingExposure_Title", "Freezing Exposure"))
+    hideLegacyExposureMoodle(playerNum)
 end
 
 function MODULE.UpdateAll()

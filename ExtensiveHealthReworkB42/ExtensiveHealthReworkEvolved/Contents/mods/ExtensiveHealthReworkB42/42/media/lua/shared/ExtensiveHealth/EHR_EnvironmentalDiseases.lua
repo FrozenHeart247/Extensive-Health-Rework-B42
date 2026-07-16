@@ -68,6 +68,8 @@ EHR.Environmental.Config = {
     heatStrokeAmbientCoolingTemp = 10.0,
     heatStrokeAmbientCoolingHours = 3.0,
     heatStrokeAmbientCoolingDecay = 0.5,
+    heatExposureStartHour = 9,
+    heatExposureEndHour = 20,
 
     -- Water contamination risk
     untreatedWaterRisk = 0.25,      -- 25% per drink from contaminated/untreated water
@@ -144,6 +146,40 @@ end
 
 function EHR.Environmental.GetHeatExposureRecoveryMultiplier()
     return EHR_EnvironmentalGetSandboxNumber("HeatExposureRecoveryMultiplier", 1.0, 0.0, 5.0)
+end
+
+function EHR.Environmental.GetHeatExposureStartHour()
+    local config = EHR.Environmental.Config or {}
+    return math.floor(EHR_EnvironmentalGetSandboxNumber(
+        "HeatExposureStartHour", config.heatExposureStartHour or 9, 0, 23))
+end
+
+function EHR.Environmental.GetHeatExposureEndHour()
+    local config = EHR.Environmental.Config or {}
+    return math.floor(EHR_EnvironmentalGetSandboxNumber(
+        "HeatExposureEndHour", config.heatExposureEndHour or 20, 0, 23))
+end
+
+function EHR.Environmental.IsHeatExposureActiveHour(timeOfDay)
+    if timeOfDay == nil then
+        local gameTime = getGameTime and getGameTime() or nil
+        if gameTime and gameTime.getTimeOfDay then
+            pcall(function() timeOfDay = gameTime:getTimeOfDay() end)
+        end
+    end
+
+    timeOfDay = tonumber(timeOfDay)
+    if timeOfDay == nil then return true end
+    timeOfDay = timeOfDay % 24
+
+    local startHour = EHR.Environmental.GetHeatExposureStartHour()
+    local endHour = EHR.Environmental.GetHeatExposureEndHour()
+    if startHour == endHour then return true end
+
+    if startHour < endHour then
+        return timeOfDay >= startHour and timeOfDay < endHour
+    end
+    return timeOfDay >= startHour or timeOfDay < endHour
 end
 
 function EHR.Environmental.GetHeatStrokeChanceMultiplier()
@@ -1195,6 +1231,16 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
         if EHR.DEBUG and exposure.heatExposure > 0 then
             EHR.Log(string.format("Heat exposure cooling indoors: %.2f hours (world temp=%.1f)",
                 exposure.heatExposure, airTemp))
+        end
+        return
+    end
+
+    if not EHR.Environmental.IsHeatExposureActiveHour() then
+        exposure.heatExposure = math.max(0, exposure.heatExposure - deltaHours * (config.heatCoolRecoveryRate or 1.25) * recoveryMultiplier)
+        exposure.heatStrokeExposure = math.max(0, exposure.heatStrokeExposure - deltaHours * 2 * recoveryMultiplier)
+
+        if EHR.DEBUG and exposure.heatExposure > 0 then
+            EHR.Log(string.format("Heat exposure cooling outside active hours: %.2f hours", exposure.heatExposure))
         end
         return
     end

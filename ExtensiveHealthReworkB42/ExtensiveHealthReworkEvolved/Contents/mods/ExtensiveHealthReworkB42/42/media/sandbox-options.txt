@@ -487,6 +487,26 @@ option ExtensiveHealthRework.HeatExposureTemperatureThreshold
     translation = EHR_HeatExposureTemperatureThreshold,
 }
 
+option ExtensiveHealthRework.HeatExposureStartHour
+{
+    type = integer,
+    min = 0,
+    max = 23,
+    default = 9,
+    page = EHR_Temperature,
+    translation = EHR_HeatExposureStartHour,
+}
+
+option ExtensiveHealthRework.HeatExposureEndHour
+{
+    type = integer,
+    min = 0,
+    max = 23,
+    default = 20,
+    page = EHR_Temperature,
+    translation = EHR_HeatExposureEndHour,
+}
+
 option ExtensiveHealthRework.HeatExposureHoursToFull
 {
     type = double,

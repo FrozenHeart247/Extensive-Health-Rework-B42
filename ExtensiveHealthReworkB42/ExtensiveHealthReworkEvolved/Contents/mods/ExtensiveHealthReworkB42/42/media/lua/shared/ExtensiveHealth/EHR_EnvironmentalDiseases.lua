@@ -99,6 +99,8 @@ EHR.Environmental.Config = {
         coughSevereSfx = "EHRCoughSevere",
         coughSevereMaleSfx = "EHRCoughSevereMale",
         coughSevereFemaleSfx = "EHRCoughSevereFemale",
+        coughMuffledRadiusMultiplier = 0.15,
+        coughMuffledVolumeMultiplier = 0.20,
         vomitRadius = 15,
         vomitVolume = 10,
     },
@@ -3356,6 +3358,65 @@ local function EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
     return cfg.coughMaleSfx or cfg.coughSfx
 end
 
+local function EHR_EnvironmentalItemMufflesCough(item)
+    if not item or not item.hasTag then return false end
+
+    if item.getCurrentUses then
+        local okUses, uses = pcall(function()
+            return item:getCurrentUses()
+        end)
+        if okUses and tonumber(uses) and tonumber(uses) <= 0 then
+            return false
+        end
+    end
+
+    local muffleTag = ItemTag and ItemTag.MUFFLE_SNEEZE or nil
+    if not muffleTag and ItemTag and ItemTag.get and ResourceLocation and ResourceLocation.of then
+        pcall(function()
+            muffleTag = ItemTag.get(ResourceLocation.of("base:mufflesneeze"))
+        end)
+    end
+    if not muffleTag then return false end
+
+    local ok, hasTag = pcall(function()
+        return item:hasTag(muffleTag)
+    end)
+    return ok and hasTag == true
+end
+
+local function EHR_EnvironmentalGetCoughMufflingItem(player)
+    if not player then return nil end
+
+    local primary = nil
+    local secondary = nil
+    pcall(function() primary = player:getPrimaryHandItem() end)
+    if EHR_EnvironmentalItemMufflesCough(primary) then
+        return primary
+    end
+
+    pcall(function() secondary = player:getSecondaryHandItem() end)
+    if secondary ~= primary and EHR_EnvironmentalItemMufflesCough(secondary) then
+        return secondary
+    end
+
+    return nil
+end
+
+local function EHR_EnvironmentalConsumeCoughMufflingItem(item)
+    if not item or not item.UseAndSync then return false end
+    local ok = pcall(function()
+        item:UseAndSync()
+    end)
+    return ok
+end
+
+local function EHR_EnvironmentalGetMuffledCoughSfx(player)
+    if EHR_EnvironmentalIsFemale(player) then
+        return "VoiceFemaleMuffledCough"
+    end
+    return "VoiceMaleMuffledCough"
+end
+
 function EHR.Environmental.TriggerCough(player, severe)
     if not player or EHR_EnvironmentalIsPlayerAsleep(player) then return false end
 
@@ -3370,6 +3431,8 @@ function EHR.Environmental.TriggerCough(player, severe)
     end
 
     local cfg = EHR.Environmental.Config.sound
+    local mufflingItem = EHR_EnvironmentalGetCoughMufflingItem(player)
+    local isMuffled = mufflingItem ~= nil
 
     -- Say cough dialogue
     if player.Say then
@@ -3388,7 +3451,9 @@ function EHR.Environmental.TriggerCough(player, severe)
 
     -- Audible SFX for the player. Zombie attraction is still handled by world sound below.
     if EHR.Environmental.AreCoughSoundsEnabled() then
-        local sfx = EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
+        local sfx = isMuffled
+            and EHR_EnvironmentalGetMuffledCoughSfx(player)
+            or EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
         if sfx and sfx ~= "" and player.playSound then
             pcall(function()
                 player:playSound(sfx)
@@ -3399,6 +3464,10 @@ function EHR.Environmental.TriggerCough(player, severe)
     -- Create noise for zombie attraction
     local radius = severe and cfg.coughSevereRadius or cfg.coughRadius
     local volume = severe and cfg.coughSevereVolume or cfg.coughVolume
+    if isMuffled then
+        radius = math.max(1, math.floor((radius * (cfg.coughMuffledRadiusMultiplier or 0.15)) + 0.5))
+        volume = math.max(1, math.floor((volume * (cfg.coughMuffledVolumeMultiplier or 0.20)) + 0.5))
+    end
 
     if player.addWorldSoundUnlessInvisible then
         pcall(function()
@@ -3410,7 +3479,16 @@ function EHR.Environmental.TriggerCough(player, severe)
         end)
     end
 
-    EHR.Log(string.format("Player coughed (severe=%s, radius=%d)", tostring(severe), radius))
+    if isMuffled then
+        EHR_EnvironmentalConsumeCoughMufflingItem(mufflingItem)
+    end
+
+    EHR.Log(string.format(
+        "Player coughed (severe=%s, muffled=%s, radius=%d)",
+        tostring(severe),
+        tostring(isMuffled),
+        radius
+    ))
     return true
 end
 

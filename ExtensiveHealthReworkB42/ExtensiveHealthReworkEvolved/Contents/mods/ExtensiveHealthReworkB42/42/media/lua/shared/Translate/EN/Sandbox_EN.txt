@@ -153,6 +153,8 @@ Sandbox_EN = {
     Sandbox_EHR_HypothermiaClearTemp_tooltip = "Core temperature required to clear temperature-driven hypothermia. <LINE> Default: 35.5C.",
     Sandbox_EHR_PainSoundsEnabled = "Enable Pain Sounds",
     Sandbox_EHR_PainSoundsEnabled_tooltip = "Character vocalizes pain when injured. Pain sounds attract zombies!",
+    Sandbox_EHR_CoughSoundsEnabled = "Enable Cough Sounds",
+    Sandbox_EHR_CoughSoundsEnabled_tooltip = "Play audible EHR cough voice sounds. Disabling this does not remove cough dialogue or the noise that attracts zombies.",
     Sandbox_EHR_PainSoundCooldown = "Pain Sound Cooldown (seconds)",
     Sandbox_EHR_PainSoundCooldown_tooltip = "Minimum seconds between pain vocalizations. 300 = 5 minutes.",
     Sandbox_EHR_ZombieAttractionRadius = "Pain Zombie Attraction (tiles)",

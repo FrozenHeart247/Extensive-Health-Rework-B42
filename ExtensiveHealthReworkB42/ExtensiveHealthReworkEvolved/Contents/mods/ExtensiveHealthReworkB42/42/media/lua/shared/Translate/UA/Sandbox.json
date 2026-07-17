@@ -103,6 +103,8 @@
     "Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip": "Увімкніть попереджувальні ефекти перед зараженням хворобами. <LINE> <LINE> ЕФЕКТИ: <LINE> - Тремтіння та діалог при холоді <LINE> - Потовиділення та діалог під час спеки <LINE> - Порушення руху при екстремальних температурах <LINE> - Підвищена втома/спрага <LINE> <LINE> Забезпечує попередження перед гіпотермією/тепловим виснаженням.",
     "Sandbox_EHR_PainSoundsEnabled": "Увімкнути звуки болю",
     "Sandbox_EHR_PainSoundsEnabled_tooltip": "Персонаж озвучує біль при пораненні. Звуки болю приваблюють зомбі!",
+    "Sandbox_EHR_CoughSoundsEnabled": "Увімкнути звуки кашлю",
+    "Sandbox_EHR_CoughSoundsEnabled_tooltip": "Відтворювати голосові звуки кашлю EHR. Вимкнення не прибирає репліки про кашель або шум, що приваблює зомбі.",
     "Sandbox_EHR_PainSoundCooldown": "Час відновлення звуку болю (секунди)",
     "Sandbox_EHR_PainSoundCooldown_tooltip": "Мінімум секунд між вокалізацією болю. 300 = 5 хвилин.",
     "Sandbox_EHR_ZombieAttractionRadius": "Pain Zombie Attraction (плитки)",

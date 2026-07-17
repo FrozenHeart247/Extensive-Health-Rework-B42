@@ -717,6 +717,14 @@ option ExtensiveHealthRework.PainSoundsEnabled
     translation = EHR_PainSoundsEnabled,
 }
 
+option ExtensiveHealthRework.CoughSoundsEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Other,
+    translation = EHR_CoughSoundsEnabled,
+}
+
 option ExtensiveHealthRework.PainSoundCooldown
 {
     type = integer,

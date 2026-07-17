@@ -130,6 +130,19 @@ local function EHR_EnvironmentalGetSandboxNumber(name, default, minValue, maxVal
     return EHR_EnvironmentalClampNumber(value, minValue, maxValue) or value
 end
 
+local function EHR_EnvironmentalGetSandboxBoolean(name, default)
+    local value = nil
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        value = SandboxVars.ExtensiveHealthRework[name]
+    end
+    if value == nil then return default == true end
+    return value == true or value == 1 or value == "true"
+end
+
+function EHR.Environmental.AreCoughSoundsEnabled()
+    return EHR_EnvironmentalGetSandboxBoolean("CoughSoundsEnabled", true)
+end
+
 function EHR.Environmental.GetHeatTemperatureThreshold()
     local config = EHR.Environmental.Config or {}
     return EHR_EnvironmentalGetSandboxNumber("HeatExposureTemperatureThreshold", config.hotTemp or 30.0, 20.0, 50.0)
@@ -3374,11 +3387,13 @@ function EHR.Environmental.TriggerCough(player, severe)
     end
 
     -- Audible SFX for the player. Zombie attraction is still handled by world sound below.
-    local sfx = EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
-    if sfx and sfx ~= "" and player.playSound then
-        pcall(function()
-            player:playSound(sfx)
-        end)
+    if EHR.Environmental.AreCoughSoundsEnabled() then
+        local sfx = EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
+        if sfx and sfx ~= "" and player.playSound then
+            pcall(function()
+                player:playSound(sfx)
+            end)
+        end
     end
 
     -- Create noise for zombie attraction

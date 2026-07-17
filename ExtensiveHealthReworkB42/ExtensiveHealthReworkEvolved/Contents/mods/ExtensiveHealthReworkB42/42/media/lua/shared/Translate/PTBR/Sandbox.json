@@ -103,6 +103,8 @@
     "Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip": "Ativa efeitos de aviso antes das doenças serem contraídas. <LINE> <LINE> EFEITOS: <LINE> - Tremores e diálogo quando com frio <LINE> - Suor e diálogo quando com calor <LINE> - Penalidades de movimento em temperaturas extremas <LINE> - Aumento de fadiga/sede <LINE> <LINE> Fornece aviso antes de hipotermia/exaustão por calor.",
     "Sandbox_EHR_PainSoundsEnabled": "Ativar Sons de Dor",
     "Sandbox_EHR_PainSoundsEnabled_tooltip": "O personagem vocaliza dor quando ferido. Sons de dor atraem zumbis!",
+    "Sandbox_EHR_CoughSoundsEnabled": "Ativar sons de tosse",
+    "Sandbox_EHR_CoughSoundsEnabled_tooltip": "Reproduz os sons de voz de tosse do EHR. Desativar não remove os diálogos de tosse nem o ruído que atrai zumbis.",
     "Sandbox_EHR_PainSoundCooldown": "Intervalo de Sons de Dor (segundos)",
     "Sandbox_EHR_PainSoundCooldown_tooltip": "Segundos mínimos entre vocalizações de dor. 300 = 5 minutos.",
     "Sandbox_EHR_ZombieAttractionRadius": "Atração de Zumbis por Dor (tiles)",

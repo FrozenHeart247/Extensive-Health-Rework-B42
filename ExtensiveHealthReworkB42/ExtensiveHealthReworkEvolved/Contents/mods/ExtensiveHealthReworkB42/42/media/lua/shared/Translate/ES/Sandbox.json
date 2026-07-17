@@ -103,6 +103,8 @@
     "Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip": "Activa efectos de advertencia. <LINE> <LINE> EFECTOS: <LINE> - Temblores y dialogo con frio <LINE> - Sudor y dialogo con calor <LINE> - Penalizaciones de movimiento en extremos <LINE> - Mas fatiga/sed <LINE> <LINE> Da aviso antes de hipotermia/agotamiento.",
     "Sandbox_EHR_PainSoundsEnabled": "Habilitar sonidos de dolor",
     "Sandbox_EHR_PainSoundsEnabled_tooltip": "El personaje vocaliza dolor. Atrae zombis!",
+    "Sandbox_EHR_CoughSoundsEnabled": "Activar sonidos de tos",
+    "Sandbox_EHR_CoughSoundsEnabled_tooltip": "Reproduce los sonidos de voz de tos de EHR. Desactivarlo no elimina los diálogos de tos ni el ruido que atrae a los zombis.",
     "Sandbox_EHR_PainSoundCooldown": "Enfriamiento de dolor (segundos)",
     "Sandbox_EHR_PainSoundCooldown_tooltip": "Segundos minimos entre vocalizaciones. 300 = 5 minutos.",
     "Sandbox_EHR_ZombieAttractionRadius": "Radio de atraccion (casillas)",

@@ -103,6 +103,8 @@ Sandbox_IT = {
     Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip = "Abilita effetti di avviso. <LINE> <LINE> EFFETTI: <LINE> - Brividi/dialogo col freddo <LINE> - Sudore/dialogo col caldo <LINE> - Penalita movimento agli estremi <LINE> - Maggiore fatica/sete <LINE> <LINE> Avvisa prima di ipotermia/esaurimento.",
     Sandbox_EHR_PainSoundsEnabled = "Abilita suoni di dolore",
     Sandbox_EHR_PainSoundsEnabled_tooltip = "Il personaggio vocalizza il dolore. Attira zombie!",
+    Sandbox_EHR_CoughSoundsEnabled = "Abilita suoni della tosse",
+    Sandbox_EHR_CoughSoundsEnabled_tooltip = "Riproduce i suoni vocali della tosse di EHR. Disabilitarli non rimuove i dialoghi della tosse né il rumore che attira gli zombie.",
     Sandbox_EHR_PainSoundCooldown = "Ricarica dolore (secondi)",
     Sandbox_EHR_PainSoundCooldown_tooltip = "Secondi minimi tra vocalizzi. 300 = 5 minuti.",
     Sandbox_EHR_ZombieAttractionRadius = "Raggio attrazione zombie (caselle)",

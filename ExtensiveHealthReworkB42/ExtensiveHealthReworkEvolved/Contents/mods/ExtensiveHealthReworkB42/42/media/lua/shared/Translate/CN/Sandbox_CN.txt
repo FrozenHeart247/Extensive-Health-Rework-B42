@@ -103,6 +103,8 @@ Sandbox_CN = {
     Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip = "在疾病发生之前启用预警效果。 <LINE> <LINE> 效果： <LINE> - 冷时颤抖和对话 <LINE> - 热时出汗和对话 <LINE> - 极端温度下的运动惩罚 <LINE> - 疲劳/口渴增加 <LINE> <LINE>在体温过低/热衰竭之前发出警告。",
     Sandbox_EHR_PainSoundsEnabled = "启用疼痛声音",
     Sandbox_EHR_PainSoundsEnabled_tooltip = "角色受伤时会发出痛苦的声音。痛苦的声音会吸引僵尸！",
+    Sandbox_EHR_CoughSoundsEnabled = "启用咳嗽音效",
+    Sandbox_EHR_CoughSoundsEnabled_tooltip = "播放 EHR 的咳嗽语音音效。关闭后仍会保留咳嗽对白和吸引僵尸的噪声。",
     Sandbox_EHR_PainSoundCooldown = "疼痛声音冷却时间（秒）",
     Sandbox_EHR_PainSoundCooldown_tooltip = "疼痛发声之间的最短秒数。 300 = 5 分钟。",
     Sandbox_EHR_ZombieAttractionRadius = "痛苦僵尸景点（方块）",

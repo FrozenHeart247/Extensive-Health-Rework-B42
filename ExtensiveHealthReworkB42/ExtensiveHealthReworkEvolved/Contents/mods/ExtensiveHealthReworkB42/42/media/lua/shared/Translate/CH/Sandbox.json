@@ -103,6 +103,8 @@
     "Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip": "在疾病發生前啟用預警效果。<LINE> <LINE>效果：<LINE>- 寒冷時顫抖和對話<LINE>- 熱時流汗和對話<LINE>- 極端溫度下的運動懲罰<LINE>- 疲勞/口渴增加<LINE> <LINE>在體溫過低/熱衰竭之前發出警告。",
     "Sandbox_EHR_PainSoundsEnabled": "啟用疼痛聲音",
     "Sandbox_EHR_PainSoundsEnabled_tooltip": "角色受傷時會發出痛苦的聲音。痛苦的聲音會吸引殭屍！",
+    "Sandbox_EHR_CoughSoundsEnabled": "啟用咳嗽音效",
+    "Sandbox_EHR_CoughSoundsEnabled_tooltip": "播放 EHR 的咳嗽語音音效。關閉後仍會保留咳嗽對白和吸引殭屍的噪聲。",
     "Sandbox_EHR_PainSoundCooldown": "疼痛聲音冷卻時間（秒）",
     "Sandbox_EHR_PainSoundCooldown_tooltip": "疼痛發聲之間最短的秒數。 300 = 5 分鐘。",
     "Sandbox_EHR_ZombieAttractionRadius": "痛苦殭屍景點（方塊）",

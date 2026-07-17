@@ -103,6 +103,8 @@ Sandbox_FR = {
     Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip = "Active les avertissements avant maladie. <LINE> <LINE> EFFETS: <LINE> - Frissons + dialogue quand froid <LINE> - Sueur + dialogue quand chaud <LINE> - Malus de mouvement aux extremes <LINE> - Fatigue/soif accrues <LINE> <LINE> Donne un avertissement avant hypothermie/coup de chaleur.",
     Sandbox_EHR_PainSoundsEnabled = "Activer les sons de douleur",
     Sandbox_EHR_PainSoundsEnabled_tooltip = "Le personnage vocalise la douleur. Attire les zombies!",
+    Sandbox_EHR_CoughSoundsEnabled = "Activer les sons de toux",
+    Sandbox_EHR_CoughSoundsEnabled_tooltip = "Joue les sons vocaux de toux d'EHR. La désactivation ne supprime ni les dialogues de toux ni le bruit qui attire les zombies.",
     Sandbox_EHR_PainSoundCooldown = "Recharge des cris (secondes)",
     Sandbox_EHR_PainSoundCooldown_tooltip = "Secondes minimum entre les cris. 300 = 5 minutes.",
     Sandbox_EHR_ZombieAttractionRadius = "Attraction zombies (cases)",

@@ -103,6 +103,8 @@
     "Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip": "Enable warning effects before diseases contract. <LINE> <LINE> EFFECTS: <LINE> - Shivering and dialogue when cold <LINE> - Sweating and dialogue when hot <LINE> - Movement penalties at extreme temps <LINE> - Increased fatigue/thirst drain <LINE> <LINE> Provides warning before hypothermia/heat exhaustion.",
     "Sandbox_EHR_PainSoundsEnabled": "Enable Pain Sounds",
     "Sandbox_EHR_PainSoundsEnabled_tooltip": "Character vocalizes pain when injured. Pain sounds attract zombies!",
+    "Sandbox_EHR_CoughSoundsEnabled": "Enable Cough Sounds",
+    "Sandbox_EHR_CoughSoundsEnabled_tooltip": "Play audible EHR cough voice sounds. Disabling this does not remove cough dialogue or the noise that attracts zombies.",
     "Sandbox_EHR_PainSoundCooldown": "Pain Sound Cooldown (seconds)",
     "Sandbox_EHR_PainSoundCooldown_tooltip": "Minimum seconds between pain vocalizations. 300 = 5 minutes.",
     "Sandbox_EHR_ZombieAttractionRadius": "Pain Zombie Attraction (tiles)",

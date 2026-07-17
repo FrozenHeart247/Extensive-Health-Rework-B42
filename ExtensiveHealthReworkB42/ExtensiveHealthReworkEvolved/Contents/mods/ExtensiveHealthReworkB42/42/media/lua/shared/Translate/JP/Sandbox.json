@@ -103,6 +103,8 @@
     "Sandbox_EHR_PreDiseaseEffectsEnabled_tooltip": "病気が発症する前に警告効果を有効にします。 <LINE> <LINE> 効果: <LINE> - 寒いときの震えと会話 <LINE> - 暑いときの発汗と会話 <LINE> - 極端な温度での移動ペナルティ <LINE> - 疲労/喉の渇きの増加 <LINE> <LINE> 低体温症/熱疲労の前に警告を発します。",
     "Sandbox_EHR_PainSoundsEnabled": "痛みの音を有効にする",
     "Sandbox_EHR_PainSoundsEnabled_tooltip": "キャラクターは怪我をすると痛みを訴えます。痛みの音はゾンビを引き寄せる！",
+    "Sandbox_EHR_CoughSoundsEnabled": "咳の音を有効にする",
+    "Sandbox_EHR_CoughSoundsEnabled_tooltip": "EHR の咳の音声を再生します。無効にしても咳の台詞やゾンビを引き寄せる物音は残ります。",
     "Sandbox_EHR_PainSoundCooldown": "痛みの音のクールダウン (秒)",
     "Sandbox_EHR_PainSoundCooldown_tooltip": "痛みの発声間の最小秒数。 300 = 5 分。",
     "Sandbox_EHR_ZombieAttractionRadius": "ペインゾンビアトラクション（タイル）",

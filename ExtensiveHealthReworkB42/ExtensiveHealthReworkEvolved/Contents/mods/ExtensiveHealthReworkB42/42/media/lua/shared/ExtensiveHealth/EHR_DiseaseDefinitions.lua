@@ -29,7 +29,7 @@ end
 -- ============================================
 --[[
     Transmission: Cold weather + wet exposure (handled by EHR_EnvironmentalDiseases)
-    Duration: 2-4 days, untreated stage 4 has a 50% pneumonia complication roll
+    Duration: 2-4 days, untreated stage 4 has a 35% pneumonia complication roll
     Effects: Sneezing (attracts zombies), mild debuffs
     Not lethal on its own
 ]]--
@@ -54,7 +54,7 @@ EHR.Disease.Diseases["common_cold"] = {
     -- Can progress to another disease
     canProgress = true,
     progressTo = "pneumonia",
-    progressChance = 0.50,          -- 50% chance for pneumonia on untreated stage 4
+    progressChance = 0.35,          -- 35% chance for pneumonia on untreated stage 4
     progressAfterHours = 0,         -- Stage 4 handles the late complication roll
     -- Treatment that prevents progression
     treatmentItem = "Pills",        -- Any pills help (B42 item type)

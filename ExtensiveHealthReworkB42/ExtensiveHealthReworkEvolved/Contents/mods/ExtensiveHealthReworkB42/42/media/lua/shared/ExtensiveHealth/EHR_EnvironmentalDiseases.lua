@@ -1849,7 +1849,7 @@ function EHR.Environmental.CheckColdProgression(player, exposure)
         return
     end
 
-    local progressChance = coldDef.progressChance or 0.50
+    local progressChance = coldDef.progressChance or 0.35
     cold.pneumoniaRollDone = true
 
     EHR.Log(string.format("Cold stage 4 complication roll: chance=%.0f%%",

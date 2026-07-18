@@ -31,6 +31,7 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_BandagePack" end)
+pcall(function() require "ExtensiveHealth/EHR_Immunity" end)
 
 EHR = EHR or {}
 EHR.UI = EHR.UI or {}
@@ -1216,6 +1217,7 @@ function EHR_HealthPanelUI:getTabDefinitions()
     local compact = self.width < 760
     return {
         { id = "ehr", label = compact and safeText("UI_EHR_Tab_EHR_Compact", "EHR") or safeText("UI_EHR_Tab_EHR", "EHR Monitor") },
+        { id = "immunity", label = compact and safeText("UI_EHR_Tab_Immunity_Compact", "Immune System") or safeText("UI_EHR_Tab_Immunity", "Immune System") },
         { id = "info", label = vanillaText.info or safeText("UI_EHR_Tab_Info", "Info") },
         { id = "skills", label = vanillaText.skills or safeText("UI_EHR_Tab_Skills", "Skills") },
         { id = "health", label = vanillaText.health or safeText("UI_EHR_Tab_Health", "Health") },
@@ -1883,6 +1885,7 @@ function EHR_HealthPanelUI:getTabIconTexture(tabId)
 
     local paths = {
         ehr = "media/textures/EHR_Tab_EHR.png",
+        immunity = "media/textures/EHR_Tab_Immune.png",
         info = "media/textures/EHR_Tab_Info.png",
         skills = "media/textures/EHR_Tab_Skills.png",
         health = "media/textures/EHR_Tab_Health.png",
@@ -2028,6 +2031,12 @@ function EHR_HealthPanelUI:drawTabGlyph(tabId, x, y, size, active)
         self:drawRect(cx - 10, cy - 2, 20, 4, a, color.r, color.g, color.b)
         self:drawRect(cx - 7, cy - 8, 14, 4, a, color.r, color.g, color.b)
         self:drawRect(cx - 7, cy + 6, 14, 4, a, color.r, color.g, color.b)
+    elseif tabId == "immunity" then
+        self:drawRect(cx - 10, y + 7, 20, 5, a, color.r, color.g, color.b)
+        self:drawRect(cx - 8, y + 12, 16, 11, a, color.r, color.g, color.b)
+        self:drawRect(cx - 4, y + 23, 8, 5, a, color.r, color.g, color.b)
+        self:drawRect(cx - 1, y + 11, 2, 13, 0.88, c.background.r, c.background.g, c.background.b)
+        self:drawRect(cx - 5, cy - 1, 10, 2, 0.88, c.background.r, c.background.g, c.background.b)
     else
         self:drawDockedTextCenter("+", x, y, size, size, color.r, color.g, color.b, a, UIFont.Medium)
     end
@@ -2769,6 +2778,7 @@ function EHR_HealthPanelUI:updateCachedData()
         activeMedications = activeMedications,
         activeSideEffects = activeSideEffects,
         bodyStatus = data.EHR_BodyStatus or {},
+        immunity = data.EHR_Immunity or {},
     }
 end
 
@@ -5160,6 +5170,269 @@ function EHR_HealthPanelUI:clampContentScroll()
     self.contentScrollY = clamp(self.contentScrollY or 0, 0, self:getMaxContentScroll())
 end
 
+function EHR_HealthPanelUI:getImmunityColor(value)
+    local c = EHR_HealthPanelUI.Colors
+    value = tonumber(value) or 0
+    if value >= 80 then return c.green end
+    if value >= 60 then return c.blue end
+    if value >= 40 then return c.yellow end
+    if value >= 20 then return c.orange end
+    return c.red
+end
+
+function EHR_HealthPanelUI:getImmunityStatusId(value)
+    if EHR.Immunity and EHR.Immunity.GetStatusId then
+        return EHR.Immunity.GetStatusId(value)
+    end
+
+    value = tonumber(value) or 0
+    if value < 20 then return "suppressed" end
+    if value < 40 then return "compromised" end
+    if value < 60 then return "strained" end
+    if value < 80 then return "stable" end
+    return "strong"
+end
+
+function EHR_HealthPanelUI:getImmunityStatusText(statusId)
+    local labels = {
+        suppressed = safeText("UI_EHR_Immunity_Status_Suppressed", "Suppressed"),
+        compromised = safeText("UI_EHR_Immunity_Status_Compromised", "Compromised"),
+        strained = safeText("UI_EHR_Immunity_Status_Strained", "Strained"),
+        stable = safeText("UI_EHR_Immunity_Status_Stable", "Stable"),
+        strong = safeText("UI_EHR_Immunity_Status_Strong", "Strong"),
+    }
+    return labels[statusId] or labels.strained
+end
+
+function EHR_HealthPanelUI:drawImmunityBar(x, y, w, h, value, target, color)
+    local c = EHR_HealthPanelUI.Colors
+    value = clamp(tonumber(value) or 0, 0, 100)
+    target = clamp(tonumber(target) or value, 0, 100)
+    color = color or self:getImmunityColor(value)
+
+    self:drawRect(x, y, w, h, 0.90, 0.025, 0.025, 0.028)
+    local fillW = math.floor(w * value / 100)
+    if fillW > 0 then
+        self:drawRect(x, y, fillW, h, color.a, color.r, color.g, color.b)
+        self:drawRect(x, y, fillW, math.max(2, math.floor(h * 0.18)), 0.20, 1.0, 0.88, 0.72)
+    end
+    self:drawRectBorder(x, y, w, h, 0.82, c.border.r, c.border.g, c.border.b)
+
+    local markerX = x + math.floor((w - 2) * target / 100)
+    self:drawRect(markerX, y - 2, 2, h + 4, 0.92, c.text.r, c.text.g, c.text.b)
+end
+
+function EHR_HealthPanelUI:drawContaminationBar(x, y, w, h, value, color)
+    local c = EHR_HealthPanelUI.Colors
+    value = clamp(tonumber(value) or 0, 0, 100)
+    color = color or self:getImmunityColor(100 - value)
+
+    self:drawRect(x, y, w, h, 0.90, 0.025, 0.025, 0.028)
+    local fillW = math.floor(w * value / 100)
+    if fillW > 0 then
+        self:drawRect(x + 1, y + 1, math.max(0, fillW - 2), h - 2, 0.88, color.r, color.g, color.b)
+    end
+    self:drawRectBorder(x, y, w, h, c.borderDim.a, c.borderDim.r, c.borderDim.g, c.borderDim.b)
+end
+
+function EHR_HealthPanelUI:drawImmunityFactorRow(label, value, x, y, w, rowH)
+    local c = EHR_HealthPanelUI.Colors
+    local color = self:getImmunityColor(value)
+    local font = self:getCompactFont()
+    local pctText = string.format("%d%%", math.floor((tonumber(value) or 0) + 0.5))
+
+    self:drawDockedText(self:truncateText(label, w - 70, font), x, y, w - 70, 22, c.text.r, c.text.g, c.text.b, c.text.a, font)
+    self:drawDockedTextRight(pctText, x + w, y, 22, color.r, color.g, color.b, color.a, font)
+    self:drawImmunityBar(x, y + 27, w, 10, value, value, color)
+    self:drawRect(x, y + rowH - 1, w, 1, 0.22, c.borderDim.r, c.borderDim.g, c.borderDim.b)
+end
+
+function EHR_HealthPanelUI:drawImmuneStatusPanel()
+    local c = EHR_HealthPanelUI.Colors
+    local bounds = self:getTabContentBounds()
+    local state = self.cachedData and self.cachedData.immunity or {}
+    local hasData = type(state) == "table" and state.version ~= nil
+    local score = clamp(tonumber(state.score) or 50, 0, 100)
+    local target = clamp(tonumber(state.target) or score, 0, 100)
+    local enabled = state.enabled ~= false
+    local statusText = self:getImmunityStatusText(self:getImmunityStatusId(score))
+    local scoreColor = self:getImmunityColor(score)
+
+    local topH = 170
+    self:drawPanelFrame(bounds.x, bounds.y, bounds.w, topH, safeText("UI_EHR_Immunity_Title", "IMMUNE SYSTEM"), nil)
+
+    if not hasData then
+        self:drawDockedTextCenter(
+            safeText("UI_EHR_Immunity_AwaitingData", "Awaiting immune status data"),
+            bounds.x + 20, bounds.y + 58, bounds.w - 40, 54,
+            c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium
+        )
+        return
+    end
+
+    self:drawDockedText(
+        string.format("%d%%", math.floor(score + 0.5)),
+        bounds.x + 18, bounds.y + 50, 150, 44,
+        scoreColor.r, scoreColor.g, scoreColor.b, scoreColor.a, UIFont.Large
+    )
+
+    if not enabled then
+        statusText = safeText("UI_EHR_Immunity_Disabled", "Disabled")
+        scoreColor = c.textDim
+    end
+    self:drawDockedTextRight(
+        statusText, bounds.x + bounds.w - 18, bounds.y + 51, 38,
+        scoreColor.r, scoreColor.g, scoreColor.b, scoreColor.a, UIFont.Medium
+    )
+
+    local barX = bounds.x + 18
+    local barY = bounds.y + 101
+    local barW = bounds.w - 36
+    self:drawImmunityBar(barX, barY, barW, 25, score, target, scoreColor)
+
+    local trendLabels = {
+        recovering = safeText("UI_EHR_Immunity_Trend_Recovering", "Recovering"),
+        declining = safeText("UI_EHR_Immunity_Trend_Declining", "Declining"),
+        stable = safeText("UI_EHR_Immunity_Trend_Stable", "Stable"),
+        disabled = safeText("UI_EHR_Immunity_Disabled", "Disabled"),
+    }
+    local trend = trendLabels[state.trend] or trendLabels.stable
+    self:drawDockedText(
+        safeText("UI_EHR_Immunity_Trend", "Trend") .. ": " .. trend,
+        barX, barY + 31, math.floor(barW / 2), 24,
+        c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, self:getCompactFont()
+    )
+    self:drawDockedTextRight(
+        string.format("%s: %d%%", safeText("UI_EHR_Immunity_Target", "Target"), math.floor(target + 0.5)),
+        barX + barW, barY + 31, 24,
+        c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, self:getCompactFont()
+    )
+
+    local lowerY = bounds.y + topH + 10
+    local lowerH = bounds.y + bounds.h - lowerY
+    local gap = 10
+    local leftW = math.floor((bounds.w - gap) * 0.60)
+    local rightW = bounds.w - leftW - gap
+    local rightX = bounds.x + leftW + gap
+
+    self:drawPanelFrame(bounds.x, lowerY, leftW, lowerH, safeText("UI_EHR_Immunity_SystemicFactors", "SYSTEMIC FACTORS"), nil)
+    local factorRows = {
+        { id = "nutrition", label = safeText("UI_EHR_Immunity_Factor_Nutrition", "Nutrition") },
+        { id = "hydration", label = safeText("UI_EHR_Immunity_Factor_Hydration", "Hydration") },
+        { id = "rest", label = safeText("UI_EHR_Immunity_Factor_Rest", "Rest") },
+        { id = "stressControl", label = safeText("UI_EHR_Immunity_Factor_StressControl", "Stress control") },
+        { id = "bloodCondition", label = safeText("UI_EHR_Immunity_Factor_BloodCondition", "Blood condition") },
+        { id = "healthReserve", label = safeText("UI_EHR_Immunity_Factor_HealthReserve", "Health reserve") },
+    }
+    local factors = type(state.factors) == "table" and state.factors or {}
+    local factorX = bounds.x + 16
+    local factorY = lowerY + 51
+    local factorW = leftW - 32
+    local rowH = math.max(47, math.floor((lowerH - 62) / #factorRows))
+    for index, factor in ipairs(factorRows) do
+        self:drawImmunityFactorRow(factor.label, factors[factor.id] or 0, factorX, factorY + (index - 1) * rowH, factorW, rowH)
+    end
+
+    self:drawPanelFrame(rightX, lowerY, rightW, lowerH, safeText("UI_EHR_Immunity_BarrierDefense", "DIRTINESS / BLOODINESS"), nil)
+    local hygiene = type(state.hygiene) == "table" and state.hygiene or nil
+    if not hygiene then
+        local legacyBarrier = type(state.barrier) == "table" and state.barrier or {}
+        local legacyDirtiness = 100 - clamp(tonumber(legacyBarrier.score) or 100, 0, 100)
+        hygiene = {
+            dirtiness = legacyDirtiness,
+            bloodiness = legacyBarrier.hasBlood == true and math.max(1, legacyDirtiness) or 0,
+        }
+    end
+
+    local dirtiness = clamp(tonumber(hygiene.dirtiness) or 0, 0, 100)
+    local bloodiness = clamp(tonumber(hygiene.bloodiness) or 0, 0, 100)
+    local dirtColor = self:getImmunityColor(100 - dirtiness)
+    local bloodColor = self:getImmunityColor(100 - bloodiness)
+    local metricFont = self:getCompactFont()
+
+    self:drawDockedText(
+        safeText("UI_EHR_Immunity_HandsArms", "Dirtiness"),
+        rightX + 16, lowerY + 52, rightW - 92, 24,
+        c.text.r, c.text.g, c.text.b, c.text.a, metricFont
+    )
+    self:drawDockedTextRight(
+        string.format("%d%%", math.floor(dirtiness + 0.5)),
+        rightX + rightW - 16, lowerY + 52, 24,
+        dirtColor.r, dirtColor.g, dirtColor.b, dirtColor.a, metricFont
+    )
+    self:drawContaminationBar(rightX + 16, lowerY + 80, rightW - 32, 18, dirtiness, dirtColor)
+
+    self:drawDockedText(
+        safeText("UI_EHR_Immunity_BloodContamination", "Bloodiness"),
+        rightX + 16, lowerY + 113, rightW - 92, 24,
+        c.text.r, c.text.g, c.text.b, c.text.a, metricFont
+    )
+    self:drawDockedTextRight(
+        string.format("%d%%", math.floor(bloodiness + 0.5)),
+        rightX + rightW - 16, lowerY + 113, 24,
+        bloodColor.r, bloodColor.g, bloodColor.b, bloodColor.a, metricFont
+    )
+    self:drawContaminationBar(rightX + 16, lowerY + 141, rightW - 32, 18, bloodiness, bloodColor)
+
+    local hygienePenalty = clamp(tonumber(hygiene.immunePenalty) or 0, 0, 55)
+    local penaltyColor = c.green
+    if hygienePenalty >= 25 then
+        penaltyColor = c.red
+    elseif hygienePenalty >= 10 then
+        penaltyColor = c.orange
+    elseif hygienePenalty > 0 then
+        penaltyColor = c.yellow
+    end
+    self:drawDockedText(
+        safeText("UI_EHR_Immunity_HygienePenalty", "Immune penalty") .. ": -" .. string.format("%d", math.floor(hygienePenalty + 0.5)),
+        rightX + 16, lowerY + 164, rightW - 32, 24,
+        penaltyColor.r, penaltyColor.g, penaltyColor.b, penaltyColor.a, metricFont
+    )
+
+    local pressuresY = lowerY + 194
+    self:drawSectionTitle(safeText("UI_EHR_Immunity_CurrentPressures", "CURRENT PRESSURES"), rightX + 10, pressuresY, rightW - 20)
+    local pressureRows = {}
+    for _, factor in ipairs(factorRows) do
+        local value = tonumber(factors[factor.id]) or 0
+        if value < 50 then
+            table.insert(pressureRows, { label = factor.label, value = value })
+        end
+    end
+    table.sort(pressureRows, function(a, b) return a.value < b.value end)
+
+    local pressureTextY = pressuresY + 38
+    if #pressureRows == 0 then
+        self:drawDockedText(
+            safeText("UI_EHR_Immunity_NoMajorPressures", "No major systemic pressures"),
+            rightX + 18, pressureTextY, rightW - 36, 28,
+            c.green.r, c.green.g, c.green.b, c.green.a, self:getCompactFont()
+        )
+    else
+        for index = 1, math.min(4, #pressureRows) do
+            local pressure = pressureRows[index]
+            local pressureColor = self:getImmunityColor(pressure.value)
+            self:drawRect(rightX + 18, pressureTextY + 7, 8, 8, pressureColor.a, pressureColor.r, pressureColor.g, pressureColor.b)
+            self:drawDockedText(
+                self:truncateText(pressure.label, rightW - 90, self:getCompactFont()),
+                rightX + 32, pressureTextY, rightW - 90, 24,
+                c.text.r, c.text.g, c.text.b, c.text.a, self:getCompactFont()
+            )
+            self:drawDockedTextRight(
+                string.format("%d%%", math.floor(pressure.value + 0.5)),
+                rightX + rightW - 18, pressureTextY, 24,
+                pressureColor.r, pressureColor.g, pressureColor.b, pressureColor.a, self:getCompactFont()
+            )
+            pressureTextY = pressureTextY + 27
+        end
+    end
+
+    self:drawDockedText(
+        safeText("UI_EHR_Immunity_MonitoringOnly", "System state: Monitoring"),
+        rightX + 18, lowerY + lowerH - 34, rightW - 36, 24,
+        c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, self:getCompactFont()
+    )
+end
+
 function EHR_HealthPanelUI:drawScrollBar(x, y, w, h)
     local maxScroll = self:getMaxContentScroll()
     if maxScroll <= 0 then return end
@@ -5210,6 +5483,8 @@ function EHR_HealthPanelUI:prerender()
         if self.rightExpanded then
             self:drawRightPanel()
         end
+    elseif self.activeTab == "immunity" then
+        self:drawImmuneStatusPanel()
     else
         self:drawEmbeddedTabFrame()
     end

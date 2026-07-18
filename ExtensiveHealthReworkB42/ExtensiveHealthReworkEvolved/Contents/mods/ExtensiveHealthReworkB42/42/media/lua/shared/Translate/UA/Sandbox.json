@@ -199,5 +199,12 @@
     "Sandbox_EHR_HypothermiaStage4Temp": "Hypothermia Stage 4 Temperature (C)",
     "Sandbox_EHR_HypothermiaStage4Temp_tooltip": "Core temperature threshold for hypothermia stage 4. \u003cLINE\u003e Default: 31C.",
     "Sandbox_EHR_HypothermiaClearTemp": "Hypothermia Clear Temperature (C)",
-    "Sandbox_EHR_HypothermiaClearTemp_tooltip": "Core temperature required to clear temperature-driven hypothermia. \u003cLINE\u003e Default: 35.5C."
+    "Sandbox_EHR_HypothermiaClearTemp_tooltip": "Core temperature required to clear temperature-driven hypothermia. \u003cLINE\u003e Default: 35.5C.",
+    "Sandbox_EHR_Immunity": "EHR: Імунна система",
+    "Sandbox_EHR_ImmunitySystemEnabled": "Увімкнути імунну систему",
+    "Sandbox_EHR_ImmunitySystemEnabled_tooltip": "Розраховує та показує показник імунної системи, загальну забрудненість і забруднення кров'ю персонажа. На першому етапі не змінює шанс захворювання.",
+    "Sandbox_EHR_ImmunityRecoveryRate": "Швидкість відновлення імунітету",
+    "Sandbox_EHR_ImmunityRecoveryRate_tooltip": "Масштабує швидкість зростання показника імунної системи до поточного цільового значення. 1.0 = типово.",
+    "Sandbox_EHR_ImmunityDeclineRate": "Швидкість ослаблення імунітету",
+    "Sandbox_EHR_ImmunityDeclineRate_tooltip": "Масштабує швидкість зниження показника імунної системи до поточного цільового значення. 1.0 = типово."
 }

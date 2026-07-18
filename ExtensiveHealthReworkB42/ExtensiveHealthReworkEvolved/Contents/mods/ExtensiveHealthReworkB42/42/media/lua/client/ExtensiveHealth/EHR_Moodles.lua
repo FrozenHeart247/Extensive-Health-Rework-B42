@@ -44,12 +44,12 @@ local LEVEL_VALUE = {
 }
 
 local ICONS = {
-    medical = "media/textures/EHR_Disease_Unknown.png",
-    corpse = "media/textures/EHR_Disease_CorpseSickness.png",
-    cadaveric = "media/textures/EHR_Disease_CadavericAspergillosis.png",
-    heat = "media/textures/EHR_Disease_HeatExhaustion.png",
-    cold = "media/textures/EHR_Disease_CommonCold.png",
-    freezing = "media/textures/EHR_Disease_Hypotermia.png",
+    medical = "media/textures/EHR_Disease_UnknownMoodle.png",
+    corpse = "media/textures/EHR_Disease_CorpseSicknessMoodle.png",
+    cadaveric = "media/textures/EHR_Disease_CadavericAspergillosisMoodle.png",
+    heat = "media/textures/EHR_Disease_HeatExhaustionMoodle.png",
+    cold = "media/textures/EHR_Disease_CommonColdMoodle.png",
+    freezing = "media/textures/EHR_Disease_HypotermiaMoodle.png",
 }
 
 local registeredNames = MODULE.registeredNames or {}

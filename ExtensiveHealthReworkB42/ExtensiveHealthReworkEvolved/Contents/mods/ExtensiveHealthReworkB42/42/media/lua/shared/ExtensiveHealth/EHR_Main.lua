@@ -623,6 +623,7 @@ function EHR.SyncEHRModDataToClient(player)
         EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
         EHR_CorpseSickness = data.EHR_CorpseSickness,
         EHR_KnoxCure = data.EHR_KnoxCure,
+        EHR_Immunity = data.EHR_Immunity,
     })
 
     return true
@@ -730,6 +731,7 @@ function EHR.OnCreatePlayer(playerIndex, player)
         modData.EHR_WoundInfection_V2_Initialized or
         modData.EHR_Medication or
         modData.EHR_Medications or  -- Legacy field
+        modData.EHR_Immunity or
         modData.EHR_Temperature or
         modData.EHR_Corpse or
         modData.EHR_CorpseSickness
@@ -750,6 +752,7 @@ function EHR.OnCreatePlayer(playerIndex, player)
             if modData.EHR_WoundInfections then table.insert(fields, "WoundsLegacy") end
             if modData.EHR_WoundInfection then table.insert(fields, "WoundsV2") end
             if modData.EHR_Medication then table.insert(fields, "Medication") end
+            if modData.EHR_Immunity then table.insert(fields, "Immunity") end
             if modData.EHR_Temperature then table.insert(fields, "Temperature") end
             if modData.EHR_Corpse then table.insert(fields, "Corpse") end
             if modData.EHR_CorpseSickness then table.insert(fields, "CorpseSickness") end
@@ -811,6 +814,7 @@ function EHR.OnCreatePlayer(playerIndex, player)
         modData.EHR_Medication = nil   -- Actual medication system
         modData.EHR_Medications = nil  -- Legacy medication data
         modData.EHR_SideEffects = nil  -- Legacy side effects
+        modData.EHR_Immunity = nil
 
         -- Other modules
         modData.EHR_Corpse = nil
@@ -942,3 +946,7 @@ end
 EHR.ResetLockedHealth = nil
 
 EHR.Log("Main module loaded")
+
+-- Loaded last so the immunity module can use the initialized EHR namespace
+-- without creating a circular require back into EHR_Main.
+pcall(function() require "ExtensiveHealth/EHR_Immunity" end)

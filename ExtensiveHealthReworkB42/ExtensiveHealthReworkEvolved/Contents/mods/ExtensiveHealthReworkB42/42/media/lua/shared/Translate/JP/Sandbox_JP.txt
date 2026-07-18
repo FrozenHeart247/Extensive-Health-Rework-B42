@@ -200,4 +200,11 @@ Sandbox_JP = {
     Sandbox_EHR_HypothermiaStage4Temp_tooltip = "Core temperature threshold for hypothermia stage 4. <LINE> Default: 31C.",
     Sandbox_EHR_HypothermiaClearTemp = "Hypothermia Clear Temperature (C)",
     Sandbox_EHR_HypothermiaClearTemp_tooltip = "Core temperature required to clear temperature-driven hypothermia. <LINE> Default: 35.5C.",
+    Sandbox_EHR_Immunity = "EHR：免疫システム",
+    Sandbox_EHR_ImmunitySystemEnabled = "免疫システムを有効化",
+    Sandbox_EHR_ImmunitySystemEnabled_tooltip = "免疫システム値、汚れ、血液の付着量を計算して表示します。第1段階では病気の発症率に影響しません。",
+    Sandbox_EHR_ImmunityRecoveryRate = "免疫回復速度",
+    Sandbox_EHR_ImmunityRecoveryRate_tooltip = "免疫システム値が現在の目標値へ回復する速度を調整します。1.0 = デフォルト。",
+    Sandbox_EHR_ImmunityDeclineRate = "免疫低下速度",
+    Sandbox_EHR_ImmunityDeclineRate_tooltip = "免疫システム値が現在の目標値へ低下する速度を調整します。1.0 = デフォルト。",
 }

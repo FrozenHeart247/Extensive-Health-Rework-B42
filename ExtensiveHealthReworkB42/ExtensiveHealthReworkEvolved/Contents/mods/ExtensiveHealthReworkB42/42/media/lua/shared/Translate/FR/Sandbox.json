@@ -199,5 +199,12 @@
     "Sandbox_EHR_HypothermiaStage4Temp": "Hypothermia Stage 4 Temperature (C)",
     "Sandbox_EHR_HypothermiaStage4Temp_tooltip": "Core temperature threshold for hypothermia stage 4. \u003cLINE\u003e Default: 31C.",
     "Sandbox_EHR_HypothermiaClearTemp": "Hypothermia Clear Temperature (C)",
-    "Sandbox_EHR_HypothermiaClearTemp_tooltip": "Core temperature required to clear temperature-driven hypothermia. \u003cLINE\u003e Default: 35.5C."
+    "Sandbox_EHR_HypothermiaClearTemp_tooltip": "Core temperature required to clear temperature-driven hypothermia. \u003cLINE\u003e Default: 35.5C.",
+    "Sandbox_EHR_Immunity": "EHR : Système immunitaire",
+    "Sandbox_EHR_ImmunitySystemEnabled": "Activer le système immunitaire",
+    "Sandbox_EHR_ImmunitySystemEnabled_tooltip": "Calcule et affiche le score du système immunitaire ainsi que les niveaux généraux de saleté et de sang du personnage. Cette première phase ne modifie pas les risques de maladie.",
+    "Sandbox_EHR_ImmunityRecoveryRate": "Vitesse de récupération immunitaire",
+    "Sandbox_EHR_ImmunityRecoveryRate_tooltip": "Ajuste la vitesse à laquelle le score du système immunitaire remonte vers sa cible actuelle. 1.0 = valeur par défaut.",
+    "Sandbox_EHR_ImmunityDeclineRate": "Vitesse de déclin immunitaire",
+    "Sandbox_EHR_ImmunityDeclineRate_tooltip": "Ajuste la vitesse à laquelle le score du système immunitaire baisse vers sa cible actuelle. 1.0 = valeur par défaut."
 }

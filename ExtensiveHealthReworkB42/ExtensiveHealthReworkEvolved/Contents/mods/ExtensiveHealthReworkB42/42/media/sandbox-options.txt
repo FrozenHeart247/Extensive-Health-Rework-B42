@@ -803,6 +803,35 @@ option ExtensiveHealthRework.PatientZeroTraitDisabled
     page = EHR_Other,
     translation = EHR_PatientZeroTraitDisabled,
 }
+
+option ExtensiveHealthRework.ImmunitySystemEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Immunity,
+    translation = EHR_ImmunitySystemEnabled,
+}
+
+option ExtensiveHealthRework.ImmunityRecoveryRate
+{
+    type = double,
+    min = 0.25,
+    max = 3.0,
+    default = 1.0,
+    page = EHR_Immunity,
+    translation = EHR_ImmunityRecoveryRate,
+}
+
+option ExtensiveHealthRework.ImmunityDeclineRate
+{
+    type = double,
+    min = 0.25,
+    max = 3.0,
+    default = 1.0,
+    page = EHR_Immunity,
+    translation = EHR_ImmunityDeclineRate,
+}
+
 option ExtensiveHealthRework.DebugMode
 {
     type = boolean,

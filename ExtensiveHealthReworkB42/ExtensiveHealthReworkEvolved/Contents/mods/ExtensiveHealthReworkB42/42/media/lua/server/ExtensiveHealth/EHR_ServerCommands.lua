@@ -21,6 +21,7 @@ pcall(function() require "ExtensiveHealth/EHR_EnvironmentalDiseases" end)
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
+pcall(function() require "ExtensiveHealth/EHR_Immunity" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -695,6 +696,7 @@ local function syncModDataToClient(player)
             EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
             EHR_CorpseSickness = data.EHR_CorpseSickness,
             EHR_KnoxCure = data.EHR_KnoxCure,
+            EHR_Immunity = data.EHR_Immunity,
         }
         sendServerCommand(player, "EHR_Sync", "UpdateModData", ehrData)
         log("[EHR Server] Sent EHR data to client via sendServerCommand")
@@ -2023,6 +2025,7 @@ function EHR.ServerCommands.ResetAll(player, args)
     data.EHR_Corpse = nil
     data.EHR_Corpse_Initialized = nil
     data.EHR_Temperature = nil
+    data.EHR_Immunity = nil
     clearDebugVanillaWoundInfections(player)
 
     -- Re-initialize
@@ -2031,6 +2034,9 @@ function EHR.ServerCommands.ResetAll(player, args)
     end
     if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFever then
         EHR.BodyTemp.ResetDiseaseFever(player, true)
+    end
+    if EHR.Immunity and EHR.Immunity.ResetPlayer then
+        EHR.Immunity.ResetPlayer(player)
     end
 
     syncModDataToClient(player)
@@ -3178,6 +3184,7 @@ local function OnClientCommand(module, command, player, args)
                 EHR_CorpseSickness = targetData.EHR_CorpseSickness,
                 EHR_KnoxCure = targetData.EHR_KnoxCure,
                 EHR_KnoxStatus = knoxStatus,
+                EHR_Immunity = targetData.EHR_Immunity,
                 EHR_Initialized = targetData.EHR_Initialized,
             }
 
@@ -3336,6 +3343,10 @@ function EHR.ServerCommands.RequestInitData(player, args)
     data.EHR_Medication = data.EHR_Medication or { activeTreatments = {}, activeDoses = {}, activeSideEffects = {} }
     data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
     data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
+    if EHR.Immunity and EHR.Immunity.InitializePlayer then
+        EHR.Immunity.InitializePlayer(player)
+        EHR.Immunity.UpdatePlayer(player, true)
+    end
 
     -- Sync to client immediately
     syncModDataToClient(player)
@@ -3373,6 +3384,10 @@ local function OnServerCreatePlayer(playerIndex, player)
     data.EHR_Medication = data.EHR_Medication or { activeTreatments = {}, activeDoses = {}, activeSideEffects = {} }
     data.EHR_MedicalJournal = data.EHR_MedicalJournal or { entries = {}, discoveries = {} }
     data.EHR_KnownDiseases = data.EHR_KnownDiseases or {}
+    if EHR.Immunity and EHR.Immunity.InitializePlayer then
+        EHR.Immunity.InitializePlayer(player)
+        EHR.Immunity.UpdatePlayer(player, true)
+    end
 
     log("[EHR Server] ================================")
 

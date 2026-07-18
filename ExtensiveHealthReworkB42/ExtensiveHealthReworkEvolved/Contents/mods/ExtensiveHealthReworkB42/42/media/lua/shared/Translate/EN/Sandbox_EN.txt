@@ -200,4 +200,11 @@ Sandbox_EN = {
     Sandbox_EHR_RealisticTemperatureCompatibility_option3 = "Disabled",
     Sandbox_EHR_StitchMinigameEnabled = "Enable Stitch Minigame",
     Sandbox_EHR_StitchMinigameEnabled_tooltip = "When enabled, stitching deep wounds opens a short EHR suturing minigame before the vanilla stitch action. Disable for vanilla stitching.",
+    Sandbox_EHR_Immunity = "EHR: Immune System",
+    Sandbox_EHR_ImmunitySystemEnabled = "Enable Immune System",
+    Sandbox_EHR_ImmunitySystemEnabled_tooltip = "Calculates and displays the character's immune system score, dirtiness, and bloodiness. In this first phase it does not change disease chances.",
+    Sandbox_EHR_ImmunityRecoveryRate = "Immune Recovery Rate",
+    Sandbox_EHR_ImmunityRecoveryRate_tooltip = "Scales how quickly the immune system score rises toward its current target. 1.0 = default.",
+    Sandbox_EHR_ImmunityDeclineRate = "Immune Decline Rate",
+    Sandbox_EHR_ImmunityDeclineRate_tooltip = "Scales how quickly the immune system score falls toward its current target. 1.0 = default.",
 }

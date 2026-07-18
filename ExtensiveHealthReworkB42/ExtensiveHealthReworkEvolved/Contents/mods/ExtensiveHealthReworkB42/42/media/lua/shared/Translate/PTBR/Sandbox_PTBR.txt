@@ -200,4 +200,11 @@ Sandbox_PTBR = {
     Sandbox_EHR_HypothermiaStage4Temp_tooltip = "Core temperature threshold for hypothermia stage 4. <LINE> Default: 31C.",
     Sandbox_EHR_HypothermiaClearTemp = "Hypothermia Clear Temperature (C)",
     Sandbox_EHR_HypothermiaClearTemp_tooltip = "Core temperature required to clear temperature-driven hypothermia. <LINE> Default: 35.5C.",
+    Sandbox_EHR_Immunity = "EHR: Sistema imunológico",
+    Sandbox_EHR_ImmunitySystemEnabled = "Ativar sistema imunológico",
+    Sandbox_EHR_ImmunitySystemEnabled_tooltip = "Calcula e exibe a pontuação do sistema imunológico e os níveis gerais de sujeira e sangue do personagem. Nesta primeira fase não altera as chances de doença.",
+    Sandbox_EHR_ImmunityRecoveryRate = "Velocidade de recuperação imunológica",
+    Sandbox_EHR_ImmunityRecoveryRate_tooltip = "Ajusta a velocidade com que a pontuação do sistema imunológico sobe até o alvo atual. 1.0 = padrão.",
+    Sandbox_EHR_ImmunityDeclineRate = "Velocidade de queda imunológica",
+    Sandbox_EHR_ImmunityDeclineRate_tooltip = "Ajusta a velocidade com que a pontuação do sistema imunológico cai até o alvo atual. 1.0 = padrão.",
 }

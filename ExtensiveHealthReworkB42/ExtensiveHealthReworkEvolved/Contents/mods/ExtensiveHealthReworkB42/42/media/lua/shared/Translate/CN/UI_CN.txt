@@ -1625,6 +1625,7 @@ UI_CN = {
     UI_EHR_Immunity_BloodContamination = "血迹",
     UI_EHR_Immunity_HygienePenalty = "免疫惩罚",
     UI_EHR_Immunity_CurrentPressures = "当前压力",
+    UI_EHR_Immunity_AntibioticPressure = "抗生素抑制",
     UI_EHR_Immunity_NoMajorPressures = "无明显全身压力",
     UI_EHR_Immunity_InfectionRisk = "感染风险",
     UI_EHR_Immunity_NotApplied = "未应用",

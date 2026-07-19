@@ -8,7 +8,7 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
     - Tier 2: Prescription - Cures disease at normal rate
     - Tier 3: Clinical Grade - 2x cure speed + side effects
 
-    Author: ExtensiveHealthRework Team
+    Author: Frozen_Heart
     Version: 1.0
 ]]
 
@@ -2255,6 +2255,23 @@ EHR.Medication.DosingSchedules = {
     ["TheyKnew.ZomboxycyclinePill"] = { doseInterval = 8, dosesRequired = 1 },  -- Single pill from bottle
 }
 
+-- Medications that suppress positive immune-system bonuses while their current
+-- dose is active. Keep this keyed by full type so homemade and clinical variants
+-- do not depend on localized display names.
+EHR.Medication.AntibioticMedications = {
+    ["Base.Antibiotics"] = true,
+    ["ExtensiveHealth.PrescriptionAntibiotics"] = true,
+    ["ExtensiveHealth.TBAntibiotics"] = true,
+    ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,
+    ["ExtensiveHealth.PlantBasedAntibiotics"] = true,
+    ["ExtensiveHealth.IVAntibiotics"] = true,
+    ["ExtensiveHealth.IVMetronidazole"] = true,
+    ["ExtensiveHealth.IVCiprofloxacin"] = true,
+    ["ExtensiveHealth.RifampicinComboPack"] = true,
+    ["ExtensiveHealth.IVVancomycin"] = true,
+    ["ExtensiveHealth.EmergencySepsisKit"] = true,
+}
+
 -- Only these systemic medicines can trigger the severe off-schedule overdose layer.
 -- Topical/support items still track dose schedules, but repeating them early no longer
 -- applies the dangerous generic overdose package.
@@ -3119,6 +3136,9 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
     end
 
     EHR.Medication.CheckAndApplyInteractions(player)
+    if EHR.Medication.RefreshImmunityForAntibiotic then
+        EHR.Medication.RefreshImmunityForAntibiotic(player, itemFullType)
+    end
 
     if EHR.SkillXP and EHR.SkillXP.OnMedicationTaken then
         EHR.SkillXP.OnMedicationTaken(player, {
@@ -3291,6 +3311,10 @@ function EHR.Medication.UseMedication(player, item)
 
     -- Check for drug interactions
     EHR.Medication.CheckAndApplyInteractions(player)
+
+    if EHR.Medication.RefreshImmunityForAntibiotic then
+        EHR.Medication.RefreshImmunityForAntibiotic(player, itemFullType)
+    end
 
     local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(player, item, inventory)
     if consumed and consumeMode == "dose" then
@@ -5136,6 +5160,60 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     }
 end
 
+function EHR.Medication.IsAntibioticMedication(medKey, doseData)
+    local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+    if medData and medData.isTopical == true then
+        return false
+    end
+
+    if EHR.Medication.AntibioticMedications
+            and EHR.Medication.AntibioticMedications[medKey] == true then
+        return true
+    end
+
+    if medData and medData.isAntibiotic ~= nil then
+        return medData.isAntibiotic == true
+    end
+
+    local medicationName = doseData and doseData.medicationName
+        or (medData and medData.displayName)
+    local category = medicationName
+        and EHR.Medication.DrugCategories
+        and EHR.Medication.DrugCategories[medicationName]
+        or nil
+
+    return category == "antibiotic"
+        or category == "iv antibiotic"
+        or category == "tb antibiotics"
+        or category == "rifampicin"
+end
+
+function EHR.Medication.HasActiveAntibiotic(player)
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking or type(medTracking.activeDoses) ~= "table" then
+        return false
+    end
+
+    for medKey, doseData in pairs(medTracking.activeDoses) do
+        if EHR.Medication.IsAntibioticMedication(medKey, doseData) then
+            local ok, status = pcall(EHR.Medication.GetDoseStatus, player, medKey)
+            if ok and status and status.isDoseActive then
+                return true, medKey, status
+            end
+        end
+    end
+
+    return false
+end
+
+function EHR.Medication.RefreshImmunityForAntibiotic(player, medKey)
+    if not EHR.Medication.IsAntibioticMedication(medKey) then return false end
+    if not EHR.Immunity or type(EHR.Immunity.UpdatePlayer) ~= "function" then return false end
+
+    local ok = pcall(EHR.Immunity.UpdatePlayer, player, true)
+    return ok
+end
+
 function EHR.Medication.GetAllDoseStatuses(player)
     local medTracking = EHR.Medication.GetMedicationData(player)
     if not medTracking then return {} end
@@ -5763,6 +5841,8 @@ local function OnEatItemHandler(character, item)
                 if not treatedDisease then
                     EHR.Medication.TrackDoseOnly(character, medData, itemFullType)
                 end
+
+                EHR.Medication.RefreshImmunityForAntibiotic(character, itemFullType)
 
                 -- Show usage message if defined
                 if medData.usageMessage and character:isLocalPlayer() then

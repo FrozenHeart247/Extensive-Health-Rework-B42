@@ -9,11 +9,14 @@
 EHR = EHR or {}
 EHR.Immunity = EHR.Immunity or {}
 
-EHR.Immunity.SCHEMA_VERSION = 3
+EHR.Immunity.SCHEMA_VERSION = 4
 EHR.Immunity.UPDATE_INTERVAL_HOURS = 0.25
 EHR.Immunity.SCHEDULER_INTERVAL_MINUTES = 15
 EHR.Immunity.BASE_RECOVERY_PER_HOUR = 1.5
 EHR.Immunity.BASE_DECLINE_PER_HOUR = 3.0
+EHR.Immunity.NEUTRAL_SCORE = 50
+EHR.Immunity.ANTIBIOTIC_CAP_SCORE = 35
+EHR.Immunity.ANTIBIOTIC_DECLINE_PER_TICK = 4
 EHR.Immunity.DEBUG_ROLLS = EHR.Immunity.DEBUG_ROLLS == true
 
 EHR.Immunity.DISEASE_SENSITIVITY = EHR.Immunity.DISEASE_SENSITIVITY or {
@@ -294,6 +297,36 @@ function EHR.Immunity.GetDiseaseSensitivity(diseaseId, context)
     return clamp(EHR.Immunity.DISEASE_SENSITIVITY[tostring(diseaseId or "")] or 0, 0, 1)
 end
 
+function EHR.Immunity.ApplyAntibioticCap(score, antibioticActive)
+    score = clamp(score, 0, 100)
+    if antibioticActive == true then
+        return math.min(score, EHR.Immunity.ANTIBIOTIC_CAP_SCORE)
+    end
+    return score
+end
+
+function EHR.Immunity.ApplyAntibioticDecline(score, tickCount, declineMultiplier)
+    score = clamp(score, 0, 100)
+    tickCount = math.max(0, math.floor(tonumber(tickCount) or 0))
+    declineMultiplier = clamp(declineMultiplier == nil and 1 or declineMultiplier, 0.25, 3.0)
+    if score <= EHR.Immunity.ANTIBIOTIC_CAP_SCORE or tickCount <= 0 then
+        return score
+    end
+
+    local loss = EHR.Immunity.ANTIBIOTIC_DECLINE_PER_TICK * tickCount * declineMultiplier
+    return math.max(EHR.Immunity.ANTIBIOTIC_CAP_SCORE, score - loss)
+end
+
+function EHR.Immunity.GetActiveAntibiotic(player)
+    if not EHR.Medication or type(EHR.Medication.HasActiveAntibiotic) ~= "function" then
+        return false
+    end
+
+    local ok, active, medKey, status = pcall(EHR.Medication.HasActiveAntibiotic, player)
+    if not ok or active ~= true then return false end
+    return true, medKey, status
+end
+
 function EHR.Immunity.GetRiskMultiplierForScore(score, sensitivity, strength)
     score = clamp(score, 0, 100)
     sensitivity = clamp(sensitivity == nil and 1 or sensitivity, 0, 1)
@@ -339,14 +372,14 @@ function EHR.Immunity.ModifyDiseaseChance(player, diseaseId, baseChance, context
     }
 end
 
-function EHR.Immunity.GetWoundContainmentChance(player, scoreAtDetection)
-    local currentScore = EHR.Immunity.GetScore(player)
+function EHR.Immunity.CalculateWoundContainmentChance(currentScore, scoreAtDetection, strength, enabled)
+    currentScore = clamp(currentScore, 0, 100)
     local detectedScore = tonumber(scoreAtDetection)
     if detectedScore == nil then detectedScore = currentScore end
 
     local effectiveScore = clamp((detectedScore + currentScore) * 0.5, 0, 100)
-    local strength = EHR.Immunity.GetEffectStrength()
-    local enabled = EHR.Immunity.IsGameplayEnabled() and strength > 0
+    strength = clamp(strength == nil and 1 or strength, 0, 2)
+    enabled = enabled ~= false and strength > 0
     local chance = 0
     if enabled and effectiveScore > EHR.Immunity.WOUND_CONTAINMENT_MIN_SCORE then
         local ratio = (effectiveScore - EHR.Immunity.WOUND_CONTAINMENT_MIN_SCORE)
@@ -354,6 +387,22 @@ function EHR.Immunity.GetWoundContainmentChance(player, scoreAtDetection)
         chance = ratio * EHR.Immunity.WOUND_CONTAINMENT_MAX_CHANCE * strength
         chance = clamp(chance, 0, EHR.Immunity.WOUND_CONTAINMENT_HARD_CAP)
     end
+
+    return chance, effectiveScore
+end
+
+function EHR.Immunity.GetWoundContainmentChance(player, scoreAtDetection)
+    local currentScore = EHR.Immunity.GetScore(player)
+    local strength = EHR.Immunity.GetEffectStrength()
+    local enabled = EHR.Immunity.IsGameplayEnabled() and strength > 0
+    local chance, effectiveScore = EHR.Immunity.CalculateWoundContainmentChance(
+        currentScore,
+        scoreAtDetection,
+        strength,
+        enabled
+    )
+    local detectedScore = tonumber(scoreAtDetection)
+    if detectedScore == nil then detectedScore = currentScore end
 
     return chance, {
         currentScore = roundOne(currentScore),
@@ -420,6 +469,20 @@ function EHR.Immunity.InitializePlayer(player)
     state.enabled = EHR.Immunity.IsEnabled()
     state.observationOnly = not EHR.Immunity.IsGameplayEnabled()
 
+    local wasAntibioticSuppressed = state.antibioticSuppressed == true
+    local antibioticActive, antibioticKey = EHR.Immunity.GetActiveAntibiotic(player)
+    state.antibioticSuppressed = antibioticActive == true
+    state.activeAntibiotic = antibioticActive and antibioticKey or nil
+    state.antibioticCap = antibioticActive and EHR.Immunity.ANTIBIOTIC_CAP_SCORE or nil
+    if antibioticActive then
+        state.target = roundOne(EHR.Immunity.ApplyAntibioticCap(state.target, true))
+        if not wasAntibioticSuppressed or not tonumber(state.lastAntibioticTickHour) then
+            state.lastAntibioticTickHour = now
+        end
+    else
+        state.lastAntibioticTickHour = nil
+    end
+
     return state
 end
 
@@ -448,9 +511,14 @@ function EHR.Immunity.UpdatePlayer(player, force)
     end
 
     local factors, target, hygiene = EHR.Immunity.CalculateFactors(player)
+    local antibioticActive, antibioticKey = EHR.Immunity.GetActiveAntibiotic(player)
+    target = EHR.Immunity.ApplyAntibioticCap(target, antibioticActive)
     state.factors = factors
     state.target = target
     state.hygiene = hygiene
+    state.antibioticSuppressed = antibioticActive == true
+    state.activeAntibiotic = antibioticActive and antibioticKey or nil
+    state.antibioticCap = antibioticActive and EHR.Immunity.ANTIBIOTIC_CAP_SCORE or nil
     state.enabled = EHR.Immunity.IsEnabled()
     state.observationOnly = not EHR.Immunity.IsGameplayEnabled()
     state.lastUpdateHour = now
@@ -465,7 +533,20 @@ function EHR.Immunity.UpdatePlayer(player, force)
     local recoveryMultiplier = clamp(getSandboxValue("ImmunityRecoveryRate", 1.0), 0.25, 3.0)
     local declineMultiplier = clamp(getSandboxValue("ImmunityDeclineRate", 1.0), 0.25, 3.0)
 
-    if target > current + 0.05 then
+    if antibioticActive and current > EHR.Immunity.ANTIBIOTIC_CAP_SCORE then
+        local lastAntibioticTick = tonumber(state.lastAntibioticTickHour) or now
+        if lastAntibioticTick > now then lastAntibioticTick = now end
+        local antibioticElapsed = math.max(0, now - lastAntibioticTick)
+        local antibioticTicks = math.floor(
+            (antibioticElapsed / EHR.Immunity.UPDATE_INTERVAL_HOURS) + 0.0001
+        )
+        state.score = EHR.Immunity.ApplyAntibioticDecline(current, antibioticTicks, declineMultiplier)
+        if antibioticTicks > 0 then
+            state.lastAntibioticTickHour = lastAntibioticTick
+                + antibioticTicks * EHR.Immunity.UPDATE_INTERVAL_HOURS
+        end
+        state.trend = "declining"
+    elseif target > current + 0.05 then
         local maximumGain = EHR.Immunity.BASE_RECOVERY_PER_HOUR * recoveryMultiplier * sampledHours
         state.score = math.min(target, current + maximumGain)
         state.trend = "recovering"
@@ -489,7 +570,7 @@ end
 
 function EHR.Immunity.GetScore(player)
     local state = EHR.Immunity.GetData(player)
-    return state and clamp(state.score, 0, 100) or 50
+    return state and clamp(state.score, 0, 100) or EHR.Immunity.NEUTRAL_SCORE
 end
 
 function EHR.Immunity.GetStatusId(score)

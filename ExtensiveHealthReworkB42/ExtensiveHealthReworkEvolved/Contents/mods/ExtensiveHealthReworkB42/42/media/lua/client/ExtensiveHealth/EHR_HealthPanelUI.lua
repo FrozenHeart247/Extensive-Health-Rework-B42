@@ -5421,7 +5421,17 @@ function EHR_HealthPanelUI:drawImmuneStatusPanel()
             table.insert(pressureRows, { label = factor.label, value = value })
         end
     end
-    table.sort(pressureRows, function(a, b) return a.value < b.value end)
+    if state.antibioticSuppressed == true then
+        table.insert(pressureRows, {
+            label = safeText("UI_EHR_Immunity_AntibioticPressure", "Antibiotic suppression"),
+            value = clamp(tonumber(state.antibioticCap) or 35, 0, 100),
+            priority = true,
+        })
+    end
+    table.sort(pressureRows, function(a, b)
+        if a.priority ~= b.priority then return a.priority == true end
+        return a.value < b.value
+    end)
 
     local pressureTextY = pressuresY + 38
     if #pressureRows == 0 then

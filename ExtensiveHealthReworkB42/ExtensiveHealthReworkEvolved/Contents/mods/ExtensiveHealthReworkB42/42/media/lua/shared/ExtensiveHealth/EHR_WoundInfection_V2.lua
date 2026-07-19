@@ -14,7 +14,7 @@
     - bodyPart:setWoundInfectionLevel(-1) - Clear infection
     - bodyPart:setInfectedWound(false) - Clear infection flag
 
-    Author: ExtensiveHealthRework Team
+    Author: Frozen_Heart
     Version: 2.8.0
 ]]--
 

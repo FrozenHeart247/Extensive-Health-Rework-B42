@@ -13,6 +13,7 @@
 require "ExtensiveHealth/EHR_Main"
 require "ISUI/ISPanel"
 pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
+pcall(function() require "ExtensiveHealth/EHR_AutoTests" end)
 
 -- Defensive check - create stubs if needed
 if not EHR then EHR = {} end
@@ -47,6 +48,7 @@ EHR.DebugV2.Tabs = {
     { id = "medications", name = "Meds" },
     { id = "stats", name = "Stats" },
     { id = "scenarios", name = "Scen" },
+    { id = "tests", name = "Tests" },
     { id = "log", name = "Log" },
 }
 
@@ -749,6 +751,7 @@ function EHR_DebugMenuV2:createChildren()
     self:createMedicationsPanel()
     self:createStatsPanel()
     self:createScenariosPanel()
+    self:createTestsPanel()
     self:createLogPanel()
 
     -- Show initial tab
@@ -779,7 +782,11 @@ end
 
 function EHR_DebugMenuV2:onClose()
     -- CRIT-002 FIX: Cancel any running tests to prevent orphaned event handlers
+    if EHR.DebugV2.StopDeepTests then
+        EHR.DebugV2.StopDeepTests(true)
+    end
     EHR.DebugV2.TestsRunning = false
+    EHR.DebugV2.LiveTestArm = nil
 
     self:setVisible(false)
     EHR.DebugV2.instance = nil
@@ -3392,11 +3399,55 @@ EHR.DebugV2.Scenarios = {
     },
 }
 
--- Test suite results
+-- Read-only auto-test results
 EHR.DebugV2.TestResults = {}
 EHR.DebugV2.TestsRunning = false
 EHR.DebugV2.TestProgress = 0
 EHR.DebugV2.TestTotal = 0
+EHR.DebugV2.TestReport = nil
+EHR.DebugV2.LiveTestArm = nil
+EHR.DebugV2.LiveTestButtons = {}
+EHR.DebugV2.DeepTestSession = nil
+EHR.DebugV2.DeepTestTickHandler = nil
+
+local function getLiveTestClockMs()
+    if getTimestampMs then
+        local ok, value = pcall(getTimestampMs)
+        if ok and tonumber(value) then return tonumber(value) end
+    end
+    return (os and os.time and os.time() or 0) * 1000
+end
+
+local function resetLiveTestButtons()
+    EHR.DebugV2.LiveTestArm = nil
+    for _, button in ipairs(EHR.DebugV2.LiveTestButtons or {}) do
+        if button and button.setTitle then
+            button:setTitle(button.liveDefaultTitle or "Live")
+        end
+    end
+end
+
+function EHR.DebugV2.StopDeepTests(abortSession)
+    local handler = EHR.DebugV2.DeepTestTickHandler
+    if handler and Events and Events.OnTick then
+        Events.OnTick.Remove(handler)
+    end
+    EHR.DebugV2.DeepTestTickHandler = nil
+
+    local session = EHR.DebugV2.DeepTestSession
+    if abortSession and session and not session.done and session.Abort then
+        local ok, report = pcall(function() return session:Abort() end)
+        if ok and type(report) == "table" then
+            EHR.DebugV2.TestReport = report
+            EHR.DebugV2.TestResults = report.results or {}
+            EHR.DebugV2.TestProgress = tonumber(session.current) or EHR.DebugV2.TestProgress
+            EHR.DebugV2.TestTotal = tonumber(session.total) or EHR.DebugV2.TestTotal
+        end
+    end
+
+    EHR.DebugV2.DeepTestSession = nil
+    EHR.DebugV2.TestsRunning = false
+end
 
 function EHR_DebugMenuV2:createScenariosPanel()
     local panel = ISPanel:new(0, 0, self.contentArea.width, self.contentArea.height)
@@ -3408,22 +3459,6 @@ function EHR_DebugMenuV2:createScenariosPanel()
     local c = EHR.DebugV2.Colors
     local y = PADDING
     local btnWidth = 160
-
-    -- Run Full Test Suite button
-    local testSuiteBtn = ISButton:new(PADDING, y, 180, BUTTON_HEIGHT + 4, "Run Full Test Suite", self, EHR_DebugMenuV2.onRunTestSuite)
-    testSuiteBtn:initialise()
-    testSuiteBtn:instantiate()
-    testSuiteBtn.backgroundColor = c.warning
-    panel:addChild(testSuiteBtn)
-
-    -- Clear results button
-    local clearResultsBtn = ISButton:new(PADDING + 190, y, 100, BUTTON_HEIGHT + 4, "Clear Results", self, EHR_DebugMenuV2.onClearTestResults)
-    clearResultsBtn:initialise()
-    clearResultsBtn:instantiate()
-    clearResultsBtn.backgroundColor = c.buttonBg
-    panel:addChild(clearResultsBtn)
-
-    y = y + BUTTON_HEIGHT + 15
 
     -- Scenario preset buttons (2 columns)
     for i, scenario in ipairs(EHR.DebugV2.Scenarios) do
@@ -3440,78 +3475,208 @@ function EHR_DebugMenuV2:createScenariosPanel()
         btn.textColor = c.text
         panel:addChild(btn)
     end
+end
 
-    -- Store reference for rendering
+function EHR_DebugMenuV2:createTestsPanel()
+    local panel = ISPanel:new(0, 0, self.contentArea.width, self.contentArea.height)
+    panel:initialise()
+    panel.backgroundColor = {r=0, g=0, b=0, a=0}
     panel.menuRef = self
+    self.contentArea:addChild(panel)
+    self.contentPanels["tests"] = panel
 
-    panel.render = function(self)
-        ISPanel.render(self)
-        self:renderScenariosStatus()
+    local c = EHR.DebugV2.Colors
+    local x = PADDING
+    local y = PADDING
+    local buttons = {
+        { label = "Run All", scope = "all", width = 82, color = c.warning },
+        { label = "Diseases", scope = "diseases", width = 94, color = c.buttonBg },
+        { label = "Medications", scope = "medications", width = 108, color = c.buttonBg },
+        { label = "Immunity", scope = "immunity", width = 94, color = c.buttonBg },
+    }
+
+    for _, buttonDef in ipairs(buttons) do
+        local button = ISButton:new(x, y, buttonDef.width, BUTTON_HEIGHT + 4, buttonDef.label, self, EHR_DebugMenuV2.onRunAutoTests)
+        button:initialise()
+        button:instantiate()
+        button.internal = buttonDef.scope
+        button.backgroundColor = buttonDef.color
+        panel:addChild(button)
+        x = x + buttonDef.width + 6
     end
 
-    panel.renderScenariosStatus = function(self)
-        local menu = self.menuRef
-        if not menu then return end
+    local clearButton = ISButton:new(x, y, 78, BUTTON_HEIGHT + 4, "Clear", self, EHR_DebugMenuV2.onClearTestResults)
+    clearButton:initialise()
+    clearButton:instantiate()
+    clearButton.backgroundColor = c.buttonBg
+    panel:addChild(clearButton)
 
-        local c = EHR.DebugV2.Colors
-        local y = 200
-        local x = PADDING
+    EHR.DebugV2.LiveTestButtons = {}
+    local liveX = PADDING
+    local liveY = y + BUTTON_HEIGHT + 10
+    local liveButtons = {
+        { label = "SMOKE ALL", scope = "all", width = 88 },
+        { label = "Smoke Diseases", scope = "diseases", width = 118 },
+        { label = "Smoke Meds", scope = "medications", width = 106 },
+        { label = "Smoke Immunity", scope = "immunity", width = 118 },
+    }
+    for _, buttonDef in ipairs(liveButtons) do
+        local button = ISButton:new(
+            liveX,
+            liveY,
+            buttonDef.width,
+            BUTTON_HEIGHT + 4,
+            buttonDef.label,
+            self,
+            EHR_DebugMenuV2.onRunLiveTests
+        )
+        button:initialise()
+        button:instantiate()
+        button.internal = buttonDef.scope
+        button.liveDefaultTitle = buttonDef.label
+        button.backgroundColor = c.danger
+        button.textColor = c.text
+        panel:addChild(button)
+        EHR.DebugV2.LiveTestButtons[#EHR.DebugV2.LiveTestButtons + 1] = button
+        liveX = liveX + buttonDef.width + 6
+    end
 
-        -- Test progress bar
-        if EHR.DebugV2.TestsRunning then
-            self:drawText("RUNNING TESTS...", x, y, c.warning.r, c.warning.g, c.warning.b, c.warning.a, UIFont.Medium)
-            y = y + 24
+    local deepButton = ISButton:new(
+        PADDING,
+        liveY + BUTTON_HEIGHT + 10,
+        118,
+        BUTTON_HEIGHT + 4,
+        "DEEP ALL",
+        self,
+        EHR_DebugMenuV2.onRunDeepTests
+    )
+    deepButton:initialise()
+    deepButton:instantiate()
+    deepButton.internal = "all"
+    deepButton.liveDefaultTitle = "DEEP ALL"
+    deepButton.backgroundColor = { r = 0.55, g = 0.04, b = 0.04, a = 0.95 }
+    deepButton.textColor = c.text
+    panel:addChild(deepButton)
+    EHR.DebugV2.LiveTestButtons[#EHR.DebugV2.LiveTestButtons + 1] = deepButton
 
-            -- Progress bar
-            local barWidth = 400
-            local barHeight = 16
-            local progress = EHR.DebugV2.TestTotal > 0 and (EHR.DebugV2.TestProgress / EHR.DebugV2.TestTotal) or 0
-
-            self:drawRect(x, y, barWidth, barHeight, 0.3, 0.1, 0.1, 0.1)
-            self:drawRect(x, y, barWidth * progress, barHeight, c.warning.a, c.warning.r, c.warning.g, c.warning.b)
-            self:drawRectBorder(x, y, barWidth, barHeight, 1, c.border.r, c.border.g, c.border.b)
-
-            self:drawText(string.format("%d / %d", EHR.DebugV2.TestProgress, EHR.DebugV2.TestTotal),
-                x + barWidth + 10, y, c.text.r, c.text.g, c.text.b, c.text.a, FONT)
-            y = y + 30
-        else
-            self:drawText("TEST RESULTS", x, y, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
-            y = y + 24
+    panel.render = function(testPanel)
+        ISPanel.render(testPanel)
+        local arm = EHR.DebugV2.LiveTestArm
+        if arm and getLiveTestClockMs() > (tonumber(arm.expiresAt) or 0) then
+            resetLiveTestButtons()
+            arm = nil
         end
 
-        -- Test results display
-        local passed = 0
-        local failed = 0
-        local results = EHR.DebugV2.TestResults
+        local drawY = 122
+        local drawX = PADDING
+        local report = EHR.DebugV2.TestReport
 
-        if #results > 0 then
-            -- Count pass/fail
-            for _, result in ipairs(results) do
-                if result.passed then passed = passed + 1 else failed = failed + 1 end
+        testPanel:drawText(
+            report and report.deep and "DEEP EHR INTEGRATION - MULTI-TICK ROLLBACK"
+                or (report and report.live and "LIVE SMOKE - ROLLBACK ATTEMPTED"
+                or "READ-ONLY EHR VALIDATION"),
+            drawX,
+            drawY,
+            report and report.live and c.warning.r or c.text.r,
+            report and report.live and c.warning.g or c.text.g,
+            report and report.live and c.warning.b or c.text.b,
+            report and report.live and c.warning.a or c.text.a,
+            UIFont.Medium
+        )
+        drawY = drawY + 24
+
+        if EHR.DebugV2.TestsRunning then
+            local progressText = "Running..."
+            if (tonumber(EHR.DebugV2.TestTotal) or 0) > 0 then
+                progressText = string.format(
+                    "Running... %d / %d",
+                    tonumber(EHR.DebugV2.TestProgress) or 0,
+                    tonumber(EHR.DebugV2.TestTotal) or 0
+                )
+            end
+            testPanel:drawText(progressText, drawX, drawY, c.warning.r, c.warning.g, c.warning.b, c.warning.a, FONT)
+            return
+        end
+
+        if not report then
+            testPanel:drawText(
+                arm and "ARMED: click the same CONFIRM button within 10 seconds."
+                    or "Top: read-only. Smoke is immediate. Deep runs real update/expiry paths.",
+                drawX,
+                drawY,
+                arm and c.warning.r or c.textDim.r,
+                arm and c.warning.g or c.textDim.g,
+                arm and c.warning.b or c.textDim.b,
+                arm and c.warning.a or c.textDim.a,
+                FONT
+            )
+            testPanel:drawText(
+                "Smoke/Deep rollback is best-effort; use a disposable debug character.",
+                drawX,
+                drawY + 16,
+                c.textDim.r,
+                c.textDim.g,
+                c.textDim.b,
+                c.textDim.a,
+                FONT
+            )
+            return
+        end
+
+        local counts = report.counts or {}
+        local summaryColor = (tonumber(counts.FAIL) or 0) == 0 and c.safe or c.danger
+        local summary = EHR.AutoTests and EHR.AutoTests.FormatSummary
+            and EHR.AutoTests.FormatSummary(report)
+            or string.format(
+                "PASS %d | WARN %d | FAIL %d | TOTAL %d",
+                tonumber(counts.PASS) or 0,
+                tonumber(counts.WARN) or 0,
+                tonumber(counts.FAIL) or 0,
+                tonumber(report.total) or 0
+            )
+        testPanel:drawText(
+            string.upper(tostring(report.scope or "all")) .. "  " .. summary,
+            drawX,
+            drawY,
+            summaryColor.r,
+            summaryColor.g,
+            summaryColor.b,
+            summaryColor.a,
+            FONT
+        )
+        drawY = drawY + 24
+
+        local maxY = testPanel.height - 20
+        for _, result in ipairs(report.results or {}) do
+            if drawY > maxY - 16 then break end
+
+            local status = result.status or (result.passed and "PASS" or "FAIL")
+            local color = status == "PASS" and c.safe or (status == "WARN" and c.warning or c.danger)
+            local label = string.format("[%s] [%s] %s", status, tostring(result.category or "?"), tostring(result.name or "?"))
+            if string.len(label) > 76 then
+                label = string.sub(label, 1, 73) .. "..."
             end
 
-            -- Summary
-            local summaryColor = failed == 0 and c.safe or c.danger
-            self:drawText(string.format("Passed: %d | Failed: %d | Total: %d", passed, failed, #results),
-                x, y, summaryColor.r, summaryColor.g, summaryColor.b, summaryColor.a, FONT)
-            y = y + 24
+            testPanel:drawText(label, drawX, drawY, color.r, color.g, color.b, color.a, FONT)
+            drawY = drawY + 16
 
-            -- Show last 12 results
-            local startIdx = math.max(1, #results - 11)
-            for i = startIdx, #results do
-                local result = results[i]
-                local color = result.passed and c.safe or c.danger
-                local status = result.passed and "PASS" or "FAIL"
-
-                self:drawText(string.format("[%s] %s", status, result.name),
-                    x + 10, y, color.r, color.g, color.b, color.a, FONT)
-                y = y + 16
-
-                if y > self.height - 40 then break end
+            if status ~= "PASS" and result.detail and drawY <= maxY - 16 then
+                local detail = tostring(result.detail)
+                if string.len(detail) > 82 then
+                    detail = string.sub(detail, 1, 79) .. "..."
+                end
+                testPanel:drawText(
+                    detail,
+                    drawX + 14,
+                    drawY,
+                    c.textDim.r,
+                    c.textDim.g,
+                    c.textDim.b,
+                    c.textDim.a,
+                    FONT
+                )
+                drawY = drawY + 16
             end
-        else
-            self:drawText("No test results. Run the test suite to validate EHR systems.",
-                x, y, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, FONT)
         end
     end
 end
@@ -3540,13 +3705,212 @@ function EHR_DebugMenuV2:onApplyScenario(button)
 end
 
 function EHR_DebugMenuV2:onClearTestResults()
+    if EHR.DebugV2.DeepTestSession then
+        EHR.DebugV2.StopDeepTests(true)
+    end
+    resetLiveTestButtons()
     EHR.DebugV2.TestResults = {}
     EHR.DebugV2.TestProgress = 0
     EHR.DebugV2.TestTotal = 0
+    EHR.DebugV2.TestReport = nil
     EHR.DebugV2.Log("Cleared test results", "TESTS", "INFO")
 end
 
-function EHR_DebugMenuV2:onRunTestSuite()
+function EHR_DebugMenuV2:onRunLiveTests(button)
+    if EHR.DebugV2.TestsRunning or not button then return end
+
+    local scope = button.internal or "all"
+    local now = getLiveTestClockMs()
+    local arm = EHR.DebugV2.LiveTestArm
+    if not arm or arm.mode ~= "smoke" or arm.scope ~= scope or now > (tonumber(arm.expiresAt) or 0) then
+        resetLiveTestButtons()
+        EHR.DebugV2.TestResults = {}
+        EHR.DebugV2.TestReport = nil
+        EHR.DebugV2.TestProgress = 0
+        EHR.DebugV2.TestTotal = 0
+        EHR.DebugV2.LiveTestArm = {
+            mode = "smoke",
+            scope = scope,
+            expiresAt = now + 10000,
+        }
+        if button.setTitle then button:setTitle("CONFIRM") end
+        EHR.DebugV2.Log(
+            "Smoke tests armed for " .. tostring(scope) .. ". Click CONFIRM within 10 seconds.",
+            "TESTS",
+            "WARN"
+        )
+        return
+    end
+
+    resetLiveTestButtons()
+    return self:onRunAutoTests({ internal = scope, liveMode = true })
+end
+
+function EHR_DebugMenuV2:onRunDeepTests(button)
+    if EHR.DebugV2.TestsRunning or not button then return end
+
+    local scope = button.internal or "all"
+    local now = getLiveTestClockMs()
+    local arm = EHR.DebugV2.LiveTestArm
+    if not arm or arm.mode ~= "deep" or arm.scope ~= scope or now > (tonumber(arm.expiresAt) or 0) then
+        resetLiveTestButtons()
+        EHR.DebugV2.TestResults = {}
+        EHR.DebugV2.TestReport = nil
+        EHR.DebugV2.TestProgress = 0
+        EHR.DebugV2.TestTotal = 0
+        EHR.DebugV2.LiveTestArm = {
+            mode = "deep",
+            scope = scope,
+            expiresAt = now + 10000,
+        }
+        if button.setTitle then button:setTitle("CONFIRM") end
+        EHR.DebugV2.Log(
+            "Deep tests armed. They execute disease effects, treatment courses, and side-effect expiry. Click CONFIRM within 10 seconds.",
+            "TESTS",
+            "WARN"
+        )
+        return
+    end
+
+    resetLiveTestButtons()
+    if not EHR.AutoTests or type(EHR.AutoTests.CreateDeepSession) ~= "function" then
+        EHR.DebugV2.TestReport = {
+            scope = scope,
+            results = {
+                {
+                    category = "Deep Core",
+                    name = "Deep session",
+                    status = "FAIL",
+                    detail = "EHR_AutoTests.CreateDeepSession did not load",
+                    passed = false,
+                },
+            },
+            counts = { PASS = 0, WARN = 0, FAIL = 1 },
+            total = 1,
+            passed = false,
+            readOnly = false,
+            live = true,
+            deep = true,
+        }
+        EHR.DebugV2.TestResults = EHR.DebugV2.TestReport.results
+        EHR.DebugV2.TestProgress = 1
+        EHR.DebugV2.TestTotal = 1
+        return
+    end
+
+    local ok, session = pcall(EHR.AutoTests.CreateDeepSession, scope, self.player)
+    if not ok or type(session) ~= "table" then
+        EHR.DebugV2.TestReport = {
+            scope = scope,
+            results = {
+                {
+                    category = "Deep Core",
+                    name = "Deep session",
+                    status = "FAIL",
+                    detail = tostring(session),
+                    passed = false,
+                },
+            },
+            counts = { PASS = 0, WARN = 0, FAIL = 1 },
+            total = 1,
+            passed = false,
+            readOnly = false,
+            live = true,
+            deep = true,
+        }
+        EHR.DebugV2.TestResults = EHR.DebugV2.TestReport.results
+        EHR.DebugV2.TestProgress = 1
+        EHR.DebugV2.TestTotal = 1
+        return
+    end
+
+    EHR.DebugV2.DeepTestSession = session
+    EHR.DebugV2.TestReport = session.report
+    EHR.DebugV2.TestResults = session.report and session.report.results or {}
+    EHR.DebugV2.TestProgress = tonumber(session.current) or 0
+    EHR.DebugV2.TestTotal = tonumber(session.total) or 0
+
+    if session.done then
+        EHR.DebugV2.DeepTestSession = nil
+        return
+    end
+
+    EHR.DebugV2.TestsRunning = true
+    local tickCount = 0
+    local tickStride = 4
+    local tickHandler
+    tickHandler = function()
+        if not EHR.DebugV2.TestsRunning or EHR.DebugV2.DeepTestSession ~= session then
+            if Events and Events.OnTick then Events.OnTick.Remove(tickHandler) end
+            if not session.done and session.Abort then pcall(function() session:Abort() end) end
+            if EHR.DebugV2.DeepTestTickHandler == tickHandler then
+                EHR.DebugV2.DeepTestTickHandler = nil
+            end
+            return
+        end
+
+        tickCount = tickCount + 1
+        if tickCount < tickStride then return end
+        tickCount = 0
+
+        local stepOk, running, report = pcall(function()
+            local keepRunning, currentReport = session:Step()
+            return keepRunning, currentReport
+        end)
+        if not stepOk then
+            if session.Abort then pcall(function() session:Abort() end) end
+            report = session.report or {
+                scope = scope,
+                results = {},
+                counts = { PASS = 0, WARN = 0, FAIL = 1 },
+                total = 1,
+                readOnly = false,
+                live = true,
+                deep = true,
+            }
+            report.results = report.results or {}
+            report.results[#report.results + 1] = {
+                category = "Deep Core",
+                name = "Tick runner",
+                status = "FAIL",
+                detail = tostring(running),
+                passed = false,
+            }
+            report.counts = report.counts or { PASS = 0, WARN = 0, FAIL = 0 }
+            report.counts.FAIL = (tonumber(report.counts.FAIL) or 0) + 1
+            report.total = (tonumber(report.total) or 0) + 1
+            report.passed = false
+            running = false
+        end
+
+        EHR.DebugV2.TestReport = report or session.report
+        EHR.DebugV2.TestResults = EHR.DebugV2.TestReport and EHR.DebugV2.TestReport.results or {}
+        EHR.DebugV2.TestProgress = tonumber(session.current) or 0
+        EHR.DebugV2.TestTotal = tonumber(session.total) or 0
+
+        if not running then
+            if Events and Events.OnTick then Events.OnTick.Remove(tickHandler) end
+            EHR.DebugV2.DeepTestTickHandler = nil
+            EHR.DebugV2.DeepTestSession = nil
+            EHR.DebugV2.TestsRunning = false
+            local summary = EHR.AutoTests.FormatSummary and EHR.AutoTests.FormatSummary(EHR.DebugV2.TestReport)
+                or "Deep tests complete"
+            EHR.DebugV2.Log(summary, "TESTS", EHR.DebugV2.TestReport.passed and "INFO" or "WARN")
+        end
+    end
+
+    EHR.DebugV2.DeepTestTickHandler = tickHandler
+    Events.OnTick.Add(tickHandler)
+    EHR.DebugV2.Log("Started asynchronous deep test session with " .. tostring(session.total) .. " steps", "TESTS", "WARN")
+end
+
+function EHR_DebugMenuV2:onRunLegacyUnsafeTestSuite()
+    -- Kept only for compatibility with old saved UI callbacks. Never execute
+    -- the legacy body below because it mutates the live player's health state.
+    if true then
+        return self:onRunAutoTests({ internal = "all" })
+    end
+
     if not self.player or EHR.DebugV2.TestsRunning then return end
 
     EHR.DebugV2.TestResults = {}
@@ -3739,6 +4103,103 @@ function EHR_DebugMenuV2:onRunTestSuite()
 
     runNextTest()
     EHR.DebugV2.Log("Started test suite with " .. #tests .. " tests", "TESTS", "INFO")
+end
+
+function EHR_DebugMenuV2:onRunAutoTests(button)
+    if EHR.DebugV2.TestsRunning then return end
+
+    local scope = button and button.internal or "all"
+    local liveMode = button and button.liveMode == true
+    local runner = liveMode and EHR.AutoTests and EHR.AutoTests.RunLive
+        or EHR.AutoTests and EHR.AutoTests.Run
+    EHR.DebugV2.TestResults = {}
+    EHR.DebugV2.TestReport = nil
+    EHR.DebugV2.TestProgress = 0
+    EHR.DebugV2.TestTotal = 0
+    EHR.DebugV2.TestsRunning = true
+
+    if not EHR.AutoTests or type(runner) ~= "function" then
+        EHR.DebugV2.TestsRunning = false
+        EHR.DebugV2.TestReport = {
+            scope = scope,
+            results = {
+                {
+                    category = "Core",
+                    name = liveMode and "Live auto-test runner" or "Auto-test runner",
+                    status = "FAIL",
+                    detail = liveMode and "EHR_AutoTests.RunLive did not load" or "EHR_AutoTests.lua did not load",
+                    passed = false,
+                },
+            },
+            counts = { PASS = 0, WARN = 0, FAIL = 1 },
+            total = 1,
+            passed = false,
+            readOnly = not liveMode,
+            live = liveMode,
+        }
+        EHR.DebugV2.TestResults = EHR.DebugV2.TestReport.results
+        EHR.DebugV2.TestTotal = 1
+        EHR.DebugV2.TestProgress = 1
+        EHR.DebugV2.Log("Auto-test runner is unavailable", "TESTS", "ERROR")
+        return
+    end
+
+    local ok, report = pcall(runner, scope, self.player)
+    EHR.DebugV2.TestsRunning = false
+
+    if not ok or type(report) ~= "table" then
+        report = {
+            scope = scope,
+            results = {
+                {
+                    category = "Core",
+                    name = liveMode and "Live auto-test runner" or "Auto-test runner",
+                    status = "FAIL",
+                    detail = tostring(report),
+                    passed = false,
+                },
+            },
+            counts = { PASS = 0, WARN = 0, FAIL = 1 },
+            total = 1,
+            passed = false,
+            readOnly = not liveMode,
+            live = liveMode,
+        }
+    end
+
+    EHR.DebugV2.TestReport = report
+    EHR.DebugV2.TestResults = report.results or {}
+    EHR.DebugV2.TestTotal = tonumber(report.total) or #EHR.DebugV2.TestResults
+    EHR.DebugV2.TestProgress = EHR.DebugV2.TestTotal
+
+    for _, result in ipairs(EHR.DebugV2.TestResults) do
+        if result.status == "FAIL" or result.status == "WARN" then
+            local level = result.status == "FAIL" and "ERROR" or "WARN"
+            EHR.DebugV2.Log(
+                string.format(
+                    "[%s] %s: %s",
+                    tostring(result.category or "?"),
+                    tostring(result.name or "?"),
+                    tostring(result.detail or "")
+                ),
+                "TESTS",
+                level
+            )
+        end
+    end
+
+    local summary = EHR.AutoTests.FormatSummary and EHR.AutoTests.FormatSummary(report)
+        or string.format("completed %d tests", EHR.DebugV2.TestTotal)
+    EHR.DebugV2.Log(
+        (liveMode and "Live auto-tests " or "Auto-tests ") .. tostring(scope) .. ": " .. summary,
+        "TESTS",
+        "INFO"
+    )
+end
+
+-- Compatibility entry point for older debug integrations.
+function EHR_DebugMenuV2:onRunTestSuite(button)
+    return self:onRunAutoTests(button)
 end
 
 -- ============================================

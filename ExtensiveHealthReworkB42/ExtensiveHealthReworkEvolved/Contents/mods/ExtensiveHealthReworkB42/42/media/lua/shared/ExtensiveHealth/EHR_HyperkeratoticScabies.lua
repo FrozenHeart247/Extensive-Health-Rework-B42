@@ -639,10 +639,20 @@ function EHR.HyperkeratoticScabies.UpdatePlayer(player)
 
     state.lastGroundCheckHour = now
 
-    local chance = getGroundChance()
+    local baseChance = getGroundChance()
+    local chance = baseChance
+    if EHR.Immunity and EHR.Immunity.ModifyDiseaseChance then
+        chance = EHR.Immunity.ModifyDiseaseChance(
+            player,
+            "hyperkeratotic_scabies",
+            baseChance,
+            { kind = "natural_ground_exposure" }
+        )
+    end
     local didProc, value = rollDetailed(chance)
     debugRoll(player, state, "roll", string.format(
-        "chance=%.2f%% roll=%.2f%% result=%s sitting=%.2fh texture=%s",
+        "base=%.2f%% chance=%.2f%% roll=%.2f%% result=%s sitting=%.2fh texture=%s",
+        (tonumber(baseChance) or 0) * 100,
         (tonumber(chance) or 0) * 100,
         (tonumber(value) or 0) * 100,
         didProc and "PROC" or "no proc",

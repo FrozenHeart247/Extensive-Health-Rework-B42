@@ -155,7 +155,16 @@ function EHR.StitchMinigame.TryCellulitisRisk(action, chance)
         return true
     end
 
-    if not ZombRand or ZombRand(100) >= math.floor(chance * 100) then
+    if EHR.Immunity and EHR.Immunity.ModifyDiseaseChance then
+        chance = EHR.Immunity.ModifyDiseaseChance(
+            patient,
+            "cellulitis",
+            chance,
+            { kind = "rough_stitch" }
+        )
+    end
+
+    if not ZombRand or (ZombRand(1000000) / 1000000) >= chance then
         return false
     end
 

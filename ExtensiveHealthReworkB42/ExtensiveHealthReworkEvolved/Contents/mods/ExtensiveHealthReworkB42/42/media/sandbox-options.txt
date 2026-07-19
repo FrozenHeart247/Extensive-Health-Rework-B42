@@ -812,6 +812,24 @@ option ExtensiveHealthRework.ImmunitySystemEnabled
     translation = EHR_ImmunitySystemEnabled,
 }
 
+option ExtensiveHealthRework.ImmunityGameplayEffects
+{
+    type = boolean,
+    default = true,
+    page = EHR_Immunity,
+    translation = EHR_ImmunityGameplayEffects,
+}
+
+option ExtensiveHealthRework.ImmunityEffectStrength
+{
+    type = double,
+    min = 0.0,
+    max = 2.0,
+    default = 1.0,
+    page = EHR_Immunity,
+    translation = EHR_ImmunityEffectStrength,
+}
+
 option ExtensiveHealthRework.ImmunityRecoveryRate
 {
     type = double,

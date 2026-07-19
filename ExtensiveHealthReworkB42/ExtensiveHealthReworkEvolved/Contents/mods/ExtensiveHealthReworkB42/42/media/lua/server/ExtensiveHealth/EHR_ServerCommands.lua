@@ -1418,8 +1418,16 @@ function EHR.ServerCommands.StitchCellulitisRisk(player, args)
 
     local chance = math.max(0, math.min(1, tonumber(args.chance) or 0))
     if chance <= 0 then return end
+    if EHR.Immunity and EHR.Immunity.ModifyDiseaseChance then
+        chance = EHR.Immunity.ModifyDiseaseChance(
+            targetPlayer,
+            "cellulitis",
+            chance,
+            { kind = "rough_stitch" }
+        )
+    end
 
-    local roll = ZombRand and (ZombRand(100) / 100) or 1
+    local roll = ZombRand and (ZombRand(1000000) / 1000000) or 1
     if roll >= chance then return end
 
     if EHR.Disease.InitializePlayer then

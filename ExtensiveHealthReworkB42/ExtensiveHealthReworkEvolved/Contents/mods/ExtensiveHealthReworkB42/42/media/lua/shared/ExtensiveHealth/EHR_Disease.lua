@@ -955,86 +955,24 @@ end
 -- IMMUNITY CALCULATION
 -- ============================================
 
---[[
-    Calculate current immunity multiplier
-    Higher = more resistant to disease
-    Returns 0.1 to 2.0
-]]--
+-- Compatibility wrapper for older integrations. New disease rolls use
+-- EHR.Immunity.ModifyDiseaseChance so the score is applied exactly once.
 function EHR.Disease.CalculateImmunity(player)
-    local base = 1.0
-    local stats = player:getStats()
-    if not stats then return base end
-
-    -- Try B42 CharacterStat API
-    if CharacterStat then
-        local hunger, thirst, fatigue, stress
-
-        -- Get stats safely
-        if CharacterStat.HUNGER then
-            local success, result = pcall(function() return stats:get(CharacterStat.HUNGER) end)
-            if success then hunger = result end
-        end
-        if CharacterStat.THIRST then
-            local success, result = pcall(function() return stats:get(CharacterStat.THIRST) end)
-            if success then thirst = result end
-        end
-        if CharacterStat.FATIGUE then
-            local success, result = pcall(function() return stats:get(CharacterStat.FATIGUE) end)
-            if success then fatigue = result end
-        end
-        if CharacterStat.STRESS then
-            local success, result = pcall(function() return stats:get(CharacterStat.STRESS) end)
-            if success then stress = result end
-        end
-
-        -- Well-fed bonus
-        if hunger and hunger < 0.2 then
-            base = base + 0.2
-        elseif hunger and hunger > 0.7 then
-            base = base - 0.2  -- Hungry = weaker immune system
-        end
-
-        -- Well-hydrated bonus
-        if thirst and thirst < 0.2 then
-            base = base + 0.2
-        elseif thirst and thirst > 0.7 then
-            base = base - 0.2
-        end
-
-        -- Rested bonus
-        if fatigue and fatigue < 0.3 then
-            base = base + 0.15
-        elseif fatigue and fatigue > 0.7 then
-            base = base - 0.25
-        end
-
-        -- Low stress bonus
-        if stress and stress < 0.3 then
-            base = base + 0.1
-        elseif stress and stress > 0.7 then
-            base = base - 0.15
+    if EHR.Immunity
+            and EHR.Immunity.IsGameplayEnabled
+            and EHR.Immunity.IsGameplayEnabled()
+            and EHR.Immunity.GetRiskMultiplierForScore
+            and EHR.Immunity.GetScore then
+        local riskMultiplier = EHR.Immunity.GetRiskMultiplierForScore(
+            EHR.Immunity.GetScore(player),
+            1,
+            EHR.Immunity.GetEffectStrength and EHR.Immunity.GetEffectStrength() or 1
+        )
+        if riskMultiplier > 0 then
+            return math.max(0.1, math.min(2.0, 1 / riskMultiplier))
         end
     end
-
-    -- Blood level modifier (integration with Blood module)
-    if EHR.Blood and EHR.Blood.GetPercent then
-        local bloodPercent = EHR.Blood.GetPercent(player)
-        if bloodPercent > 80 then
-            base = base + 0.15
-        elseif bloodPercent < 50 then
-            base = base - 0.3
-        end
-    end
-
-    -- Active disease penalty
-    local data = EHR.Disease.GetDiseaseData(player)
-    if data then
-        local activeCount = EHR.Disease.GetActiveCount(player)
-        base = base - (activeCount * 0.2)
-    end
-
-    -- Clamp to reasonable range
-    return math.max(0.1, math.min(2.0, base))
+    return 1.0
 end
 
 -- ============================================
@@ -1072,26 +1010,32 @@ function EHR.Disease.TryContract(player, diseaseId, baseChance)
         return false
     end
 
-    -- Calculate actual chance with immunity
-    local immunity = EHR.Disease.CalculateImmunity(player)
-    local specificImmunity = data.immunity[diseaseId] or 0
-    if diseaseId == "food_poisoning" then
-        immunity = 1.0
-        specificImmunity = 0
-        data.immunity[diseaseId] = 0
+    baseChance = math.max(0, math.min(1, tonumber(baseChance) or 0))
+    local actualChance = baseChance
+    local immunityDetails = nil
+    if EHR.Immunity and EHR.Immunity.ModifyDiseaseChance then
+        actualChance, immunityDetails = EHR.Immunity.ModifyDiseaseChance(
+            player,
+            diseaseId,
+            baseChance,
+            { kind = "contraction" }
+        )
     end
 
-    -- Higher immunity = lower chance
-    local actualChance = baseChance / immunity
-    -- Specific immunity reduces chance further
-    actualChance = actualChance * (1 - specificImmunity)
-
     -- Roll for contraction
-    local roll = ZombRand(100) / 100
+    local roll = ZombRand(1000000) / 1000000
 
-    if EHR.DEBUG then
-        EHR.Log(string.format("Disease roll: %s - base=%.0f%%, immunity=%.2f, specific=%.2f, actual=%.0f%%, roll=%.2f",
-            diseaseId, baseChance * 100, immunity, specificImmunity, actualChance * 100, roll))
+    if EHR.DEBUG or (EHR.Immunity and EHR.Immunity.DEBUG_ROLLS == true) then
+        EHR.Log(string.format(
+            "Disease roll: %s - base=%.2f%%, immune=%.1f, sensitivity=%.2f, multiplier=%.2f, actual=%.2f%%, roll=%.2f%%",
+            diseaseId,
+            baseChance * 100,
+            immunityDetails and immunityDetails.score or 50,
+            immunityDetails and immunityDetails.sensitivity or 0,
+            immunityDetails and immunityDetails.multiplier or 1,
+            actualChance * 100,
+            roll * 100
+        ))
     end
 
     if roll < actualChance then
@@ -1465,15 +1409,9 @@ function EHR.Disease.OnRecovery(player, diseaseId)
 
     EHR.Log("Recovered from " .. name)
 
-    -- Build specific immunity for non-food-poisoning diseases.
-    -- Food poisoning should stay fully risk-based on each bad meal.
-    if diseaseId == "food_poisoning" then
-        data.immunity[diseaseId] = 0
-    elseif diseaseId == "toxin_poisoning" or diseaseId == "ahtr" or diseaseId == "concussion" or diseaseId == "hyperkeratotic_scabies" then
-        data.immunity[diseaseId] = 0
-    else
-        data.immunity[diseaseId] = math.min(0.8, (data.immunity[diseaseId] or 0) + 0.5)
-    end
+    -- Legacy per-disease immunity values remain in modData for save
+    -- compatibility, but the dynamic Immune System is now the single source
+    -- of truth for future contraction rolls.
 
     -- Record recovery
     local gameTime = getGameTime()
@@ -4672,9 +4610,9 @@ function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReaso
         itemName or "unknown", riskReason or "unknown", diseaseName, risk * 100, contractChance * 100))
 
     if accumulatedRisk >= (cfg.guaranteedThreshold or 0.80) then
-        EHR.Disease.Contract(player, diseaseId)
-        diseaseData = EHR.Disease.GetDiseaseData(player)
-        contracted = diseaseData and diseaseData.active and diseaseData.active[diseaseId] ~= nil
+        -- Preserve the old guaranteed boundary at neutral immunity while still
+        -- allowing supported diseases to receive the immune risk modifier.
+        contracted = EHR.Disease.TryContract(player, diseaseId, 1.0)
         EHR_DiseaseDebugFood(player, "guaranteed-contract", string.format(
             "item=%s disease=%s reason=%s base=%.2f%% accumulated=%.2f%% threshold=%.2f%% result=%s",
             tostring(itemName or "unknown"),

@@ -1,18 +1,35 @@
 --[[
-    Extensive Health Rework - Immune Status
+    Extensive Health Rework - Immune System
 
-    Phase 1 is observational only. This module calculates and persists the
-    player's immune resilience, but it does not modify disease rolls yet.
+    The score is calculated on the authoritative side and is used only at
+    supported infection boundaries. It never cures an active disease or
+    modifies symptoms, exposure accumulation, or medication behavior.
 ]]
 
 EHR = EHR or {}
 EHR.Immunity = EHR.Immunity or {}
 
-EHR.Immunity.SCHEMA_VERSION = 2
+EHR.Immunity.SCHEMA_VERSION = 3
 EHR.Immunity.UPDATE_INTERVAL_HOURS = 0.25
 EHR.Immunity.SCHEDULER_INTERVAL_MINUTES = 15
 EHR.Immunity.BASE_RECOVERY_PER_HOUR = 1.5
 EHR.Immunity.BASE_DECLINE_PER_HOUR = 3.0
+EHR.Immunity.DEBUG_ROLLS = EHR.Immunity.DEBUG_ROLLS == true
+
+EHR.Immunity.DISEASE_SENSITIVITY = EHR.Immunity.DISEASE_SENSITIVITY or {
+    common_cold = 0.85,
+    pneumonia = 0.80,
+    dysentery = 0.65,
+    gastroenteritis = 0.75,
+    cadaveric_aspergillosis = 1.00,
+    tuberculosis = 0.75,
+    hyperkeratotic_scabies = 0.85,
+    cellulitis = 0.90,
+}
+
+EHR.Immunity.WOUND_CONTAINMENT_MIN_SCORE = 20
+EHR.Immunity.WOUND_CONTAINMENT_MAX_CHANCE = 0.45
+EHR.Immunity.WOUND_CONTAINMENT_HARD_CAP = 0.65
 
 local FACTOR_WEIGHTS = {
     nutrition = 0.22,
@@ -261,6 +278,92 @@ function EHR.Immunity.IsEnabled()
     return getSandboxValue("ImmunitySystemEnabled", true) ~= false
 end
 
+function EHR.Immunity.IsGameplayEnabled()
+    return EHR.Immunity.IsEnabled()
+        and getSandboxValue("ImmunityGameplayEffects", true) ~= false
+end
+
+function EHR.Immunity.GetEffectStrength()
+    return clamp(getSandboxValue("ImmunityEffectStrength", 1.0), 0, 2)
+end
+
+function EHR.Immunity.GetDiseaseSensitivity(diseaseId, context)
+    if type(context) == "table" and tonumber(context.sensitivity) then
+        return clamp(context.sensitivity, 0, 1)
+    end
+    return clamp(EHR.Immunity.DISEASE_SENSITIVITY[tostring(diseaseId or "")] or 0, 0, 1)
+end
+
+function EHR.Immunity.GetRiskMultiplierForScore(score, sensitivity, strength)
+    score = clamp(score, 0, 100)
+    sensitivity = clamp(sensitivity == nil and 1 or sensitivity, 0, 1)
+    strength = clamp(strength == nil and EHR.Immunity.GetEffectStrength() or strength, 0, 2)
+
+    local fullEffect
+    if score >= 50 then
+        fullEffect = 1 - 0.35 * ((score - 50) / 50)
+    else
+        fullEffect = 1 + 0.50 * ((50 - score) / 50)
+    end
+
+    return clamp(1 + (fullEffect - 1) * sensitivity * strength, 0.35, 2.0)
+end
+
+function EHR.Immunity.GetRiskModifierPercent(score)
+    if not EHR.Immunity.IsGameplayEnabled() then return 0 end
+    local multiplier = EHR.Immunity.GetRiskMultiplierForScore(score, 1, EHR.Immunity.GetEffectStrength())
+    return roundOne((multiplier - 1) * 100)
+end
+
+function EHR.Immunity.ModifyDiseaseChance(player, diseaseId, baseChance, context)
+    baseChance = clamp(baseChance, 0, 1)
+    local sensitivity = EHR.Immunity.GetDiseaseSensitivity(diseaseId, context)
+    local score = EHR.Immunity.GetScore(player)
+    local strength = EHR.Immunity.GetEffectStrength()
+    local enabled = EHR.Immunity.IsGameplayEnabled() and sensitivity > 0 and strength > 0
+    local multiplier = enabled
+        and EHR.Immunity.GetRiskMultiplierForScore(score, sensitivity, strength)
+        or 1
+    local finalChance = clamp(baseChance * multiplier, 0, 1)
+
+    return finalChance, {
+        diseaseId = diseaseId,
+        context = type(context) == "table" and context.kind or nil,
+        baseChance = baseChance,
+        finalChance = finalChance,
+        score = roundOne(score),
+        sensitivity = sensitivity,
+        strength = strength,
+        multiplier = roundOne(multiplier),
+        enabled = enabled,
+    }
+end
+
+function EHR.Immunity.GetWoundContainmentChance(player, scoreAtDetection)
+    local currentScore = EHR.Immunity.GetScore(player)
+    local detectedScore = tonumber(scoreAtDetection)
+    if detectedScore == nil then detectedScore = currentScore end
+
+    local effectiveScore = clamp((detectedScore + currentScore) * 0.5, 0, 100)
+    local strength = EHR.Immunity.GetEffectStrength()
+    local enabled = EHR.Immunity.IsGameplayEnabled() and strength > 0
+    local chance = 0
+    if enabled and effectiveScore > EHR.Immunity.WOUND_CONTAINMENT_MIN_SCORE then
+        local ratio = (effectiveScore - EHR.Immunity.WOUND_CONTAINMENT_MIN_SCORE)
+            / (100 - EHR.Immunity.WOUND_CONTAINMENT_MIN_SCORE)
+        chance = ratio * EHR.Immunity.WOUND_CONTAINMENT_MAX_CHANCE * strength
+        chance = clamp(chance, 0, EHR.Immunity.WOUND_CONTAINMENT_HARD_CAP)
+    end
+
+    return chance, {
+        currentScore = roundOne(currentScore),
+        detectedScore = roundOne(detectedScore),
+        effectiveScore = roundOne(effectiveScore),
+        strength = strength,
+        enabled = enabled,
+    }
+end
+
 function EHR.Immunity.CalculateFactors(player)
     local hunger = getCharacterStat(player, "HUNGER", "getHunger", 0)
     local thirst = getCharacterStat(player, "THIRST", "getThirst", 0)
@@ -315,7 +418,7 @@ function EHR.Immunity.InitializePlayer(player)
     state.lastUpdateHour = tonumber(state.lastUpdateHour) or now
     state.trend = state.trend or "stable"
     state.enabled = EHR.Immunity.IsEnabled()
-    state.observationOnly = true
+    state.observationOnly = not EHR.Immunity.IsGameplayEnabled()
 
     return state
 end
@@ -349,7 +452,7 @@ function EHR.Immunity.UpdatePlayer(player, force)
     state.target = target
     state.hygiene = hygiene
     state.enabled = EHR.Immunity.IsEnabled()
-    state.observationOnly = true
+    state.observationOnly = not EHR.Immunity.IsGameplayEnabled()
     state.lastUpdateHour = now
 
     if not state.enabled then

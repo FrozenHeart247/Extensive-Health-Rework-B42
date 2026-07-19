@@ -1626,5 +1626,8 @@ UI_UA = {
     UI_EHR_Immunity_HygienePenalty = "Штраф до імунітету",
     UI_EHR_Immunity_CurrentPressures = "ПОТОЧНІ НАВАНТАЖЕННЯ",
     UI_EHR_Immunity_NoMajorPressures = "Немає значних системних навантажень",
-    UI_EHR_Immunity_MonitoringOnly = "Стан системи: Спостереження",
+    UI_EHR_Immunity_InfectionRisk = "Ризик інфекції",
+    UI_EHR_Immunity_NotApplied = "Не застосовується",
+    UI_EHR_Immunity_GameplayActive = "Стан системи: Активна",
+    UI_EHR_Immunity_MonitoringOnly = "Стан системи: Лише спостереження",
 }

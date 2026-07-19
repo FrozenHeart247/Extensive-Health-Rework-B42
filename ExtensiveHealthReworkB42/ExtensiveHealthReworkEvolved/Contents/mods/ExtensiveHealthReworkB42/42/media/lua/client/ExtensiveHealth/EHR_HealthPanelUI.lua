@@ -5258,12 +5258,13 @@ function EHR_HealthPanelUI:drawImmuneStatusPanel()
     local statusText = self:getImmunityStatusText(self:getImmunityStatusId(score))
     local scoreColor = self:getImmunityColor(score)
 
-    local topH = 170
+    local gameplayActive = enabled and state.observationOnly ~= true
+    local topH = 190
     self:drawPanelFrame(bounds.x, bounds.y, bounds.w, topH, safeText("UI_EHR_Immunity_Title", "IMMUNE SYSTEM"), nil)
 
     if not hasData then
         self:drawDockedTextCenter(
-            safeText("UI_EHR_Immunity_AwaitingData", "Awaiting immune status data"),
+            safeText("UI_EHR_Immunity_AwaitingData", "Awaiting immune system data"),
             bounds.x + 20, bounds.y + 58, bounds.w - 40, 54,
             c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Medium
         )
@@ -5306,6 +5307,28 @@ function EHR_HealthPanelUI:drawImmuneStatusPanel()
         string.format("%s: %d%%", safeText("UI_EHR_Immunity_Target", "Target"), math.floor(target + 0.5)),
         barX + barW, barY + 31, 24,
         c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, self:getCompactFont()
+    )
+
+    local riskText
+    local riskColor = c.textDim
+    if gameplayActive and EHR.Immunity and EHR.Immunity.GetRiskModifierPercent then
+        local riskModifier = tonumber(EHR.Immunity.GetRiskModifierPercent(score)) or 0
+        local riskSign = riskModifier > 0 and "+" or ""
+        riskText = safeText("UI_EHR_Immunity_InfectionRisk", "Infection risk")
+            .. ": " .. riskSign .. string.format("%.1f%%", riskModifier)
+        if riskModifier > 0.05 then
+            riskColor = c.orange
+        elseif riskModifier < -0.05 then
+            riskColor = c.green
+        end
+    else
+        riskText = safeText("UI_EHR_Immunity_InfectionRisk", "Infection risk")
+            .. ": " .. safeText("UI_EHR_Immunity_NotApplied", "Not applied")
+    end
+    self:drawDockedTextCenter(
+        riskText,
+        barX, barY + 56, barW, 24,
+        riskColor.r, riskColor.g, riskColor.b, riskColor.a, self:getCompactFont()
     )
 
     local lowerY = bounds.y + topH + 10
@@ -5426,8 +5449,11 @@ function EHR_HealthPanelUI:drawImmuneStatusPanel()
         end
     end
 
+    local systemStateText = gameplayActive
+        and safeText("UI_EHR_Immunity_GameplayActive", "System state: Active")
+        or safeText("UI_EHR_Immunity_MonitoringOnly", "System state: Monitoring only")
     self:drawDockedText(
-        safeText("UI_EHR_Immunity_MonitoringOnly", "System state: Monitoring"),
+        systemStateText,
         rightX + 18, lowerY + lowerH - 34, rightW - 36, 24,
         c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, self:getCompactFont()
     )

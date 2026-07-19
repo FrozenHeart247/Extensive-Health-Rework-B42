@@ -1626,5 +1626,8 @@
     "UI_EHR_Immunity_HygienePenalty": "Penalidade imunológica",
     "UI_EHR_Immunity_CurrentPressures": "PRESSÕES ATUAIS",
     "UI_EHR_Immunity_NoMajorPressures": "Nenhuma pressão sistêmica importante",
-    "UI_EHR_Immunity_MonitoringOnly": "Estado do sistema: Monitoramento"
+    "UI_EHR_Immunity_InfectionRisk": "Risco de infecção",
+    "UI_EHR_Immunity_NotApplied": "Não aplicado",
+    "UI_EHR_Immunity_GameplayActive": "Estado do sistema: Ativo",
+    "UI_EHR_Immunity_MonitoringOnly": "Estado do sistema: Somente monitoramento"
 }

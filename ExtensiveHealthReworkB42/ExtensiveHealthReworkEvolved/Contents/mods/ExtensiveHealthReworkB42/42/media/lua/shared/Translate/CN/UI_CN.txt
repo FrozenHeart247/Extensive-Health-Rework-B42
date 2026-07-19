@@ -1626,5 +1626,8 @@ UI_CN = {
     UI_EHR_Immunity_HygienePenalty = "免疫惩罚",
     UI_EHR_Immunity_CurrentPressures = "当前压力",
     UI_EHR_Immunity_NoMajorPressures = "无明显全身压力",
-    UI_EHR_Immunity_MonitoringOnly = "系统状态：监测中",
+    UI_EHR_Immunity_InfectionRisk = "感染风险",
+    UI_EHR_Immunity_NotApplied = "未应用",
+    UI_EHR_Immunity_GameplayActive = "系统状态：已启用",
+    UI_EHR_Immunity_MonitoringOnly = "系统状态：仅监测",
 }

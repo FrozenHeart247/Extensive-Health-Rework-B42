@@ -1503,6 +1503,124 @@ function EHR_HealthPanelUI:prepareTemperatureView(view)
     end
     normalizeButton(view.toggleAdvBtn)
 
+    local function localizedText(key, fallback)
+        if getText then
+            local ok, value = pcall(getText, key)
+            if ok and value and value ~= "" and value ~= key then
+                return value
+            end
+        end
+        return fallback
+    end
+
+    local originalPrerender = view.prerender
+    view.prerender = function(viewSelf, ...)
+        if originalPrerender then
+            originalPrerender(viewSelf, ...)
+        end
+
+        local function clearIndoorClimateLabel()
+            local debugEnabled = isDebugEnabled and isDebugEnabled() or false
+            if viewSelf.ehrIndoorClimateLabelVisible and viewSelf.labelCoreTemp then
+                if not debugEnabled then
+                    viewSelf.labelCoreTemp:setName(
+                        viewSelf.labelCoreTemp.prefixName or "Core temperature"
+                    )
+                end
+            end
+            if viewSelf.ehrMetabolicLabelVisible and viewSelf.labelCoreHeat and not debugEnabled then
+                viewSelf.labelCoreHeat:setName(
+                    viewSelf.labelCoreHeat.prefixName or "Body heat generation"
+                )
+            end
+            viewSelf.ehrIndoorClimateLabelVisible = false
+            viewSelf.ehrMetabolicLabelVisible = false
+        end
+
+        local icl = _G and _G.IndoorClimateLite or nil
+        if not icl or type(icl.getTemperatureSample) ~= "function" then
+            clearIndoorClimateLabel()
+            return
+        end
+
+        viewSelf.ehrIndoorClimateUiTick = (tonumber(viewSelf.ehrIndoorClimateUiTick) or 0) + 1
+        if not viewSelf.ehrIndoorClimateSample or viewSelf.ehrIndoorClimateUiTick % 15 == 0 then
+            local okSample, freshSample = pcall(icl.getTemperatureSample, viewSelf.player)
+            if okSample and type(freshSample) == "table" and freshSample.active ~= false then
+                viewSelf.ehrIndoorClimateSample = freshSample
+            else
+                viewSelf.ehrIndoorClimateSample = nil
+            end
+        end
+
+        local sample = viewSelf.ehrIndoorClimateSample
+        local airTemp = sample and tonumber(sample.airC) or nil
+        if not airTemp or not viewSelf.labelCoreTemp then
+            clearIndoorClimateLabel()
+            return
+        end
+
+        local coreTemp = nil
+        local metabolicRate = nil
+        pcall(function()
+            local bodyDamage = viewSelf.player and viewSelf.player:getBodyDamage() or nil
+            local thermoregulator = bodyDamage and bodyDamage:getThermoregulator() or nil
+            coreTemp = thermoregulator and tonumber(thermoregulator:getCoreTemperature()) or nil
+            metabolicRate = thermoregulator and tonumber(thermoregulator:getMetabolicRateReal()) or nil
+        end)
+
+        -- While ICL supplies ambient air, EHR's vanilla heat adapter owns the
+        -- corrected core value. Use it for both the label and temperature bar.
+        pcall(function()
+            local ehr = _G and _G.EHR or nil
+            local bodyTemp = ehr and ehr.BodyTemp or nil
+            local tempData = bodyTemp
+                and bodyTemp.GetTemperatureData
+                and bodyTemp.GetTemperatureData(viewSelf.player)
+                or nil
+            local owner = tempData and tempData.environmentManagedBy or nil
+            if owner == "IndoorClimateLite"
+                    or owner == "VanillaHeatAdapter"
+                    or owner == "ClientThermoregulator" then
+                coreTemp = tonumber(tempData.bodyTemp) or coreTemp
+                metabolicRate = tonumber(tempData.lastMetabolicRate) or metabolicRate
+            end
+        end)
+
+        if coreTemp and viewSelf.coreTemperatureBar and viewSelf.coreTemperatureBar.setValue then
+            local clampedCore = math.max(20, math.min(42, coreTemp))
+            local coreUi = clampedCore < 37
+                and (((clampedCore - 20) / 17) * 0.5)
+                or (0.5 + (((clampedCore - 37) / 5) * 0.5))
+            viewSelf.coreTemperatureBar:setValue(math.max(0, math.min(1, coreUi)))
+        end
+
+        local prefix = viewSelf.labelCoreTemp.prefixName or "Core temperature"
+        local locationLabel = sample.indoors == true
+            and localizedText("UI_ICL_IndoorAir", "Indoor air")
+            or localizedText("UI_ICL_OutdoorAir", "Outdoor air")
+        local label = coreTemp
+            and string.format("%s (%.1f C) | %s: %.1f C", prefix, coreTemp, locationLabel, airTemp)
+            or string.format("%s | %s: %.1f C", prefix, locationLabel, airTemp)
+
+        local outdoorTemp = tonumber(sample.outdoorC)
+        if sample.indoors == true and outdoorTemp then
+            label = label .. string.format(
+                " | %s: %.1f C",
+                localizedText("UI_ICL_OutdoorAir", "Outdoor air"),
+                outdoorTemp
+            )
+        end
+        viewSelf.labelCoreTemp:setName(label)
+        viewSelf.ehrIndoorClimateLabelVisible = true
+
+        if metabolicRate and viewSelf.labelCoreHeat then
+            local heatPrefix = viewSelf.labelCoreHeat.prefixName or "Body heat generation"
+            viewSelf.labelCoreHeat:setName(string.format("%s (%.2f MET)", heatPrefix, metabolicRate))
+            viewSelf.ehrMetabolicLabelVisible = true
+        end
+    end
+
     local originalOnMouseUp = view.onMouseUp
     view.onMouseUp = function(viewSelf, x, y)
         local buttons = viewSelf.viewButtons and viewSelf.currentViewID and viewSelf.viewButtons[viewSelf.currentViewID] or nil

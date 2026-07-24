@@ -795,9 +795,16 @@ local function getPlayerWetness(player)
     return 0
 end
 
-local function getAirTemperature()
+local function getAirTemperature(player)
+    if EHR.Environmental and EHR.Environmental.GetRuntimeEnvironment and player then
+        local ok, env = pcall(EHR.Environmental.GetRuntimeEnvironment, player)
+        if ok and type(env) == "table" and tonumber(env.airTemp) then
+            return tonumber(env.airTemp)
+        end
+    end
+
     if EHR.Environmental and EHR.Environmental.GetAirTemperature then
-        local ok, temp = pcall(function() return EHR.Environmental.GetAirTemperature() end)
+        local ok, temp = pcall(function() return EHR.Environmental.GetAirTemperature(player) end)
         if ok and temp then return temp end
     end
 
@@ -862,7 +869,7 @@ end
 function EHR.CorpseSickness.GetFungalEnvironment(player)
     local config = EHR.CorpseSickness.Config
     local wetness = getPlayerWetness(player)
-    local airTemp = getAirTemperature()
+    local airTemp = getAirTemperature(player)
     local outside = isPlayerOutside(player)
     local raining = outside and isRainingNow()
 

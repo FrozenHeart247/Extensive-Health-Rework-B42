@@ -10,7 +10,7 @@
     Hypothermia starts: <= 35.0°C
     Heat exhaustion risk: > 40.5°C
 
-    v1.0.0 - Initial implementation
+    v1.1.0 - Vanilla Thermoregulator heat-balance adapter for ICL
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
@@ -35,7 +35,7 @@ EHR.BodyTemp.Config = {
 
     -- Cold thresholds (Celsius) - adjusted to be less sensitive
     -- Normal body temp can range 36.0-37.5°C in healthy people
-    coldStage1 = 36.0,   -- Chilly (lowered from 36.5 - 36.4°C is normal!)
+    coldStage1 = 35.8,   -- Chilly (lowered from 36.5 - 36.4°C is normal!)
     coldStage2 = 35.5,   -- Cold (lowered from 36.0)
     coldStage3 = 35.0,   -- Very Cold
     coldStage4 = 34.0,   -- Severe Cold
@@ -63,6 +63,12 @@ EHR.BodyTemp.Config = {
     baseChangeRate = 0.8,  -- 10x faster than real life (~4 game hours to reach hypothermia risk)
     coldPressureFactor = 0.55, -- Cold-side target shift. Higher means cold can push below 36C.
     heatPressureFactor = 0.09, -- Heat-side target shift. Kept conservative; heat stroke uses world exposure too.
+    metabolicRestingRate = 1.5, -- Vanilla Metabolics.Default, in MET.
+    metabolicMaxRate = 10.3, -- Vanilla Metabolics.MAX, in MET.
+    metabolicMaxTargetShift = 2.4, -- Core target increase at maximum vanilla heat generation.
+    metabolicSleepTargetShift = 0.2, -- Small core target decrease below the resting metabolic rate.
+    metabolicHeatingRateMaxMultiplier = 4.0, -- Faster core heating at maximum activity.
+    metabolicClothingRateBonus = 1.0, -- Extra max-rate multiplier at full insulation.
 
     -- Disease trigger timing (game hours at dangerous temp)
     hypothermiaTriggerTime = 0.5,    -- Legacy chance timer; hypothermia now stages from <= 35°C
@@ -203,6 +209,81 @@ function EHR.BodyTemp.IsRealisticTemperatureActive()
     if mode == "disabled" then return false end
 
     return EHR.BodyTemp.DetectRealisticTemperatureActive()
+end
+
+local ICL_BODY_ENVIRONMENT_HEAT_PROBE_TICKS = 30
+local iclBodyEnvironmentCache = setmetatable({}, { __mode = "k" })
+
+function EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
+    if not player or not EHR.Environmental then return nil end
+
+    local dedicatedServer = isServer and isServer()
+        and not (isClient and isClient())
+
+    -- Local thermoregulation calls this every tick. Read ICL's already-cached
+    -- public sample directly instead of rebuilding the full environmental
+    -- disease snapshot (shade, headwear and a 3x3 object scan) every frame.
+    if not dedicatedServer and EHR.Environmental.GetIndoorClimateLiteSample then
+        local okSample, sample = pcall(
+            EHR.Environmental.GetIndoorClimateLiteSample,
+            player
+        )
+        if okSample and type(sample) == "table" and tonumber(sample.airC) then
+            local cache = iclBodyEnvironmentCache[player]
+            if not cache then
+                cache = { heatProbeTick = ICL_BODY_ENVIRONMENT_HEAT_PROBE_TICKS }
+                iclBodyEnvironmentCache[player] = cache
+            end
+
+            cache.heatProbeTick = (cache.heatProbeTick or 0) + 1
+            if cache.heatProbeTick >= ICL_BODY_ENVIRONMENT_HEAT_PROBE_TICKS then
+                cache.heatProbeTick = 0
+                if EHR.Environmental.IsNearHeat then
+                    local okHeat, isNearHeat = pcall(
+                        EHR.Environmental.IsNearHeat,
+                        player
+                    )
+                    if okHeat then cache.isNearHeat = isNearHeat == true end
+                end
+            end
+
+            return {
+                airTemp = tonumber(sample.airC),
+                isIndoors = sample.indoors == true,
+                isNearHeat = cache.isNearHeat == true,
+                temperatureSource = "IndoorClimateLite",
+                iclActive = true,
+                iclVersion = sample.version,
+                iclOutdoorAirTemp = tonumber(sample.outdoorC),
+                iclVanillaAirTemp = tonumber(sample.vanillaAirC),
+                iclTargetAirTemp = tonumber(sample.targetC),
+                iclLeakScore = tonumber(sample.leakScore),
+                iclPowered = sample.powered == true,
+                roomKey = sample.roomKey,
+                buildingKey = sample.buildingKey,
+            }
+        end
+    end
+
+    if not EHR.Environmental.GetRuntimeEnvironment then return nil end
+    local ok, env = pcall(EHR.Environmental.GetRuntimeEnvironment, player)
+    if not ok
+            or type(env) ~= "table"
+            or env.temperatureSource ~= "IndoorClimateLite"
+            or env.iclActive ~= true
+            or not tonumber(env.airTemp) then
+        return nil
+    end
+
+    return env
+end
+
+function EHR.BodyTemp.IsIndoorClimateLiteActive(player)
+    if EHR.BodyTemp.IsRealisticTemperatureActive
+            and EHR.BodyTemp.IsRealisticTemperatureActive() then
+        return false
+    end
+    return EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player) ~= nil
 end
 
 function EHR.BodyTemp.GetSpeedMultiplier()
@@ -455,19 +536,26 @@ function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
         return false
     end
 
-    if not (EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)) then
-        return false
-    end
-
     local tempData = EHR.BodyTemp.GetTemperatureData and EHR.BodyTemp.GetTemperatureData(player) or nil
     local bodyTemp = tempData and tonumber(tempData.bodyTemp) or nil
+    local indoorClimateManaged = tempData
+        and (
+            tempData.environmentManagedBy == "IndoorClimateLite"
+            or tempData.environmentManagedBy == "VanillaHeatAdapter"
+        )
+    local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource
+        and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+    if not indoorClimateManaged and not hasFeverSource then return false end
+
     local normalTemp = EHR.BodyTemp.Config.normalTemp or 36.6
 
-    -- This bridge should preserve an already-calculated EHR fever value, not
-    -- jump straight to the target. The gradual ramp is handled by
-    -- MoveDiseaseFeverToward/UpdateBodyTemperature.
+    -- Vanilla moodles read CharacterStat.TEMPERATURE every frame. While the ICL
+    -- adapter is active, vanilla Thermoregulator can overwrite that field, so
+    -- continuously preserve the corrected managed core value.
+    -- Fever-only use keeps the previous above-normal guard.
     bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
-    if not bodyTemp or bodyTemp <= normalTemp + 0.05 then return false end
+    if not bodyTemp then return false end
+    if not indoorClimateManaged and bodyTemp <= normalTemp + 0.05 then return false end
 
     return EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
 end
@@ -871,6 +959,86 @@ function EHR.BodyTemp.IsExerting(player)
 end
 
 --[[
+    Read the vanilla Thermoregulator's continuous metabolic heat value.
+
+    Heat Generation in the vanilla temperature panel is based on
+    metabolicRateReal (MET), not only on whether the player is running. EHR
+    owns core temperature while Indoor Climate Lite is active, so the same
+    value must be folded into EHR's target temperature or activity heat is
+    otherwise lost.
+
+    @param player (IsoPlayer)
+    @return table - available, rate, ui, normalizedLoad, targetShift
+]]--
+function EHR.BodyTemp.GetMetabolicHeatState(player)
+    local cfg = EHR.BodyTemp.Config
+    local restingRate = tonumber(cfg.metabolicRestingRate) or 1.5
+    local maximumRate = math.max(restingRate + 0.1, tonumber(cfg.metabolicMaxRate) or 10.3)
+    local state = {
+        available = false,
+        rate = nil,
+        ui = nil,
+        normalizedLoad = 0,
+        targetShift = 0,
+        source = "Unavailable",
+    }
+    if not player then return state end
+
+    pcall(function()
+        local bodyDamage = player:getBodyDamage()
+        local thermoregulator = bodyDamage and bodyDamage:getThermoregulator() or nil
+        if not thermoregulator then return end
+
+        if thermoregulator.getMetabolicRateReal then
+            state.rate = tonumber(thermoregulator:getMetabolicRateReal())
+            state.source = state.rate and "MetabolicRateReal" or state.source
+        elseif thermoregulator.getHeatGeneration then
+            state.rate = tonumber(thermoregulator:getHeatGeneration())
+            state.source = state.rate and "HeatGeneration" or state.source
+        end
+
+        if thermoregulator.getHeatGenerationUI then
+            state.ui = tonumber(thermoregulator:getHeatGenerationUI())
+        end
+    end)
+
+    -- B42 exposes the real MET value, but invert the vanilla UI mapping as a
+    -- compatibility fallback in case a later build exposes only the bar value.
+    if not state.rate and state.ui then
+        local ui = math.max(0, math.min(1, state.ui))
+        if ui < 0.5 then
+            state.rate = (ui / 0.5) * restingRate
+        else
+            state.rate = restingRate + (((ui - 0.5) / 0.5) * (maximumRate - restingRate))
+        end
+        state.source = "HeatGenerationUI"
+    end
+
+    local rate = tonumber(state.rate)
+    if not rate then return state end
+
+    rate = math.max(0, math.min(maximumRate, rate))
+    state.rate = rate
+    state.available = true
+
+    if rate >= restingRate then
+        state.normalizedLoad = math.max(
+            0,
+            math.min(1, (rate - restingRate) / (maximumRate - restingRate))
+        )
+        state.targetShift = state.normalizedLoad * (tonumber(cfg.metabolicMaxTargetShift) or 2.4)
+    else
+        local sleepingRate = 0.8
+        local restingSpan = math.max(0.1, restingRate - sleepingRate)
+        local restingDeficit = math.max(0, math.min(1, (restingRate - rate) / restingSpan))
+        state.normalizedLoad = -restingDeficit
+        state.targetShift = -restingDeficit * (tonumber(cfg.metabolicSleepTargetShift) or 0.2)
+    end
+
+    return state
+end
+
+--[[
     Check if player is dehydrated.
     @param player (IsoPlayer)
     @return boolean
@@ -1105,7 +1273,7 @@ function EHR.BodyTemp.CalculateTargetTempLegacy(player)
     -- Get environmental factors
     local airTemp = 15  -- Default moderate
     if EHR.Environmental and EHR.Environmental.GetAirTemperature then
-        airTemp = EHR.Environmental.GetAirTemperature()
+        airTemp = EHR.Environmental.GetAirTemperature(player)
     end
 
     local wetness = 0
@@ -1255,6 +1423,8 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
     local ambientTemp = nil
     local usedCharacterAir = false
     local usedRealisticTemperatureAir = false
+    local usedIndoorClimateLiteAir = false
+    local runtimeEnvironment = nil
 
     if EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive() then
         local rt = _G and _G.RC_TempSim or nil
@@ -1280,6 +1450,15 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
         end
     end
 
+    if not ambientTemp and EHR.BodyTemp.GetIndoorClimateLiteEnvironment then
+        runtimeEnvironment = EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
+        if runtimeEnvironment then
+            ambientTemp = tonumber(runtimeEnvironment.airTemp)
+            usedCharacterAir = ambientTemp ~= nil
+            usedIndoorClimateLiteAir = ambientTemp ~= nil
+        end
+    end
+
     local climate = getClimateManager and getClimateManager() or nil
     if not ambientTemp and climate and climate.getAirTemperatureForCharacter then
         local ok, temp = pcall(function()
@@ -1292,12 +1471,14 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
     end
 
     if not ambientTemp and EHR.Environmental and EHR.Environmental.GetAirTemperature then
-        ambientTemp = tonumber(EHR.Environmental.GetAirTemperature())
+        ambientTemp = tonumber(EHR.Environmental.GetAirTemperature(player))
     end
     ambientTemp = ambientTemp or 15.0
 
     local isIndoors = false
-    if EHR.Environmental and EHR.Environmental.IsIndoors then
+    if runtimeEnvironment then
+        isIndoors = runtimeEnvironment.isIndoors == true
+    elseif EHR.Environmental and EHR.Environmental.IsIndoors then
         isIndoors = EHR.Environmental.IsIndoors(player)
     end
 
@@ -1312,17 +1493,22 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
     end
 
     local wetness = 0
-    if EHR.Environmental and EHR.Environmental.GetWetness then
+    if runtimeEnvironment and tonumber(runtimeEnvironment.wetness) then
+        wetness = tonumber(runtimeEnvironment.wetness) or 0
+    elseif EHR.Environmental and EHR.Environmental.GetWetness then
         wetness = tonumber(EHR.Environmental.GetWetness(player)) or 0
     end
     wetness = math.max(0, math.min(1, wetness))
 
     local isNearHeat = false
-    if EHR.Environmental and EHR.Environmental.IsNearHeat then
+    if runtimeEnvironment then
+        isNearHeat = runtimeEnvironment.isNearHeat == true
+    elseif EHR.Environmental and EHR.Environmental.IsNearHeat then
         isNearHeat = EHR.Environmental.IsNearHeat(player)
     end
 
     local isExerting = EHR.BodyTemp.IsExerting(player)
+    local metabolicState = EHR.BodyTemp.GetMetabolicHeatState(player)
     local clothingInsulation = math.max(0, math.min(1, EHR.BodyTemp.GetClothingInsulation(player) or 0))
 
     local coldComfort = 18.0
@@ -1360,9 +1546,15 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
         targetTemp = targetTemp + clothingHeatBurden
     end
 
-    if isExerting then
-        targetTemp = targetTemp + 0.25
+    local metabolicHeatShift = 0
+    if metabolicState and metabolicState.available then
+        metabolicHeatShift = tonumber(metabolicState.targetShift) or 0
+    elseif isExerting then
+        -- Compatibility fallback for a game build without Thermoregulator
+        -- access. Do not add this on top of the real vanilla heat value.
+        metabolicHeatShift = 0.25
     end
+    targetTemp = targetTemp + metabolicHeatShift
 
     if isNearHeat then
         targetTemp = math.max(targetTemp, normalTemp + 0.25)
@@ -1370,14 +1562,35 @@ function EHR.BodyTemp.CalculateTargetTemp(player)
 
     local tempData = EHR.BodyTemp.GetTemperatureData(player)
     if tempData then
-        tempData.environmentColdPressure = coldPressure > 0.05 and not isNearHeat
-        tempData.environmentHeatPressure = heatPressure > 0.05 or clothingHeatBurden > 0.05
+        tempData.environmentColdPressure = coldPressure > 0.05
+            and not isNearHeat
+            and targetTemp < normalTemp - 0.05
+        tempData.environmentHeatPressure = targetTemp > normalTemp + 0.05
+            and (heatPressure > 0.05 or clothingHeatBurden > 0.05 or metabolicHeatShift > 0.05)
         tempData.lastEffectiveAirTemp = ambientTemp
         tempData.lastEffectiveComfortMin = coldComfort
         tempData.lastClothingInsulation = clothingInsulation
         tempData.lastClothingHeatBurden = clothingHeatBurden
+        tempData.lastMetabolicRate = metabolicState and tonumber(metabolicState.rate) or nil
+        tempData.lastHeatGenerationUI = metabolicState and tonumber(metabolicState.ui) or nil
+        tempData.lastMetabolicLoad = metabolicState and tonumber(metabolicState.normalizedLoad) or 0
+        tempData.lastMetabolicHeatShift = metabolicHeatShift
+        tempData.lastMetabolicHeatSource = metabolicState and metabolicState.source or "ExertionFallback"
         tempData.lastUsedCharacterAirTemp = usedCharacterAir
         tempData.lastUsedRealisticTemperatureAir = usedRealisticTemperatureAir
+        tempData.lastUsedIndoorClimateLiteAir = usedIndoorClimateLiteAir
+        tempData.lastTemperatureSource = usedRealisticTemperatureAir
+            and "RealisticTemperature"
+            or (usedIndoorClimateLiteAir and "IndoorClimateLite" or "ClimateManager")
+        tempData.lastIndoorClimateLiteTarget = runtimeEnvironment
+            and tonumber(runtimeEnvironment.iclTargetAirTemp)
+            or nil
+        tempData.lastIndoorClimateLiteOutdoor = runtimeEnvironment
+            and tonumber(runtimeEnvironment.iclOutdoorAirTemp)
+            or nil
+        tempData.lastIndoorClimateLiteLeak = runtimeEnvironment
+            and tonumber(runtimeEnvironment.iclLeakScore)
+            or nil
     end
 
     return math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, targetTemp))
@@ -1413,6 +1626,312 @@ function EHR.BodyTemp.CalculateChangeRate(currentTemp, targetTemp, deltaHours)
     return rate
 end
 
+-- ============================================
+-- VANILLA HEAT-BALANCE ADAPTER
+-- ============================================
+
+-- Vanilla already calculates metabolic heat, per-body-part clothing coverage,
+-- holes, garment/body wetness, wind resistance and physiological responses.
+-- ICL only needs to replace the environmental-air part of that balance.
+local vanillaHeatAdapterStates = setmetatable({}, { __mode = "k" })
+local VANILLA_ADAPTER_NODE_REFRESH_TICKS = 6
+local VANILLA_ADAPTER_AIR_EPSILON = 0.01
+
+local function EHR_BodyTempSafeMethodNumber(object, methodName)
+    if not object then return nil end
+    local okMethod, method = pcall(function() return object[methodName] end)
+    if not okMethod or not method then return nil end
+
+    local ok, value = pcall(method, object)
+    value = ok and tonumber(value) or nil
+    if not value or value ~= value or value == math.huge or value == -math.huge then
+        return nil
+    end
+    return value
+end
+
+local function EHR_BodyTempGetThermoregulator(player)
+    if not player or not player.getBodyDamage then return nil end
+
+    local ok, thermo = pcall(function()
+        local bodyDamage = player:getBodyDamage()
+        return bodyDamage and bodyDamage:getThermoregulator() or nil
+    end)
+    if not ok then return nil end
+    return thermo
+end
+
+local function EHR_BodyTempIsDedicatedServer()
+    return isServer and isServer()
+        and not (isClient and isClient())
+end
+
+-- Reproduces the environmental part of B42 Thermoregulator.updateNodesHeatDelta.
+-- The remaining node terms and metabolic heat are kept from vanilla's
+-- getDbg_totalHeat(), so this must only be used as a difference calculation.
+function EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(node, airTemp, airAndWindTemp)
+    if not node then return nil end
+
+    local skinTemp = EHR_BodyTempSafeMethodNumber(node, "getSkinCelcius")
+    local skinSurface = EHR_BodyTempSafeMethodNumber(node, "getSkinSurface")
+    local insulation = EHR_BodyTempSafeMethodNumber(node, "getInsulation")
+    local windResistance = EHR_BodyTempSafeMethodNumber(node, "getWindresist")
+    local bodyWetness = EHR_BodyTempSafeMethodNumber(node, "getBodyWetness")
+    airTemp = tonumber(airTemp)
+    airAndWindTemp = tonumber(airAndWindTemp) or airTemp
+
+    if not skinTemp or not skinSurface or not insulation
+            or not windResistance or not bodyWetness or not airTemp then
+        return nil
+    end
+
+    insulation = math.max(0, insulation)
+    windResistance = math.max(0, windResistance)
+    bodyWetness = math.max(0, math.min(1, bodyWetness))
+
+    local externalTemp = airTemp
+    if airAndWindTemp < airTemp then
+        externalTemp = airTemp
+            - ((airTemp - airAndWindTemp) / (1 + windResistance))
+    end
+
+    local heatDelta = externalTemp - skinTemp
+    if heatDelta < 0 then
+        heatDelta = heatDelta * (1 + (0.75 * bodyWetness))
+    else
+        heatDelta = heatDelta / (1 + (3.0 * bodyWetness))
+    end
+
+    return heatDelta * 0.3 / (1 + insulation) * skinSurface
+end
+
+local function EHR_BodyTempCalculateAmbientCorrection(thermo, vanillaAir, vanillaWindAir, desiredAir, desiredWindAir)
+    local nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
+    if not nodeCount then return nil end
+
+    nodeCount = math.max(0, math.floor(nodeCount))
+    local vanillaEnvironmentalHeat = 0
+    local desiredEnvironmentalHeat = 0
+
+    for index = 0, nodeCount - 1 do
+        local okNode, node = pcall(function() return thermo:getNode(index) end)
+        if not okNode or not node then return nil end
+
+        local vanillaNodeHeat = EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(
+            node, vanillaAir, vanillaWindAir
+        )
+        local desiredNodeHeat = EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(
+            node, desiredAir, desiredWindAir
+        )
+        if vanillaNodeHeat == nil or desiredNodeHeat == nil then return nil end
+
+        vanillaEnvironmentalHeat = vanillaEnvironmentalHeat + vanillaNodeHeat
+        desiredEnvironmentalHeat = desiredEnvironmentalHeat + desiredNodeHeat
+    end
+
+    return desiredEnvironmentalHeat - vanillaEnvironmentalHeat,
+        vanillaEnvironmentalHeat,
+        desiredEnvironmentalHeat,
+        nodeCount
+end
+
+local function EHR_BodyTempGetAdapterState(player)
+    local state = vanillaHeatAdapterStates[player]
+    if not state then
+        state = {
+            refreshTick = VANILLA_ADAPTER_NODE_REFRESH_TICKS,
+            ambientCorrection = 0,
+        }
+        vanillaHeatAdapterStates[player] = state
+    end
+    return state
+end
+
+local function EHR_BodyTempGetEnvironmentIdentity(environment)
+    if type(environment) ~= "table" then return "none" end
+    return tostring(
+        environment.roomKey
+        or environment.iclRoomKey
+        or environment.buildingKey
+        or environment.iclBuildingKey
+        or (environment.isIndoors and "indoors" or "outdoors")
+    )
+end
+
+function EHR.BodyTemp.GetClientReportedBodyTemperature(player)
+    if not EHR_BodyTempIsDedicatedServer()
+            or not EHR.Environmental
+            or not EHR.Environmental.GetRuntimeEnvironment then
+        return nil
+    end
+
+    local ok, environment = pcall(EHR.Environmental.GetRuntimeEnvironment, player)
+    if not ok or type(environment) ~= "table" then return nil end
+
+    local bodyTemp = tonumber(environment.bodyTempC)
+    if not bodyTemp or bodyTemp < 20 or bodyTemp > 42 then return nil end
+    return bodyTemp
+end
+
+-- Applies one vanilla-sized core-temperature step. This runs every game tick;
+-- the expensive 17-node environmental correction is cached for a few ticks.
+function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
+    if not player or EHR_BodyTempIsDedicatedServer() then return false end
+    if EHR.BodyTemp.IsRealisticTemperatureActive
+            and EHR.BodyTemp.IsRealisticTemperatureActive() then
+        return false
+    end
+
+    local environment = EHR.BodyTemp.GetIndoorClimateLiteEnvironment
+        and EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
+        or nil
+    if not environment then return false end
+
+    local tempData = EHR.BodyTemp.GetTemperatureData(player)
+    local thermo = EHR_BodyTempGetThermoregulator(player)
+    if not tempData or not thermo then
+        if tempData then tempData.vanillaHeatAdapterAvailable = false end
+        return false
+    end
+
+    local totalHeat = EHR_BodyTempSafeMethodNumber(thermo, "getDbg_totalHeat")
+    local bodyHeatMultiplier = EHR_BodyTempSafeMethodNumber(thermo, "getBodyHeatMultiplier")
+    local setPoint = EHR_BodyTempSafeMethodNumber(thermo, "getSetPoint")
+    local vanillaCore = EHR_BodyTempSafeMethodNumber(thermo, "getCoreTemperature")
+        or EHR.BodyTemp.ReadVanillaBodyTemperature(player)
+    local vanillaAir = EHR_BodyTempSafeMethodNumber(thermo, "getTemperatureAir")
+    local vanillaWindAir = EHR_BodyTempSafeMethodNumber(thermo, "getTemperatureAirAndWind")
+        or vanillaAir
+
+    if not totalHeat or not bodyHeatMultiplier or not setPoint
+            or not vanillaCore or not vanillaAir then
+        tempData.vanillaHeatAdapterAvailable = false
+        return false
+    end
+
+    local desiredAir = tonumber(environment.airTemp) or vanillaAir
+    local isIndoors = environment.isIndoors == true
+
+    -- ICL's final air already contains its heaters/fans. Preserve the stronger
+    -- native value when EHR positively identifies a lit vanilla heat source.
+    if isIndoors and environment.isNearHeat == true and vanillaAir > desiredAir then
+        desiredAir = vanillaAir
+    end
+
+    local desiredWindAir = vanillaWindAir
+    if isIndoors then
+        desiredWindAir = desiredAir
+    else
+        local windChill = math.max(0, vanillaAir - vanillaWindAir)
+        desiredWindAir = desiredAir - windChill
+    end
+
+    local state = EHR_BodyTempGetAdapterState(player)
+    local environmentIdentity = EHR_BodyTempGetEnvironmentIdentity(environment)
+    state.refreshTick = (state.refreshTick or 0) + 1
+
+    local airChanged = state.desiredAir == nil
+        or math.abs(desiredAir - state.desiredAir) >= VANILLA_ADAPTER_AIR_EPSILON
+        or state.vanillaAir == nil
+        or math.abs(vanillaAir - state.vanillaAir) >= VANILLA_ADAPTER_AIR_EPSILON
+    local environmentChanged = state.environmentIdentity ~= environmentIdentity
+    local shouldRefresh = airChanged
+        or environmentChanged
+        or state.refreshTick >= VANILLA_ADAPTER_NODE_REFRESH_TICKS
+
+    if math.abs(desiredAir - vanillaAir) < VANILLA_ADAPTER_AIR_EPSILON
+            and math.abs(desiredWindAir - vanillaWindAir) < VANILLA_ADAPTER_AIR_EPSILON then
+        state.ambientCorrection = 0
+        state.vanillaEnvironmentalHeat = nil
+        state.desiredEnvironmentalHeat = nil
+        state.nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
+        state.refreshTick = 0
+    elseif shouldRefresh then
+        local correction, vanillaEnvironmentalHeat, desiredEnvironmentalHeat, nodeCount =
+            EHR_BodyTempCalculateAmbientCorrection(
+                thermo,
+                vanillaAir,
+                vanillaWindAir,
+                desiredAir,
+                desiredWindAir
+            )
+        if correction == nil then
+            tempData.vanillaHeatAdapterAvailable = false
+            return false
+        end
+
+        state.ambientCorrection = correction
+        state.vanillaEnvironmentalHeat = vanillaEnvironmentalHeat
+        state.desiredEnvironmentalHeat = desiredEnvironmentalHeat
+        state.nodeCount = nodeCount
+        state.refreshTick = 0
+    end
+
+    state.desiredAir = desiredAir
+    state.vanillaAir = vanillaAir
+    state.environmentIdentity = environmentIdentity
+
+    local correctedTotalHeat = totalHeat + (tonumber(state.ambientCorrection) or 0)
+    local managedCore = tonumber(tempData.bodyTemp) or vanillaCore
+    local coreDelta = correctedTotalHeat * bodyHeatMultiplier
+
+    -- These are the same expansion rules used by vanilla updateHeatDeltas().
+    if coreDelta < 0 and managedCore > setPoint then
+        coreDelta = coreDelta * (1 + ((managedCore - setPoint) / 2))
+    elseif coreDelta > 0 and managedCore < setPoint then
+        coreDelta = coreDelta * (1 + ((setPoint - managedCore) / 4))
+    end
+
+    coreDelta = coreDelta * math.max(0, tonumber(EHR.BodyTemp.GetSpeedMultiplier()) or 1)
+    managedCore = math.max(
+        EHR.BodyTemp.Config.minBodyTemp or 28.0,
+        math.min(EHR.BodyTemp.Config.maxBodyTemp or 42.0, managedCore + coreDelta)
+    )
+
+    tempData.bodyTemp = managedCore
+    tempData.environmentBodyTemp = managedCore
+    tempData.environmentTargetTemp = managedCore
+    tempData.targetTemp = managedCore
+    tempData.environmentManagedBy = "VanillaHeatAdapter"
+    tempData.vanillaHeatAdapterAvailable = true
+    tempData.lastEffectiveAirTemp = desiredAir
+    tempData.lastThermoregulatorAir = vanillaAir
+    tempData.lastThermoregulatorWindAir = vanillaWindAir
+    tempData.lastVanillaTotalHeat = totalHeat
+    tempData.lastAmbientHeatCorrection = tonumber(state.ambientCorrection) or 0
+    tempData.lastCorrectedTotalHeat = correctedTotalHeat
+    tempData.lastVanillaCoreDelta = totalHeat * bodyHeatMultiplier
+    tempData.lastAppliedCoreDelta = coreDelta
+    tempData.lastVanillaEnvironmentalHeat = state.vanillaEnvironmentalHeat
+    tempData.lastDesiredEnvironmentalHeat = state.desiredEnvironmentalHeat
+    tempData.lastThermalNodeCount = state.nodeCount
+    tempData.lastMetabolicRate = EHR_BodyTempSafeMethodNumber(thermo, "getMetabolicRateReal")
+    tempData.lastHeatGenerationUI = EHR_BodyTempSafeMethodNumber(thermo, "getHeatGenerationUI")
+    tempData.lastUsedIndoorClimateLiteAir = true
+    tempData.lastTemperatureSource = isIndoors
+        and "IndoorClimateLiteVanillaAdapter"
+        or "VanillaThermoregulator"
+
+    state.debugTick = (state.debugTick or 0) + 1
+    if EHR.DEBUG and state.debugTick >= 60 then
+        state.debugTick = 0
+        EHR.Log(string.format(
+            "BodyTemp Adapter: %s air=%.2f vanillaAir=%.2f MET=%.2f vanillaHeat=%+.4f airCorrection=%+.4f correctedHeat=%+.4f coreDelta=%+.5f core=%.3f",
+            isIndoors and "indoors" or "outdoors",
+            desiredAir,
+            vanillaAir,
+            tonumber(tempData.lastMetabolicRate) or 0,
+            totalHeat,
+            tonumber(state.ambientCorrection) or 0,
+            correctedTotalHeat,
+            coreDelta,
+            managedCore
+        ))
+    end
+
+    return true
+end
+
 --[[
     Update body temperature for a player.
     @param player (IsoPlayer)
@@ -1428,10 +1947,36 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
 
     local oldTemp = tonumber(tempData.bodyTemp) or vanillaTemp
     local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
-    local managedEnvironment = EHR.BodyTemp.IsRealisticTemperatureActive and EHR.BodyTemp.IsRealisticTemperatureActive()
+    local realisticTemperatureManaged = EHR.BodyTemp.IsRealisticTemperatureActive
+        and EHR.BodyTemp.IsRealisticTemperatureActive()
+    local indoorClimateEnvironment = nil
+    if not realisticTemperatureManaged and EHR.BodyTemp.GetIndoorClimateLiteEnvironment then
+        indoorClimateEnvironment = EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
+    end
+    local indoorClimateManaged = indoorClimateEnvironment ~= nil
+    local clientReportedTemp = EHR.BodyTemp.GetClientReportedBodyTemperature
+        and EHR.BodyTemp.GetClientReportedBodyTemperature(player)
+        or nil
+    local adapterManaged = tempData.vanillaHeatAdapterAvailable == true
+        and tempData.environmentManagedBy == "VanillaHeatAdapter"
+    local managedEnvironment = realisticTemperatureManaged
+        or indoorClimateManaged
+        or clientReportedTemp ~= nil
     local environmentTarget = vanillaTemp
 
-    if managedEnvironment then
+    if clientReportedTemp then
+        -- On a dedicated server the local client owns the live Thermoregulator
+        -- and ICL sample. The server consumes the reported Celsius value for
+        -- authoritative disease stages instead of simulating stale client state.
+        environmentTarget = math.max(
+            cfg.minBodyTemp or 28.0,
+            math.min(cfg.maxBodyTemp or 42.0, clientReportedTemp)
+        )
+        tempData.bodyTemp = environmentTarget
+        tempData.environmentBodyTemp = environmentTarget
+        tempData.environmentManagedBy = "ClientThermoregulator"
+        tempData.vanillaHeatAdapterAvailable = false
+    elseif realisticTemperatureManaged then
         -- Realistic Temperature owns environmental body heat and core temp.
         -- EHR only mirrors that value here, then layers disease fever on top.
         local rec = nil
@@ -1444,15 +1989,71 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
         end
         environmentTarget = math.max(cfg.minBodyTemp or 28.0, math.min(cfg.maxBodyTemp or 42.0, environmentTarget))
         tempData.bodyTemp = environmentTarget
+        tempData.environmentManagedBy = "RealisticTemperature"
+    elseif adapterManaged then
+        -- The per-tick adapter has already applied vanilla metabolic heat plus
+        -- ICL's environmental-air correction. This periodic update only handles
+        -- fever/stages and must not run the legacy target-temperature model.
+        environmentTarget = tonumber(tempData.environmentBodyTemp)
+            or tonumber(tempData.bodyTemp)
+            or vanillaTemp
+        tempData.bodyTemp = environmentTarget
+        tempData.environmentManagedBy = "VanillaHeatAdapter"
+    elseif indoorClimateManaged then
+        -- Compatibility fallback for a build where the Thermoregulator debug
+        -- APIs are unavailable. The normal B42 path uses VanillaHeatAdapter.
+        environmentTarget = EHR.BodyTemp.CalculateTargetTemp(player)
+        environmentTarget = math.max(
+            cfg.minBodyTemp or 28.0,
+            math.min(cfg.maxBodyTemp or 42.0, tonumber(environmentTarget) or vanillaTemp)
+        )
+        local environmentalChange = EHR.BodyTemp.CalculateChangeRate(
+            oldTemp,
+            environmentTarget,
+            tonumber(deltaHours) or 0
+        )
+
+        -- Metabolic heat rises much faster than passive environmental drift in
+        -- vanilla. Scale only upward movement, using the same continuous MET
+        -- load that drives the Heat Generation bar. Insulation further traps
+        -- activity heat, while cooling after activity retains the normal rate.
+        local metabolicLoad = math.max(0, math.min(1, tonumber(tempData.lastMetabolicLoad) or 0))
+        local clothingInsulation = math.max(0, math.min(1, tonumber(tempData.lastClothingInsulation) or 0))
+        local heatingRateMultiplier = 1.0
+        if environmentalChange > 0 and metabolicLoad > 0 then
+            local maxMultiplier = math.max(
+                1.0,
+                tonumber(cfg.metabolicHeatingRateMaxMultiplier) or 4.0
+            )
+            local clothingBonus = math.max(
+                0,
+                tonumber(cfg.metabolicClothingRateBonus) or 1.0
+            )
+            heatingRateMultiplier = 1
+                + (metabolicLoad * ((maxMultiplier - 1) + (clothingInsulation * clothingBonus)))
+            environmentalChange = math.min(
+                environmentTarget - oldTemp,
+                environmentalChange * heatingRateMultiplier
+            )
+        end
+        tempData.lastMetabolicHeatingRateMultiplier = heatingRateMultiplier
+
+        tempData.bodyTemp = math.max(
+            cfg.minBodyTemp or 28.0,
+            math.min(cfg.maxBodyTemp or 42.0, oldTemp + environmentalChange)
+        )
+        tempData.environmentManagedBy = "IndoorClimateLite"
     else
         -- Without RT compatibility, vanilla owns environmental heating/cooling.
         -- EHR mirrors it for UI and thresholds, and only nudges disease fever.
         tempData.bodyTemp = vanillaTemp
         oldTemp = tonumber(oldTemp) or vanillaTemp
+        tempData.environmentManagedBy = "Vanilla"
     end
 
     tempData.environmentTargetTemp = environmentTarget
     tempData.targetTemp = environmentTarget
+    local bodyTemperatureWriteAttempted = false
 
     if hasFeverSource then
         local gameTime = getGameTime and getGameTime() or nil
@@ -1477,7 +2078,7 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
             cfg.minBodyTemp or 28.0,
             math.min(cfg.maxBodyTemp or 42.0, tonumber(tempData.diseaseTargetTemp) or environmentTarget)
         )
-        local current = oldTemp
+        local current = managedEnvironment and (tonumber(tempData.bodyTemp) or oldTemp) or oldTemp
         if diseaseTarget >= environmentTarget and current < environmentTarget then
             current = environmentTarget
         end
@@ -1497,11 +2098,18 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
 
         if EHR.BodyTemp.WriteDiseaseBodyTemperature then
             EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
+            bodyTemperatureWriteAttempted = true
         end
-    elseif managedEnvironment then
+    elseif realisticTemperatureManaged then
         tempData.bodyTemp = environmentTarget
         tempData.targetTemp = environmentTarget
         tempData.diseaseFeverActive = false
+    end
+
+    if managedEnvironment
+            and not bodyTemperatureWriteAttempted
+            and EHR.BodyTemp.WriteDiseaseBodyTemperature then
+        EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
     end
 
     -- Update stages (with hysteresis to prevent flickering)
@@ -2065,12 +2673,20 @@ local function getActivePlayers()
     return players
 end
 
-local function processPlayerTick(player)
+local function processPlayerTick(player, clientPredictionOnly)
     if not player or not player:isAlive() then return end
 
     -- Check if custom body temp system is enabled
     -- If disabled, don't suppress vanilla temp - allows other temp mods to work
     if not EHR.BodyTemp.IsEnabled() then return end
+
+    -- Initialization and the vanilla adapter run before the slower medical
+    -- checks. Vanilla's heat delta is a per-tick value and must not be sampled
+    -- only once every BODY_TEMP_TICK_INTERVAL.
+    EHR.BodyTemp.InitializePlayer(player)
+    if EHR.BodyTemp.UpdateVanillaHeatAdapter then
+        EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
+    end
 
     -- Legacy no-op: vanilla is authoritative for environmental temperature.
     EHR.BodyTemp.SuppressVanillaTemperature(player)
@@ -2083,9 +2699,6 @@ local function processPlayerTick(player)
     state.tick = state.tick + 1
     if state.tick < BODY_TEMP_TICK_INTERVAL then return end
     state.tick = 0
-
-    -- Initialize if needed
-    EHR.BodyTemp.InitializePlayer(player)
 
     local tempData = EHR.BodyTemp.GetTemperatureData(player)
     if not tempData then return end
@@ -2121,6 +2734,10 @@ local function processPlayerTick(player)
     -- Update body temperature
     EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
 
+    if clientPredictionOnly then
+        return
+    end
+
     -- Apply pre-disease effects (shivering, sweating, dialogue)
     EHR.BodyTemp.ApplyPreDiseaseEffects(player, tempData)
 
@@ -2129,21 +2746,17 @@ local function processPlayerTick(player)
 end
 
 function EHR.BodyTemp.OnTick()
-    -- MP: server-authoritative processing. Client branch keeps legacy no-op.
+    -- MP: the local client owns its live Thermoregulator/ICL heat balance.
+    -- Disease contraction remains server-authoritative via bodyTempC snapshots.
     if isClient and isClient() and not (isServer and isServer()) then
         local player = getSpecificPlayer(0)
-        if player and EHR.BodyTemp.IsEnabled() then
-            EHR.BodyTemp.SuppressVanillaTemperature(player)
-            if EHR.BodyTemp.MaintainDiseaseFeverBridge then
-                EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
-            end
-        end
+        processPlayerTick(player, true)
         return
     end
 
     local players = getActivePlayers()
     for _, player in ipairs(players) do
-        processPlayerTick(player)
+        processPlayerTick(player, false)
     end
 end
 
@@ -2156,4 +2769,4 @@ if Events and Events.OnTick then
     EHR.Log("Body Temperature module events registered")
 end
 
-EHR.Log("Body Temperature module loaded v1.0.0")
+EHR.Log("Body Temperature module loaded v1.1.0 (vanilla heat adapter)")

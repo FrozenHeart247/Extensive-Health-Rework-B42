@@ -354,10 +354,52 @@ end
 -- ============================================
 
 --[[
-    Get current air temperature (Celsius)
-    B42: getClimateManager():getTemperature()
+    Read Indoor Climate Lite's public ambient sample when it is active.
+    ICL never writes body temperature; EHR remains the sole health-model owner.
 ]]--
-function EHR.Environmental.GetAirTemperature()
+function EHR.Environmental.GetIndoorClimateLiteSample(player)
+    local icl = _G and _G.IndoorClimateLite or nil
+    if not icl or type(icl.getTemperatureSample) ~= "function" then return nil end
+
+    local ok, sample = pcall(function()
+        return icl.getTemperatureSample(player)
+    end)
+    if not ok or type(sample) ~= "table" then return nil end
+
+    local active = sample.active
+    if active == nil and type(icl.isActive) == "function" then
+        local okActive, currentActive = pcall(icl.isActive)
+        active = okActive and currentActive or false
+    end
+    if active ~= true then return nil end
+
+    local airTemp = tonumber(sample.airC)
+    if not airTemp or airTemp < -80 or airTemp > 80 then return nil end
+    return sample
+end
+
+--[[
+    Get current effective air temperature (Celsius).
+    Prefers an existing multiplayer client snapshot, then ICL's local sample,
+    and finally the global ClimateManager outdoor temperature.
+]]--
+function EHR.Environmental.GetAirTemperature(player)
+    if player and EHR.Environmental.GetClientSnapshot then
+        local okSnapshot, snapshot = pcall(EHR.Environmental.GetClientSnapshot, player)
+        if okSnapshot
+                and type(snapshot) == "table"
+                and snapshot.temperatureSource == "IndoorClimateLite"
+                and snapshot.iclActive == true
+                and tonumber(snapshot.airTemp) then
+            return tonumber(snapshot.airTemp)
+        end
+    end
+
+    local iclSample = EHR.Environmental.GetIndoorClimateLiteSample(player)
+    if iclSample then
+        return tonumber(iclSample.airC)
+    end
+
     local climate = getClimateManager()
     if climate and climate.getTemperature then
         local success, temp = pcall(function() return climate:getTemperature() end)
@@ -392,7 +434,7 @@ function EHR.Environmental.GetEffectiveHeatAirTemperature(player, fallbackAirTem
         return vehicleTemp, true
     end
 
-    return tonumber(fallbackAirTemp) or EHR.Environmental.GetAirTemperature(), false
+    return tonumber(fallbackAirTemp) or EHR.Environmental.GetAirTemperature(player), false
 end
 
 local function EHR_EnvironmentalNormalizeBodyTempStat(value)
@@ -969,10 +1011,31 @@ local function EHR_EnvironmentalClampNumber(value, minValue, maxValue, fallback)
     return value
 end
 
+local function EHR_EnvironmentalReadBodyTempCelsius(player)
+    if EHR.BodyTemp and EHR.BodyTemp.GetBodyTemperature then
+        local ok, value = pcall(EHR.BodyTemp.GetBodyTemperature, player)
+        value = ok and tonumber(value) or nil
+        if value and value >= 20 and value <= 42 then return value end
+    end
+
+    local normalized = EHR.Environmental.GetBodyTemperature(player)
+    normalized = tonumber(normalized)
+    if not normalized then return nil end
+    if normalized >= 20 and normalized <= 42 then return normalized end
+
+    -- Environmental disease code intentionally uses its legacy normalized
+    -- scale, where 0.5 represents 37C.
+    return ((normalized - 0.5) * 8.0) + 37.0
+end
+
 function EHR.Environmental.BuildClientSnapshot(player)
     if not player then return nil end
 
-    local airTemp = EHR.Environmental.GetAirTemperature()
+    local iclSample = EHR.Environmental.GetIndoorClimateLiteSample(player)
+    local usesIndoorClimateLite = iclSample ~= nil
+    local airTemp = usesIndoorClimateLite
+        and tonumber(iclSample.airC)
+        or EHR.Environmental.GetAirTemperature(player)
     local heatAirTemp, isInVehicle = EHR.Environmental.GetEffectiveHeatAirTemperature(player, airTemp)
 
     return {
@@ -981,6 +1044,7 @@ function EHR.Environmental.BuildClientSnapshot(player)
         heatAirTemp = heatAirTemp,
         isInVehicle = isInVehicle == true,
         bodyTemp = EHR.Environmental.GetBodyTemperature(player),
+        bodyTempC = EHR_EnvironmentalReadBodyTempCelsius(player),
         wetness = EHR.Environmental.GetWetness(player),
         isIndoors = EHR.Environmental.IsIndoors(player) == true,
         isNearHeat = EHR.Environmental.IsNearHeat(player) == true,
@@ -989,6 +1053,14 @@ function EHR.Environmental.BuildClientSnapshot(player)
         controlledBathing = EHR_EnvironmentalIsControlledBathing(player) == true,
         headwearMultiplier = EHR.Environmental.GetHeatHeadwearMultiplier(player),
         thirst = EHR_EnvironmentalReadThirst(player),
+        temperatureSource = usesIndoorClimateLite and "IndoorClimateLite" or "ClimateManager",
+        iclActive = usesIndoorClimateLite,
+        iclVersion = usesIndoorClimateLite and tostring(iclSample.version or "") or nil,
+        iclOutdoorAirTemp = usesIndoorClimateLite and tonumber(iclSample.outdoorC) or nil,
+        iclVanillaAirTemp = usesIndoorClimateLite and tonumber(iclSample.vanillaAirC) or nil,
+        iclTargetAirTemp = usesIndoorClimateLite and tonumber(iclSample.targetC) or nil,
+        iclLeakScore = usesIndoorClimateLite and tonumber(iclSample.leakScore) or nil,
+        iclPowered = usesIndoorClimateLite and iclSample.powered == true or false,
     }
 end
 
@@ -997,14 +1069,21 @@ function EHR.Environmental.StoreClientSnapshot(player, args)
 
     local playerID = EHR.Environmental.GetPlayerKey(player)
     local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+    local usesIndoorClimateLite = args.temperatureSource == "IndoorClimateLite"
+        and args.iclActive == true
+    local iclVersion = usesIndoorClimateLite and tostring(args.iclVersion or "") or nil
+    if iclVersion and #iclVersion > 32 then
+        iclVersion = string.sub(iclVersion, 1, 32)
+    end
 
     EHR.Environmental.ClientSnapshots[playerID] = {
         hour = EHR_EnvironmentalClampNumber(args.hour, currentHour - 1.0, currentHour + 1.0, currentHour),
         receivedHour = currentHour,
-        airTemp = EHR_EnvironmentalClampNumber(args.airTemp, -80, 80, EHR.Environmental.GetAirTemperature()),
+        airTemp = EHR_EnvironmentalClampNumber(args.airTemp, -80, 80, EHR.Environmental.GetAirTemperature(player)),
         heatAirTemp = EHR_EnvironmentalClampNumber(args.heatAirTemp, -80, 90, args.airTemp),
         isInVehicle = args.isInVehicle == true,
         bodyTemp = EHR_EnvironmentalClampNumber(args.bodyTemp, 0, 1.5, 0.5),
+        bodyTempC = EHR_EnvironmentalClampNumber(args.bodyTempC, 20, 42, nil),
         wetness = EHR_EnvironmentalClampNumber(args.wetness, 0, 1.5, 0),
         isIndoors = args.isIndoors == true,
         isNearHeat = args.isNearHeat == true,
@@ -1013,6 +1092,22 @@ function EHR.Environmental.StoreClientSnapshot(player, args)
         controlledBathing = args.controlledBathing == true,
         headwearMultiplier = EHR_EnvironmentalClampNumber(args.headwearMultiplier, 0.05, 2.0, 1.0),
         thirst = EHR_EnvironmentalClampNumber(args.thirst, 0, 1.5, 0),
+        temperatureSource = usesIndoorClimateLite and "IndoorClimateLite" or "ClimateManager",
+        iclActive = usesIndoorClimateLite,
+        iclVersion = iclVersion,
+        iclOutdoorAirTemp = usesIndoorClimateLite
+            and EHR_EnvironmentalClampNumber(args.iclOutdoorAirTemp, -80, 80, args.airTemp)
+            or nil,
+        iclVanillaAirTemp = usesIndoorClimateLite
+            and EHR_EnvironmentalClampNumber(args.iclVanillaAirTemp, -80, 80, args.airTemp)
+            or nil,
+        iclTargetAirTemp = usesIndoorClimateLite
+            and EHR_EnvironmentalClampNumber(args.iclTargetAirTemp, -80, 80, args.airTemp)
+            or nil,
+        iclLeakScore = usesIndoorClimateLite
+            and EHR_EnvironmentalClampNumber(args.iclLeakScore, 0, 1, 0)
+            or nil,
+        iclPowered = usesIndoorClimateLite and args.iclPowered == true or false,
     }
 end
 
@@ -1052,7 +1147,7 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     local coldExposureMultiplier = EHR.Environmental.GetCommonColdExposureMultiplier()
 
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
     local bodyTemp = tonumber(env.bodyTemp) or EHR.Environmental.GetBodyTemperature(player)
     local wetness = tonumber(env.wetness) or EHR.Environmental.GetWetness(player)
     local isIndoors = env.isIndoors == true
@@ -1232,7 +1327,7 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
     end
 
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
     local isIndoors = env.isIndoors == true
     local isExerting = env.isExerting == true
     local thirst = tonumber(env.thirst) or 0
@@ -1446,7 +1541,7 @@ function EHR.Environmental.CheckHeatProgression(player, exposure)
 
     -- Check if player is still in heat
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
     local isInShade = env.isInShade == true
 
     if isInShade and airTemp < EHR.Environmental.Config.veryHotTemp then
@@ -1491,7 +1586,7 @@ function EHR.Environmental.CheckHeatCooling(player, deltaHours)
     if not diseaseData or not diseaseData.active then return end
 
     local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+    local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
 
     -- Check both heat exhaustion and heat stroke
     for _, diseaseId in ipairs({"heat_exhaustion", "heat_stroke"}) do
@@ -2101,7 +2196,7 @@ function EHR.Environmental.UpdateHeatStrokeAmbientCooling(player, disease, delta
     local currentTemp = tonumber(airTemp)
     if not currentTemp then
         local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
-        currentTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature()
+        currentTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
     end
 
     local elapsed = tonumber(deltaHours) or 0
@@ -3916,7 +4011,7 @@ function EHR.Environmental.IsWarmEnoughForRecovery(player)
     local isIndoors = EHR.Environmental.IsIndoors(player)
 
     -- BUG-017 FIX: Use body temperature for indoor warmth check
-    -- GetAirTemperature() returns OUTDOOR temp, not room temp
+    -- GetAirTemperature(player) may return ICL's simulated room temperature.
     -- Body temperature reflects actual player warmth from room heating, clothing, etc.
     --
     -- Indoor with reasonable body temp (>0.4) = warm enough
@@ -4269,7 +4364,7 @@ local function processPlayerTick(player)
     end
 end
 
-local function processClientEnvironmentalTick(player)
+local function processClientEnvironmentalTick(player, snapshotOnly)
     if not player or not player:isAlive() then return end
 
     EHR.Environmental.InitializePlayer(player)
@@ -4298,6 +4393,8 @@ local function processClientEnvironmentalTick(player)
         sendClientCommand(player, "EHR", "EnvironmentalSnapshot", snapshot)
     end
 
+    if snapshotOnly then return end
+
     -- Keep local exposure cards responsive in multiplayer, but leave disease
     -- contraction/progression to the server-authoritative tick.
     EHR.Environmental._skipDiseaseChecks = true
@@ -4315,21 +4412,26 @@ end
     Main tick handler for environmental diseases
 ]]--
 function EHR.Environmental.OnTick()
-    -- Check if disease system is enabled
-    if EHR.Disease and not EHR.Disease.IsEnabled() then return end
+    local diseaseEnabled = not EHR.Disease or EHR.Disease.IsEnabled()
 
     -- MP: server-authoritative progression, client-only suppression
     if isClient and isClient() and not (isServer and isServer()) then
         local player = getSpecificPlayer(0)
         if player then
-            if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
-                EHR.Environmental.SuppressVanillaTemperature(player)
+            if diseaseEnabled then
+                if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
+                    EHR.Environmental.SuppressVanillaTemperature(player)
+                end
+                EHR.Environmental.SuppressVanillaCold(player)
             end
-            EHR.Environmental.SuppressVanillaCold(player)
-            processClientEnvironmentalTick(player)
+            -- The snapshot also carries ICL ambient data for EHR body
+            -- temperature, so keep it alive when diseases are disabled.
+            processClientEnvironmentalTick(player, not diseaseEnabled)
         end
         return
     end
+
+    if not diseaseEnabled then return end
 
     local players = getActivePlayers()
     for _, player in ipairs(players) do

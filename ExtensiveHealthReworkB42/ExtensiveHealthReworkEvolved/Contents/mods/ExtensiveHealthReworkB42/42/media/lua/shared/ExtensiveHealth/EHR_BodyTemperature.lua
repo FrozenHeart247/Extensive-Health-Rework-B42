@@ -553,6 +553,15 @@ function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
     -- adapter is active, vanilla Thermoregulator can overwrite that field, so
     -- continuously preserve the corrected managed core value.
     -- Fever-only use keeps the previous above-normal guard.
+    -- In MP, when ICL's air is identical to vanilla air, the adapter mirrors the
+    -- real vanilla core and must not write it back: doing so erases vanilla's
+    -- freshly calculated Chilly/Hot state on the very same frame.
+    if tempData
+            and tempData.vanillaDirectCore == true
+            and not hasFeverSource then
+        return false
+    end
+
     bodyTemp = EHR_BodyTempNormalizeCelsius(bodyTemp)
     if not bodyTemp then return false end
     if not indoorClimateManaged and bodyTemp <= normalTemp + 0.05 then return false end
@@ -1741,10 +1750,32 @@ local function EHR_BodyTempGetAdapterState(player)
         state = {
             refreshTick = VANILLA_ADAPTER_NODE_REFRESH_TICKS,
             ambientCorrection = 0,
+            warnings = {},
         }
         vanillaHeatAdapterStates[player] = state
     end
     return state
+end
+
+local function EHR_BodyTempAdapterWarnOnce(state, key, message)
+    if not state then return end
+    state.warnings = state.warnings or {}
+    if state.warnings[key] then return end
+    state.warnings[key] = true
+
+    if EHR and EHR.Log then
+        EHR.Log("WARNING: BodyTemp Adapter: " .. tostring(message))
+    elseif print then
+        print("[EHR] WARNING: BodyTemp Adapter: " .. tostring(message))
+    end
+end
+
+local function EHR_BodyTempHasActiveFeverSafely(player, tempData)
+    if tempData and tempData.diseaseFeverActive == true then return true end
+    if not EHR.BodyTemp.HasActiveDiseaseFeverSource then return false end
+
+    local ok, hasFever = pcall(EHR.BodyTemp.HasActiveDiseaseFeverSource, player)
+    return ok and hasFever == true
 end
 
 local function EHR_BodyTempGetEnvironmentIdentity(environment)
@@ -1776,26 +1807,48 @@ end
 -- Applies one vanilla-sized core-temperature step. This runs every game tick;
 -- the expensive 17-node environmental correction is cached for a few ticks.
 function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
-    if not player or EHR_BodyTempIsDedicatedServer() then return false end
+    if not player then return false end
     if EHR.BodyTemp.IsRealisticTemperatureActive
             and EHR.BodyTemp.IsRealisticTemperatureActive() then
         return false
     end
 
+    local state = EHR_BodyTempGetAdapterState(player)
+    local multiplayerClient = isClient and isClient()
+    local dedicatedServer = EHR_BodyTempIsDedicatedServer()
     local environment = EHR.BodyTemp.GetIndoorClimateLiteEnvironment
         and EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
         or nil
-    if not environment then return false end
+    if not environment then
+        state.missingEnvironmentTicks = (state.missingEnvironmentTicks or 0) + 1
+        if state.missingEnvironmentTicks >= 300 then
+            EHR_BodyTempAdapterWarnOnce(
+                state,
+                "missingIndoorClimateSample",
+                "the local IndoorClimateLite sample is unavailable; the vanilla adapter is not running"
+            )
+        end
+        return false
+    end
+    state.missingEnvironmentTicks = 0
 
     local tempData = EHR.BodyTemp.GetTemperatureData(player)
     local thermo = EHR_BodyTempGetThermoregulator(player)
     if not tempData or not thermo then
         if tempData then tempData.vanillaHeatAdapterAvailable = false end
+        if tempData and not thermo then
+            EHR_BodyTempAdapterWarnOnce(
+                state,
+                "missingThermoregulator",
+                "local Thermoregulator is unavailable; using the compatibility fallback"
+            )
+        end
         return false
     end
 
     local totalHeat = EHR_BodyTempSafeMethodNumber(thermo, "getDbg_totalHeat")
     local bodyHeatMultiplier = EHR_BodyTempSafeMethodNumber(thermo, "getBodyHeatMultiplier")
+    local vanillaCoreDelta = EHR_BodyTempSafeMethodNumber(thermo, "getCoreHeatDelta")
     local setPoint = EHR_BodyTempSafeMethodNumber(thermo, "getSetPoint")
     local vanillaCore = EHR_BodyTempSafeMethodNumber(thermo, "getCoreTemperature")
         or EHR.BodyTemp.ReadVanillaBodyTemperature(player)
@@ -1807,6 +1860,39 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
             or not vanillaCore or not vanillaAir then
         tempData.vanillaHeatAdapterAvailable = false
         return false
+    end
+
+    -- Some MP clients briefly expose a zero BodyHeatMultiplier while the local
+    -- Thermoregulator is being initialized or resynchronized. A zero value
+    -- makes an otherwise valid heat balance look permanently frozen. Recover
+    -- the multiplier from vanilla's own core delta, or reuse the last valid
+    -- local value. If neither exists, let the slower compatibility model run.
+    if bodyHeatMultiplier > 0 then
+        state.lastPositiveBodyHeatMultiplier = bodyHeatMultiplier
+    elseif multiplayerClient then
+        -- This value is not used for integration on an MP client. The client
+        -- mirrors the server-replicated core and must never replay a serialized
+        -- CoreHeatDelta locally.
+        bodyHeatMultiplier = tonumber(state.lastPositiveBodyHeatMultiplier) or 0.001
+    else
+        local derivedMultiplier = nil
+        if vanillaCoreDelta
+                and math.abs(totalHeat) > 0.000001
+                and math.abs(vanillaCoreDelta) > 0.000000001 then
+            derivedMultiplier = math.abs(vanillaCoreDelta / totalHeat)
+        end
+
+        bodyHeatMultiplier = derivedMultiplier
+            or tonumber(state.lastPositiveBodyHeatMultiplier)
+        if not bodyHeatMultiplier or bodyHeatMultiplier <= 0 then
+            tempData.vanillaHeatAdapterAvailable = false
+            EHR_BodyTempAdapterWarnOnce(
+                state,
+                "zeroBodyHeatMultiplier",
+                "MP returned a zero body-heat multiplier; using the compatibility fallback until vanilla initializes it"
+            )
+            return false
+        end
     end
 
     local desiredAir = tonumber(environment.airTemp) or vanillaAir
@@ -1826,7 +1912,6 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
         desiredWindAir = desiredAir - windChill
     end
 
-    local state = EHR_BodyTempGetAdapterState(player)
     local environmentIdentity = EHR_BodyTempGetEnvironmentIdentity(environment)
     state.refreshTick = (state.refreshTick or 0) + 1
 
@@ -1839,7 +1924,16 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
         or environmentChanged
         or state.refreshTick >= VANILLA_ADAPTER_NODE_REFRESH_TICKS
 
-    if math.abs(desiredAir - vanillaAir) < VANILLA_ADAPTER_AIR_EPSILON
+    if multiplayerClient then
+        -- In B42 MP, CoreHeatDelta is serialized but totalHeat is not. The
+        -- client therefore sees a stale server delta alongside totalHeat=0.
+        -- All ICL correction is server-owned; the client only mirrors core.
+        state.ambientCorrection = 0
+        state.vanillaEnvironmentalHeat = nil
+        state.desiredEnvironmentalHeat = nil
+        state.nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
+        state.refreshTick = 0
+    elseif math.abs(desiredAir - vanillaAir) < VANILLA_ADAPTER_AIR_EPSILON
             and math.abs(desiredWindAir - vanillaWindAir) < VANILLA_ADAPTER_AIR_EPSILON then
         state.ambientCorrection = 0
         state.vanillaEnvironmentalHeat = nil
@@ -1871,22 +1965,57 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
     state.vanillaAir = vanillaAir
     state.environmentIdentity = environmentIdentity
 
-    local correctedTotalHeat = totalHeat + (tonumber(state.ambientCorrection) or 0)
-    local managedCore = tonumber(tempData.bodyTemp) or vanillaCore
-    local coreDelta = correctedTotalHeat * bodyHeatMultiplier
+    local ambientCorrection = tonumber(state.ambientCorrection) or 0
+    local correctedTotalHeat = totalHeat + ambientCorrection
+    local incomingCore = tonumber(tempData.bodyTemp) or vanillaCore
+    local hasFeverSource = EHR_BodyTempHasActiveFeverSafely(player, tempData)
+    local usesDirectVanillaCore = multiplayerClient and not hasFeverSource
 
-    -- These are the same expansion rules used by vanilla updateHeatDeltas().
-    if coreDelta < 0 and managedCore > setPoint then
-        coreDelta = coreDelta * (1 + ((managedCore - setPoint) / 2))
-    elseif coreDelta > 0 and managedCore < setPoint then
-        coreDelta = coreDelta * (1 + ((setPoint - managedCore) / 4))
+    -- MP periodically replaces EHR_Temperature with the server's ModData table.
+    -- Keep the continuously integrated core in client-local state so that a
+    -- stale server snapshot cannot reset the calculation every sync. Disease
+    -- fever is authoritative and is intentionally allowed to update that state.
+    if state.managedCore == nil then
+        state.managedCore = dedicatedServer and vanillaCore or incomingCore
+    elseif hasFeverSource then
+        state.managedCore = incomingCore
     end
 
-    coreDelta = coreDelta * math.max(0, tonumber(EHR.BodyTemp.GetSpeedMultiplier()) or 1)
-    managedCore = math.max(
-        EHR.BodyTemp.Config.minBodyTemp or 28.0,
-        math.min(EHR.BodyTemp.Config.maxBodyTemp or 42.0, managedCore + coreDelta)
-    )
+    local managedCore = tonumber(state.managedCore) or incomingCore
+    local coreDelta = 0
+    local coreDeltaSource = "VanillaCore"
+    local correctionCoreDelta = 0
+    local appliedThermalStep = false
+
+    if usesDirectVanillaCore then
+        -- The authoritative server has already applied vanilla metabolism,
+        -- clothing and ICL's environmental correction. Mirror its replicated
+        -- core and leave vanilla moodles completely untouched.
+        managedCore = vanillaCore
+        coreDelta = managedCore - (tonumber(state.managedCore) or managedCore)
+        appliedThermalStep = true
+        coreDeltaSource = "ServerCore"
+    else
+        coreDelta = correctedTotalHeat * bodyHeatMultiplier
+
+        -- These are the same expansion rules used by vanilla updateHeatDeltas().
+        if coreDelta < 0 and managedCore > setPoint then
+            coreDelta = coreDelta * (1 + ((managedCore - setPoint) / 2))
+        elseif coreDelta > 0 and managedCore < setPoint then
+            coreDelta = coreDelta * (1 + ((setPoint - managedCore) / 4))
+        end
+        coreDeltaSource = "TotalHeat"
+        appliedThermalStep = true
+    end
+
+    if not usesDirectVanillaCore then
+        coreDelta = coreDelta * math.max(0, tonumber(EHR.BodyTemp.GetSpeedMultiplier()) or 1)
+        managedCore = math.max(
+            EHR.BodyTemp.Config.minBodyTemp or 28.0,
+            math.min(EHR.BodyTemp.Config.maxBodyTemp or 42.0, managedCore + coreDelta)
+        )
+    end
+    state.managedCore = managedCore
 
     tempData.bodyTemp = managedCore
     tempData.environmentBodyTemp = managedCore
@@ -1900,8 +2029,11 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
     tempData.lastVanillaTotalHeat = totalHeat
     tempData.lastAmbientHeatCorrection = tonumber(state.ambientCorrection) or 0
     tempData.lastCorrectedTotalHeat = correctedTotalHeat
-    tempData.lastVanillaCoreDelta = totalHeat * bodyHeatMultiplier
+    tempData.lastVanillaCoreDelta = vanillaCoreDelta or (totalHeat * bodyHeatMultiplier)
+    tempData.lastAmbientCoreDelta = correctionCoreDelta
     tempData.lastAppliedCoreDelta = coreDelta
+    tempData.lastCoreDeltaSource = coreDeltaSource
+    tempData.lastAppliedThermalStep = appliedThermalStep
     tempData.lastVanillaEnvironmentalHeat = state.vanillaEnvironmentalHeat
     tempData.lastDesiredEnvironmentalHeat = state.desiredEnvironmentalHeat
     tempData.lastThermalNodeCount = state.nodeCount
@@ -1911,6 +2043,77 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
     tempData.lastTemperatureSource = isIndoors
         and "IndoorClimateLiteVanillaAdapter"
         or "VanillaThermoregulator"
+    tempData.vanillaDirectCore = usesDirectVanillaCore
+
+    if multiplayerClient and state.lastLoggedDirectMode ~= usesDirectVanillaCore then
+        state.lastLoggedDirectMode = usesDirectVanillaCore
+        state.mpSampleTick = 0
+        state.mpFollowupLogged = false
+        if print then
+            print(string.format(
+                "[EHR Temperature] MP mode: %s air=%.2f vanillaAir=%.2f ambientHeat=%+.5f core=%.3f",
+                usesDirectVanillaCore and "ServerCore" or "LocalFever",
+                desiredAir,
+                vanillaAir,
+                ambientCorrection,
+                managedCore
+            ))
+        end
+    end
+
+    if dedicatedServer and not state.serverAdapterLogged then
+        state.serverAdapterLogged = true
+        if print then
+            print(string.format(
+                "[EHR Temperature] Server adapter active: air=%.2f vanillaAir=%.2f multiplier=%.8f heat=%+.5f ambientHeat=%+.5f applied=%+.7f core=%.3f",
+                desiredAir,
+                vanillaAir,
+                bodyHeatMultiplier,
+                totalHeat,
+                ambientCorrection,
+                coreDelta,
+                managedCore
+            ))
+        end
+    end
+
+    if not state.mpAdapterLogged and multiplayerClient then
+        state.mpAdapterLogged = true
+        if print then
+            print(string.format(
+                "[EHR Temperature] MP adapter active: air=%.2f vanillaAir=%.2f multiplier=%.8f heat=%+.5f vanillaDelta=%+.7f corrected=%+.5f source=%s core=%.3f",
+                desiredAir,
+                vanillaAir,
+                bodyHeatMultiplier,
+                totalHeat,
+                tonumber(vanillaCoreDelta) or 0,
+                correctedTotalHeat,
+                coreDeltaSource,
+                managedCore
+            ))
+        end
+    end
+
+    state.mpSampleTick = (state.mpSampleTick or 0) + 1
+    if multiplayerClient
+            and not state.mpFollowupLogged
+            and state.mpSampleTick >= 300 then
+        state.mpFollowupLogged = true
+        if print then
+            print(string.format(
+                "[EHR Temperature] MP adapter sample: air=%.2f vanillaAir=%.2f vanillaCore=%.3f vanillaDelta=%+.7f ambientDelta=%+.7f applied=%+.7f thermalStep=%s source=%s core=%.3f",
+                desiredAir,
+                vanillaAir,
+                vanillaCore,
+                tonumber(vanillaCoreDelta) or 0,
+                correctionCoreDelta,
+                coreDelta,
+                tostring(appliedThermalStep),
+                coreDeltaSource,
+                managedCore
+            ))
+        end
+    end
 
     state.debugTick = (state.debugTick or 0) + 1
     if EHR.DEBUG and state.debugTick >= 60 then
@@ -1964,19 +2167,7 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
         or clientReportedTemp ~= nil
     local environmentTarget = vanillaTemp
 
-    if clientReportedTemp then
-        -- On a dedicated server the local client owns the live Thermoregulator
-        -- and ICL sample. The server consumes the reported Celsius value for
-        -- authoritative disease stages instead of simulating stale client state.
-        environmentTarget = math.max(
-            cfg.minBodyTemp or 28.0,
-            math.min(cfg.maxBodyTemp or 42.0, clientReportedTemp)
-        )
-        tempData.bodyTemp = environmentTarget
-        tempData.environmentBodyTemp = environmentTarget
-        tempData.environmentManagedBy = "ClientThermoregulator"
-        tempData.vanillaHeatAdapterAvailable = false
-    elseif realisticTemperatureManaged then
+    if realisticTemperatureManaged then
         -- Realistic Temperature owns environmental body heat and core temp.
         -- EHR only mirrors that value here, then layers disease fever on top.
         local rec = nil
@@ -1999,6 +2190,19 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
             or vanillaTemp
         tempData.bodyTemp = environmentTarget
         tempData.environmentManagedBy = "VanillaHeatAdapter"
+    elseif clientReportedTemp then
+        -- Fallback for the short interval before the dedicated server receives
+        -- its first ICL environmental snapshot. Once the server adapter is
+        -- active it is authoritative and must not be overwritten by a delayed
+        -- client body-temperature report.
+        environmentTarget = math.max(
+            cfg.minBodyTemp or 28.0,
+            math.min(cfg.maxBodyTemp or 42.0, clientReportedTemp)
+        )
+        tempData.bodyTemp = environmentTarget
+        tempData.environmentBodyTemp = environmentTarget
+        tempData.environmentManagedBy = "ClientThermoregulator"
+        tempData.vanillaHeatAdapterAvailable = false
     elseif indoorClimateManaged then
         -- Compatibility fallback for a build where the Thermoregulator debug
         -- APIs are unavailable. The normal B42 path uses VanillaHeatAdapter.
@@ -2108,6 +2312,7 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
 
     if managedEnvironment
             and not bodyTemperatureWriteAttempted
+            and not (tempData.vanillaDirectCore == true and not hasFeverSource)
             and EHR.BodyTemp.WriteDiseaseBodyTemperature then
         EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
     end

@@ -377,6 +377,23 @@ local function coldExposureLevels(player)
         soakedRatio = (tonumber(exposure.soakedColdExposure) or 0) / soakedThreshold
     end
 
+    -- The wet-only common-cold route now starts above 90% character wetness.
+    -- Show Cold Exposure immediately at Low instead of waiting until 5% of the
+    -- one-hour exposure timer has accumulated. Respect the environmental risk
+    -- flag so controlled bathing and a nearby heat source do not show a false
+    -- warning.
+    local soakedWetnessThreshold = tonumber(config.commonColdSoakedThreshold) or 0.90
+    local wetness = EHR.Environmental.GetWetness and safeCall(function()
+        return EHR.Environmental.GetWetness(player)
+    end, 0) or 0
+    local immediateSoakedRisk = (tonumber(wetness) or 0) > soakedWetnessThreshold
+    if exposure.commonColdSoakedRisk == false then
+        immediateSoakedRisk = false
+    end
+    if immediateSoakedRisk then
+        soakedRatio = math.max(soakedRatio, 0.05)
+    end
+
     local hypoRatio = 0
     if hypoThreshold > 0 then
         hypoRatio = (tonumber(exposure.hypothermiaExposure) or 0) / hypoThreshold

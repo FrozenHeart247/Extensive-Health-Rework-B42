@@ -44,11 +44,11 @@ EHR.Environmental.Config = {
     -- Wetness thresholds (0-1 scale)
     wetThreshold = 0.3,         -- Above this counts as "wet"
     soakedThreshold = 0.7,      -- Above this counts as "soaked"
-    commonColdSoakedThreshold = 0.80, -- Heavy wetness can trigger cold exposure even without freezing weather
+    commonColdSoakedThreshold = 0.90, -- Wet-only common cold requires at least 90% character wetness
 
     -- Exposure time requirements (in game hours)
     coldExposureForCold = 2.0,      -- Hours of cold+wet for common cold
-    soakedExposureForCold = 2.0,    -- Hours at heavy wetness for wet-only common cold
+    soakedExposureForCold = 1.0,    -- Hours at 90%+ wetness before wet-only common cold rolls
     commonColdRiskCheckInterval = 1.0, -- Roll common cold risk at most once per game hour
     coldExposureForHypo = 0.5,      -- Hours of freezing+wet for hypothermia
     heatExposureForExhaustion = 4.0,  -- Hours from clean exposure to full heat exhaustion risk at 30C
@@ -1199,7 +1199,7 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     -- Check cold conditions
     local isWet = wetness > config.wetThreshold
     local isSoaked = wetness > config.soakedThreshold
-    local isHeavilySoaked = wetness >= (config.commonColdSoakedThreshold or 0.85)
+    local isHeavilySoaked = wetness >= (config.commonColdSoakedThreshold or 0.90)
     local isFreezing = airTemp <= config.freezingTemp
     local isHypoRisk = airTemp < config.hypothermiaTemp
 

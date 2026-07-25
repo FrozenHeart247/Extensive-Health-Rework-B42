@@ -5,13 +5,13 @@
     Adds EHR items to appropriate loot containers:
     - Blood bags and saline (medical facilities)
     - Medications by tier (OTC, Prescription, Clinical)
-    - Disease flyers (medical locations)
+    - Disease flyers (medical literature, pharmacies, and rare household mail)
     - Syringes and IV kits
 
     Spawn Locations by Tier:
     - Tier 1: OTC - Pharmacies, Bathrooms, Stores, First Aid Kits
-    - Tier 2: Prescription - Clinics, Pharmacies, Hospitals
-    - Tier 3: Clinical - Large Hospitals, Military Medical, Ambulances
+    - Tier 2: Prescription - Clinics, Pharmacies, Hospitals, rare household leftovers
+    - Tier 3: Clinical - Hospitals, military/ambulance supplies, extremely rare home care
 
     Note: Knox Cure items are handled separately in EHR_KnoxDistribution.lua
     (location-specific spawns using OnFillContainer)
@@ -87,19 +87,8 @@ end
 local distributionAliases = {
     -- B42.17 renamed or removed several B41/B42.13 procedural lists.
     -- Resolve old targets to nearby lists that still exist instead of dropping the item.
-    PharmacyShelfMeds = {"MedicalStorageDrugs", "MedicalClinicDrugs"},
-    MedicalCabinetDrugs = {"MedicalStorageDrugs", "MedicalClinicDrugs"},
     MedicalCabinet = {"MedicalClinicDrugs", "MedicalStorageDrugs"},
-    DrugStoreMagazines = {"MedicalStorageDrugs", "MedicalClinicDrugs"},
-    MedicineCabinet = {"BedroomSidetable", "BedroomDresser"},
     ArmySurplusMedical = {"ArmyStorageMedical", "MedicalStorageOutfit"},
-    FirstAidKit = {"AmbulanceMedical", "MedicalStorageDrugs"},
-    Sidetable = {"BedroomSidetable", "BedroomDresser"},
-    Dresser = {"BedroomDresser"},
-    WardrobeMan = {"BedroomDresser"},
-    WardrobeWoman = {"BedroomDresser"},
-    ShelvesGeneric = {"LivingRoomShelf", "DeskGeneric"},
-    FilingCabinet = {"DeskGeneric", "LivingRoomShelf"},
 }
 
 local function resolveDistribution(listName)
@@ -428,25 +417,17 @@ local function EHR_InitDistributions()
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.InstantIcePack", 4)
     end
 
-    -- Medical cabinets
-    if ProceduralDistributions.list["MedicalCabinetDrugs"] then
-        for item, chance in pairs(bloodBagRarity) do
-            tryAdd("MedicalCabinetDrugs", item, chance * 0.2)
-        end
-        tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.SalineBag", 2)
-        tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.EmptyBloodBag", 3)
-    end
-
-    -- Pharmacy shelves (saline only, no blood bags)
-    tryAdd("PharmacyShelfMeds", "ExtensiveHealth.SalineBag", 1)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.SterilizedBandages", 4)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.AlchoholicBandage", 2)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.InstantIcePack", 2)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Furosemide", 1)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.Antipsychotics", 2)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.DualOrexinReceptor", 1.5)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.NitricOxideBooster", 2)
-    tryAddMed("PharmacyShelfMeds", "ExtensiveHealth.TopicalPermethrin", 2)
+    -- B42 pharmacies use StoreShelfMedical for public shelves and
+    -- MedicalClinicDrugs for the counter/storage area.
+    tryAdd("StoreShelfMedical", "ExtensiveHealth.SalineBag", 0.3)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.SterilizedBandages", 4)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AlchoholicBandage", 2)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.InstantIcePack", 2)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Furosemide", 1)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Antipsychotics", 2)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.DualOrexinReceptor", 1.5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.NitricOxideBooster", 2)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.TopicalPermethrin", 2)
 
     -- Military medical
     if ProceduralDistributions.list["ArmyStorageMedical"] then
@@ -501,62 +482,68 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.MedicalWildPlants"] = 1.2,
     }
 
+    local flyerLiteratureTargets = {
+        MedicalOfficeBooks = 0.25,
+        HospitalMagazineRack = 0.20,
+        BookstoreMedical = 0.12,
+        LibraryMedical = 0.10,
+        UniversityLibraryMedical = 0.15,
+        UniversityDesk_Medical = 0.08,
+    }
+
     for item, chance in pairs(flyerRarity) do
         tryAdd("MedicalStorageDrugs", item, chance)
         tryAdd("MedicalClinicDrugs", item, chance * 0.7)
-        tryAdd("MedicalCabinetDrugs", item, chance * 0.4)
-        tryAdd("PharmacyShelfMeds", item, chance * 0.3)
-        tryAdd("DrugStoreMagazines", item, chance * 0.3)
+        tryAdd("MedicalCabinet", item, chance * 0.4)
+        tryAdd("StoreShelfMedical", item, chance * 0.15)
+        tryAdd("MagazineRackMixed", item, chance * 0.12)
+
+        for listName, multiplier in pairs(flyerLiteratureTargets) do
+            tryAdd(listName, item, chance * multiplier)
+        end
+
+        -- Vanilla postboxes have two rolls. At 4% of the medical-location
+        -- weight, the complete pool averages about one EHR leaflet per
+        -- 35-40 mailboxes, not one per house.
+        tryAddBag("postbox", item, chance * 0.04)
     end
 
     -- Medicine recipes
     tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.8)
     tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.6)
-    tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
-    tryAdd("PharmacyShelfMeds", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.8)
+    tryAdd("MedicalCabinet", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
+    tryAdd("StoreShelfMedical", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.15)
+    tryAdd("MagazineRackMixed", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.4)
     tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.35)
     tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.25)
-    tryAdd("MedicalCabinetDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.08)
-    tryAdd("PharmacyShelfMeds", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.08)
-    tryAdd("DrugStoreMagazines", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.35)
+    tryAdd("MedicalCabinet", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.08)
+    tryAdd("StoreShelfMedical", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.05)
+    tryAdd("MagazineRackMixed", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.18)
 
     -- =========================================
     -- TIER 1 - OTC (OVER THE COUNTER)
     -- Common locations
     -- =========================================
 
-    -- Pharmacy/Drug Store Shelves
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ColdFluTablets", 8)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntipyreticTablets", 7)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.CoughSyrup", 7)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiNauseaTablets", 7)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiDiarrheal", 7)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntiInflammatory", 8)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.CoughSuppressant", 6)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.AntisepticCream", 8)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.MuscleRelaxants", 5)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.ElectrolytePowder", 6)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.BronchodilatorInhaler", 3)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.InstantIcePack", 4)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.Antipsychotics", 3)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.DualOrexinReceptor", 2)
-    tryAddMed("DrugStoreMagazines", "ExtensiveHealth.TopicalPermethrin", 3)
-
-    -- Supermarket / general store medical shelves. These are intentionally lighter
-    -- than pharmacies: OTC meds and basic supplies only.
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.ColdFluTablets", 3)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntipyreticTablets", 3)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.CoughSyrup", 2)
+    -- Public pharmacy and general-store medical shelves. B42 shares this
+    -- procedural list between pharmacies and the occasional supermarket aisle,
+    -- so keep prescription-only items very rare here.
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.ColdFluTablets", 3.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntipyreticTablets", 3.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.CoughSyrup", 2.5)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.CoughSuppressant", 2)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntiNauseaTablets", 2)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntiDiarrheal", 2)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntiInflammatory", 3)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.ElectrolytePowder", 2)
-    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntisepticCream", 3)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntiNauseaTablets", 2.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntiDiarrheal", 2.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntiInflammatory", 3.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.ElectrolytePowder", 2.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.AntisepticCream", 3.5)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.MuscleRelaxants", 1.2)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.BronchodilatorInhaler", 1)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.SterilizedBandages", 2)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.AlchoholicBandage", 1)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.InstantIcePack", 1)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.Antipsychotics", 0.4)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.DualOrexinReceptor", 0.35)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.TopicalPermethrin", 1)
 
     -- GigaMart/Grocery shelves use toiletries instead of StoreShelfMedical in B42.
@@ -586,22 +573,6 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
     tryAddMed("MedicalCabinet", "ExtensiveHealth.InstantIcePack", 1)
     tryAddMed("MedicalCabinet", "ExtensiveHealth.TopicalPermethrin", 1)
-
-    -- Household medicine cabinets / bedroom fallback.
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.ColdFluTablets", 4)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntipyreticTablets", 4)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.CoughSyrup", 3)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiNauseaTablets", 3)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiDiarrheal", 3)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntisepticCream", 4)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.AntiInflammatory", 3)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.NitricOxideBooster", 1)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.SterilizedBandages", 2)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.AlchoholicBandage", 1)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.InstantIcePack", 1)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.Antipsychotics", 1)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.DualOrexinReceptor", 0.8)
-    tryAddMed("MedicineCabinet", "ExtensiveHealth.TopicalPermethrin", 1)
 
     -- Medical Storage / Clinic (OTC items)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ColdFluTablets", 7)
@@ -707,6 +678,69 @@ local function EHR_InitDistributions()
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.AlchoholicBandage", 4)
     tryAddMed("ArmySurplusMedical", "ExtensiveHealth.InstantIcePack", 3)
 
+    -- B42 has several real medical lists that the old EHR table never touched.
+    -- These cover doctor's offices, patient rooms, refrigerated supplies,
+    -- military bunkers, and annotated medical safehouses.
+    local secondaryMedicalTargets = {
+        MedicalCabinet = 0.7,
+        MedicalOfficeCounter = 0.9,
+        MedicalOfficeDesk = 0.45,
+        HospitalRoomCounter = 1.0,
+        HospitalRoomShelves = 1.2,
+    }
+    local secondaryMedicalItems = {
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 2.5,
+        ["ExtensiveHealth.AntiviralCapsules"] = 1.5,
+        ["ExtensiveHealth.AntifungalTablets"] = 1.0,
+        ["ExtensiveHealth.AntiparasiticPills"] = 0.7,
+        ["ExtensiveHealth.AntibioticOintment"] = 2.0,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 1.5,
+        ["ExtensiveHealth.OralRehydrationKit"] = 1.5,
+        ["ExtensiveHealth.Furosemide"] = 1.0,
+        ["ExtensiveHealth.Antipsychotics"] = 0.8,
+        ["ExtensiveHealth.DualOrexinReceptor"] = 0.8,
+        ["ExtensiveHealth.TetanusAntitoxin"] = 0.7,
+        ["ExtensiveHealth.TBAntibiotics"] = 0.5,
+        ["ExtensiveHealth.TopicalPermethrin"] = 1.0,
+    }
+    for listName, multiplier in pairs(secondaryMedicalTargets) do
+        for item, chance in pairs(secondaryMedicalItems) do
+            tryAddMed(listName, item, chance * multiplier)
+        end
+    end
+
+    local clinicalMedicalTargets = {
+        FridgeMedical = 1.0,
+        HospitalRoomShelves = 0.8,
+        HospitalRoomCounter = 0.35,
+        ArmyBunkerMedical = 0.45,
+        SafehouseMedical = 0.6,
+        SafehouseMedical_Mid = 0.3,
+        SafehouseMedical_Late = 0.12,
+    }
+    local clinicalMedicalItems = {
+        ["ExtensiveHealth.IVAntibiotics"] = 2.4,
+        ["ExtensiveHealth.IVMetronidazole"] = 1.5,
+        ["ExtensiveHealth.IVAmphotericin"] = 0.8,
+        ["ExtensiveHealth.IVCiprofloxacin"] = 1.5,
+        ["ExtensiveHealth.IVVancomycin"] = 1.2,
+        ["ExtensiveHealth.IVFluids"] = 3.0,
+        ["ExtensiveHealth.EmergencySepsisKit"] = 1.2,
+        ["ExtensiveHealth.CorticosteroidInjection"] = 1.5,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 1.5,
+        ["ExtensiveHealth.ChelationKit"] = 0.8,
+        ["ExtensiveHealth.AlbendazoleInjection"] = 0.8,
+        ["ExtensiveHealth.TetanusImmunoglobulin"] = 1.2,
+        ["ExtensiveHealth.IVKit"] = 3.0,
+        ["ExtensiveHealth.Syringe"] = 4.0,
+        ["ExtensiveHealth.SalineBag"] = 3.0,
+    }
+    for listName, multiplier in pairs(clinicalMedicalTargets) do
+        for item, chance in pairs(clinicalMedicalItems) do
+            tryAddMed(listName, item, chance * multiplier)
+        end
+    end
+
     -- Combat stimulants are restricted tactical supplies.
     -- Keep them out of normal medical pools so they remain rare, military/police-flavored loot.
     local combatStimulant = "ExtensiveHealth.CombatStimulants"
@@ -749,16 +783,56 @@ local function EHR_InitDistributions()
     tryAddVehicleMed("PoliceSWATSeatFront", combatStimulant, 0.8)
     tryAddVehicleMed("PoliceSWATTruckBed", combatStimulant, 1.2)
 
-    -- First Aid Kits (basic supplies)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.AntisepticCream", 7)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.AntiInflammatory", 5)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.AntipyreticTablets", 4)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.NitricOxideBooster", 1)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.Syringe", 3)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.SterilizedBandages", 7)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.AlchoholicBandage", 3)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.InstantIcePack", 3)
-    tryAddMed("FirstAidKit", "ExtensiveHealth.TopicalPermethrin", 1)
+    -- First-aid kits are inventory containers in B42, not procedural furniture.
+    -- Populate every vanilla kit variant while preserving its native roll count.
+    local firstAidKitProfiles = {
+        FirstAidKit = 0.65,
+        FirstAidKit_New = 1.0,
+        FirstAidKit_Camping = 0.65,
+        FirstAidKit_Camping_New = 0.85,
+        FirstAidKit_Military = 1.0,
+        FirstAidKit_Pro = 0.9,
+        FirstAidKit_NewPro = 1.1,
+    }
+    local firstAidKitBasic = {
+        ["ExtensiveHealth.AntisepticCream"] = 7,
+        ["ExtensiveHealth.AntiInflammatory"] = 5,
+        ["ExtensiveHealth.AntipyreticTablets"] = 4,
+        ["ExtensiveHealth.ElectrolytePowder"] = 2,
+        ["ExtensiveHealth.NitricOxideBooster"] = 1,
+        ["ExtensiveHealth.Syringe"] = 1,
+        ["ExtensiveHealth.SterilizedBandages"] = 7,
+        ["ExtensiveHealth.AlchoholicBandage"] = 3,
+        ["ExtensiveHealth.InstantIcePack"] = 3,
+        ["ExtensiveHealth.TopicalPermethrin"] = 1,
+    }
+    for bagName, multiplier in pairs(firstAidKitProfiles) do
+        for item, chance in pairs(firstAidKitBasic) do
+            tryAddBagMed(bagName, item, chance * multiplier)
+        end
+    end
+
+    -- Advanced kits can contain a small amount of prescription/emergency gear.
+    local advancedFirstAidProfiles = {
+        FirstAidKit_New = 0.25,
+        FirstAidKit_Military = 1.0,
+        FirstAidKit_Pro = 0.8,
+        FirstAidKit_NewPro = 1.0,
+    }
+    local advancedFirstAidItems = {
+        ["ExtensiveHealth.AntibioticOintment"] = 2,
+        ["ExtensiveHealth.OralRehydrationKit"] = 1.5,
+        ["ExtensiveHealth.BronchodilatorInhaler"] = 1.5,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.8,
+        ["ExtensiveHealth.IVKit"] = 0.5,
+        ["ExtensiveHealth.CorticosteroidInjection"] = 0.3,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 0.3,
+    }
+    for bagName, multiplier in pairs(advancedFirstAidProfiles) do
+        for item, chance in pairs(advancedFirstAidItems) do
+            tryAddBagMed(bagName, item, chance * multiplier)
+        end
+    end
 
     -- Ambulance vehicle containers. These are the actual van loot tables, separate from
     -- procedural "AmbulanceMedical" storage used by buildings/outfits.
@@ -877,58 +951,88 @@ local function EHR_InitDistributions()
     setBagDistributionMinRolls("Bag_Satchel_Medical", 3)
 
     -- =========================================
-    -- HOUSEHOLD SPAWNS (Very Rare)
-    -- Tier 1 & 2 only - people keep meds at home
+    -- HOUSEHOLD SPAWNS
+    -- OTC is uncommon, prescriptions are rare, clinical home-care leftovers
+    -- are extremely rare. Only real B42 household lists are used here.
     -- =========================================
 
-    -- Household container types
+    -- Per-container multipliers prevent the old B41 aliases from inserting the
+    -- same item into BedroomDresser/BedroomSidetable several times.
     local householdContainers = {
-        "Sidetable",           -- Bedside tables
-        "BedroomDresser",      -- Bedroom furniture
-        "BedroomSidetable",    -- Bedroom side tables
-        "Dresser",             -- Dressers
-        "WardrobeMan",         -- Wardrobes
-        "WardrobeWoman",
-        "ShelvesGeneric",      -- Generic shelves
-        "LivingRoomShelf",     -- Living room
-        "DeskGeneric",         -- Desks
-        "FilingCabinet",       -- Home office
+        BathroomCabinet = 1.00,
+        BathroomCounter = 0.55,
+        BathroomShelf = 0.55,
+        BedroomSidetable = 1.80,
+        BedroomDresser = 0.60,
+        LivingRoomShelf = 0.35,
+        DeskGeneric = 0.35,
     }
 
-    -- Tier 1 OTC - Very low chance (someone might keep cold meds in nightstand)
+    -- Tier 1 OTC - a modest chance in the bathroom, much lower elsewhere.
     local tier1Household = {
         ["ExtensiveHealth.ColdFluTablets"] = 0.3,
         ["ExtensiveHealth.AntipyreticTablets"] = 0.3,
         ["ExtensiveHealth.CoughSyrup"] = 0.2,
+        ["ExtensiveHealth.CoughSuppressant"] = 0.15,
         ["ExtensiveHealth.AntiNauseaTablets"] = 0.2,
         ["ExtensiveHealth.AntiDiarrheal"] = 0.2,
         ["ExtensiveHealth.AntiInflammatory"] = 0.3,
         ["ExtensiveHealth.AntisepticCream"] = 0.2,
         ["ExtensiveHealth.MuscleRelaxants"] = 0.1,
+        ["ExtensiveHealth.ElectrolytePowder"] = 0.15,
+        ["ExtensiveHealth.BronchodilatorInhaler"] = 0.08,
         ["ExtensiveHealth.NitricOxideBooster"] = 0.1,
+        ["ExtensiveHealth.SterilizedBandages"] = 0.15,
+        ["ExtensiveHealth.InstantIcePack"] = 0.12,
     }
 
-    -- Tier 2 Prescription - Even lower (leftover prescriptions)
+    -- Tier 2 Prescription - leftover personal prescriptions.
     local tier2Household = {
-        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.1,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.12,
         ["ExtensiveHealth.AntibioticOintment"] = 0.15,
         ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.05,
         ["ExtensiveHealth.AntiviralCapsules"] = 0.05,
-        ["ExtensiveHealth.ActivatedCharcoal"] = 0.1,
-        ["ExtensiveHealth.InstantIcePack"] = 0.1,
-        ["ExtensiveHealth.Antipsychotics"] = 0.05,
-        ["ExtensiveHealth.TopicalPermethrin"] = 0.08,
+        ["ExtensiveHealth.AntifungalTablets"] = 0.04,
+        ["ExtensiveHealth.AntiparasiticPills"] = 0.03,
+        ["ExtensiveHealth.ActivatedCharcoal"] = 0.08,
+        ["ExtensiveHealth.OralRehydrationKit"] = 0.08,
+        ["ExtensiveHealth.Furosemide"] = 0.04,
+        ["ExtensiveHealth.Antipsychotics"] = 0.04,
+        ["ExtensiveHealth.DualOrexinReceptor"] = 0.04,
+        ["ExtensiveHealth.TopicalPermethrin"] = 0.06,
+        ["ExtensiveHealth.TBAntibiotics"] = 0.01,
     }
 
-    for _, container in ipairs(householdContainers) do
+    -- Tier 3 Clinical - uncommon home nursing/emergency remnants. Individual
+    -- items remain rare; the complete pool is about 0.235 weight before the
+    -- container multiplier is applied.
+    local tier3Household = {
+        ["ExtensiveHealth.CorticosteroidInjection"] = 0.060,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 0.050,
+        ["ExtensiveHealth.IVFluids"] = 0.050,
+        ["ExtensiveHealth.IVAntibiotics"] = 0.015,
+        ["ExtensiveHealth.IVCiprofloxacin"] = 0.010,
+        ["ExtensiveHealth.IVMetronidazole"] = 0.008,
+        ["ExtensiveHealth.IVAmphotericin"] = 0.005,
+        ["ExtensiveHealth.IVVancomycin"] = 0.008,
+        ["ExtensiveHealth.ChelationKit"] = 0.005,
+        ["ExtensiveHealth.AlbendazoleInjection"] = 0.008,
+        ["ExtensiveHealth.TetanusImmunoglobulin"] = 0.008,
+        ["ExtensiveHealth.EmergencySepsisKit"] = 0.008,
+    }
+
+    for container, containerMultiplier in pairs(householdContainers) do
         -- Tier 1
         for item, chance in pairs(tier1Household) do
-            tryAddMed(container, item, chance)
+            tryAddMed(container, item, chance * containerMultiplier)
         end
-        -- Tier 2
+        -- Tier 2 and 3 share the existing household prescription sandbox toggle.
         if householdPrescriptionLoot then
             for item, chance in pairs(tier2Household) do
-                tryAddMed(container, item, chance)
+                tryAddMed(container, item, chance * containerMultiplier)
+            end
+            for item, chance in pairs(tier3Household) do
+                tryAddMed(container, item, chance * containerMultiplier)
             end
         end
     end

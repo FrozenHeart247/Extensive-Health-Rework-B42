@@ -476,18 +476,32 @@ function EHR.Environmental.GetBodyTemperature(player)
     return 0.5 -- Default normal
 end
 
+local function EHR_EnvironmentalNormalizeWetness(value, percentScale)
+    value = tonumber(value)
+    if not value then return 0 end
+
+    -- B42 registers CharacterStat.WETNESS on a 0..100 scale. Older APIs and
+    -- existing EHR snapshots use 0..1, so accept both representations.
+    if percentScale == true or value > 1.5 then
+        value = value / 100
+    end
+
+    return math.max(0, math.min(1, value))
+end
+
 --[[
-    Get player wetness (0-1 scale)
-    B42: CharacterStat.WETNESS through stats:get()
+    Get player wetness normalized to the EHR 0-1 scale.
+    B42 CharacterStat.WETNESS itself is 0-100.
 ]]--
 function EHR.Environmental.GetWetness(player)
+    if not player then return 0 end
     local stats = player:getStats()
     if not stats then return 0 end
 
     if CharacterStat and CharacterStat.WETNESS then
         local success, wet = pcall(function() return stats:get(CharacterStat.WETNESS) end)
         if success and wet then
-            return wet
+            return EHR_EnvironmentalNormalizeWetness(wet, true)
         end
     end
 
@@ -495,7 +509,7 @@ function EHR.Environmental.GetWetness(player)
     if player.getWetness then
         local success, wet = pcall(function() return player:getWetness() end)
         if success and wet then
-            return wet
+            return EHR_EnvironmentalNormalizeWetness(wet, true)
         end
     end
 

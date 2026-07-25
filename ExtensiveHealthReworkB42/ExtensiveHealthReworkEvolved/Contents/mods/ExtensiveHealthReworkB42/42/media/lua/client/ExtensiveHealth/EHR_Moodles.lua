@@ -402,6 +402,14 @@ local function coldExposureLevels(player)
     local coldLevel, coldDisplayRatio = exposureLevelFromRatio(math.max(coldRatio, soakedRatio))
     local freezingLevel, freezingDisplayRatio = exposureLevelFromRatio(hypoRatio)
 
+    -- Cold Exposure is the high-wetness warning requested by EHR. Do not let a
+    -- saved/decaying accumulator display it below the live 90% gate. This also
+    -- cleans up exposure accumulated by older builds that interpreted B42's
+    -- 0..100 WETNESS stat as if it were already normalized.
+    if not immediateSoakedRisk then
+        coldLevel, coldDisplayRatio = "None", 0
+    end
+
     if type(active) == "table" then
         if active.common_cold or active.pneumonia then
             coldLevel, coldDisplayRatio = "None", 0

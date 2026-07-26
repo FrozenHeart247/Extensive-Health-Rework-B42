@@ -134,6 +134,15 @@ local function addItemToRawDistribution(dist, itemName, chance)
     return false
 end
 
+local function addItemToRawDistributionFront(dist, itemName, chance)
+    if dist and dist.items then
+        table.insert(dist.items, 1, chance)
+        table.insert(dist.items, 1, itemName)
+        return true
+    end
+    return false
+end
+
 local function addItemToBagDistribution(bagName, itemName, chance)
     local dist = SuburbsDistributions and SuburbsDistributions[bagName]
     if not dist then
@@ -141,6 +150,15 @@ local function addItemToBagDistribution(bagName, itemName, chance)
         dist = all and all[bagName]
     end
     return addItemToRawDistribution(dist, itemName, chance)
+end
+
+local function addItemToBagDistributionFront(bagName, itemName, chance)
+    local dist = SuburbsDistributions and SuburbsDistributions[bagName]
+    if not dist then
+        local all = SuburbsDistributions and SuburbsDistributions["all"]
+        dist = all and all[bagName]
+    end
+    return addItemToRawDistributionFront(dist, itemName, chance)
 end
 
 local function procListContains(procList, procName)
@@ -265,6 +283,18 @@ local function EHR_InitDistributions()
     local function tryAddBagMed(bagName, itemName, chance)
         if medicationLootMultiplier <= 0 then return end
         tryAddBag(bagName, itemName, chance * medicationLootMultiplier)
+    end
+
+    local function tryAddBagPriorityMed(bagName, itemName, chance)
+        if medicationLootMultiplier <= 0 then return end
+        if addItemToBagDistributionFront(bagName, itemName, chance * medicationLootMultiplier) then
+            added = added + 1
+        else
+            failed = failed + 1
+            if not failedTables[bagName] then
+                failedTables[bagName] = true
+            end
+        end
     end
 
     local function tryAddVehicle(distributionName, itemName, chance)
@@ -595,7 +625,7 @@ local function EHR_InitDistributions()
     -- =========================================
 
     -- Medical Clinic
-    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 7)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 10)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntifungalTablets", 3)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.OralRehydrationKit", 5)
@@ -606,13 +636,13 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
-    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SterilizedBandages", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AlchoholicBandage", 4)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.TopicalPermethrin", 4)
 
     -- Medical Storage Drugs (Tier 2)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 6)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.PrescriptionAntibiotics", 10)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiviralCapsules", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.ActivatedCharcoal", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntiparasiticPills", 2)
@@ -620,18 +650,13 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Antipsychotics", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.DualOrexinReceptor", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TetanusAntitoxin", 3)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 2)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 3.5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntibioticOintment", 5)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 4)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.BroadSpectrumAntibiotics", 8)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVKit", 5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVFluids", 2)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.SalineBag", 6)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TopicalPermethrin", 3)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVAntibiotics", 0.8)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.IVCiprofloxacin", 0.5)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.CorticosteroidInjection", 0.6)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.RespiratorySupportKit", 0.6)
-    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.EmergencySepsisKit", 0.35)
 
     -- =========================================
     -- TIER 3 - CLINICAL GRADE
@@ -689,18 +714,18 @@ local function EHR_InitDistributions()
         HospitalRoomShelves = 1.2,
     }
     local secondaryMedicalItems = {
-        ["ExtensiveHealth.PrescriptionAntibiotics"] = 2.5,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 4.0,
         ["ExtensiveHealth.AntiviralCapsules"] = 1.5,
         ["ExtensiveHealth.AntifungalTablets"] = 1.0,
         ["ExtensiveHealth.AntiparasiticPills"] = 0.7,
         ["ExtensiveHealth.AntibioticOintment"] = 2.0,
-        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 1.5,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 3.0,
         ["ExtensiveHealth.OralRehydrationKit"] = 1.5,
         ["ExtensiveHealth.Furosemide"] = 1.0,
         ["ExtensiveHealth.Antipsychotics"] = 0.8,
         ["ExtensiveHealth.DualOrexinReceptor"] = 0.8,
         ["ExtensiveHealth.TetanusAntitoxin"] = 0.7,
-        ["ExtensiveHealth.TBAntibiotics"] = 0.5,
+        ["ExtensiveHealth.TBAntibiotics"] = 1.0,
         ["ExtensiveHealth.TopicalPermethrin"] = 1.0,
     }
     for listName, multiplier in pairs(secondaryMedicalTargets) do
@@ -710,10 +735,15 @@ local function EHR_InitDistributions()
     end
 
     local clinicalMedicalTargets = {
-        FridgeMedical = 1.0,
-        HospitalRoomShelves = 0.8,
-        HospitalRoomCounter = 0.35,
-        ArmyBunkerMedical = 0.45,
+        FridgeMedical = 1.8,
+        MedicalClinicDrugs = 0.8,
+        MedicalClinicTools = 0.35,
+        MedicalStorageDrugs = 1.5,
+        MedicalOfficeCounter = 0.5,
+        MedicalOfficeDesk = 0.15,
+        HospitalRoomShelves = 1.5,
+        HospitalRoomCounter = 0.8,
+        ArmyBunkerMedical = 0.8,
         SafehouseMedical = 0.6,
         SafehouseMedical_Mid = 0.3,
         SafehouseMedical_Late = 0.12,
@@ -862,6 +892,8 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.InstantIcePack"] = 2,
         ["ExtensiveHealth.AntibioticOintment"] = 2,
         ["ExtensiveHealth.ActivatedCharcoal"] = 1.2,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 3,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 2,
     }
 
     local ambulanceTruckMeds = {
@@ -880,24 +912,33 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.AntibioticOintment"] = 6,
         ["ExtensiveHealth.ActivatedCharcoal"] = 4,
         ["ExtensiveHealth.OralRehydrationKit"] = 4,
-        ["ExtensiveHealth.PrescriptionAntibiotics"] = 3,
-        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 3,
-        ["ExtensiveHealth.IVKit"] = 8,
-        ["ExtensiveHealth.Syringe"] = 10,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 8,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 8,
+        ["ExtensiveHealth.TBAntibiotics"] = 1,
+        ["ExtensiveHealth.IVKit"] = 18,
+        ["ExtensiveHealth.Syringe"] = 22,
         ["ExtensiveHealth.SalineBag"] = 10,
-        ["ExtensiveHealth.IVFluids"] = 8,
+        ["ExtensiveHealth.IVFluids"] = 12,
         ["ExtensiveHealth.Furosemide"] = 4,
-        ["ExtensiveHealth.RespiratorySupportKit"] = 3,
-        ["ExtensiveHealth.CorticosteroidInjection"] = 2.5,
-        ["ExtensiveHealth.EmergencySepsisKit"] = 1.5,
-        ["ExtensiveHealth.IVCiprofloxacin"] = 2,
-        ["ExtensiveHealth.IVAntibiotics"] = 1.2,
-        ["ExtensiveHealth.IVMetronidazole"] = 0.8,
-        ["ExtensiveHealth.IVVancomycin"] = 0.8,
-        ["ExtensiveHealth.TetanusImmunoglobulin"] = 1.5,
-        ["ExtensiveHealth.AlbendazoleInjection"] = 0.4,
-        ["ExtensiveHealth.IVAmphotericin"] = 0.3,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 5,
+        ["ExtensiveHealth.CorticosteroidInjection"] = 5,
+        ["ExtensiveHealth.EmergencySepsisKit"] = 4,
+        ["ExtensiveHealth.IVCiprofloxacin"] = 4,
+        ["ExtensiveHealth.IVAntibiotics"] = 4,
+        ["ExtensiveHealth.IVMetronidazole"] = 3,
+        ["ExtensiveHealth.IVVancomycin"] = 3,
+        ["ExtensiveHealth.TetanusImmunoglobulin"] = 3,
+        ["ExtensiveHealth.ChelationKit"] = 2,
+        ["ExtensiveHealth.AlbendazoleInjection"] = 1.5,
+        ["ExtensiveHealth.IVAmphotericin"] = 1.5,
+        ["ExtensiveHealth.EmptyBloodBag"] = 22,
     }
+
+    -- A working ambulance should normally carry transfusion supplies. Filled
+    -- bags retain the real-world blood-type ratios; empty bags are more common.
+    for item, chance in pairs(bloodBagRarity) do
+        ambulanceTruckMeds[item] = chance * 0.75
+    end
 
     for item, chance in pairs(ambulanceGloveBoxMeds) do
         tryAddVehicleMed("AmbulanceGloveBox", item, chance)
@@ -912,8 +953,9 @@ local function EHR_InitDistributions()
     setVehicleDistributionMinRolls("AmbulanceSeatFront", 2)
     setVehicleDistributionMinRolls("AmbulanceTruckBed", 6)
 
-    -- Medical backpacks/satchels. Slightly richer than a generic first-aid kit,
-    -- but still below clinics and pharmacies.
+    -- Medical backpacks/satchels. Common supplies stay in the normal pool.
+    -- Capacity is limited, so emergency/clinical gear is inserted before the
+    -- large vanilla pool below to prevent it being crowded out.
     local medicalBagMeds = {
         ["ExtensiveHealth.SterilizedBandages"] = 18,
         ["ExtensiveHealth.AlchoholicBandage"] = 9,
@@ -926,26 +968,45 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.BronchodilatorInhaler"] = 5,
         ["ExtensiveHealth.InstantIcePack"] = 7,
         ["ExtensiveHealth.AntibioticOintment"] = 6,
-        ["ExtensiveHealth.Syringe"] = 4,
         ["ExtensiveHealth.ActivatedCharcoal"] = 4,
         ["ExtensiveHealth.OralRehydrationKit"] = 3,
-        ["ExtensiveHealth.PrescriptionAntibiotics"] = 3,
-        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 1.5,
         ["ExtensiveHealth.AntiviralCapsules"] = 1.5,
         ["ExtensiveHealth.AntifungalTablets"] = 1,
         ["ExtensiveHealth.AntiparasiticPills"] = 0.8,
-        ["ExtensiveHealth.SalineBag"] = 3,
-        ["ExtensiveHealth.IVFluids"] = 1.5,
-        ["ExtensiveHealth.IVKit"] = 1.5,
-        ["ExtensiveHealth.RespiratorySupportKit"] = 0.8,
-        ["ExtensiveHealth.CorticosteroidInjection"] = 0.5,
-        ["ExtensiveHealth.EmergencySepsisKit"] = 0.35,
-        ["ExtensiveHealth.IVCiprofloxacin"] = 0.25,
     }
 
     for item, chance in pairs(medicalBagMeds) do
         tryAddBagMed("Bag_MedicalBag", item, chance)
         tryAddBagMed("Bag_Satchel_Medical", item, chance * 0.75)
+    end
+
+    local traumaBagEmergency = {
+        ["ExtensiveHealth.IVKit"] = 18,
+        ["ExtensiveHealth.Syringe"] = 24,
+        ["ExtensiveHealth.SalineBag"] = 10,
+        ["ExtensiveHealth.IVFluids"] = 8,
+        ["ExtensiveHealth.EmptyBloodBag"] = 18,
+        ["ExtensiveHealth.RespiratorySupportKit"] = 3,
+        ["ExtensiveHealth.CorticosteroidInjection"] = 3,
+        ["ExtensiveHealth.EmergencySepsisKit"] = 2.5,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 8,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 6,
+        ["ExtensiveHealth.TBAntibiotics"] = 1,
+        ["ExtensiveHealth.IVCiprofloxacin"] = 2,
+        ["ExtensiveHealth.IVAntibiotics"] = 2,
+        ["ExtensiveHealth.IVMetronidazole"] = 1.5,
+        ["ExtensiveHealth.IVVancomycin"] = 1.5,
+        ["ExtensiveHealth.TetanusImmunoglobulin"] = 1.5,
+        ["ExtensiveHealth.ChelationKit"] = 0.7,
+        ["ExtensiveHealth.AlbendazoleInjection"] = 0.7,
+        ["ExtensiveHealth.IVAmphotericin"] = 0.5,
+    }
+    for item, chance in pairs(bloodBagRarity) do
+        traumaBagEmergency[item] = chance * 0.35
+    end
+    for item, chance in pairs(traumaBagEmergency) do
+        tryAddBagPriorityMed("Bag_MedicalBag", item, chance)
+        tryAddBagPriorityMed("Bag_Satchel_Medical", item, chance * 0.75)
     end
     setBagDistributionMinRolls("Bag_MedicalBag", 4)
     setBagDistributionMinRolls("Bag_Satchel_Medical", 3)
@@ -956,16 +1017,56 @@ local function EHR_InitDistributions()
     -- are extremely rare. Only real B42 household lists are used here.
     -- =========================================
 
-    -- Per-container multipliers prevent the old B41 aliases from inserting the
-    -- same item into BedroomDresser/BedroomSidetable several times.
+    -- Reproduce the effective density of the previous loot table without
+    -- depending on stacked B41 aliases. The former MedicineCabinet alias sent
+    -- the full bathroom pool into BedroomSidetable; it now goes to real B42
+    -- bathroom containers while the rest of the house keeps the old aggregate
+    -- density. "common" controls OTC/prescription leftovers, "medicine" is a
+    -- small fallback for houses without a bathroom cabinet, and "clinical"
+    -- preserves the rarer clinical balance separately.
     local householdContainers = {
-        BathroomCabinet = 1.00,
-        BathroomCounter = 0.55,
-        BathroomShelf = 0.55,
-        BedroomSidetable = 1.80,
-        BedroomDresser = 0.60,
-        LivingRoomShelf = 0.35,
-        DeskGeneric = 0.35,
+        BedroomSidetable = { common = 1.50, medicine = 0.20, clinical = 1.80 },
+        BedroomSidetableClassy = { common = 1.50, medicine = 0.20, clinical = 1.80 },
+        BedroomSidetableRedneck = { common = 1.50, medicine = 0.20, clinical = 1.80 },
+        BedroomDresser = { common = 3.00, medicine = 0.10, clinical = 0.60 },
+        BedroomDresserClassy = { common = 3.00, medicine = 0.10, clinical = 0.60 },
+        BedroomDresserRedneck = { common = 3.00, medicine = 0.10, clinical = 0.60 },
+        LivingRoomShelf = { common = 1.50, clinical = 0.35 },
+        LivingRoomShelfClassy = { common = 1.50, clinical = 0.35 },
+        LivingRoomShelfRedneck = { common = 1.50, clinical = 0.35 },
+        DeskGeneric = { common = 1.50, clinical = 0.35 },
+    }
+
+    -- These are the old MedicineCabinet weights, now attached to the correct
+    -- B42 containers. Part of the pool is reserved for common bedroom furniture
+    -- so houses without a bathroom cabinet still have a useful medical cache.
+    local bathroomContainers = {
+        BathroomCabinet = { medicine = 0.65, clinical = 1.00 },
+        BathroomCounter = { medicine = 0.20, clinical = 0.55 },
+        BathroomShelf = { medicine = 0.20, clinical = 0.55 },
+    }
+
+    local bathroomMedicine = {
+        ["ExtensiveHealth.ColdFluTablets"] = 4.0,
+        ["ExtensiveHealth.AntipyreticTablets"] = 4.0,
+        ["ExtensiveHealth.CoughSyrup"] = 3.0,
+        ["ExtensiveHealth.AntiNauseaTablets"] = 3.0,
+        ["ExtensiveHealth.AntiDiarrheal"] = 3.0,
+        ["ExtensiveHealth.AntisepticCream"] = 4.0,
+        ["ExtensiveHealth.AntiInflammatory"] = 3.0,
+        ["ExtensiveHealth.NitricOxideBooster"] = 1.0,
+        ["ExtensiveHealth.SterilizedBandages"] = 2.0,
+        ["ExtensiveHealth.AlchoholicBandage"] = 1.0,
+        ["ExtensiveHealth.InstantIcePack"] = 1.0,
+        ["ExtensiveHealth.TopicalPermethrin"] = 1.0,
+    }
+
+    local bathroomPrescription = {
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.60,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.30,
+        ["ExtensiveHealth.TBAntibiotics"] = 0.05,
+        ["ExtensiveHealth.Antipsychotics"] = 1.0,
+        ["ExtensiveHealth.DualOrexinReceptor"] = 0.8,
     }
 
     -- Tier 1 OTC - a modest chance in the bathroom, much lower elsewhere.
@@ -988,9 +1089,9 @@ local function EHR_InitDistributions()
 
     -- Tier 2 Prescription - leftover personal prescriptions.
     local tier2Household = {
-        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.12,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.30,
         ["ExtensiveHealth.AntibioticOintment"] = 0.15,
-        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.05,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.15,
         ["ExtensiveHealth.AntiviralCapsules"] = 0.05,
         ["ExtensiveHealth.AntifungalTablets"] = 0.04,
         ["ExtensiveHealth.AntiparasiticPills"] = 0.03,
@@ -1000,7 +1101,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.Antipsychotics"] = 0.04,
         ["ExtensiveHealth.DualOrexinReceptor"] = 0.04,
         ["ExtensiveHealth.TopicalPermethrin"] = 0.06,
-        ["ExtensiveHealth.TBAntibiotics"] = 0.01,
+        ["ExtensiveHealth.TBAntibiotics"] = 0.03,
     }
 
     -- Tier 3 Clinical - uncommon home nursing/emergency remnants. Individual
@@ -1021,18 +1122,47 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.EmergencySepsisKit"] = 0.008,
     }
 
-    for container, containerMultiplier in pairs(householdContainers) do
-        -- Tier 1
-        for item, chance in pairs(tier1Household) do
-            tryAddMed(container, item, chance * containerMultiplier)
+    local function accumulateWeights(target, source, multiplier)
+        if not multiplier or multiplier <= 0 then return end
+        for item, chance in pairs(source) do
+            target[item] = (target[item] or 0) + chance * multiplier
         end
+    end
+
+    for container, multipliers in pairs(householdContainers) do
+        -- Merge overlapping pools before insertion so the fallback does not
+        -- recreate the duplicate entries that existed in the old alias table.
+        local commonWeights = {}
+        accumulateWeights(commonWeights, tier1Household, multipliers.common)
+        accumulateWeights(commonWeights, bathroomMedicine, multipliers.medicine)
+        for item, chance in pairs(commonWeights) do
+            tryAddMed(container, item, chance)
+        end
+
         -- Tier 2 and 3 share the existing household prescription sandbox toggle.
         if householdPrescriptionLoot then
-            for item, chance in pairs(tier2Household) do
-                tryAddMed(container, item, chance * containerMultiplier)
+            local prescriptionWeights = {}
+            accumulateWeights(prescriptionWeights, tier2Household, multipliers.common)
+            accumulateWeights(prescriptionWeights, bathroomPrescription, multipliers.medicine)
+            for item, chance in pairs(prescriptionWeights) do
+                tryAddMed(container, item, chance)
             end
             for item, chance in pairs(tier3Household) do
-                tryAddMed(container, item, chance * containerMultiplier)
+                tryAddMed(container, item, chance * multipliers.clinical)
+            end
+        end
+    end
+
+    for container, multipliers in pairs(bathroomContainers) do
+        for item, chance in pairs(bathroomMedicine) do
+            tryAddMed(container, item, chance * multipliers.medicine)
+        end
+        if householdPrescriptionLoot then
+            for item, chance in pairs(bathroomPrescription) do
+                tryAddMed(container, item, chance * multipliers.medicine)
+            end
+            for item, chance in pairs(tier3Household) do
+                tryAddMed(container, item, chance * multipliers.clinical)
             end
         end
     end
@@ -1048,7 +1178,9 @@ local function EHR_InitDistributions()
         table.insert(failedTableList, tableName)
     end
 
-    print("[EHR] Distributions loaded - Added: " .. added .. ", Failed: " .. failed)
+    print("[EHR] Distributions loaded - Added: " .. added .. ", Failed: " .. failed
+        .. ", MedicationLootMultiplier: " .. tostring(medicationLootMultiplier)
+        .. ", HouseholdPrescriptionLoot: " .. tostring(householdPrescriptionLoot))
     if failedTableCount > 0 then
         print("[EHR] Missing distribution tables (" .. failedTableCount .. "): " .. table.concat(failedTableList, ", "))
         print("[EHR] Note: Some B42 distribution tables may have different names from B41")

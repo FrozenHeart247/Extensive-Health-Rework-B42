@@ -145,15 +145,17 @@ local function appendMediaStrings(values, media)
         return
     end
 
-    if type(media) == "table" then
-        appendMaybeTranslated(values, media.id)
-        appendMaybeTranslated(values, media.title)
-        appendMaybeTranslated(values, media.info)
-        appendMaybeTranslated(values, media.text)
-        appendMaybeTranslated(values, media.name)
-        appendMaybeTranslated(values, media.guid)
-    else
-        appendMaybeTranslated(values, media)
+    -- B42's ItemCodeOnCreate stores print-media data in modData.printMedia.
+    -- Depending on how the item was generated, Kahlua may expose that value as
+    -- either a Lua table or a Java-backed object, so type(media) is unreliable.
+    appendMaybeTranslated(values, media)
+    for _, fieldName in ipairs({ "id", "title", "info", "text", "name", "guid" }) do
+        local ok, fieldValue = pcall(function()
+            return media[fieldName]
+        end)
+        if ok then
+            appendMaybeTranslated(values, fieldValue)
+        end
     end
 end
 
@@ -162,12 +164,12 @@ local function isKentuckyHeraldJuly16(item)
 
     local fullType = item.getFullType and item:getFullType() or ""
     local itemType = item.getType and item:getType() or ""
-    if fullType ~= "Base.Newspaper_Herald_New" and itemType ~= "Newspaper_Herald_New" then
-        return false
-    end
 
     local modData = item.getModData and item:getModData() or nil
     local values = {}
+    -- Newspaper_Recent and other regional newspaper items can receive a
+    -- Kentucky Herald issue through vanilla ItemCodeOnCreate. The embedded
+    -- print-media identity is authoritative; the base item type is not.
     appendMaybeTranslated(values, fullType)
     appendMaybeTranslated(values, itemType)
     if item.getName then
@@ -213,6 +215,8 @@ local function isKentuckyHeraldJuly16(item)
 
     return false
 end
+
+EHR.DiseaseFlyers.IsKentuckyHeraldJuly16 = isKentuckyHeraldJuly16
 
 local function unlockKnoxFromHerald(character, item, source)
     if not character or not item or not isKentuckyHeraldJuly16(item) then
@@ -441,7 +445,10 @@ local function hookInventoryReadItem()
 
     local originalReadItem = currentReadItem
     local wrappedReadItem = function(item, player)
-        if isFlyerItem(item) or isKentuckyHeraldJuly16(item) then
+        -- Real B42 newspapers must stay on the vanilla ISReadABook path so
+        -- perform() can display their embedded print-media page. The Herald
+        -- hook above unlocks Knox knowledge after that vanilla action finishes.
+        if isFlyerItem(item) then
             local playerObj = getSpecificPlayer(player)
             if not playerObj or item:getContainer() == nil then
                 return
@@ -456,12 +463,7 @@ local function hookInventoryReadItem()
                 local okPages, value = pcall(function() return item:getNumberOfPages() end)
                 if okPages and tonumber(value) then pages = tonumber(value) end
             end
-            if isKentuckyHeraldJuly16(item) then
-                unlockKnoxFromHerald(playerObj, item, "ISInventoryPaneContextMenu.readItem")
-                ISTimedActionQueue.add(ISEHRReadHeraldAction:new(playerObj, item, math.max(100, pages * 15)))
-            else
-                ISTimedActionQueue.add(ISEHRReadFlyerAction:new(playerObj, item, math.max(80, pages * 15)))
-            end
+            ISTimedActionQueue.add(ISEHRReadFlyerAction:new(playerObj, item, math.max(80, pages * 15)))
 
             if ISCraftingUI and ISCraftingUI.ReturnItemToOriginalContainer then
                 pcall(function() ISCraftingUI.ReturnItemToOriginalContainer(playerObj, item) end)

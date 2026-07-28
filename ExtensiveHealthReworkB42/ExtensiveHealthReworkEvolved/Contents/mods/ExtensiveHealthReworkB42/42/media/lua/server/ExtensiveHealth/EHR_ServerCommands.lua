@@ -18,6 +18,7 @@ pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
 pcall(function() require "ExtensiveHealth/EHR_Sepsis" end)
 pcall(function() require "ExtensiveHealth/EHR_EnvironmentalDiseases" end)
+pcall(function() require "ExtensiveHealth/EHR_BodyTemperature" end)
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
@@ -1345,6 +1346,212 @@ function EHR.ServerCommands.EnvironmentalSnapshot(player, args)
     if not ok then
         log("[EHR Server] EnvironmentalSnapshot failed: " .. tostring(result))
     end
+end
+
+local HEAT_STROKE_BATH_DURATION_HOURS = 3.0
+local HEAT_STROKE_BATH_COMPLETION_TOLERANCE_HOURS = 0.1
+local HEAT_STROKE_BATH_HEARTBEAT_GRACE_HOURS = 0.25
+local HEAT_STROKE_BATH_MAIN_SPRITES = {
+    fixtures_bathroom_01_25 = true,
+    fixtures_bathroom_01_26 = true,
+    fixtures_bathroom_01_52 = true,
+    fixtures_bathroom_01_55 = true,
+}
+
+local function heatStrokeBathCurrentHour()
+    local gameTime = getGameTime and getGameTime() or nil
+    return gameTime and gameTime:getWorldAgeHours() or 0
+end
+
+local function clearHeatStrokeBathServerState(player)
+    local modData = player and player.getModData and player:getModData() or nil
+    if not modData then return end
+
+    modData.EHR_HeatStrokeColdBathActive = nil
+    modData.EHR_HeatStrokeColdBathUntil = nil
+    modData.EHR_HeatStrokeColdBathStartHour = nil
+    modData.EHR_HeatStrokeColdBathX = nil
+    modData.EHR_HeatStrokeColdBathY = nil
+    modData.EHR_HeatStrokeColdBathZ = nil
+end
+
+local function getHeatStrokeDisease(player)
+    if not (player and EHR.Disease and EHR.Disease.GetDiseaseData) then return nil end
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
+    return diseaseData and diseaseData.active and diseaseData.active.heat_stroke or nil
+end
+
+local function heatStrokeBathSpriteName(object)
+    if not object then return nil end
+    local sprite = nil
+    pcall(function() sprite = object:getSprite() end)
+    if not sprite then return nil end
+
+    local name = nil
+    pcall(function() name = sprite:getName() end)
+    return name and tostring(name) or nil
+end
+
+local function squareHasHeatStrokeBath(square)
+    if not square then return false end
+
+    local objects = nil
+    pcall(function() objects = square:getObjects() end)
+    if not objects then return false end
+
+    for i = 0, objects:size() - 1 do
+        if HEAT_STROKE_BATH_MAIN_SPRITES[heatStrokeBathSpriteName(objects:get(i))] then
+            return true
+        end
+    end
+    return false
+end
+
+local function validateHeatStrokeBath(player, args)
+    if not player or type(args) ~= "table" then return false end
+
+    local x = tonumber(args.x)
+    local y = tonumber(args.y)
+    local z = tonumber(args.z)
+    if not x or not y or not z then return false end
+    if x ~= math.floor(x) or y ~= math.floor(y) or z ~= math.floor(z) then return false end
+
+    local playerX, playerY, playerZ = nil, nil, nil
+    local gotPlayerPosition = pcall(function()
+        playerX = player:getX()
+        playerY = player:getY()
+        playerZ = player:getZ()
+    end)
+    if not gotPlayerPosition or not playerX or not playerY or not playerZ then return false end
+    if math.abs(playerZ - z) > 0.01 then return false end
+
+    local dx = playerX - x
+    local dy = playerY - y
+    if (dx * dx) + (dy * dy) > 9 then return false end
+
+    local cell = getCell and getCell() or nil
+    if not cell then return false end
+
+    local square = nil
+    local gotSquare = pcall(function() square = cell:getGridSquare(x, y, z) end)
+    return gotSquare and squareHasHeatStrokeBath(square)
+end
+
+local function sameHeatStrokeBath(modData, args)
+    return tonumber(modData.EHR_HeatStrokeColdBathX) == tonumber(args.x)
+        and tonumber(modData.EHR_HeatStrokeColdBathY) == tonumber(args.y)
+        and tonumber(modData.EHR_HeatStrokeColdBathZ) == tonumber(args.z)
+end
+
+local function resetHeatStrokeAfterBath(player, now)
+    if EHR.Environmental then
+        if EHR.Environmental.InitializePlayer then
+            pcall(EHR.Environmental.InitializePlayer, player)
+        end
+
+        local exposure = EHR.Environmental.GetExposureData and EHR.Environmental.GetExposureData(player) or nil
+        if exposure then
+            exposure.heatExposure = 0
+            exposure.heatStrokeExposure = 0
+            exposure.lastHeatStrokeRiskCheck = now
+        end
+
+        if EHR.Environmental.SetHeatStrokeSleepRegenSuppressed then
+            pcall(EHR.Environmental.SetHeatStrokeSleepRegenSuppressed, player, false)
+        end
+        if EHR.Environmental.ClearHeatMovementPenalty then
+            pcall(EHR.Environmental.ClearHeatMovementPenalty, player)
+        end
+    end
+
+    if EHR.BodyTemp then
+        if EHR.BodyTemp.WriteDiseaseBodyTemperature then
+            pcall(EHR.BodyTemp.WriteDiseaseBodyTemperature, player, 37.0)
+        end
+
+        local tempData = EHR.BodyTemp.GetTemperatureData and EHR.BodyTemp.GetTemperatureData(player) or nil
+        if tempData then
+            tempData.bodyTemp = 37.0
+            tempData.diseaseTargetTemp = nil
+            tempData.diseaseTargetTempUntil = nil
+        end
+
+        if EHR.BodyTemp.ResetDiseaseFeverIfStale then
+            pcall(EHR.BodyTemp.ResetDiseaseFeverIfStale, player, true)
+        end
+    end
+end
+
+function EHR.ServerCommands.HeatStrokeBath(player, args)
+    if not player or type(args) ~= "table" then return end
+
+    local action = tostring(args.action or "")
+    local modData = player:getModData()
+    local now = heatStrokeBathCurrentHour()
+
+    if action == "stop" then
+        clearHeatStrokeBathServerState(player)
+        return
+    end
+
+    if action == "start" then
+        if not getHeatStrokeDisease(player) or not validateHeatStrokeBath(player, args) then
+            clearHeatStrokeBathServerState(player)
+            syncModDataToClient(player)
+            log("[EHR Server] HeatStrokeBath start rejected")
+            return
+        end
+
+        modData.EHR_HeatStrokeColdBathActive = true
+        modData.EHR_HeatStrokeColdBathUntil = now + HEAT_STROKE_BATH_HEARTBEAT_GRACE_HOURS
+        modData.EHR_HeatStrokeColdBathStartHour = now
+        modData.EHR_HeatStrokeColdBathX = tonumber(args.x)
+        modData.EHR_HeatStrokeColdBathY = tonumber(args.y)
+        modData.EHR_HeatStrokeColdBathZ = tonumber(args.z)
+        log("[EHR Server] HeatStrokeBath started for " .. tostring(player:getUsername()))
+        return
+    end
+
+    local activeUntil = tonumber(modData.EHR_HeatStrokeColdBathUntil) or 0
+    local bathIsActive = modData.EHR_HeatStrokeColdBathActive == true
+        and activeUntil > now
+        and sameHeatStrokeBath(modData, args)
+        and getHeatStrokeDisease(player) ~= nil
+        and validateHeatStrokeBath(player, args)
+
+    if action == "heartbeat" then
+        if bathIsActive then
+            modData.EHR_HeatStrokeColdBathUntil = now + HEAT_STROKE_BATH_HEARTBEAT_GRACE_HOURS
+        else
+            clearHeatStrokeBathServerState(player)
+        end
+        return
+    end
+
+    if action ~= "complete" then return end
+
+    local startedAt = tonumber(modData.EHR_HeatStrokeColdBathStartHour) or now
+    local minimumDuration = HEAT_STROKE_BATH_DURATION_HOURS - HEAT_STROKE_BATH_COMPLETION_TOLERANCE_HOURS
+    if not bathIsActive or (now - startedAt) < minimumDuration then
+        clearHeatStrokeBathServerState(player)
+        syncModDataToClient(player)
+        log("[EHR Server] HeatStrokeBath completion rejected")
+        return
+    end
+
+    local cured = false
+    if EHR.Disease and EHR.Disease.Cure then
+        local ok, result = pcall(EHR.Disease.Cure, player, "heat_stroke")
+        cured = ok and result == true
+    end
+
+    if cured then
+        resetHeatStrokeAfterBath(player, now)
+    end
+    clearHeatStrokeBathServerState(player)
+    syncModDataToClient(player)
+    log("[EHR Server] HeatStrokeBath completed for " .. tostring(player:getUsername())
+        .. ", cured=" .. tostring(cured))
 end
 
 function EHR.ServerCommands.FoodDiseaseRisk(player, args)
@@ -2968,7 +3175,10 @@ end
 
 local function OnClientCommand(module, command, player, args)
     local isEHRCommand = module == "EHR" or module == "EHR_Flyers"
-    local quietCommand = module == "EHR" and command == "EnvironmentalSnapshot"
+    local quietCommand = module == "EHR" and (
+        command == "EnvironmentalSnapshot"
+        or (command == "HeatStrokeBath" and args and args.action == "heartbeat")
+    )
     if isEHRCommand and not quietCommand then
         log("[EHR Server DEBUG] ========== OnClientCommand ==========")
         log("[EHR Server DEBUG] module = '" .. tostring(module) .. "'")
@@ -2991,6 +3201,9 @@ local function OnClientCommand(module, command, player, args)
             return
         elseif command == "EnvironmentalSnapshot" then
             EHR.ServerCommands.EnvironmentalSnapshot(player, args)
+            return
+        elseif command == "HeatStrokeBath" then
+            EHR.ServerCommands.HeatStrokeBath(player, args)
             return
         elseif command == "FoodDiseaseRisk" then
             EHR.ServerCommands.FoodDiseaseRisk(player, args)

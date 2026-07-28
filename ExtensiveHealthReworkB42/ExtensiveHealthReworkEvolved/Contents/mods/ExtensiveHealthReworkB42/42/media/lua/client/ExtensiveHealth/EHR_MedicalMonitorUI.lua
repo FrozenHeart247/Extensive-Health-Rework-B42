@@ -9,7 +9,6 @@
     - Side effects
     - Healing status
 
-    Author: ExtensiveHealthRework Team
     Version: 1.0
 ]]
 

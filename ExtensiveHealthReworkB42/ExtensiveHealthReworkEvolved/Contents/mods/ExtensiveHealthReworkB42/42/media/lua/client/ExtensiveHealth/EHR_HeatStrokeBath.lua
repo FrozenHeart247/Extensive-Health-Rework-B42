@@ -21,6 +21,7 @@ EHR.HeatStrokeBath = EHR.HeatStrokeBath or {}
 
 EHR.HeatStrokeBath.DurationHours = 3.0
 EHR.HeatStrokeBath.WaterRequired = 8
+EHR.HeatStrokeBath.ServerHeartbeatHours = 5 / 60
 
 local BATH_PARTS = {
     fixtures_bathroom_01_25 = { main = "fixtures_bathroom_01_25", sub = "fixtures_bathroom_01_24", dir = IsoDirections.S, facing = "S", isMain = true },
@@ -202,6 +203,26 @@ local function EHR_HeatStrokeBathSetColdBathFlag(player, active, untilHour)
     modData.EHR_HeatStrokeColdBathUntil = nil
 end
 
+local function EHR_HeatStrokeBathSendServerState(player, action, parts)
+    if not player or not action then return end
+    if not (isClient and isClient()) or not sendClientCommand then return end
+
+    local main = parts and parts.main or nil
+    local square = main and main.getSquare and main:getSquare() or nil
+    if not square then return end
+
+    local args = {
+        action = action,
+        x = square:getX(),
+        y = square:getY(),
+        z = square:getZ(),
+        sprite = EHR_HeatStrokeBathGetSpriteName(main),
+    }
+    pcall(function()
+        sendClientCommand(player, "EHR", "HeatStrokeBath", args)
+    end)
+end
+
 local function EHR_HeatStrokeBathMarkLifestyleColdBath(player)
     if not EHR_HeatStrokeBathCanUseLifestyleAnimation(player) then return end
 
@@ -256,9 +277,11 @@ function EHRHeatStrokeColdBathAction:start()
     local now = EHR_HeatStrokeBathCurrentHour()
     self.startHour = now
     self.endHour = now + EHR.HeatStrokeBath.DurationHours
+    self.nextServerHeartbeatHour = now + EHR.HeatStrokeBath.ServerHeartbeatHours
     self.useLifestyleAnim = EHR_HeatStrokeBathCanUseLifestyleAnimation(self.character)
 
     EHR_HeatStrokeBathSetColdBathFlag(self.character, true, self.endHour)
+    EHR_HeatStrokeBathSendServerState(self.character, "start", self.parts)
 
     if self.character.setMetabolicTarget and Metabolics then
         self.character:setMetabolicTarget(Metabolics.LightWork)
@@ -292,6 +315,10 @@ function EHRHeatStrokeColdBathAction:update()
     local progress = math.min(1, elapsed / EHR.HeatStrokeBath.DurationHours)
 
     EHR_HeatStrokeBathSetColdBathFlag(self.character, true, (self.endHour or now) + 0.1)
+    if now >= (self.nextServerHeartbeatHour or 0) then
+        EHR_HeatStrokeBathSendServerState(self.character, "heartbeat", self.parts)
+        self.nextServerHeartbeatHour = now + EHR.HeatStrokeBath.ServerHeartbeatHours
+    end
 
     if self.useLifestyleAnim then
         if progress > 0.08 and not self.baseAnimStarted then
@@ -312,6 +339,7 @@ function EHRHeatStrokeColdBathAction:update()
 end
 
 function EHRHeatStrokeColdBathAction:stop()
+    EHR_HeatStrokeBathSendServerState(self.character, "stop", self.parts)
     EHR_HeatStrokeBathSetColdBathFlag(self.character, false)
 
     if self.useLifestyleAnim and self.startX and self.startY then
@@ -322,6 +350,9 @@ function EHRHeatStrokeColdBathAction:stop()
 end
 
 function EHRHeatStrokeColdBathAction:perform()
+    -- The MP server must cure first. EHR.Disease.Cure requests a sync on clients,
+    -- so queue completion before the local cure to keep command ordering correct.
+    EHR_HeatStrokeBathSendServerState(self.character, "complete", self.parts)
     EHR_HeatStrokeBathSetColdBathFlag(self.character, false)
     EHR_HeatStrokeBathMarkLifestyleColdBath(self.character)
 
@@ -352,6 +383,7 @@ function EHRHeatStrokeColdBathAction:new(character, parts)
     o.maxTime = -1
     o.startHour = 0
     o.endHour = 0
+    o.nextServerHeartbeatHour = 0
     o.useLifestyleAnim = false
     o.baseAnimStarted = false
     return o

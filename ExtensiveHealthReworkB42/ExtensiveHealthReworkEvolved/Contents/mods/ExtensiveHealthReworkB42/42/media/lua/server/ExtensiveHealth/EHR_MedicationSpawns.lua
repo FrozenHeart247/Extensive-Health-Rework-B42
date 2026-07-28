@@ -271,7 +271,12 @@ end
     @param container (ItemContainer)
 ]]--
 function EHR.MedicationSpawns.OnFillContainer(roomType, containerType, container)
-    if not container then return end
+    -- Some B42.19 refill paths fire this event with an
+    -- ItemPickerJava$ItemPickerContainer distribution descriptor instead of an
+    -- inventory ItemContainer. Do not try to index methods on that descriptor.
+    if not container or not instanceof or not instanceof(container, "ItemContainer") then
+        return
+    end
 
     local locationType = EHR.MedicationSpawns.GetLocationType(roomType, containerType)
 

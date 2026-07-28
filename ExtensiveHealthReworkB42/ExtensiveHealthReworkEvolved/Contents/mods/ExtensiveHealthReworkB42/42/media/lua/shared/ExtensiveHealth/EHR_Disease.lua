@@ -407,37 +407,6 @@ EHR.Disease.Diseases = {
         },
     },
 
-    ["heat_exhaustion"] = {
-        name = "Heat Exhaustion",
-        category = "environmental",
-        incubationMin = 1,
-        incubationMax = 6,
-        durationMin = 8,
-        durationMax = 24,
-        baseSeverity = 0.6,
-        canKill = true,  -- Heat stroke
-        stageCount = 4,
-        canProgress = "heat_stroke",
-        treatments = {
-            tier0 = {"Base.PillsBeta"},
-            tier1 = {"ExtensiveHealth.ElectrolytePowder"},
-            tier2 = {"ExtensiveHealth.OralRehydrationKit"},  -- Cures in 48h
-            tier3 = {},
-        },
-        stageEntryDialogue = {
-            [1] = "I'm sweating a lot...",
-            [2] = "Getting lightheaded from the heat...",
-            [3] = "*panting* I'm overheating... need water and shade!",
-            [4] = "Cooling down now...",
-        },
-        dialogue = {
-            [1] = {"So hot...", "I need water..."},
-            [2] = {"*heavy sweating*", "Dizzy...", "Need to rest..."},
-            [3] = {"*stops sweating*", "This is bad... heat stroke coming...", "I might pass out..."},
-            [4] = {"Feeling cooler...", "That was dangerous..."},
-        },
-    },
-
     -- =========================================
     -- CORPSE/INFECTION DISEASES
     -- =========================================
@@ -1074,7 +1043,8 @@ function EHR.Disease.Contract(player, diseaseId)
 
     -- Apply speed multiplier (faster = shorter times)
     if speedMult > 0 then
-        incubation = math.max(1, incubation / speedMult)
+        local minimumIncubation = def.immediateOnset == true and 0 or 1
+        incubation = math.max(minimumIncubation, incubation / speedMult)
         duration = math.max(1, duration / speedMult)
     end
 
@@ -1088,6 +1058,7 @@ function EHR.Disease.Contract(player, diseaseId)
         incubationEnd = currentHour + incubation,
         endTime = currentHour + incubation + duration,
         stage = 1,  -- Start in incubation
+        stageCount = tonumber(def.stageCount) or 4,
         severity = def.baseSeverity + (ZombRand(30) / 100 - 0.15),  -- +/- 15% variance
         diagnosed = false,
         peakTime = currentHour + incubation + (duration * 0.4),  -- Peak at 40% through

@@ -2668,7 +2668,7 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
     end
 
     if EHR.Environmental and EHR.Environmental.GetHeatExposureDisplay and self.player
-            and not activeDiseases["heat_exhaustion"] and not activeDiseases["heat_stroke"] then
+            and not activeDiseases["heat_stroke"] then
         local ok, exposureLevel = pcall(function()
             return EHR.Environmental.GetHeatExposureDisplay(self.player)
         end)
@@ -2690,8 +2690,8 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
                 if colorOk then exposureColor = colorResult end
             end
 
-            activeDiseases["heat_exhaustion"] = {
-                displayName = safeText("UI_EHR_Disease_heat_exhaustion", "Heat Exhaustion"),
+            activeDiseases["heat_exhaustion_exposure"] = {
+                displayName = safeText("UI_EHR_Moodle_HeatExposure_Title", "Heat Exhaustion Exposure"),
                 exposureLevel = exposureLevel,
                 exposureColor = exposureColor,
                 severity = stage,

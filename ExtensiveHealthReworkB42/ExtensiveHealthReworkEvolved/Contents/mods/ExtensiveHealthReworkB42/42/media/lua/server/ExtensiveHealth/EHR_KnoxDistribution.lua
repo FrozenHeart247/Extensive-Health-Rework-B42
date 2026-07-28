@@ -129,20 +129,27 @@ function EHR.KnoxDistribution.OnFillContainer(roomName, containerType, container
     -- Check if Knox items are enabled
     if not EHR.KnoxDistribution.IsEnabled() then return end
 
-    -- Safety checks
-    if not container then return end
+    -- B42.19 can invoke OnFillContainer with the distribution descriptor
+    -- ItemPickerJava$ItemPickerContainer in some UI-driven refill paths. That
+    -- object is not an inventory ItemContainer and exposes neither getParent()
+    -- nor AddItem(). Never index it as though it were one.
+    if not container or not instanceof or not instanceof(container, "ItemContainer") then
+        return
+    end
 
-    -- Get container position
-    local parentOk, parent = pcall(function()
-        return container:getParent()
-    end)
-    if not parentOk then return end
-    if not parent then return end
+    -- Reject corpses, bags, and unrelated inventory containers before touching
+    -- their world position.
+    if not EHR.KnoxDistribution.IsValidContainer(containerType) then
+        return
+    end
 
-    local coordsOk, x, y, z = pcall(function()
-        return parent:getX(), parent:getY(), parent:getZ()
-    end)
-    if not coordsOk or not x or not y or not z then return end
+    -- World loot containers expose their owning square directly. This is safer
+    -- than assuming every possible parent implements getX/getY/getZ.
+    local square = container:getSourceGrid()
+    if not square then return end
+
+    local x, y, z = square:getX(), square:getY(), square:getZ()
+    if x == nil or y == nil or z == nil then return end
 
     -- Must be in the facility
     if not EHR.KnoxDistribution.IsInFacility(x, y) then
@@ -151,11 +158,6 @@ function EHR.KnoxDistribution.OnFillContainer(roomName, containerType, container
 
     -- Must be in a basement (z < 0)
     if z >= 0 then
-        return
-    end
-
-    -- Must be a valid container type
-    if not EHR.KnoxDistribution.IsValidContainer(containerType) then
         return
     end
 

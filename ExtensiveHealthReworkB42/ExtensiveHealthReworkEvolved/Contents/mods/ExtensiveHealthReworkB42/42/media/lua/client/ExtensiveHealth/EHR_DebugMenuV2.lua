@@ -1186,7 +1186,6 @@ EHR.DebugV2.DiseaseList = {
     "dysentery",
     "hypothermia",
     "corpse_sickness",
-    "heat_exhaustion",
     "heat_stroke",
     "trichinosis",
     "hyperkeratotic_scabies",

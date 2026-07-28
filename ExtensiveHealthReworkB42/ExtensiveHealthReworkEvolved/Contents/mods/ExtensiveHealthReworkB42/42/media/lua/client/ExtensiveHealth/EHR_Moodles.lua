@@ -322,8 +322,10 @@ local function heatExposureLevel(player)
         return EHR.Disease.GetDiseaseData(player)
     end, nil) or nil
     local active = type(diseaseData) == "table" and diseaseData.active or nil
-    if type(active) == "table" and (active.heat_exhaustion or active.heat_stroke) then
-        return "None", 0
+    if type(active) == "table" then
+        if active.heat_stroke then
+            return "High", 1
+        end
     end
 
     local level = safeCall(function()

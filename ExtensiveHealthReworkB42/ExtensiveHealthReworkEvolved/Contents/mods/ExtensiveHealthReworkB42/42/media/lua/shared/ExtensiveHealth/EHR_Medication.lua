@@ -195,7 +195,7 @@ EHR.Medication.Database = {
     -- Base.PillsBeta
     ["Base.PillsBeta"] = {
         tier = 0,
-        treats = {"heat_exhaustion", "hypothermia"},
+        treats = {"hypothermia"},
         displayName = "Beta Blockers",
         icon = "PillsBetablocker",
         usageMessage = "You take beta blockers. Your heart rate stabilizes.",
@@ -335,7 +335,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.ElectrolytePowder"] = {
         tier = 1,
-        treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_exhaustion", "heat_stroke"},
+        treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_stroke"},
         displayName = "Electrolyte Powder",
         usageMessage = "You mix and drink the electrolyte solution. You feel more hydrated.",
         appliesWithoutDisease = true,
@@ -679,7 +679,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.OralRehydrationKit"] = {
         tier = 2,
-        treats = {"dysentery", "heat_exhaustion"},
+        treats = {"dysentery"},
         displayName = "Oral Rehydration Kit",
         usageMessage = "You prepare and drink the rehydration solution.",
         blockWhileDoseActive = true,

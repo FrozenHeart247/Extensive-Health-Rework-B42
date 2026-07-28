@@ -413,6 +413,11 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.BloodBagABNeg"] = 0.5, -- 1%
     }
 
+    -- Kahlua caps the number of local-variable records in a single function at
+    -- 200. Keep the large distribution sections in separate closures so adding
+    -- new loot loops does not make this file fail to compile.
+    local function addProceduralLoot()
+
     -- Medical Storage Blood (hospitals)
     if ProceduralDistributions.list["MedicalStorageBlood"] then
         for item, chance in pairs(bloodBagRarity) do
@@ -813,6 +818,11 @@ local function EHR_InitDistributions()
     tryAddVehicleMed("PoliceSWATSeatFront", combatStimulant, 0.8)
     tryAddVehicleMed("PoliceSWATTruckBed", combatStimulant, 1.2)
 
+    end
+    addProceduralLoot()
+
+    local function addContainerLoot()
+
     -- First-aid kits are inventory containers in B42, not procedural furniture.
     -- Populate every vanilla kit variant while preserving its native roll count.
     local firstAidKitProfiles = {
@@ -1011,6 +1021,11 @@ local function EHR_InitDistributions()
     setBagDistributionMinRolls("Bag_MedicalBag", 4)
     setBagDistributionMinRolls("Bag_Satchel_Medical", 3)
 
+    end
+    addContainerLoot()
+
+    local function addHouseholdLoot()
+
     -- =========================================
     -- HOUSEHOLD SPAWNS
     -- OTC is uncommon, prescriptions are rare, clinical home-care leftovers
@@ -1028,9 +1043,9 @@ local function EHR_InitDistributions()
         BedroomSidetable = { common = 1.50, medicine = 0.20, clinical = 1.80 },
         BedroomSidetableClassy = { common = 1.50, medicine = 0.20, clinical = 1.80 },
         BedroomSidetableRedneck = { common = 1.50, medicine = 0.20, clinical = 1.80 },
-        BedroomDresser = { common = 3.00, medicine = 0.10, clinical = 0.60 },
-        BedroomDresserClassy = { common = 3.00, medicine = 0.10, clinical = 0.60 },
-        BedroomDresserRedneck = { common = 3.00, medicine = 0.10, clinical = 0.60 },
+        BedroomDresser = { common = 3.00, medicine = 0.20, clinical = 0.60 },
+        BedroomDresserClassy = { common = 3.00, medicine = 0.20, clinical = 0.60 },
+        BedroomDresserRedneck = { common = 3.00, medicine = 0.20, clinical = 0.60 },
         LivingRoomShelf = { common = 1.50, clinical = 0.35 },
         LivingRoomShelfClassy = { common = 1.50, clinical = 0.35 },
         LivingRoomShelfRedneck = { common = 1.50, clinical = 0.35 },
@@ -1042,8 +1057,8 @@ local function EHR_InitDistributions()
     -- so houses without a bathroom cabinet still have a useful medical cache.
     local bathroomContainers = {
         BathroomCabinet = { medicine = 0.65, clinical = 1.00 },
-        BathroomCounter = { medicine = 0.20, clinical = 0.55 },
-        BathroomShelf = { medicine = 0.20, clinical = 0.55 },
+        BathroomCounter = { medicine = 0.30, clinical = 0.55 },
+        BathroomShelf = { medicine = 0.30, clinical = 0.55 },
     }
 
     local bathroomMedicine = {
@@ -1089,13 +1104,13 @@ local function EHR_InitDistributions()
 
     -- Tier 2 Prescription - leftover personal prescriptions.
     local tier2Household = {
-        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.30,
+        ["ExtensiveHealth.PrescriptionAntibiotics"] = 0.60, --0.30
         ["ExtensiveHealth.AntibioticOintment"] = 0.15,
-        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.15,
+        ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 0.25, --0.15
         ["ExtensiveHealth.AntiviralCapsules"] = 0.05,
         ["ExtensiveHealth.AntifungalTablets"] = 0.04,
-        ["ExtensiveHealth.AntiparasiticPills"] = 0.03,
-        ["ExtensiveHealth.ActivatedCharcoal"] = 0.08,
+        ["ExtensiveHealth.AntiparasiticPills"] = 0.09,
+        ["ExtensiveHealth.ActivatedCharcoal"] = 0.1,
         ["ExtensiveHealth.OralRehydrationKit"] = 0.08,
         ["ExtensiveHealth.Furosemide"] = 0.04,
         ["ExtensiveHealth.Antipsychotics"] = 0.04,
@@ -1166,6 +1181,9 @@ local function EHR_InitDistributions()
             end
         end
     end
+
+    end
+    addHouseholdLoot()
 
     -- =========================================
     -- SUMMARY

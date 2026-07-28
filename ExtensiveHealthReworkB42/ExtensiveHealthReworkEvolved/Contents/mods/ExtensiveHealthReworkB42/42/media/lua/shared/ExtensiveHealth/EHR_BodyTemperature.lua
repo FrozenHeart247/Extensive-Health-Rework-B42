@@ -4,7 +4,7 @@
 
     Vanilla-driven body temperature bridge.
     Provides gradual pre-disease effects (shivering, sweating) and smooth
-    transitions to hypothermia/heat exhaustion diseases.
+    transitions to hypothermia; heat-stroke risk is managed by environmental exposure.
 
     Normal body temperature: 36.6°C (97.9°F)
     Hypothermia starts: <= 35.0°C
@@ -2466,8 +2466,8 @@ function EHR.BodyTemp.CheckDiseaseThresholds(player, tempData, deltaHours)
     -- Hypothermia is stage-driven by current core temperature.
     EHR.BodyTemp.SyncHypothermiaFromTemperature(player, tempData)
 
-    -- Check heat exhaustion threshold (body temp > 40.5°C)
-    -- Heat disease risk is now handled by world-temperature exposure in EHR_EnvironmentalDiseases.
+    -- Track the hot danger zone for UI/debug data only. Heat-stroke risk is
+    -- handled by heat-exhaustion exposure in EHR_EnvironmentalDiseases.
     if tempData.hotStage >= 4 then
         -- In hot danger zone
         if tempData.dangerZone ~= "hot" then
@@ -2540,55 +2540,11 @@ function EHR.BodyTemp.TryTriggerHypothermia(player, tempData)
 end
 
 --[[
-    Attempt to trigger heat exhaustion disease.
+    Legacy compatibility hook. Heat exhaustion is now an exposure meter owned by
+    EHR.Environmental; it must never be contracted as a disease from body heat.
 ]]--
 function EHR.BodyTemp.TryTriggerHeatExhaustion(player, tempData)
-    if not EHR.Disease or not EHR.Disease.TryContract then return end
-
-    -- Check if already has heat exhaustion or heat stroke
-    local diseaseData = EHR.Disease.GetDiseaseData(player)
-    if diseaseData and diseaseData.active then
-        if diseaseData.active["heat_exhaustion"] or diseaseData.active["heat_stroke"] then
-            return  -- Already have it
-        end
-    end
-
-    -- Calculate chance based on:
-    -- - Time in danger zone
-    -- - Current body temp (higher = higher)
-    -- - Dehydration
-    -- - Exertion
-    local cfg = EHR.BodyTemp.Config
-    local timeRatio = tempData.timeAtDangerousTemp / cfg.heatExhaustionTriggerTime
-    local tempSeverity = (tempData.bodyTemp - cfg.hotStage4) / 2  -- 0-1 based on how far above 40.5°C
-
-    local isDehydrated = EHR.BodyTemp.IsDehydrated(player)
-    local isExerting = EHR.BodyTemp.IsExerting(player)
-
-    local baseChance = 0.25  -- 25% base
-    local chance = baseChance * (1 + timeRatio * 0.5) * (1 + tempSeverity)
-    if isDehydrated then chance = chance * 1.5 end
-    if isExerting then chance = chance * 1.3 end
-    chance = math.min(0.85, chance)  -- Cap at 85%
-
-    if EHR.DEBUG then
-        EHR.Log(string.format("BodyTemp: Heat exhaustion check - chance=%.1f%%, time=%.2fh, temp=%.1f°C, dehydrated=%s, exerting=%s",
-            chance * 100, tempData.timeAtDangerousTemp, tempData.bodyTemp, tostring(isDehydrated), tostring(isExerting)))
-    end
-
-    -- Try to contract
-    if EHR.Disease.TryContract(player, "heat_exhaustion", chance) then
-        -- Reset danger zone tracking
-        tempData.timeAtDangerousTemp = 0
-        if EHR.DEBUG then
-            EHR.Log("BodyTemp: Heat exhaustion contracted!")
-        end
-
-        -- MP: Trigger server sync after disease contraction
-        if isClient() then
-            sendClientCommand(player, "EHR", "RequestSync", {})
-        end
-    end
+    return
 end
 
 -- ============================================
@@ -2805,7 +2761,7 @@ function EHR.BodyTemp.IsWarmEnoughForRecovery(player)
 end
 
 --[[
-    Check if player is cool enough for heat exhaustion recovery.
+    Check if player is cool enough for heat-stroke recovery.
     @param player (IsoPlayer)
     @return boolean
 ]]--

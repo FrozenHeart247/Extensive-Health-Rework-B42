@@ -627,114 +627,26 @@ EHR.Disease.Diseases["cadaveric_aspergillosis"] = {
 }
 
 -- ============================================
--- HEAT EXHAUSTION (Phase 3)
+-- HEAT EXHAUSTION EXPOSURE
 -- ============================================
 --[[
-    Transmission: High temperature + physical exertion + dehydration
-    Duration: 4-12 hours (fast recovery possible)
-    Effects: Dizziness, nausea, weakness, thirst drain
-    Can progress to: Heat Stroke (LETHAL)
-    Treatment: Water, shade, rest, remove clothing
+    Heat exhaustion is an exposure meter managed by EHR_EnvironmentalDiseases,
+    not a disease instance. High exposure rolls directly for Heat Stroke.
 ]]--
-EHR.Disease.Diseases["heat_exhaustion"] = {
-    name = "Heat Exhaustion",
-    -- Timing (in game hours) - shorter illness
-    incubationMin = 1,      -- 1 hour minimum
-    incubationMax = 2,      -- 2 hours maximum
-    durationMin = 4,        -- 4 hours minimum
-    durationMax = 12,       -- 12 hours maximum
-    -- Stage duration percentages
-    stageDurations = {
-        [1] = 0.15,  -- 15% incubation
-        [2] = 0.30,  -- 30% early (heat cramps)
-        [3] = 0.35,  -- 35% peak (heat exhaustion)
-        [4] = 0.20,  -- 20% recovery
-    },
-    -- Special: requires cooling to recover
-    requiresCoolingForRecovery = true,
-    -- Severity
-    baseSeverity = 0.5,
-    -- Can progress to heat stroke (LETHAL)
-    canProgress = true,
-    progressTo = "heat_stroke",
-    progressChance = 0.40,          -- 40% if untreated in heat
-    progressAfterHours = 4,         -- After 4 hours in peak without cooling
-    -- Can kill if progresses to heat stroke
-    canKill = false,  -- Heat exhaustion itself doesn't kill
-    -- Treatment
-    treatmentCooling = true,
-    treatmentItem = nil,            -- No medicine, need shade + water
-    -- Stages
-    stageCount = 4,
-    -- Stage effects
-    effects = {
-        [1] = {
-            thirstDrain = 0.003,
-            staminaPenalty = 0.10,
-            sweating = true,
-        },
-        [2] = {
-            thirstDrain = 0.008,
-            staminaPenalty = 0.25,
-            movementPenalty = 0.85,
-            crampChance = 0.005,    -- Muscle cramps
-        },
-        [3] = {
-            thirstDrain = 0.015,
-            staminaPenalty = 0.50,
-            movementPenalty = 0.70,
-            vomitChance = 0.005,
-            dizzinessChance = 0.010,
-            canSprint = false,
-        },
-        [4] = {
-            thirstDrain = 0.005,
-            staminaPenalty = 0.20,
-        },
-    },
-    -- Stage entry dialogue
-    stageEntryDialogue = {
-        [1] = "Getting really hot... sweating buckets.",
-        [2] = "*wipes sweat* Leg cramping up... need water.",
-        [3] = "*dizzy* Everything's spinning... can't take this heat...",
-        [4] = "Finally cooling down... that was close.",
-    },
-    -- Random dialogue
-    dialogue = {
-        [1] = {
-            "It's so hot...",
-            "Sweating through my clothes...",
-        },
-        [2] = {
-            "*cramps* Ow, my leg!",
-            "So thirsty...",
-            "Need to get out of this sun...",
-        },
-        [3] = {
-            "*dizzy* World's spinning...",
-            "*nauseous* Feel like I'm going to be sick...",
-            "Why did I stop sweating? That's bad...",
-            "Need shade... water... now...",
-        },
-        [4] = {
-            "Feeling better now...",
-            "Need to be more careful in this heat.",
-        },
-    },
-}
+EHR.Disease.Diseases["heat_exhaustion"] = nil
 
 -- ============================================
--- HEAT STROKE (Hidden - progression from Heat Exhaustion)
+-- HEAT STROKE (triggered by high heat-exhaustion exposure)
 -- ============================================
 --[[
-    This is the LETHAL version of heat exhaustion
-    Player doesn't contract this directly - only progresses from heat exhaustion
+    This is the lethal result of excessive heat exposure.
     Short, intense, deadly
 ]]--
 EHR.Disease.Diseases["heat_stroke"] = {
     name = "Heat Stroke",
     incubationMin = 0,      -- No incubation, immediate danger
     incubationMax = 0,
+    immediateOnset = true,
     durationMin = 4,        -- 4 hours minimum
     durationMax = 8,        -- 8 hours maximum
     stageDurations = {
@@ -758,42 +670,43 @@ EHR.Disease.Diseases["heat_stroke"] = {
     effects = {
         [1] = {
             thirstDrain = 0.004,
+            healthDrainPerHour = 2,
             staminaPenalty = 0.70,
             movementPenalty = 0.65,
             canSprint = false,
             dizzinessChance = 0.080,
             confusionChance = 0.080,
-            collapseChance = 0.060,
+            collapseChance = 0.50,
         },
         [2] = {
             thirstDrain = 0.010,
-            healthDrainPerHour = 10,
+            healthDrainPerHour = 15,
             staminaPenalty = 0.85,
             movementPenalty = 0.50,
             canSprint = false,
             dizzinessChance = 0.120,
             confusionChance = 0.120,
-            collapseChance = 0.100,
+            collapseChance = 0.60,
         },
         [3] = {
             thirstDrain = 0.016,
-            healthDrainPerHour = 24,
+            healthDrainPerHour = 36,
             staminaPenalty = 0.95,
             movementPenalty = 0.35,
             canSprint = false,
             dizzinessChance = 0.180,
             confusionChance = 0.180,
-            collapseChance = 0.140,
+            collapseChance = 0.70,
         },
         [4] = {
             thirstDrain = 0.008,
-            healthDrainPerHour = 16,
+            healthDrainPerHour = 24,
             staminaPenalty = 0.75,
             movementPenalty = 0.50,
             canSprint = false,
             dizzinessChance = 0.120,
             confusionChance = 0.120,
-            collapseChance = 0.100,
+            collapseChance = 0.50,
         },
     },
     stageEntryDialogue = {
@@ -1579,7 +1492,7 @@ EHR.Log("  - dysentery: Contaminated water -> LETHAL dehydration")
 EHR.Log("  - hypothermia: Cold + wet -> LETHAL cardiac arrest")
 EHR.Log("  - corpse_sickness: Prolonged corpse exposure -> nausea + weakness")
 EHR.Log("  - cadaveric_aspergillosis: Damp/cold corpses -> fungal lung infection")
-EHR.Log("  - heat_exhaustion: Heat + exertion -> can progress to heat stroke")
+EHR.Log("  - heat exhaustion exposure: High exposure rolls directly for heat stroke")
 EHR.Log("  - heat_stroke: LETHAL without cooling")
 EHR.Log("  - trichinosis: Raw meat -> SEVERE muscle pain + potential death")
 EHR.Log("  - gastroenteritis: Dirty hands + eating -> vomiting, dehydration")

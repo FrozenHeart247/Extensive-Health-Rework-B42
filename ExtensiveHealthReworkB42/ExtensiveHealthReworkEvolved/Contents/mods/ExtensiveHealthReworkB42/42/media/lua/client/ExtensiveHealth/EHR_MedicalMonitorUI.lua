@@ -905,6 +905,8 @@ function EHR_MedicalMonitorUI:updateCachedData()
             local currentHour = getGameTime():getWorldAgeHours()
             -- Copy each disease entry and calculate progress
             for diseaseId, diseaseInfo in pairs(diseaseData.active) do
+                local diseaseDef = EHR.Disease and EHR.Disease.Diseases
+                    and EHR.Disease.Diseases[diseaseId] or nil
                 -- BUG-019 FIX: Calculate progress for UI display
                 -- Progress = percentage of time elapsed from start to end
                 local progress = 0
@@ -922,10 +924,12 @@ function EHR_MedicalMonitorUI:updateCachedData()
                     incubationEnd = diseaseInfo.incubationEnd,
                     endTime = diseaseInfo.endTime,
                     stage = diseaseInfo.stage,
+                    stageCount = diseaseInfo.stageCount or (diseaseDef and diseaseDef.stageCount) or 4,
                     severity = diseaseInfo.severity,
                     diagnosed = diseaseInfo.diagnosed,
                     peakTime = diseaseInfo.peakTime,
                     warmthBlocked = diseaseInfo.warmthBlocked,
+                    coolingBlocked = diseaseInfo.coolingBlocked,
                     progress = progress,  -- Calculated progress for UI
                     treating = activeTreatmentMap[diseaseId] == true,
                 }

@@ -11,7 +11,7 @@ require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Disease"
 require "ISUI/ISPanel"
 require "TimedActions/ISSmashWindow"
-pcall(function() require "TimedActions/ISWalkToTimedAction" end)
+require "TimedActions/WalkToTimedAction"
 pcall(function() require "TimedActions/ISReloadWeaponAction" end)
 pcall(function() require "ISUI/ISInventoryPaneContextMenu" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)

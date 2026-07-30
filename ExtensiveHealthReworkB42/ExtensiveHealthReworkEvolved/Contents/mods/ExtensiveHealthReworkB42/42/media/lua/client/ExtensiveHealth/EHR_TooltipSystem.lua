@@ -10,7 +10,6 @@
 ]]
 
 require "ISUI/ISToolTipInv"
-require "ISUI/ISFoodToolTip"
 
 -- Ensure TooltipData is loaded (should be loaded from shared already)
 if not EHR or not EHR.Tooltips or not EHR.Tooltips.Data then
@@ -293,51 +292,6 @@ function ISToolTipInv:render()
     -- Fall back to vanilla tooltip if needed
     if useVanilla and originalDoTooltip then
         originalDoTooltip(self)
-    end
-end
-
--- ============================================
--- FOOD TOOLTIP OVERRIDE
--- Items with DaysFresh/DaysTotallyRotten use ISFoodToolTip
--- We need to hook this for perishable items like blood bags
--- ============================================
-
-local originalFoodTooltip = nil
-
--- Only hook ISFoodToolTip if it exists (B42 compatibility)
-if ISFoodToolTip and type(ISFoodToolTip) == "table" and ISFoodToolTip.render then
-    originalFoodTooltip = ISFoodToolTip.render
-
-    function ISFoodToolTip:render()
-        local useVanilla = true
-
-        -- Try EHR custom tooltip first
-        local item = self.item
-        if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
-            local itemFullType = item.getFullType and item:getFullType() or nil
-            local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
-            if ehrData then
-                -- Wrap in pcall to catch any rendering errors
-                local success, err = pcall(function()
-                    self:renderEHRTooltip(ehrData, item)
-                end)
-                if success then
-                    useVanilla = false
-                else
-                    print("[EHR FoodTooltip] ERROR rendering: " .. tostring(err))
-                    print(debug.traceback())
-                end
-            end
-        end
-
-        -- Fall back to vanilla food tooltip if needed
-        if useVanilla and originalFoodTooltip then
-            originalFoodTooltip(self)
-        end
-    end
-else
-    if EHR and EHR.Log then
-        EHR.Log("WARNING: ISFoodToolTip not found - perishable item tooltips may use vanilla display")
     end
 end
 
@@ -752,13 +706,6 @@ end
 -- Assign the shared implementation to both tooltip classes
 function ISToolTipInv:renderEHRTooltip(data, item)
     return renderEHRTooltipImpl(self, data, item)
-end
-
--- Only assign to ISFoodToolTip if it exists
-if ISFoodToolTip and type(ISFoodToolTip) == "table" then
-    function ISFoodToolTip:renderEHRTooltip(data, item)
-        return renderEHRTooltipImpl(self, data, item)
-    end
 end
 
 -- ============================================

@@ -17,7 +17,9 @@
 ]]--
 
 require "ExtensiveHealth/EHR_Main"
-require "ExtensiveHealth/EHR_Disease"
+-- EHR_Disease owns the load order for this module. Disease lookups below are
+-- runtime-only and already guarded, so requiring it back here only creates a
+-- recursive require under the Build 42.20 loader.
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}

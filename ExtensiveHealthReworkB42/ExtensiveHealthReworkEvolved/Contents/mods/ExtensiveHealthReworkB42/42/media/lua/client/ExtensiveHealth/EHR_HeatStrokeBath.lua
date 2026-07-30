@@ -12,7 +12,7 @@ require "ExtensiveHealth/EHR_Disease"
 require "ExtensiveHealth/EHR_EnvironmentalDiseases"
 require "ExtensiveHealth/EHR_BodyTemperature"
 require "TimedActions/ISBaseTimedAction"
-require "TimedActions/ISWalkToTimedAction"
+require "TimedActions/WalkToTimedAction"
 
 pcall(function() require "ExtensiveHealth/EHR_LifestyleCompat" end)
 

@@ -4,7 +4,7 @@
 require "ISUI/ISPanel"
 require "ISUI/ISButton"
 require "TimedActions/ISBaseTimedAction"
-require "TimedActions/ISWalkToTimedAction"
+require "TimedActions/WalkToTimedAction"
 require "ExtensiveHealth/EHR_Main"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 

@@ -11,7 +11,8 @@
 
     B42 API Notes:
     - ISApplyBandage handles bandaging and disinfecting
-    - ISTakePill handles pill consumption
+    - EHR_MedicationHook owns ISTakePillAction:complete()
+    - This module keeps the food-action fallback for food-shaped antibiotics
     - Use item:getFullType() for item identification
 ]]--
 
@@ -355,61 +356,17 @@ function EHR.WoundHook.HookBandageAction()
 end
 
 -- ============================================
--- PILL/ANTIBIOTICS HOOK
+-- PILL/ANTIBIOTICS OWNERSHIP
 -- ============================================
 
 --[[
-    Hook into ISTakePill to detect antibiotic consumption
+    ISTakePillAction is already handled centrally by EHR_MedicationHook.
+    Do not wrap it a second time here: doing so would apply one antibiotic
+    through both medication systems. The ISEatFoodAction fallback below stays
+    separate for food-shaped antibiotic items.
 ]]--
 function EHR.WoundHook.HookPillAction()
-    -- Try to require the pill action
-    local success = pcall(function()
-        require "TimedActions/ISTakePill"
-    end)
-
-    if not success or not ISTakePill then
-        EHR.Log("WoundHook: ISTakePill not found")
-        return false
-    end
-
-    -- Store original perform
-    local originalPerform = ISTakePill.perform
-
-    -- Override perform
-    ISTakePill.perform = function(self)
-        -- Capture item before original (might be consumed)
-        local item = self.item
-        local player = self.character
-        local isAntibiotics = item and EHR.WoundHook.IsAntibiotics(item)
-
-        -- Call original
-        originalPerform(self)
-
-        -- Process antibiotics
-        if player and player == getSpecificPlayer(0) and isAntibiotics then
-            EHR.Log("WoundHook: Player took antibiotics")
-
-            -- First check if player has sepsis - antibiotics help but IV needed
-            if EHR.Sepsis and EHR.Sepsis.HasSepsis and EHR.Sepsis.HasSepsis(player) then
-                -- Pills slow sepsis but don't cure it
-                local data = EHR.Sepsis.GetData(player)
-                if data then
-                    -- Reset stage timer (buys time)
-                    local gameTime = getGameTime()
-                    data.stageStartTime = gameTime:getWorldAgeHours()
-                    EHR.Locale.Say(player, "The antibiotics might slow this down... but I need IV treatment.")
-                    EHR.Log("WoundHook: Antibiotics slowed sepsis progression")
-                end
-            end
-
-            -- Treat wound infections
-            if EHR.WoundInfection and EHR.WoundInfection.OnTakeAntibiotics then
-                EHR.WoundInfection.OnTakeAntibiotics(player)
-            end
-        end
-    end
-
-    EHR.Log("WoundHook: ISTakePill.perform hooked")
+    EHR.Log("WoundHook: pill actions delegated to EHR_MedicationHook")
     return true
 end
 
@@ -685,11 +642,8 @@ function EHR.WoundHook.Initialize()
     -- Hook pill action
     local pillHooked = EHR.WoundHook.HookPillAction()
 
-    -- If pill hook failed, try eating action
-    local eatHooked = false
-    if not pillHooked then
-        eatHooked = EHR.WoundHook.HookEatAction()
-    end
+    -- Keep support for food-shaped antibiotic items as a separate fallback.
+    local eatHooked = EHR.WoundHook.HookEatAction()
 
     EHR.WoundHook.initialized = true
     EHR.Log("WoundHook: Initialization complete")

@@ -726,8 +726,122 @@ EHR.Disease.FoodRisks = {
     rawWildGameHigh = 0.70,
     rawWildGameMedium = 0.70,
     rawWildGameLow = 0.70,
+    rawPork = 0.70,
     rawMeatLow = 0.70,
 }
+
+function EHR.Disease.NormalizeFoodPortion(amount)
+    if amount == nil then return 1.0 end
+    return math.max(0, math.min(1, tonumber(amount) or 0))
+end
+
+function EHR.Disease.GetFoodDiseaseChanceMultiplier(diseaseId)
+    local keyByDisease = {
+        food_poisoning = "FoodPoisoningChanceMultiplier",
+        gastroenteritis = "GastroenteritisChanceMultiplier",
+        trichinosis = "TrichinosisChanceMultiplier",
+    }
+    local key = keyByDisease[diseaseId]
+    if not key then return 1.0 end
+
+    local value = tonumber(EHR.Disease.GetSetting(key, 1.0)) or 1.0
+    return math.max(0, math.min(5, value))
+end
+
+function EHR.Disease.GetFoodFreshnessRisk(isRotten, isBurnt, isFresh, age, offAge)
+    if isRotten == true or isBurnt == true then return 0, nil end
+
+    -- The item API is authoritative when it exposes freshness. In particular,
+    -- food is still fresh immediately before getOffAge(), so an arbitrary
+    -- percentage of that age must never be treated as stale.
+    if isFresh == true then return 0, nil end
+    if isFresh == false then
+        return EHR.Disease.FoodRisks.stale or 0.10, "stale"
+    end
+
+    -- Compatibility fallback for modded food which does not implement isFresh().
+    age = tonumber(age)
+    offAge = tonumber(offAge)
+    if age and offAge and offAge > 0 and age >= offAge then
+        return EHR.Disease.FoodRisks.stale or 0.10, "stale"
+    end
+
+    return 0, nil
+end
+
+function EHR.Disease.GetFoodRiskBaseLimit(diseaseId, riskReason)
+    local risks = EHR.Disease.FoodRisks or {}
+    local limits = {
+        food_poisoning = {
+            rotten = risks.rotten or 0.70,
+            burned = risks.burned or 0.05,
+            stale = risks.stale or 0.10,
+            ["dangerous uncooked"] = risks.dangerousUncooked or 0.35,
+            uncooked = risks.uncooked or 0.35,
+        },
+        trichinosis = {
+            ["uncooked wild game"] = math.max(
+                risks.rawWildGameHigh or 0,
+                risks.rawWildGameMedium or 0,
+                risks.rawWildGameLow or 0
+            ),
+            ["uncooked pork"] = risks.rawPork or risks.rawMeatLow or 0.70,
+            -- Kept for packets sent by an older client during a rolling MP update.
+            ["uncooked meat"] = risks.rawPork or risks.rawMeatLow or 0.70,
+        },
+        gastroenteritis = {
+            ["bloody and dirty hands"] = 0.33,
+            ["bloody hands"] = 0.33,
+            ["dirty hands"] = 0.33,
+            ["contaminated hands"] = 0.33,
+        },
+    }
+
+    local diseaseLimits = limits[diseaseId]
+    return diseaseLimits and diseaseLimits[riskReason] or nil
+end
+
+function EHR.Disease.GetFoodRiskMaximum(diseaseId, riskReason)
+    local multiplier = EHR.Disease.GetFoodDiseaseChanceMultiplier(diseaseId)
+    local safeProbability = 1.0
+    local foundComponent = false
+
+    -- Multiple properties of one item are represented as a single combined
+    -- reason. Validate every component, then combine their independent risks.
+    for component in string.gmatch(tostring(riskReason or ""), "[^+]+") do
+        local normalizedComponent = string.gsub(component, "^%s+", "")
+        normalizedComponent = string.gsub(normalizedComponent, "%s+$", "")
+
+        local baseLimit = EHR.Disease.GetFoodRiskBaseLimit(diseaseId, normalizedComponent)
+        if not baseLimit then return nil end
+
+        local componentRisk = math.min(1, baseLimit * multiplier)
+        safeProbability = safeProbability * (1 - componentRisk)
+        foundComponent = true
+    end
+
+    if not foundComponent then return nil end
+    return 1 - safeProbability
+end
+
+function EHR.Disease.ValidateFoodDiseaseRisk(diseaseId, riskReason, risk)
+    if not EHR.Disease.IsEnabled() then return nil, "disease system disabled" end
+    if not EHR.Disease.IsDiseaseEnabled(diseaseId) then return nil, "disease disabled" end
+
+    local def = EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId]
+    if not def or def.category ~= "food" then return nil, "invalid food disease" end
+
+    local maximum = EHR.Disease.GetFoodRiskMaximum(diseaseId, riskReason)
+    if not maximum then return nil, "invalid food-risk reason" end
+
+    local suppliedRisk = tonumber(risk) or 0
+    if suppliedRisk <= 0 then return nil, "non-positive risk" end
+
+    if maximum <= 0 then return nil, "risk disabled by multiplier" end
+
+    local sanitized = math.max(0, math.min(maximum, suppliedRisk))
+    return sanitized, nil, sanitized + 0.000001 < suppliedRisk
+end
 
 -- Food poisoning is not a one-frame lottery: repeated risky bites stack up.
 EHR.Disease.FoodRiskAccumulation = {
@@ -3882,6 +3996,7 @@ function EHR.Disease.ClearFoodRiskHistory(history)
     history.lastFoodRiskChance = nil
     history.lastFoodAccumulatedRisk = nil
     history.lastFoodRiskDiseaseId = nil
+    history.lastFoodRiskItemName = nil
     history.foodRiskAccumulated = nil
     history.foodRiskLastTime = nil
     history.foodRiskAccumulatedByDisease = nil
@@ -4019,6 +4134,7 @@ function EHR.Disease.GetAccumulatedFoodRisk(player, addedRisk, riskReason, disea
         history.lastFoodRiskReason = riskReason or history.lastFoodRiskReason
         history.lastFoodRiskChance = addedRisk or history.lastFoodRiskChance
         history.lastFoodAccumulatedRisk = accumulated
+        history.lastBadFood = now
     end
 
     return accumulated
@@ -4432,11 +4548,6 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
 
     local mediumRiskPatterns = {
         "fox meat", "foxmeat", "raccoon meat", "raccoonmeat", "wolf meat", "wolfmeat",
-        "dead rabbit", "deadrabbit", "rabbit meat", "rabbitmeat", " rabbit", "rabbit ", "^rabbit$",
-        "squirrel meat", "squirrelmeat", "dead squirrel", "deadsquirrel",
-        "frog meat", "frogmeat", " frog", "frog ", "^frog$",
-        "small bird meat", "smallbirdmeat", "small bird", "smallbird", "bird meat",
-        "venison", "deer meat", "deermeat",
     }
     for _, pattern in ipairs(mediumRiskPatterns) do
         if string.find(nameLower, pattern) then
@@ -4447,35 +4558,24 @@ function EHR.Disease.GetTrichinosisRisk(item, isCooked, nameLower, isBurnt)
         end
     end
 
-    if foodTypeLower == "game" and rawMeatCandidate then
-        return EHR.Disease.FoodRisks.rawWildGameMedium or 0.25, "uncooked wild game"
-    end
-
-    local lowRiskPatterns = {
-        "chicken leg", "chicken wing", "chicken", "turkey",
+    local porkPatterns = {
         "pork chop", "porkchop", "pork", "bacon",
-        "steak", "beef", "mutton", "lamb",
     }
-    for _, pattern in ipairs(lowRiskPatterns) do
+    for _, pattern in ipairs(porkPatterns) do
         if string.find(nameLower, pattern) then
             if rawMeatCandidate then
-                return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+                return EHR.Disease.FoodRisks.rawPork or EHR.Disease.FoodRisks.rawMeatLow or 0.70, "uncooked pork"
             end
             return 0, nil
         end
     end
 
     local dangerousMeatTypes = {
-        poultry = true,
         pork = true,
-        beef = true,
         bacon = true,
-        mutton = true,
-        lamb = true,
-        meat = true,
     }
     if dangerousUncooked and dangerousMeatTypes[foodTypeLower] then
-        return EHR.Disease.FoodRisks.rawMeatLow or 0.15, "uncooked meat"
+        return EHR.Disease.FoodRisks.rawPork or EHR.Disease.FoodRisks.rawMeatLow or 0.70, "uncooked pork"
     end
 
     return 0, nil
@@ -4547,15 +4647,21 @@ function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReaso
         return false
     end
 
-    local diseaseData = EHR.Disease.GetDiseaseData(player)
-    local now = getGameTime():getWorldAgeHours()
-    if diseaseData and diseaseData.history then
-        diseaseData.history.lastBadFood = now
-        diseaseData.history.lastFoodRiskReason = riskReason
-        diseaseData.history.lastFoodRiskChance = risk
-        diseaseData.history.lastFoodRiskDiseaseId = diseaseId
+    local validatedRisk, rejectionReason = EHR.Disease.ValidateFoodDiseaseRisk(diseaseId, riskReason, risk)
+    if not validatedRisk then
+        EHR_DiseaseDebugFood(player, "apply-rejected", string.format(
+            "item=%s disease=%s reason=%s risk=%s rejection=%s",
+            tostring(itemName or "unknown"),
+            tostring(diseaseId),
+            tostring(riskReason or "unknown"),
+            tostring(risk),
+            tostring(rejectionReason or "unknown")
+        ), true)
+        return false
     end
+    risk = validatedRisk
 
+    local diseaseData = EHR.Disease.GetDiseaseData(player)
     local def = EHR.Disease.Diseases[diseaseId]
     local diseaseName = (def and def.name) or diseaseId
 
@@ -4570,6 +4676,10 @@ function EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, riskReaso
             risk * 100
         ), true)
         return false
+    end
+
+    if diseaseData and diseaseData.history then
+        diseaseData.history.lastFoodRiskItemName = tostring(itemName or "unknown")
     end
 
     local accumulatedRisk = EHR.Disease.GetAccumulatedFoodRisk(player, risk, riskReason, diseaseId)
@@ -4625,35 +4735,45 @@ end
 
     B42 API Note: Many item methods changed, using pcall for safety
 ]]--
-function EHR.Disease.CheckFoodRisk(player, item)
+function EHR.Disease.CheckFoodRisk(player, item, amount)
     if not player or not item then return end
 
     -- Ensure disease data is initialized before checking
     EHR.Disease.InitializePlayer(player)
 
     local risks = {}
-
-    local function getFoodDiseaseChanceMultiplier(diseaseId)
-        local keyByDisease = {
-            food_poisoning = "FoodPoisoningChanceMultiplier",
-            gastroenteritis = "GastroenteritisChanceMultiplier",
-            trichinosis = "TrichinosisChanceMultiplier",
-        }
-        local key = keyByDisease[diseaseId]
-        if not key then return 1.0 end
-        local value = tonumber(EHR.Disease.GetSetting(key, 1.0)) or 1.0
-        return math.max(0, math.min(5, value))
-    end
+    local risksByDisease = {}
+    local portion = EHR.Disease.NormalizeFoodPortion(amount)
+    if portion <= 0 then return risks end
 
     local function addRisk(diseaseId, riskReason, chance)
-        chance = (tonumber(chance) or 0) * getFoodDiseaseChanceMultiplier(diseaseId)
+        if not EHR.Disease.IsEnabled() or not EHR.Disease.IsDiseaseEnabled(diseaseId) then return end
+
+        chance = (tonumber(chance) or 0)
+            * EHR.Disease.GetFoodDiseaseChanceMultiplier(diseaseId)
+            * portion
         chance = math.max(0, math.min(1, chance))
         if diseaseId and riskReason and chance > 0 then
-            table.insert(risks, {
+            local existing = risksByDisease[diseaseId]
+            if existing then
+                -- A single bite gets one roll per disease. If several properties
+                -- point to the same disease, combine them without rolling twice.
+                if existing.reason == riskReason then
+                    existing.chance = math.max(existing.chance, chance)
+                else
+                    existing.reason = existing.reason .. " + " .. riskReason
+                    existing.chance = 1 - ((1 - existing.chance) * (1 - chance))
+                end
+                return
+            end
+
+            local foodRisk = {
                 diseaseId = diseaseId,
                 reason = riskReason,
                 chance = chance,
-            })
+            }
+            risksByDisease[diseaseId] = foodRisk
+            table.insert(risks, foodRisk)
         end
     end
 
@@ -4681,12 +4801,13 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local nameLower = string.lower(itemName .. " " .. itemFullType .. " " .. tostring(foodType) .. " " .. tostring(herbalistType))
     local foodTypeLower = string.lower(tostring(foodType or ""))
     local poisonPower = tonumber(safeCall("getPoisonPower")) or 0
+    local effectivePoisonPower = poisonPower * portion
     local poisonDetectionLevel = tonumber(safeCall("getPoisonDetectionLevel")) or 0
     if isCookable == nil then
         isCookable = EHR_DiseaseGetItemFlag(item, {"isCookable", "getIsCookable"})
     end
 
-    if poisonPower > 0 then
+    if effectivePoisonPower > 0 then
         local toxinType = "toxin"
         local herbalistLower = string.lower(tostring(herbalistType or ""))
         if herbalistLower == "mushroom" or string.find(nameLower, "mushroom", 1, true) then
@@ -4698,13 +4819,13 @@ function EHR.Disease.CheckFoodRisk(player, item)
         if isClient and isClient() and sendClientCommand then
             sendClientCommand(player, "EHR", "FoodToxinRisk", {
                 itemName = tostring(itemName or "unknown"),
-                poisonPower = tonumber(poisonPower) or 0,
+                poisonPower = tonumber(effectivePoisonPower) or 0,
                 poisonDetectionLevel = tonumber(poisonDetectionLevel) or 0,
                 toxinType = tostring(toxinType or "toxin"),
             })
         else
-            EHR.Disease.MarkVanillaPoisonFood(player, itemName, poisonPower, poisonDetectionLevel, toxinType)
-            EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, poisonPower, toxinType)
+            EHR.Disease.MarkVanillaPoisonFood(player, itemName, effectivePoisonPower, poisonDetectionLevel, toxinType)
+            EHR.Disease.ApplyVanillaPoisonDisease(player, itemName, effectivePoisonPower, toxinType)
         end
     end
 
@@ -4815,7 +4936,6 @@ function EHR.Disease.CheckFoodRisk(player, item)
     local rawSafeUncooked = readyPreparedSafe == true or (rawSafeFoodTypes[foodTypeLower] == true and preparedUncooked ~= true)
     local cookableUncooked = isCookable == true and hiddenUncooked ~= true and rawSafeUncooked ~= true and preparedUncooked == true
     if trichinosisRisk <= 0
-        and isRotten ~= true
         and isBurnt ~= true
         and isCooked ~= true then
         if dangerousUncooked == true then
@@ -4827,13 +4947,17 @@ function EHR.Disease.CheckFoodRisk(player, item)
         end
     end
 
-    -- Stale food check (age-based, with B42 freshness fallback)
-    if isRotten ~= true and isBurnt ~= true and age and offAge then
-        if age > offAge * 0.8 then  -- More than 80% to spoilage
-            addRisk("food_poisoning", "stale", EHR.Disease.FoodRisks.stale)
-        end
-    elseif isRotten ~= true and isBurnt ~= true and isFresh == false then
-        addRisk("food_poisoning", "stale", EHR.Disease.FoodRisks.stale)
+    -- Respect the item's actual B42 freshness state. Age is only a fallback for
+    -- modded food which does not implement isFresh().
+    local staleRisk, staleReason = EHR.Disease.GetFoodFreshnessRisk(
+        isRotten,
+        isBurnt,
+        isFresh,
+        age,
+        offAge
+    )
+    if staleRisk > 0 then
+        addRisk("food_poisoning", staleReason, staleRisk)
     end
 
     local gastroRisk, gastroReason = EHR.Disease.GetGastroenteritisRisk(player)
@@ -4849,11 +4973,12 @@ function EHR.Disease.CheckFoodRisk(player, item)
             (tonumber(foodRisk.chance) or 0) * 100))
     end
     EHR_DiseaseDebugFood(player, "inspect", string.format(
-        "item=%s fullType=%s foodType=%s herbalist=%s rotten=%s burnt=%s cooked=%s cookable=%s fresh=%s age=%.2f/off=%.2f poison=%.2f detect=%.2f dangerousUncooked=%s looksUncooked=%s hiddenUncooked=%s rawSafe=%s prepared=%s cookableUncooked=%s trich=%.2f%%(%s) gastro=%.2f%%(%s) risks=[%s]",
+        "item=%s fullType=%s foodType=%s herbalist=%s portion=%.2f rotten=%s burnt=%s cooked=%s cookable=%s fresh=%s age=%.2f/off=%.2f poison=%.2f/%.2f detect=%.2f dangerousUncooked=%s looksUncooked=%s hiddenUncooked=%s rawSafe=%s prepared=%s cookableUncooked=%s trich=%.2f%%(%s) gastro=%.2f%%(%s) risks=[%s]",
         tostring(itemName or "unknown"),
         tostring(itemFullType or ""),
         tostring(foodType or ""),
         tostring(herbalistType or ""),
+        portion,
         tostring(isRotten),
         tostring(isBurnt),
         tostring(isCooked),
@@ -4862,6 +4987,7 @@ function EHR.Disease.CheckFoodRisk(player, item)
         tonumber(age) or 0,
         tonumber(offAge) or 0,
         poisonPower,
+        effectivePoisonPower,
         poisonDetectionLevel,
         tostring(dangerousUncooked),
         tostring(looksUncooked),
@@ -4902,9 +5028,10 @@ function EHR.Disease.CheckFoodRisk(player, item)
 
         sendClientCommand(player, "EHR", "FoodDiseaseRisk", {
             itemName = tostring(itemName or "unknown"),
+            portion = portion,
             risks = packetRisks,
         })
-        return
+        return risks
     end
 
     if #risks == 0 then
@@ -4924,17 +5051,28 @@ function EHR.Disease.CheckFoodRisk(player, item)
             foodRisk.chance
         )
     end
+    return risks
 end
 
 --[[
     OnEat event handler
 ]]--
 function EHR.Disease.OnEatFood(player, item, amount)
-    -- Ensure player has disease data
-    EHR.Disease.InitializePlayer(player)
+    if not player or not item then return end
 
-    -- Check the food for disease risk
-    EHR.Disease.CheckFoodRisk(player, item)
+    -- Dedicated MP servers receive the validated client packet. Ignoring the
+    -- mirrored event here prevents a second roll for the same bite.
+    if isServer and isServer() and (not isClient or not isClient()) then
+        return
+    end
+
+    -- Route OnEat and the timed-action fallback through one deduplication gate.
+    if EHR.FoodHook and EHR.FoodHook.HandleFoodConsumption then
+        return EHR.FoodHook.HandleFoodConsumption(player, item, amount)
+    end
+
+    EHR.Disease.InitializePlayer(player)
+    return EHR.Disease.CheckFoodRisk(player, item, amount)
 end
 
 -- ============================================

@@ -14,14 +14,15 @@ pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 require "TimedActions/ISEatFoodAction"
 
 EHR = EHR or {}
-EHR.FoodHook = {}
+EHR.FoodHook = EHR.FoodHook or {}
 
 -- Track if we've already hooked
-EHR.FoodHook.initialized = false
-EHR.FoodHook.drinkInitialized = false
-EHR.FoodHook.worldDrinkInitialized = false
+EHR.FoodHook.initialized = EHR.FoodHook.initialized or false
+EHR.FoodHook.drinkInitialized = EHR.FoodHook.drinkInitialized or false
+EHR.FoodHook.worldDrinkInitialized = EHR.FoodHook.worldDrinkInitialized or false
 EHR.FoodHook.lastFoodRisk = EHR.FoodHook.lastFoodRisk or {}
 EHR.FoodHook.lastDrinkRisk = EHR.FoodHook.lastDrinkRisk or {}
+EHR.FoodHook.lastFoodRiskCleanupHour = EHR.FoodHook.lastFoodRiskCleanupHour or nil
 
 local function shouldBlockEatingForTetanus(action)
     if not action or not action.character or not action.item then return false end
@@ -177,11 +178,35 @@ function EHR.FoodHook.HandleWaterDrink(player, waterSource, sourceType)
     end
 end
 
-function EHR.FoodHook.HandleFoodConsumption(player, item)
+local function isLocalFoodPlayer(player)
+    if not player or not getSpecificPlayer then return false end
+
+    local playerNum = safeCall(player, "getPlayerNum")
+    if playerNum ~= nil then
+        local ok, localPlayer = pcall(function() return getSpecificPlayer(playerNum) end)
+        if ok and localPlayer == player then return true end
+    end
+
+    local ok, firstPlayer = pcall(function() return getSpecificPlayer(0) end)
+    return ok and firstPlayer == player
+end
+
+function EHR.FoodHook.HandleFoodConsumption(player, item, amount)
     if not player or not item then return end
-    if player ~= getSpecificPlayer(0) then return end
+    if not isLocalFoodPlayer(player) then return end
 
     local currentHour = getGameTime():getWorldAgeHours()
+    local lastCleanup = EHR.FoodHook.lastFoodRiskCleanupHour
+    if not lastCleanup or currentHour < lastCleanup or (currentHour - lastCleanup) >= 0.10 then
+        local cutoff = currentHour - 0.01
+        for cachedKey, cachedHour in pairs(EHR.FoodHook.lastFoodRisk) do
+            if type(cachedHour) ~= "number" or cachedHour < cutoff or cachedHour > currentHour then
+                EHR.FoodHook.lastFoodRisk[cachedKey] = nil
+            end
+        end
+        EHR.FoodHook.lastFoodRiskCleanupHour = currentHour
+    end
+
     local key = getActionItemKey(player, item, "food")
     local lastHour = EHR.FoodHook.lastFoodRisk[key]
     if lastHour and (currentHour - lastHour) < 0.001 then
@@ -201,7 +226,7 @@ function EHR.FoodHook.HandleFoodConsumption(player, item)
     end
 
     if EHR.Disease and EHR.Disease.CheckFoodRisk then
-        EHR.Disease.CheckFoodRisk(player, item)
+        return EHR.Disease.CheckFoodRisk(player, item, amount)
     end
 end
 
@@ -209,7 +234,7 @@ local function handleCompletedFoodAction(action)
     if not action or action.EHR_FoodRiskHandled then return end
     action.EHR_FoodRiskHandled = true
     if action.item and action.character then
-        EHR.FoodHook.HandleFoodConsumption(action.character, action.item)
+        EHR.FoodHook.HandleFoodConsumption(action.character, action.item, action.percentage)
     end
 end
 
@@ -429,6 +454,7 @@ function EHR.FoodHook.Reset()
     -- The action hook is global. Reinstalling it after respawn stacks wrappers.
     EHR.FoodHook.lastFoodRisk = {}
     EHR.FoodHook.lastDrinkRisk = {}
+    EHR.FoodHook.lastFoodRiskCleanupHour = nil
     EHR.Log("FoodHook: Reset - global hook remains installed")
 end
 

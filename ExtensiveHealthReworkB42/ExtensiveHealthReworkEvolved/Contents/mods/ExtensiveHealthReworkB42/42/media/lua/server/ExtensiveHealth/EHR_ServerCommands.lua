@@ -1571,14 +1571,31 @@ function EHR.ServerCommands.FoodDiseaseRisk(player, args)
         return
     end
 
-    local itemName = tostring(args.itemName or "unknown")
+    local itemName = string.sub(tostring(args.itemName or "unknown"), 1, 128)
     local applied = 0
+    local processed = 0
     for _, foodRisk in ipairs(risks) do
+        if processed >= 3 then break end
+        processed = processed + 1
         if type(foodRisk) == "table" then
             local diseaseId = tostring(foodRisk.diseaseId or "")
             local reason = tostring(foodRisk.reason or "food")
-            local chance = math.max(0, math.min(1, tonumber(foodRisk.chance) or 0))
-            if chance > 0 and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId] then
+            local suppliedChance = math.max(0, math.min(1, tonumber(foodRisk.chance) or 0))
+            local chance, rejectionReason, clamped = EHR.Disease.ValidateFoodDiseaseRisk(
+                diseaseId,
+                reason,
+                suppliedChance
+            )
+            if chance then
+                if clamped then
+                    log(string.format(
+                        "[EHR Server] FoodDiseaseRisk clamped: disease=%s reason=%s supplied=%.4f accepted=%.4f",
+                        diseaseId,
+                        reason,
+                        suppliedChance,
+                        chance
+                    ))
+                end
                 local ok, result = pcall(function()
                     return EHR.Disease.ApplyFoodDiseaseRisk(player, itemName, diseaseId, reason, chance)
                 end)
@@ -1587,6 +1604,13 @@ function EHR.ServerCommands.FoodDiseaseRisk(player, args)
                 else
                     log("[EHR Server] FoodDiseaseRisk failed for " .. tostring(diseaseId) .. ": " .. tostring(result))
                 end
+            elseif suppliedChance > 0 then
+                log(string.format(
+                    "[EHR Server] FoodDiseaseRisk rejected: disease=%s reason=%s rejection=%s",
+                    diseaseId,
+                    reason,
+                    tostring(rejectionReason or "invalid risk")
+                ))
             end
         end
     end

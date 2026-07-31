@@ -18,7 +18,7 @@ require "ExtensiveHealth/EHR_DiseaseDefinitions"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
-EHR.Food = {}
+EHR.Food = EHR.Food or {}
 
 -- ============================================
 -- CONFIGURATION
@@ -74,7 +74,7 @@ EHR.Food.Config = {
 -- HAND CONTAMINATION TRACKING
 -- ============================================
 
-EHR.Food.HandData = {}
+EHR.Food.HandData = EHR.Food.HandData or {}
 
 --[[
     Initialize hand contamination tracking for a player
@@ -353,40 +353,12 @@ end
     Called when player eats food
     This should be hooked into the existing EHR_FoodHook.lua
 ]]--
-function EHR.Food.OnEatFood(player, item)
+function EHR.Food.OnEatFood(player, item, amount)
     if not player or not item then return end
 
-    -- Initialize if needed
     EHR.Food.InitializePlayer(player)
-
-    -- Check for trichinosis risk (raw meat)
-    if EHR.Food.IsTrichinosisEnabled() then
-        local trichinRisk = EHR.Food.CheckTrichinosisRisk(item)
-        trichinRisk = math.max(0, math.min(1, trichinRisk * getSandboxNumber("TrichinosisChanceMultiplier", 1.0, 0.0, 5.0)))
-        if trichinRisk > 0 then
-            EHR.Log(string.format("Trichinosis risk detected: %.0f%%", trichinRisk * 100))
-
-            if EHR.Disease and EHR.Disease.TryContract then
-                if EHR.Disease.TryContract(player, "trichinosis", trichinRisk) then
-                    EHR.Log("Player contracted trichinosis from raw meat!")
-                end
-            end
-        end
-    end
-
-    -- Check for gastroenteritis risk (dirty hands)
-    if EHR.Food.IsGastroenteritisEnabled() then
-        local handRisk = EHR.Food.GetContaminationRisk(player)
-        handRisk = math.max(0, math.min(1, handRisk * getSandboxNumber("GastroenteritisChanceMultiplier", 1.0, 0.0, 5.0)))
-        if handRisk > 0.05 then  -- Threshold to avoid constant checks
-            EHR.Log(string.format("Gastroenteritis risk from dirty hands: %.0f%%", handRisk * 100))
-
-            if EHR.Disease and EHR.Disease.TryContract then
-                if EHR.Disease.TryContract(player, "gastroenteritis", handRisk) then
-                    EHR.Log("Player contracted gastroenteritis from dirty hands!")
-                end
-            end
-        end
+    if EHR.Disease and EHR.Disease.CheckFoodRisk then
+        return EHR.Disease.CheckFoodRisk(player, item, amount)
     end
 end
 

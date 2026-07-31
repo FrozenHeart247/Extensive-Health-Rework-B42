@@ -835,6 +835,18 @@ function EHR.Blood.TriggerBlackout(player, data)
         EHR.Blood.BLACKOUT_SLEEP_HOURS, wakeUpTime, EHR.Blood.BLACKOUT_COOLDOWN_HOURS))
 end
 
+local function EHR_BloodIsBetaBlockerActive(player)
+    if not player then return false end
+
+    if EHR.Medication and EHR.Medication.IsBetaBlockerActive then
+        local ok, active = pcall(EHR.Medication.IsBetaBlockerActive, player)
+        if ok then return active == true end
+    end
+
+    local modData = player:getModData()
+    return modData and modData.EHR_BetaBlockerActive == true
+end
+
 function EHR.Blood.ApplyEffects(player, data)
     -- Safety check: ensure blood data exists (can be nil after reset)
     if not data or not data.EHR_Blood then return end
@@ -861,12 +873,38 @@ function EHR.Blood.ApplyEffects(player, data)
     end
 
     local bloodPercent = data.EHR_Blood.currentVolume / data.EHR_Blood.maxVolume
+    local betaBlockerActive = EHR_BloodIsBetaBlockerActive(player)
+    local functionalBloodPercent = bloodPercent
+    if betaBlockerActive and bloodPercent < 0.90 then
+        -- Beta blockers do not make wounds bleed faster. They blunt the
+        -- cardiovascular compensation for hypovolemia, so low blood volume
+        -- produces weakness and blackout risk about five percentage points sooner.
+        functionalBloodPercent = math.max(0, bloodPercent - 0.05)
+    end
     local stats = player:getStats()
 
     if not stats then return end
 
     -- Get current stage
-    local currentStage = EHR.Blood.GetStage(bloodPercent)
+    local actualStage = EHR.Blood.GetStage(bloodPercent)
+    local currentStage = EHR.Blood.GetStage(functionalBloodPercent)
+    local betaStageShifted = betaBlockerActive and currentStage < actualStage
+    if betaStageShifted then
+        data.EHR_Blood.betaBlockerStageShifted = true
+    elseif data.EHR_Blood.betaBlockerStageShifted then
+        -- Restore the movement modifier when a temporary beta-blocker stage
+        -- shift ends (including after a transfusion during the active dose).
+        data.EHR_Blood.betaBlockerStageShifted = nil
+        if player.setSpeedMod then
+            if actualStage == EHR.Blood.Stages.CRITICAL then
+                player:setSpeedMod(0.5)
+            elseif actualStage == EHR.Blood.Stages.MODERATE then
+                player:setSpeedMod(0.8)
+            else
+                player:setSpeedMod(1.0)
+            end
+        end
+    end
 
     -- Check for stage transition (trigger dialogue once per stage)
     local lastStage = data.EHR_Blood.lastStage or EHR.Blood.Stages.HEALTHY
@@ -876,7 +914,14 @@ function EHR.Blood.ApplyEffects(player, data)
         if dialogue then
             EHR.Dialogue.SayStageChange(player, dialogue)
         end
-        EHR.Log(string.format("Blood stage changed: %d -> %d (%.1f%%)", lastStage, currentStage, bloodPercent * 100))
+        if betaBlockerActive then
+            EHR.Log(string.format(
+                "Blood stage changed: %d -> %d (actual %.1f%%, beta-blocked functional %.1f%%)",
+                lastStage, currentStage, bloodPercent * 100, functionalBloodPercent * 100
+            ))
+        else
+            EHR.Log(string.format("Blood stage changed: %d -> %d (%.1f%%)", lastStage, currentStage, bloodPercent * 100))
+        end
     end
     data.EHR_Blood.lastStage = currentStage
 
@@ -924,8 +969,9 @@ function EHR.Blood.ApplyEffects(player, data)
         -- Check 24-hour cooldown
         local canBlackout, hoursSince = EHR.Blood.CanBlackout(player)
 
-        -- Adrenaline check: panic or stress prevents blackout
-        if canBlackout and CharacterStat then
+        -- Adrenaline can prevent a blackout unless beta blockade suppresses
+        -- that compensatory cardiovascular response.
+        if canBlackout and CharacterStat and not betaBlockerActive then
             local panic = 0
             local stress = 0
             if CharacterStat.PANIC then

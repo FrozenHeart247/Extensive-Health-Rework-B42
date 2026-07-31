@@ -130,7 +130,11 @@ EHR.Medication.Database = {
         icon = "Painkillers",
         useVanillaActionOnly = true,
         skipDrugInteractions = true,
-        usageMessage = "You take painkillers. The pain eases slightly.",
+        effectDurationHours = 3,
+        analgesic = {
+            rampHours = 0.5,
+        },
+        usageMessage = "You take painkillers. The pain begins to fade.",
     },
 
     -- Base.PillsVitamins (B42 caffeine pills)
@@ -198,6 +202,20 @@ EHR.Medication.Database = {
         treats = {"hypothermia"},
         displayName = "Beta Blockers",
         icon = "PillsBetablocker",
+        effectDurationHours = 2,
+        betaBlocker = true,
+        monitorSideEffects = {
+            {
+                effectId = "beta_blocker_sleep_disruption",
+                displayName = "Sleep disruption (cannot sleep)",
+                severity = 1,
+            },
+            {
+                effectId = "beta_blocker_blood_loss_risk",
+                displayName = "Reduced blood-loss tolerance",
+                severity = 2,
+            },
+        },
         usageMessage = "You take beta blockers. Your heart rate stabilizes.",
     },
 
@@ -2182,13 +2200,13 @@ EHR.Medication.SideEffects = {
 EHR.Medication.DosingSchedules = {
     -- Tier 0 - Basic (every 4 hours)
     ["Base.Antibiotics"] = { doseInterval = 4, dosesRequired = 6 },
-    ["Base.Pills"] = { doseInterval = 4, dosesRequired = 3 },
+    ["Base.Pills"] = { doseInterval = 3, dosesRequired = 1, activeHours = 3 },
     ["ExtensiveHealth.HomemadePainkillers"] = { doseInterval = 4, dosesRequired = 3 },
     ["Base.PillsVitamins"] = { doseInterval = 12, dosesRequired = 1 },
     ["Base.PillsSleepingTablets"] = { doseInterval = 8, dosesRequired = 1 },
     ["ExtensiveHealth.HomemadeSleepingPills"] = { doseInterval = 8, dosesRequired = 1 },
     ["Base.PillsAntiDep"] = { doseInterval = 12, dosesRequired = 14 },
-    ["Base.PillsBeta"] = { doseInterval = 8, dosesRequired = 3 },
+    ["Base.PillsBeta"] = { doseInterval = 2, dosesRequired = 1, activeHours = 2 },
 
     -- Tier 1 - OTC (every 4-6 hours)
     ["ExtensiveHealth.ColdFluTablets"] = { doseInterval = 4, dosesRequired = 8 },
@@ -2319,6 +2337,7 @@ local function EHR_MedicationGetDoseTiming(medData, itemFullType, tierEffects)
 
     local canCure = EHR_MedicationCanCure(medData, tierEffects)
     local hasSymptomRelief = medData.symptomReduction ~= nil
+        or medData.analgesic ~= nil
         or ((tierEffects and tierEffects.symptomRelief or 0) > 0)
     local symptomOnly = hasSymptomRelief and not canCure
 
@@ -3414,6 +3433,20 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
         EHR.Medication.StartSleepAid(player, medData)
     end
 
+    if medData.analgesic then
+        local trackedDose = medTracking.activeDoses[medKey]
+        if type(trackedDose) == "table" then
+            local initialPain = 0
+            pcall(function()
+                local stats = player:getStats()
+                if stats and CharacterStat and CharacterStat.PAIN then
+                    initialPain = tonumber(stats:get(CharacterStat.PAIN)) or 0
+                end
+            end)
+            trackedDose.analgesicInitialPain = math.max(0, math.min(100, initialPain))
+        end
+    end
+
     EHR.Log("Tracked dose (no disease): " .. medData.displayName)
 end
 
@@ -3935,6 +3968,94 @@ function EHR.Medication.IsCaffeineAwake(player)
     return currentHour < (tonumber(effect.endTime) or 0)
 end
 
+-- Beta blockers use the EHR dose timer as their single source of truth. This
+-- keeps the monitor, panic suppression, sleep block and blood-volume effects
+-- synchronized even though the vanilla beta effect has a much shorter timer.
+function EHR.Medication.IsBetaBlockerActive(player)
+    if not player or not EHR.Medication.GetDoseStatus then return false end
+
+    local ok, status = pcall(EHR.Medication.GetDoseStatus, player, "Base.PillsBeta")
+    return ok and status ~= nil and status.isDoseActive == true
+end
+
+function EHR.Medication.IsAnalgesicActive(player)
+    if not player or not EHR.Medication.GetDoseStatus then return false end
+
+    local ok, status = pcall(EHR.Medication.GetDoseStatus, player, "Base.Pills")
+    return ok and status ~= nil and status.isDoseActive == true
+end
+
+-- Pain itself is a 0..100 CharacterStat in B42. Only the final perceived pain
+-- is changed here; body-part AdditionalPain remains intact, so untreated wounds
+-- become painful again naturally after the analgesic wears off.
+local function EHRMedicationSetPerceivedPain(player, value)
+    if not player or not CharacterStat or not CharacterStat.PAIN then return false end
+
+    local stats = nil
+    pcall(function() stats = player:getStats() end)
+    if not stats then return false end
+
+    local ok = pcall(function()
+        stats:set(CharacterStat.PAIN, math.max(0, math.min(100, tonumber(value) or 0)))
+    end)
+    return ok == true
+end
+
+local function EHRMedicationUpdateAnalgesic(player, medTracking, currentHour)
+    if not player or not medTracking then return end
+
+    local doseData = medTracking.activeDoses and medTracking.activeDoses["Base.Pills"] or nil
+    local medData = EHR.Medication.Database and EHR.Medication.Database["Base.Pills"] or nil
+    local analgesic = medData and medData.analgesic or nil
+    local active = type(doseData) == "table"
+        and analgesic ~= nil
+        and EHR.Medication.IsAnalgesicActive
+        and EHR.Medication.IsAnalgesicActive(player)
+    local modData = player:getModData()
+
+    if not active then
+        if modData then
+            modData.EHR_AnalgesicActive = nil
+        end
+        return
+    end
+
+    if modData then
+        modData.EHR_AnalgesicActive = true
+    end
+
+    local currentPain = 0
+    local hasPain = false
+    pcall(function()
+        local stats = player:getStats()
+        if stats and CharacterStat and CharacterStat.PAIN then
+            currentPain = tonumber(stats:get(CharacterStat.PAIN)) or 0
+            hasPain = true
+        end
+    end)
+    if not hasPain then return end
+
+    local initialPain = tonumber(doseData.analgesicInitialPain)
+    if initialPain == nil then
+        initialPain = math.max(0, math.min(100, currentPain))
+        doseData.analgesicInitialPain = initialPain
+    end
+
+    local startTime = tonumber(doseData.lastDoseTime) or currentHour
+    local elapsed = math.max(0, currentHour - startTime)
+    local rampHours = math.max(0.01, tonumber(analgesic.rampHours) or 0.5)
+    local progress = math.max(0, math.min(1, elapsed / rampHours))
+    local targetPain = math.max(0, initialPain * (1 - progress))
+
+    -- A new injury may raise pain again while the medicine is active. Capping
+    -- the final stat every update keeps that pain masked without erasing its source.
+    if currentPain > targetPain + 0.001 then
+        if EHRMedicationSetPerceivedPain(player, targetPain) then
+            EHRMedicationRefreshMoodles(player)
+        end
+    end
+end
+
 function EHR.Medication.StartSleepAid(player, medData)
     local support = medData and medData.sleepAid
     if not player or not support then return false end
@@ -4207,11 +4328,29 @@ local function EHRMedicationRollInsomniaCrash(player, source)
 end
 
 function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
-    if not player or not medTracking or not medTracking.activeGeneralEffects then return end
+    if not player or not medTracking then return end
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
 
     local authoritative = EHRMedicationIsAuthoritative()
     local changed = false
     EHRMedicationUpdateMPFatigueRecovery(player, medTracking, currentHour)
+    EHRMedicationUpdateAnalgesic(player, medTracking, currentHour)
+
+    local betaModData = player:getModData()
+    local betaActive = EHR.Medication.IsBetaBlockerActive
+        and EHR.Medication.IsBetaBlockerActive(player)
+    if betaActive then
+        if betaModData then
+            betaModData.EHR_BetaBlockerActive = true
+        end
+        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.PANIC, 0)
+    elseif betaModData and betaModData.EHR_BetaBlockerActive then
+        betaModData.EHR_BetaBlockerActive = nil
+        -- Stop any remaining vanilla timer when the two-hour EHR effect ends.
+        if player.setBetaEffect then
+            pcall(function() player:setBetaEffect(0) end)
+        end
+    end
 
     local sleepAid = medTracking.activeGeneralEffects.sleepAid
     if type(sleepAid) == "table" then
@@ -5120,6 +5259,13 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     local activeHours = doseData.activeHours
     if activeHours == nil then activeHours = doseTiming.activeHours end
     local totalDosesNeeded = doseData.totalDosesNeeded or doseTiming.dosesRequired
+    if medKey == "Base.PillsBeta" or medKey == "Base.Pills" then
+        -- Migrate active vanilla-drug doses saved by older builds to the current
+        -- EHR duration/course definition instead of retaining stale schedules.
+        intervalHours = doseTiming.doseInterval
+        activeHours = doseTiming.activeHours
+        totalDosesNeeded = doseTiming.dosesRequired
+    end
     local medCanCure = EHR_MedicationCanCure(medData, tierEffects)
     local requiresDoseCourse = doseData.requiresDoseCourse == true
         or (doseData.treatingDisease ~= nil and medCanCure)
@@ -5692,6 +5838,54 @@ function EHR.Medication.GetActiveSideEffects(player)
     end
 
     return effects
+end
+
+-- Add predictable dose-bound effects to the UI without registering them as
+-- activeSideEffects. The latter is also consumed by moodles and gameplay
+-- effect handlers, while this list is informational and monitor-only.
+function EHR.Medication.AppendDoseSideEffectsForMonitor(effects, doseStatuses)
+    effects = effects or {}
+
+    local seen = {}
+    for _, effect in pairs(effects) do
+        if type(effect) == "table" and effect.effectId then
+            seen[tostring(effect.effectId)] = true
+        end
+    end
+
+    for keyFromMap, status in pairs(doseStatuses or {}) do
+        if type(status) == "table" and status.isDoseActive == true then
+            local remaining = math.max(0, tonumber(status.hoursActiveRemaining) or 0)
+            if remaining > (1 / 60) then
+                local medKey = status.medKey or tostring(keyFromMap)
+                local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+                for _, effectData in ipairs((medData and medData.monitorSideEffects) or {}) do
+                    local effectId = effectData.effectId
+                    if effectId and not seen[effectId] then
+                        table.insert(effects, {
+                            effectId = effectId,
+                            displayName = EHR.Medication.GetSideEffectDisplayName(effectId, effectData),
+                            severity = tonumber(effectData.severity) or 1,
+                            hoursRemaining = remaining,
+                            medicationName = status.medicationName or (medData and medData.displayName),
+                            doseBound = true,
+                        })
+                        seen[effectId] = true
+                    end
+                end
+            end
+        end
+    end
+
+    return effects
+end
+
+function EHR.Medication.GetMonitorSideEffects(player)
+    if not player then return {} end
+
+    local effects = EHR.Medication.GetActiveSideEffects(player)
+    local doseStatuses = EHR.Medication.GetAllDoseStatuses(player)
+    return EHR.Medication.AppendDoseSideEffectsForMonitor(effects, doseStatuses)
 end
 
 -- ============================================

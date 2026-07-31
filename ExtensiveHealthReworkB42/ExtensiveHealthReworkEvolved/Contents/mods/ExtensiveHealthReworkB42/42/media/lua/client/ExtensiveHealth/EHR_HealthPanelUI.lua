@@ -2877,6 +2877,8 @@ function EHR_HealthPanelUI:updateCachedData()
         activeSideEffects = medicationView.activeSideEffects or {}
     elseif self.isRemoteHealthPanel and medicationData.activeSideEffects then
         activeSideEffects = medicationData.activeSideEffects or {}
+    elseif EHR.Medication and EHR.Medication.GetMonitorSideEffects and self.player then
+        activeSideEffects = EHR.Medication.GetMonitorSideEffects(self.player) or {}
     elseif EHR.Medication and EHR.Medication.GetActiveSideEffects and self.player then
         activeSideEffects = EHR.Medication.GetActiveSideEffects(self.player) or {}
     end
@@ -5265,6 +5267,9 @@ function EHR_HealthPanelUI:drawRightPanel()
     else
         for _, effect in ipairs(sideEffects) do
             local name = effect.displayName or effect.effectId or "Side effect"
+            if EHR.Medication and EHR.Medication.GetSideEffectDisplayName and effect.effectId then
+                name = EHR.Medication.GetSideEffectDisplayName(effect.effectId, effect)
+            end
             local remaining = formatShortHours(effect.hoursRemaining or 0)
             self:drawText(self:truncateText(name, w - 120, UIFont.Small), x + 18, contentY, c.yellow.r, c.yellow.g, c.yellow.b, c.yellow.a, UIFont.Small)
             self:drawTextRight(remaining, x + w - 18, contentY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)

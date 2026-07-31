@@ -67,7 +67,7 @@
     "Tooltip_Antibiotics": "Basic antibiotics. <LINE> Provides minor infection support. <LINE> Does not replace full EHR treatment courses.",
     "Tooltip_Painkillers": "Basic painkillers. <LINE> Reduces pain using vanilla behavior. <LINE> EHR tracks remaining doses and active duration.",
     "Tooltip_PillsAntidepressant": "Antidepressants. <LINE> Helps reduce panic and depression using vanilla behavior. <LINE> Allows sleep during active insomnia. <LINE> Long-course insomnia treatment: 168 hours.",
-    "Tooltip_PillsBetablocker": "Beta blockers. <LINE> Helps control panic using vanilla behavior. <LINE> EHR tracks remaining doses and active duration.",
+    "Tooltip_PillsBetablocker": "Beta blockers. <LINE> Suppresses panic for about 2 hours. <LINE> Prevents normal sleep while active. <LINE> Worsens weakness and blackout risk when blood volume is low.",
     "Tooltip_EHR_Label_ZeroHours": "0 hours",
     "Tooltip_EHR_Label_Minutes": "%1 min",
     "Tooltip_EHR_Label_Hours": "%1 hour(s)",

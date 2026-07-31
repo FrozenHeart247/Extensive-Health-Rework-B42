@@ -1079,7 +1079,7 @@ function EHR_MedicalMonitorUI:updateCachedData()
     -- Get medication data
     if self.isRemoteExamination and self.remoteExamData and self.remoteExamData.EHR_Medication then
         -- Use server-provided medication data for remote examination
-        local medData = self.remoteExamData.EHR_Medication
+        local medData = self.remoteExamData.EHR_MedicationView or self.remoteExamData.EHR_Medication
         self.cachedData.medications = medData.activeTreatments or {}
         self.cachedData.sideEffects = medData.activeSideEffects or {}
         self.cachedData.doseStatuses = medData.activeDoses or {}
@@ -1087,7 +1087,9 @@ function EHR_MedicalMonitorUI:updateCachedData()
         if EHR.Medication.GetActiveTreatments then
             self.cachedData.medications = EHR.Medication.GetActiveTreatments(self.player)
         end
-        if EHR.Medication.GetActiveSideEffects then
+        if EHR.Medication.GetMonitorSideEffects then
+            self.cachedData.sideEffects = EHR.Medication.GetMonitorSideEffects(self.player)
+        elseif EHR.Medication.GetActiveSideEffects then
             self.cachedData.sideEffects = EHR.Medication.GetActiveSideEffects(self.player)
         end
         if EHR.Medication.GetAllDoseStatuses then
@@ -2356,7 +2358,7 @@ function EHR_MedicalMonitorUI:renderSideEffectsSection(startY)
         -- Get translated side effect name
         local displayName = effect.displayName or effect.effectId
         if EHR.Medication and EHR.Medication.GetSideEffectDisplayName and effect.effectId then
-            displayName = EHR.Medication.GetSideEffectDisplayName(effect.effectId)
+            displayName = EHR.Medication.GetSideEffectDisplayName(effect.effectId, effect)
         elseif getText and effect.effectId then
             -- Try the side effect translation key (UI_SideEffect_Nausea, etc.)
             local key = "UI_SideEffect_" .. effect.effectId:gsub("^%l", string.upper):gsub("_(%l)", function(c) return c:upper() end)

@@ -1,4 +1,4 @@
--- Blocks normal sleep while EHR stimulant effects are active.
+-- Blocks normal sleep while selected EHR medication effects are active.
 
 require "ExtensiveHealth/EHR_Medication"
 require "ISUI/ISWorldObjectContextMenu"
@@ -20,17 +20,37 @@ local function EHR_StimulantSleepText()
     return "The caffeine is still burning through me. I can't sleep."
 end
 
+local function EHR_BetaBlockerSleepText()
+    if getText then
+        local key = "UI_EHR_BetaBlocker_NoSleep"
+        local text = getText(key)
+        if text and text ~= key then
+            return text
+        end
+    end
+    return "The beta blockers are disturbing my sleep. I can't fall asleep yet."
+end
+
+local function EHR_ShowSleepBlocked(player, text)
+    if HaloTextHelper and HaloTextHelper.addBadText then
+        pcall(function() HaloTextHelper.addBadText(player, text) end)
+    elseif player.Say then
+        pcall(function() EHR.Locale.Say(player, text) end)
+    end
+end
+
 local function EHR_StimulantSleepBlocked(player)
     if not player or not EHR.Medication or not EHR.Medication.IsCaffeineAwake then
         -- Keep checking insomnia even if the medication module is missing a caffeine helper.
     elseif EHR.Medication.IsCaffeineAwake(player) then
         local text = EHR_StimulantSleepText()
-        if HaloTextHelper and HaloTextHelper.addBadText then
-            pcall(function() HaloTextHelper.addBadText(player, text) end)
-        elseif player.Say then
-            pcall(function() EHR.Locale.Say(player, text) end)
-        end
+        EHR_ShowSleepBlocked(player, text)
+        return true
+    end
 
+    if EHR.Medication and EHR.Medication.IsBetaBlockerActive
+            and EHR.Medication.IsBetaBlockerActive(player) then
+        EHR_ShowSleepBlocked(player, EHR_BetaBlockerSleepText())
         return true
     end
 
@@ -44,12 +64,7 @@ local function EHR_StimulantSleepBlocked(player)
             end
         end
 
-        if HaloTextHelper and HaloTextHelper.addBadText then
-            pcall(function() HaloTextHelper.addBadText(player, text) end)
-        elseif player.Say then
-            pcall(function() EHR.Locale.Say(player, text) end)
-        end
-
+        EHR_ShowSleepBlocked(player, text)
         return true
     end
 

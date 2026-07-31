@@ -190,6 +190,7 @@ local function trackMedicationDose(character, item, medData, itemFullType)
             lastDoseTime = currentHour,
             treatingDisease = trackedDose.treatingDisease,
             symptomOnly = trackedDose.symptomOnly == true,
+            analgesicInitialPain = trackedDose.analgesicInitialPain,
         })
     end
 end

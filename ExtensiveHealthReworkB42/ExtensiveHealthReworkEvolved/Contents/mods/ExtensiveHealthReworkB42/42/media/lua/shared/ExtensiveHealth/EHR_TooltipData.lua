@@ -262,9 +262,9 @@ EHR.Tooltips.Data = {
         description = "Beta blocker tablets.",
         relieves = {"Panic", "Heart strain"},
         effects = {
-            "Uses vanilla beta blocker behavior",
-            "Provides minor EHR support during heat or cold stress",
-            "Tracked by EHR medication monitoring",
+            "Suppresses panic for about 2 hours",
+            "Prevents normal sleep while active",
+            "Worsens weakness and blackout risk when blood volume is low",
             "Multi-dose bottle",
         },
     },

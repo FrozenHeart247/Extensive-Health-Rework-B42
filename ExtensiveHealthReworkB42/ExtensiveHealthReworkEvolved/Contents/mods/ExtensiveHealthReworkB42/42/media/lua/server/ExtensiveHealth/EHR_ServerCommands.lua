@@ -3360,6 +3360,7 @@ local function OnClientCommand(module, command, player, args)
                 startTime = args.lastDoseTime,
                 treatingDisease = args.treatingDisease,
                 symptomOnly = args.symptomOnly == true,
+                analgesicInitialPain = args.analgesicInitialPain,
             }
 
             syncModDataToClient(player)
@@ -3443,7 +3444,8 @@ local function OnClientCommand(module, command, player, args)
                 medicationView = {
                     activeTreatments = EHR.Medication.GetActiveTreatments and EHR.Medication.GetActiveTreatments(targetPlayer) or {},
                     activeDoses = EHR.Medication.GetAllDoseStatuses and EHR.Medication.GetAllDoseStatuses(targetPlayer) or {},
-                    activeSideEffects = EHR.Medication.GetActiveSideEffects and EHR.Medication.GetActiveSideEffects(targetPlayer) or {},
+                    activeSideEffects = EHR.Medication.GetMonitorSideEffects and EHR.Medication.GetMonitorSideEffects(targetPlayer)
+                        or (EHR.Medication.GetActiveSideEffects and EHR.Medication.GetActiveSideEffects(targetPlayer) or {}),
                 }
             end
 

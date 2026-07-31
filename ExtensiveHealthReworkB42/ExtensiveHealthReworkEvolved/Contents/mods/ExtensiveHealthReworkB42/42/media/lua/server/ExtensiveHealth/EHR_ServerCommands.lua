@@ -582,6 +582,8 @@ local function ensureWoundData(data)
     }
     data.EHR_WoundInfection.parts = data.EHR_WoundInfection.parts or {}
     data.EHR_WoundInfection.incubating = data.EHR_WoundInfection.incubating or {}
+    data.EHR_WoundInfection.immuneContained = data.EHR_WoundInfection.immuneContained or {}
+    data.EHR_WoundInfection.antisepticBlocked = data.EHR_WoundInfection.antisepticBlocked or {}
     return data.EHR_WoundInfection
 end
 
@@ -1631,6 +1633,64 @@ local function setCellulitisSource(targetPlayer, args)
     cellulitis.sourceBodyPart = args and args.sourceBodyPart or cellulitis.sourceBodyPart
     cellulitis.stitchQuality = tonumber(args and args.quality) or cellulitis.stitchQuality
     cellulitis.stitchMisses = tonumber(args and args.misses) or cellulitis.stitchMisses
+end
+
+local function resolveWoundBodyPartType(partName)
+    if not BodyPartType or not partName then return nil end
+    partName = tostring(partName)
+
+    local partType = BodyPartType[partName]
+    if not partType and BodyPartType.FromString then
+        local ok, result = pcall(function() return BodyPartType.FromString(partName) end)
+        if ok then partType = result end
+    end
+
+    if not partType or tostring(partType) == "MAX" or tostring(partType) ~= partName then
+        return nil
+    end
+    return partType
+end
+
+local function playersAreCloseEnoughForTreatment(doctor, patient)
+    if not doctor or not patient then return false end
+    if doctor == patient then return true end
+
+    local ok, closeEnough = pcall(function()
+        if math.abs((doctor:getZ() or 0) - (patient:getZ() or 0)) > 0.01 then return false end
+        local dx = (doctor:getX() or 0) - (patient:getX() or 0)
+        local dy = (doctor:getY() or 0) - (patient:getY() or 0)
+        return (dx * dx + dy * dy) <= 9
+    end)
+    return ok and closeEnough == true
+end
+
+function EHR.ServerCommands.WoundDisinfected(player, args)
+    if not player or not args then return end
+
+    local targetPlayer = findOnlinePlayerByArgs(args, player)
+    if not targetPlayer then
+        log("[EHR Server] WoundDisinfected rejected: target player not found")
+        return
+    end
+    if not playersAreCloseEnoughForTreatment(player, targetPlayer) then
+        log("[EHR Server] WoundDisinfected rejected: target player is too far away")
+        return
+    end
+
+    local partType = resolveWoundBodyPartType(args.bodyPart)
+    if not partType then
+        log("[EHR Server] WoundDisinfected rejected: invalid body part " .. tostring(args.bodyPart))
+        return
+    end
+    if not EHR.WoundInfection or not EHR.WoundInfection.OnDisinfect then
+        log("[EHR Server] WoundDisinfected rejected: wound infection module unavailable")
+        return
+    end
+
+    EHR.WoundInfection.OnDisinfect(targetPlayer, partType)
+    syncModDataToClient(targetPlayer)
+    log("[EHR Server] Disinfected wound state on " .. tostring(partType)
+        .. " for " .. tostring(targetPlayer:getUsername()))
 end
 
 function EHR.ServerCommands.StitchCellulitisRisk(player, args)
@@ -3232,6 +3292,9 @@ local function OnClientCommand(module, command, player, args)
         elseif command == "FoodDiseaseRisk" then
             EHR.ServerCommands.FoodDiseaseRisk(player, args)
             return
+        elseif command == "WoundDisinfected" then
+            EHR.ServerCommands.WoundDisinfected(player, args)
+            return
         elseif command == "StitchCellulitisRisk" then
             EHR.ServerCommands.StitchCellulitisRisk(player, args)
             return
@@ -3893,52 +3956,10 @@ local function processPlayerProgression(player)
         end
     end
 
-    -- Process Wound Infection Progression
-    if data.EHR_WoundInfection and data.EHR_WoundInfection.parts then
-        for partName, partData in pairs(data.EHR_WoundInfection.parts) do
-            if partData.stage and partData.stage > 0 and partData.stage < 4 then
-                local stageTime = currentHour - (partData.stageStartTime or currentHour)
-                -- Wounds progress roughly every 12-24 hours without treatment
-                local progressionTime = 18 - (partData.stage * 2)  -- Faster at higher stages
-
-                if stageTime >= progressionTime then
-                    local nextStage = partData.stage + 1
-
-                    if nextStage >= 4 then
-                        -- Stage 4 is a handoff into systemic sepsis. Keep the
-                        -- local wound severe so the UI does not stick at 100%.
-                        if not data.EHR_Sepsis or not data.EHR_Sepsis.active then
-                            data.EHR_Sepsis = {
-                                active = true,
-                                stage = 1,
-                                startTime = currentHour,
-                                stageStartTime = currentHour,
-                                sourceBodyPart = partName,
-                                treatmentDoses = 0,
-                                lastHealthDamageHour = currentHour,
-                                healthCap = nil,
-                            }
-                            data.EHR_Sepsis_Initialized = true
-                            log("[EHR Server] Player " .. player:getUsername() .. " developed sepsis from wound " .. partName)
-                        end
-
-                        partData.stage = 3
-                        partData.stageStartTime = currentHour
-                        partData.sepsisTriggered = true
-                        partData.lastSepsisTrigger = currentHour
-                        log("[EHR Server] Player " .. player:getUsername() .. " wound " .. partName .. " handed off to sepsis")
-                    else
-                        partData.stage = nextStage
-                        partData.stageStartTime = currentHour
-                        log("[EHR Server] Player " .. player:getUsername() .. " wound " .. partName .. " progressed to stage " .. partData.stage)
-                    end
-                end
-            end
-        end
-
-        -- Recalculate wound stats
-        recalcWoundStats(data.EHR_WoundInfection)
-    end
+    -- Wound infection detection, incubation, stage timing, treatment holds and
+    -- sepsis handoff are owned by EHR_WoundInfection_V2 on the server. Keeping
+    -- a second progression loop here made MP advance by two different clocks
+    -- and bypassed the WoundInfectionSpeed sandbox multiplier.
 
     -- Blood regeneration is handled by EHR.Blood.UpdateBloodVolume through
     -- EHR.Blood.ApplyBloodRegeneration. Keeping a second server-only regen here

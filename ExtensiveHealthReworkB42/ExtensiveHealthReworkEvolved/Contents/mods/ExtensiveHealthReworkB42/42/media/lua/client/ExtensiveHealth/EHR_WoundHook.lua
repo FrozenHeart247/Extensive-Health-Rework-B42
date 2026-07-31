@@ -190,6 +190,32 @@ local function WoundHookPlayerName(player)
     return tostring(name or player)
 end
 
+local function WoundHookNotifyServerOfDisinfect(doctor, patient, bodyPartType)
+    if not (isClient and isClient()) or not sendClientCommand then return end
+    if not doctor or not patient or not bodyPartType then return end
+
+    local args = { bodyPart = tostring(bodyPartType) }
+    if patient ~= doctor then
+        pcall(function()
+            if patient.getUsername then args.targetUsername = patient:getUsername() end
+        end)
+        pcall(function()
+            if patient.getOnlineID then args.targetOnlineID = tostring(patient:getOnlineID()) end
+        end)
+        pcall(function()
+            if patient.getDisplayName then args.targetDisplayName = tostring(patient:getDisplayName()) end
+        end)
+
+        if not args.targetUsername and not args.targetOnlineID and not args.targetDisplayName then
+            WoundHookDisinfectDebug("cannot notify server: remote patient has no stable identifier")
+            return
+        end
+    end
+
+    sendClientCommand(doctor, "EHR", "WoundDisinfected", args)
+    WoundHookDisinfectDebug("notified server of disinfect part=" .. tostring(bodyPartType))
+end
+
 local function WoundHookItemName(item)
     if not item then return "nil" end
     local name = nil
@@ -259,6 +285,7 @@ local function WoundHookProcessDisinfect(action, source)
     if bodyPartType and EHR.WoundInfection and EHR.WoundInfection.OnDisinfect then
         WoundHookDisinfectDebug("calling OnDisinfect partType=" .. tostring(bodyPartType))
         EHR.WoundInfection.OnDisinfect(patient, bodyPartType)
+        WoundHookNotifyServerOfDisinfect(doctor, patient, bodyPartType)
     else
         WoundHookDisinfectDebug("OnDisinfect unavailable bodyPartType=" .. tostring(bodyPartType))
     end
@@ -331,6 +358,7 @@ function EHR.WoundHook.HookBandageAction()
                 if bodyPartType and EHR.WoundInfection and EHR.WoundInfection.OnDisinfect then
                     WoundHookDisinfectDebug("ISApplyBandage calling OnDisinfect partType=" .. tostring(bodyPartType))
                     EHR.WoundInfection.OnDisinfect(patient, bodyPartType)
+                    WoundHookNotifyServerOfDisinfect(doctor, patient, bodyPartType)
                 else
                     WoundHookDisinfectDebug("ISApplyBandage OnDisinfect unavailable bodyPartType=" .. tostring(bodyPartType))
                 end

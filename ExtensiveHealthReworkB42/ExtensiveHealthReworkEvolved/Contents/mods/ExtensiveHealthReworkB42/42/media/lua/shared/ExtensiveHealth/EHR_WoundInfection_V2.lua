@@ -118,7 +118,8 @@ function EHR.WoundInfection.IsEnabled()
 end
 
 function EHR.WoundInfection.GetSpeedMultiplier()
-    return EHR.WoundInfection.GetSetting("WoundInfectionSpeed", 1.0)
+    local value = tonumber(EHR.WoundInfection.GetSetting("WoundInfectionSpeed", 1.0)) or 1.0
+    return math.max(0.1, math.min(10.0, value))
 end
 
 -- ============================================
@@ -127,12 +128,17 @@ end
 
 EHR.WoundInfection.VANILLA_INFECTION_LEVEL_EPSILON = 0.05
 
-function EHR.WoundInfection.IsVanillaInfected(bodyPart)
+function EHR.WoundInfection.GetVanillaInfectionFlag(bodyPart)
     if not bodyPart then return false end
     local flagOk, flag = pcall(function()
         return bodyPart:isInfectedWound()
     end)
-    if flagOk and flag then return true end
+    return flagOk and flag == true or false
+end
+
+function EHR.WoundInfection.IsVanillaInfected(bodyPart)
+    if not bodyPart then return false end
+    if EHR.WoundInfection.GetVanillaInfectionFlag(bodyPart) then return true end
 
     -- In B42/MP the vanilla wound infection can briefly have a positive level
     -- while the boolean flag is false or not yet replicated. Ignore tiny
@@ -173,6 +179,9 @@ local function BodyPartHasActiveWound(bodyPart)
     if check(function() return bodyPart:isBurnt() end) then return true end
     if check(function() return bodyPart:haveGlass() end) then return true end
     if check(function() return bodyPart:haveBullet() end) then return true end
+    -- A stitched deep wound is closed at the surface, but it is still a valid
+    -- source of a new infection (vanilla can infect it during stitching).
+    if check(function() return bodyPart:stitched() end) then return true end
 
     if checkPositive(function() return bodyPart:getBleedingTime() end) then return true end
     if checkPositive(function() return bodyPart:getScratchTime() end) then return true end
@@ -180,6 +189,7 @@ local function BodyPartHasActiveWound(bodyPart)
     if checkPositive(function() return bodyPart:getBiteTime() end) then return true end
     if checkPositive(function() return bodyPart:getDeepWoundTime() end) then return true end
     if checkPositive(function() return bodyPart:getBurnTime() end) then return true end
+    if checkPositive(function() return bodyPart:getStitchTime() end) then return true end
 
     return false
 end
@@ -291,8 +301,25 @@ local function ResolveImmuneContainment(player, data, partName, bodyPart, incuba
     return false
 end
 
-local function BeginWoundIncubation(player, data, partName, vanillaLevel, currentHour)
+local function BeginWoundIncubation(player, data, partName, bodyPart, vanillaLevel, vanillaFlagActive, currentHour)
     data.incubating = data.incubating or {}
+
+    -- A vanilla infection marker can survive briefly after the wound itself is
+    -- gone. New incubation is legal only while a real wound (including a
+    -- stitched wound) still exists. Once captured here, that incubation remains
+    -- valid through AdvanceWoundIncubation even after the wound fully closes.
+    local woundActive = BodyPartHasActiveWound(bodyPart)
+    if not woundActive then
+        data.lastOrphanVanillaCleanup = data.lastOrphanVanillaCleanup or {}
+        data.lastOrphanVanillaCleanup[partName] = {
+            time = currentHour,
+            vanillaLevel = tonumber(vanillaLevel) or 0,
+        }
+        EHR.WoundInfection.ClearVanillaInfection(bodyPart, "orphan-after-healing")
+        EHR.Log("Ignored orphan vanilla wound infection marker on healed body part " .. tostring(partName))
+        return nil
+    end
+
     local score = 50
     if EHR.Immunity and EHR.Immunity.GetScore then
         score = EHR.Immunity.GetScore(player)
@@ -301,7 +328,9 @@ local function BeginWoundIncubation(player, data, partName, vanillaLevel, curren
     data.incubating[partName] = {
         detectedTime = currentHour,
         vanillaLevel = vanillaLevel,
-        vanillaFlagActive = true,
+        vanillaFlagActive = vanillaFlagActive == true,
+        vanillaFlagAtDetection = vanillaFlagActive == true,
+        woundActiveAtDetection = woundActive,
         immuneScoreAtDetection = score,
         containmentResolved = false,
     }
@@ -355,6 +384,8 @@ local function AdvanceWoundIncubation(player, data, partName, bodyPart, incubati
         vanillaLevel = vanillaLevel or incubationData.vanillaLevel or 0,
         vanillaFlagActive = vanillaFlagActive == true,
         vanillaClearedTime = vanillaFlagActive and nil or incubationData.vanillaClearedTime,
+        vanillaFlagAtDetection = incubationData.vanillaFlagAtDetection,
+        woundActiveAtDetection = incubationData.woundActiveAtDetection,
         immuneScoreAtDetection = incubationData.immuneScoreAtDetection,
         immuneScoreAtResolution = incubationData.immuneScoreAtResolution,
         immuneContainmentChance = incubationData.containmentChance,
@@ -835,11 +866,13 @@ function EHR.WoundInfection.ScanForInfections(player)
 
             if bodyPart then
                 local vanillaInfected = EHR.WoundInfection.IsVanillaInfected(bodyPart)
+                local vanillaFlagActive = EHR.WoundInfection.GetVanillaInfectionFlag(bodyPart)
                 local vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
                 local partData = data.parts[partName]
                 if not antisepticProtection and not vanillaInfected and not partData then
                     vanillaInfected = RestoreSuppressedVanillaInfection(data, partName, bodyPart)
                     if vanillaInfected then
+                        vanillaFlagActive = EHR.WoundInfection.GetVanillaInfectionFlag(bodyPart)
                         vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
                     end
                 elseif not BodyPartHasActiveWound(bodyPart) and data.antisepticBlocked then
@@ -866,11 +899,11 @@ function EHR.WoundInfection.ScanForInfections(player)
                     local incubationData = data.incubating and data.incubating[partName]
 
                     if not partData and not incubationData then
-                        BeginWoundIncubation(player, data, partName, vanillaLevel, currentHour)
+                        BeginWoundIncubation(player, data, partName, bodyPart, vanillaLevel, vanillaFlagActive, currentHour)
                     elseif incubationData and not partData then
                         local incubationResult = AdvanceWoundIncubation(
                             player, data, partName, bodyPart, incubationData,
-                            currentHour, vanillaLevel, true
+                            currentHour, vanillaLevel, vanillaFlagActive
                         )
                         if incubationResult == "contained" then return end
                         partData = data.parts[partName]
@@ -984,11 +1017,13 @@ function EHR.WoundInfection.ScanForInfections(player)
                 if bodyPart then
                     local partName = tostring(bpType)
                     local vanillaInfected = EHR.WoundInfection.IsVanillaInfected(bodyPart)
+                    local vanillaFlagActive = EHR.WoundInfection.GetVanillaInfectionFlag(bodyPart)
                     local vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
                     local partData = data.parts[partName]
                     if not antisepticProtection and not vanillaInfected and not partData then
                         vanillaInfected = RestoreSuppressedVanillaInfection(data, partName, bodyPart)
                         if vanillaInfected then
+                            vanillaFlagActive = EHR.WoundInfection.GetVanillaInfectionFlag(bodyPart)
                             vanillaLevel = EHR.WoundInfection.GetVanillaInfectionLevel(bodyPart)
                         end
                     elseif not BodyPartHasActiveWound(bodyPart) and data.antisepticBlocked then
@@ -1009,11 +1044,11 @@ function EHR.WoundInfection.ScanForInfections(player)
                         else
                         local incubationData = data.incubating and data.incubating[partName]
                         if not partData and not incubationData then
-                            BeginWoundIncubation(player, data, partName, vanillaLevel, currentHour)
+                            BeginWoundIncubation(player, data, partName, bodyPart, vanillaLevel, vanillaFlagActive, currentHour)
                         elseif incubationData and not partData then
                             local incubationResult = AdvanceWoundIncubation(
                                 player, data, partName, bodyPart, incubationData,
-                                currentHour, vanillaLevel, true
+                                currentHour, vanillaLevel, vanillaFlagActive
                             )
                             partData = data.parts[partName]
                         else

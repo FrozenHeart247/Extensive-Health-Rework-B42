@@ -258,89 +258,89 @@ function EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, first)
     end
 end
 
-EHRDeliriumOverlay = EHRDeliriumOverlay or ISPanel:derive("EHRDeliriumOverlay")
+local function getOverlayVisuals(runtime, currentHour)
+    if not runtime then return nil end
 
-function EHRDeliriumOverlay:new(playerIndex)
-    local width = getCore():getScreenWidth()
-    local height = getCore():getScreenHeight()
-    local o = ISPanel.new(self, 0, 0, width, height)
-    o.playerIndex = playerIndex or 0
-    o.background = false
-    o.border = false
-    return o
-end
-
-function EHRDeliriumOverlay:initialise()
-    ISPanel.initialise(self)
-    if self.javaObject and self.javaObject.setConsumeMouseEvents then
-        self.javaObject:setConsumeMouseEvents(false)
-    end
-    if self.setAlwaysOnTop then
-        self:setAlwaysOnTop(true)
-    end
-end
-
-function EHRDeliriumOverlay:onMouseDown(x, y) return false end
-function EHRDeliriumOverlay:onMouseUp(x, y) return false end
-function EHRDeliriumOverlay:onRightMouseDown(x, y) return false end
-function EHRDeliriumOverlay:onRightMouseUp(x, y) return false end
-function EHRDeliriumOverlay:onMouseMove(dx, dy) return false end
-function EHRDeliriumOverlay:onMouseMoveOutside(dx, dy) return false end
-function EHRDeliriumOverlay:onMouseWheel(del) return false end
-
-function EHRDeliriumOverlay:prerender()
-    self:setX(0)
-    self:setY(0)
-    self:setWidth(getCore():getScreenWidth())
-    self:setHeight(getCore():getScreenHeight())
-end
-
-function EHRDeliriumOverlay:render()
-    local runtime = EHR.Delirium.GetRuntime(self.playerIndex or 0)
     local untilHour = tonumber(runtime.overlayUntilHour) or 0
     local startHour = tonumber(runtime.overlayStartHour) or 0
-    local now = worldHour()
-    if now >= untilHour or untilHour <= startHour then return end
+    currentHour = tonumber(currentHour) or worldHour()
+    if currentHour >= untilHour or untilHour <= startHour then return nil end
 
     local color = runtime.overlayColor or EHR.Delirium.OverlayColors[1]
     local duration = math.max(0.001, untilHour - startHour)
-    local remaining = math.max(0, untilHour - now)
-    local elapsed = math.max(0, now - startHour)
+    local remaining = math.max(0, untilHour - currentHour)
+    local elapsed = math.max(0, currentHour - startHour)
     local fade = math.min(1, remaining / math.min(duration, 1 / 60), elapsed / math.min(duration, 1 / 60))
-    local pulse = 0.78 + math.sin(now * 320) * 0.22
+    local pulse = 0.78 + math.sin(currentHour * 320) * 0.22
     local alpha = (tonumber(runtime.overlayAlpha) or 0.10) * math.max(0, fade) * pulse
 
-    self:drawRect(0, 0, self.width, self.height, alpha, color.r, color.g, color.b)
+    if alpha <= 0 then return nil end
+    return color, alpha
 end
 
-function EHR.Delirium.EnsureOverlay(playerIndex)
-    local runtime = EHR.Delirium.GetRuntime(playerIndex)
-    if runtime.overlay and runtime.overlay.getIsVisible and runtime.overlay:getIsVisible() then
-        if runtime.overlay.javaObject and runtime.overlay.javaObject.setConsumeMouseEvents then
-            runtime.overlay.javaObject:setConsumeMouseEvents(false)
-        end
-        return runtime.overlay
+function EHR.Delirium.GetOverlayRenderBridge()
+    local bridge = EHR.Delirium.OverlayRenderBridge
+    if bridge and bridge.javaObject then return bridge end
+
+    -- This element is deliberately instantiated but never added to UIManager.
+    -- It gives the render event access to DrawTextureScaledColor without ever
+    -- participating in mouse hit-testing.
+    bridge = ISPanel:new(0, 0, 1, 1)
+    bridge.background = false
+    bridge.border = false
+    bridge:initialise()
+    bridge:instantiate()
+    if bridge.javaObject and bridge.javaObject.setConsumeMouseEvents then
+        bridge.javaObject:setConsumeMouseEvents(false)
+    end
+    EHR.Delirium.OverlayRenderBridge = bridge
+    return bridge
+end
+
+function EHR.Delirium.RenderOverlay(playerIndex, currentHour)
+    if isClient and isClient() and not EHR.Delirium.Config.ENABLE_MULTIPLAYER_OVERLAY then
+        return
     end
 
-    local overlay = EHRDeliriumOverlay:new(playerIndex)
-    overlay:initialise()
-    overlay:instantiate()
-    if overlay.javaObject and overlay.javaObject.setConsumeMouseEvents then
-        overlay.javaObject:setConsumeMouseEvents(false)
+    local runtime = EHR.Delirium.GetRuntime(playerIndex)
+    local color, alpha = getOverlayVisuals(runtime, currentHour)
+    if not color or not alpha then return end
+
+    local bridge = EHR.Delirium.GetOverlayRenderBridge()
+    local core = getCore and getCore() or nil
+    if not bridge or not bridge.javaObject or not core then return end
+
+    local ok, err = pcall(function()
+        bridge.javaObject:DrawTextureScaledColor(
+            nil,
+            0,
+            0,
+            core:getScreenWidth(),
+            core:getScreenHeight(),
+            tonumber(color.r) or 1,
+            tonumber(color.g) or 1,
+            tonumber(color.b) or 1,
+            alpha
+        )
+    end)
+    if not ok and not EHR.Delirium.OverlayRenderErrorLogged then
+        EHR.Delirium.OverlayRenderErrorLogged = true
+        EHR.Log("Delirium overlay render failed: " .. tostring(err))
     end
-    overlay:addToUIManager()
-    if overlay.javaObject and overlay.javaObject.setConsumeMouseEvents then
-        overlay.javaObject:setConsumeMouseEvents(false)
+end
+
+function EHR.Delirium.OnPostUIDraw()
+    local currentHour = worldHour()
+    for i = 0, getLocalPlayerCount() - 1 do
+        local player = getSpecificPlayer and getSpecificPlayer(i) or nil
+        EHR.Delirium.RenderOverlay(getPlayerIndex(player, i), currentHour)
     end
-    if overlay.setAlwaysOnTop then
-        overlay:setAlwaysOnTop(true)
-    end
-    runtime.overlay = overlay
-    return overlay
 end
 
 function EHR.Delirium.RemoveOverlay(playerIndex)
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
+    -- Remove a legacy full-screen panel if this code is reloaded into a running
+    -- session created by an older version.
     if runtime.overlay and runtime.overlay.removeFromUIManager then
         pcall(function() runtime.overlay:removeFromUIManager() end)
     end
@@ -358,12 +358,6 @@ function EHR.Delirium.UpdateOverlay(playerIndex, currentHour)
     end
 
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
-    if not runtime.overlay then return end
-
-    if runtime.overlay.javaObject and runtime.overlay.javaObject.setConsumeMouseEvents then
-        runtime.overlay.javaObject:setConsumeMouseEvents(false)
-    end
-
     local untilHour = tonumber(runtime.overlayUntilHour) or 0
     if untilHour <= 0 or currentHour >= untilHour then
         EHR.Delirium.RemoveOverlay(playerIndex)
@@ -385,7 +379,7 @@ function EHR.Delirium.StartOverlay(playerIndex, currentHour)
     runtime.overlayAlpha = randomFloat(cfg.OVERLAY_ALPHA_MIN, cfg.OVERLAY_ALPHA_MAX)
     runtime.overlayColor = colors[ZombRand(#colors) + 1]
 
-    EHR.Delirium.EnsureOverlay(playerIndex)
+    EHR.Delirium.GetOverlayRenderBridge()
 end
 
 local function getObjects(square)
@@ -785,6 +779,11 @@ end
 
 if Events then
     Events.OnTick.Add(EHR.Delirium.OnTick)
+    if Events.OnPostUIDraw then
+        Events.OnPostUIDraw.Add(EHR.Delirium.OnPostUIDraw)
+    elseif Events.OnRenderTick then
+        Events.OnRenderTick.Add(EHR.Delirium.OnPostUIDraw)
+    end
     if Events.OnPlayerDeath then
         Events.OnPlayerDeath.Add(EHR.Delirium.OnPlayerDeath)
     end

@@ -669,6 +669,24 @@ option ExtensiveHealthRework.HouseholdPrescriptionLoot
     translation = EHR_HouseholdPrescriptionLoot,
 }
 
+option ExtensiveHealthRework.ZombieLootEnabled
+{
+    type = boolean,
+    default = true,
+    page = EHR_Loot,
+    translation = EHR_ZombieLootEnabled,
+}
+
+option ExtensiveHealthRework.ZombieLootChance
+{
+    type = double,
+    min = 0.0,
+    max = 100.0,
+    default = 5.0,
+    page = EHR_Loot,
+    translation = EHR_ZombieLootChance,
+}
+
 option ExtensiveHealthRework.HealingRequiresFed
 {
     type = boolean,

@@ -102,4 +102,5 @@ ItemName_PTBR = {
     ExtensiveHealth.CommonColdTea = "Chá de ervas",
     ExtensiveHealth.AntipyreticTea = "Chá antitérmico",
     ExtensiveHealth.RelaxantTea = "Chá relaxante",
+    ExtensiveHealth.MedicineStorageBox = "Caixa de armazenamento de medicamentos",
 }

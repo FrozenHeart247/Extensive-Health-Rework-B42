@@ -102,4 +102,5 @@ ItemName_UA = {
     ExtensiveHealth.CommonColdTea = "Трав'яний чай",
     ExtensiveHealth.AntipyreticTea = "Жарознижувальний чай",
     ExtensiveHealth.RelaxantTea = "Заспокійливий чай",
+    ExtensiveHealth.MedicineStorageBox = "Скринька для зберігання ліків",
 }

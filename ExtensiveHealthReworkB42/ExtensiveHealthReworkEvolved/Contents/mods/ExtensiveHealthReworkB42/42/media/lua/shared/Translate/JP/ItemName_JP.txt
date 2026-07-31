@@ -102,4 +102,5 @@ ItemName_JP = {
     ExtensiveHealth.CommonColdTea = "ハーブティー",
     ExtensiveHealth.AntipyreticTea = "解熱ハーブティー",
     ExtensiveHealth.RelaxantTea = "リラックスティー",
+    ExtensiveHealth.MedicineStorageBox = "医薬品保管箱",
 }

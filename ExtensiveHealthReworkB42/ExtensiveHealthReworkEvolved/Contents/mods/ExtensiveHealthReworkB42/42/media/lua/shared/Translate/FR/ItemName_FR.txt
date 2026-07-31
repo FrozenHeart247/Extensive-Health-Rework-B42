@@ -102,4 +102,5 @@ ItemName_FR = {
     ExtensiveHealth.CommonColdTea = "Tisane",
     ExtensiveHealth.AntipyreticTea = "Tisane antipyrétique",
     ExtensiveHealth.RelaxantTea = "Tisane relaxante",
+    ExtensiveHealth.MedicineStorageBox = "Boîte de rangement pour médicaments",
 }

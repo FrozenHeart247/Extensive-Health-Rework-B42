@@ -789,6 +789,19 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.Buprenorphine"] = {
+        tier = 2,
+        treats = {"painkiller_addiction"},
+        displayName = "Buprenorphine",
+        icon = "Buprenorphine",
+        usageMessage = "You take buprenorphine. The withdrawal begins to settle.",
+        effectDurationHours = 12,
+        cureTimeHours = 120,
+        treatmentTimeText = "120 hours (10-dose course)",
+        blockWhileDoseActive = true,
+        activeDoseMessage = "The current buprenorphine dose is still active.",
+    },
+
     ["ExtensiveHealth.TetanusAntitoxin"] = {
         tier = 2,
         treats = {"tetanus"},
@@ -2243,6 +2256,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.Furosemide"] = { doseInterval = 8, dosesRequired = 6 },  -- Transfusion reaction support course
     ["ExtensiveHealth.Antipsychotics"] = { doseInterval = 12, dosesRequired = 8 },  -- 4-day mental health course
     ["ExtensiveHealth.DualOrexinReceptor"] = { doseInterval = 12, dosesRequired = 8 },  -- 4-day insomnia course
+    ["ExtensiveHealth.Buprenorphine"] = { doseInterval = 12, dosesRequired = 10 },  -- 5-day addiction treatment course
     ["ExtensiveHealth.TetanusAntitoxin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single injection
     ["ExtensiveHealth.TBAntibiotics"] = { doseInterval = 24, dosesRequired = 21 },
     ["ExtensiveHealth.AntibioticOintment"] = { doseInterval = 8, dosesRequired = 6 },  -- Reduced from 9
@@ -2303,6 +2317,7 @@ EHR.Medication.OverdoseRiskMedications = {
     ["ExtensiveHealth.Furosemide"] = true,
     ["ExtensiveHealth.Antipsychotics"] = true,
     ["ExtensiveHealth.DualOrexinReceptor"] = true,
+    ["ExtensiveHealth.Buprenorphine"] = true,
     ["ExtensiveHealth.TBAntibiotics"] = true,
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,
     ["ExtensiveHealth.PlantBasedAntibiotics"] = true,
@@ -3444,6 +3459,15 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
                 end
             end)
             trackedDose.analgesicInitialPain = math.max(0, math.min(100, initialPain))
+        end
+    end
+
+    if medKey == "Base.Pills" then
+        if not (EHR.PainkillerAddiction and EHR.PainkillerAddiction.OnPainkillerDose) then
+            pcall(function() require "ExtensiveHealth/EHR_PainkillerAddiction" end)
+        end
+        if EHR.PainkillerAddiction and EHR.PainkillerAddiction.OnPainkillerDose then
+            EHR.PainkillerAddiction.OnPainkillerDose(player, currentHour)
         end
     end
 

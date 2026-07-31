@@ -96,6 +96,7 @@ EHR_HealthPanelUI.DiseaseIconPaths = {
     hyperkeratotic_scabies = "media/textures/EHR_Disease_hyperkeratoticScabies.png",
     hypothermia = "media/textures/EHR_Disease_Hypotermia.png",
     insomnia = "media/textures/EHR_Disease_Insomina.png",
+    painkiller_addiction = "media/textures/EHR_Disease_PainkillerAddiction.png",
     knox_infection = "media/textures/EHR_Disease_KnoxInfection.png",
     pneumonia = "media/textures/EHR_Disease_Pneumonia.png",
     sepsis = "media/textures/EHR_Disease_Sepsis.png",

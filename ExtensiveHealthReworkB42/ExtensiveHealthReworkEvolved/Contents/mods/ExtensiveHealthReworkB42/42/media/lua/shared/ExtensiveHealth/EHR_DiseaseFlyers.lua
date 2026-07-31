@@ -77,6 +77,7 @@ EHR.DiseaseFlyers.Config = {
         concussion = true,
         delirium = true,
         insomnia = true,
+        painkiller_addiction = true,
     },
 }
 
@@ -94,6 +95,7 @@ local diseaseAliases = {
     Delirium = "delirium",
     Madness = "delirium",
     Insomnia = "insomnia",
+    PainkillerAddiction = "painkiller_addiction",
     Flu = "flu",
     Influenza = "flu",
     Pneumonia = "pneumonia",
@@ -137,6 +139,7 @@ local compactDiseaseAliases = {
     delirium = "delirium",
     madness = "delirium",
     insomnia = "insomnia",
+    painkilleraddiction = "painkiller_addiction",
     flu = "flu",
     influenza = "flu",
     pneumonia = "pneumonia",

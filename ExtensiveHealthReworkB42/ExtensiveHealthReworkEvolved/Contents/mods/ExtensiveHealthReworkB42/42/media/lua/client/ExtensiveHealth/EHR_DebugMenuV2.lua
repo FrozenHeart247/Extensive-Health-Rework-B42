@@ -1196,6 +1196,7 @@ EHR.DebugV2.DiseaseList = {
     "concussion",
     "delirium",
     "insomnia",
+    "painkiller_addiction",
     "tuberculosis",
 }
 

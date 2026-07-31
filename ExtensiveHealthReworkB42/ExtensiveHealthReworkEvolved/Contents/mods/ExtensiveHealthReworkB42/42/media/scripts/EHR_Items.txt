@@ -812,6 +812,19 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item Buprenorphine
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:drainable,
+        DisplayName = Buprenorphine,
+        Icon = Buprenorphine,
+        Weight = 0.1,
+        Tooltip = Tooltip_Buprenorphine,
+        UseDelta = 0.1,
+        UseWhileEquipped = false,
+        Medical = true,
+    }
+
     item TetanusAntitoxin
     {
         DisplayCategory = FirstAid,

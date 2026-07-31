@@ -108,6 +108,7 @@ EHR.MedicationSpawns.DrainableMeds = {
     ["ExtensiveHealth.Furosemide"] = true,
     ["ExtensiveHealth.Antipsychotics"] = true,
     ["ExtensiveHealth.DualOrexinReceptor"] = true,
+    ["ExtensiveHealth.Buprenorphine"] = true,
     ["ExtensiveHealth.TBAntibiotics"] = true,
     ["ExtensiveHealth.AntibioticOintment"] = true,
     ["ExtensiveHealth.BroadSpectrumAntibiotics"] = true,

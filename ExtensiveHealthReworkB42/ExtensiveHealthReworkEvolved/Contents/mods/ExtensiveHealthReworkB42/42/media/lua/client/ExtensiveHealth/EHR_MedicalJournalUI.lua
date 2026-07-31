@@ -75,6 +75,7 @@ local DiseaseIcons = {
     hyperkeratotic_scabies = "media/textures/EHR_Disease_hyperkeratoticScabies.png",
     hypothermia = "media/textures/EHR_Disease_Hypotermia.png",
     insomnia = "media/textures/EHR_Disease_Insomina.png",
+    painkiller_addiction = "media/textures/EHR_Disease_PainkillerAddiction.png",
     knox_infection = "media/textures/EHR_Disease_KnoxInfection.png",
     pneumonia = "media/textures/EHR_Disease_Pneumonia.png",
     sepsis = "media/textures/EHR_Disease_Sepsis.png",
@@ -127,6 +128,7 @@ local CatalogOrder = {
     "concussion",
     "delirium",
     "insomnia",
+    "painkiller_addiction",
     "ahtr",
     "knox_infection",
 }
@@ -284,6 +286,15 @@ local CodexInfo = {
         symptoms = "Poor rest, inability to sleep naturally in later stages, stress, fatigue, and headache.",
         prevention = "Sleep before exhaustion becomes prolonged and avoid stacking strong stimulants.",
         treatment = "Sleeping pills allow sleep while active. Dual orexin receptor medication cures over 96 hours; antidepressants cure over 168 hours.",
+    },
+    painkiller_addiction = {
+        category = "mental",
+        incubation = "Develops after sustained or excessive painkiller use.",
+        duration = "Persistent. Stage 3 does not recover naturally.",
+        cause = "Repeated use of standard painkillers, especially five or more doses within 24 hours or doses taken too close together.",
+        symptoms = "Craving, persistent stress and depression, and increased thirst. An active painkiller or buprenorphine dose temporarily suppresses withdrawal symptoms.",
+        prevention = "Avoid frequent redosing and keep daily painkiller use below the high-risk range.",
+        treatment = "Buprenorphine cures the condition over 120 hours: 10 doses, one every 12 hours. Each active dose suppresses withdrawal symptoms.",
     },
     ahtr = {
         category = "blood",

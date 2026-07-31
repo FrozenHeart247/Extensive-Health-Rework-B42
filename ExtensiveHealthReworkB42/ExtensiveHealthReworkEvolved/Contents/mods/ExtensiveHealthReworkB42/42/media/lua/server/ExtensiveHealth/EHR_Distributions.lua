@@ -461,6 +461,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Furosemide", 1)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.DualOrexinReceptor", 1.5)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Buprenorphine", 1.5)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.NitricOxideBooster", 2)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.TopicalPermethrin", 2)
 
@@ -579,6 +580,7 @@ local function EHR_InitDistributions()
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.InstantIcePack", 1)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.Antipsychotics", 0.4)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.DualOrexinReceptor", 0.35)
+    tryAddMed("StoreShelfMedical", "ExtensiveHealth.Buprenorphine", 0.35)
     tryAddMed("StoreShelfMedical", "ExtensiveHealth.TopicalPermethrin", 1)
 
     -- GigaMart/Grocery shelves use toiletries instead of StoreShelfMedical in B42.
@@ -638,6 +640,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Antipsychotics", 4)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.DualOrexinReceptor", 4)
+    tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Buprenorphine", 4)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.AntibioticOintment", 6)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.Syringe", 8)
     tryAddMed("MedicalClinicDrugs", "ExtensiveHealth.SalineBag", 4)
@@ -654,6 +657,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Furosemide", 4)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Antipsychotics", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.DualOrexinReceptor", 3)
+    tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.Buprenorphine", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TetanusAntitoxin", 3)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.TBAntibiotics", 3.5)
     tryAddMed("MedicalStorageDrugs", "ExtensiveHealth.AntibioticOintment", 5)
@@ -684,6 +688,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Antipsychotics", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.DualOrexinReceptor", 2)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Buprenorphine", 2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.IVKit", 7)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Syringe", 10)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.SalineBag", 7)
@@ -729,6 +734,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.Furosemide"] = 1.0,
         ["ExtensiveHealth.Antipsychotics"] = 0.8,
         ["ExtensiveHealth.DualOrexinReceptor"] = 0.8,
+        ["ExtensiveHealth.Buprenorphine"] = 0.8,
         ["ExtensiveHealth.TetanusAntitoxin"] = 0.7,
         ["ExtensiveHealth.TBAntibiotics"] = 1.0,
         ["ExtensiveHealth.TopicalPermethrin"] = 1.0,
@@ -1082,6 +1088,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.TBAntibiotics"] = 0.05,
         ["ExtensiveHealth.Antipsychotics"] = 1.0,
         ["ExtensiveHealth.DualOrexinReceptor"] = 0.8,
+        ["ExtensiveHealth.Buprenorphine"] = 0.8,
     }
 
     -- Tier 1 OTC - a modest chance in the bathroom, much lower elsewhere.
@@ -1115,6 +1122,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.Furosemide"] = 0.04,
         ["ExtensiveHealth.Antipsychotics"] = 0.04,
         ["ExtensiveHealth.DualOrexinReceptor"] = 0.04,
+        ["ExtensiveHealth.Buprenorphine"] = 0.04,
         ["ExtensiveHealth.TopicalPermethrin"] = 0.06,
         ["ExtensiveHealth.TBAntibiotics"] = 0.03,
     }

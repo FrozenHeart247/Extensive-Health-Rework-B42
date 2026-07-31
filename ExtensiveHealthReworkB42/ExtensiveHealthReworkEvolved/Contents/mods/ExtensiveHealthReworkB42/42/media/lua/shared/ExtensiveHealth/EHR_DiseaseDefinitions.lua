@@ -1384,6 +1384,69 @@ EHR.Disease.Diseases["insomnia"] = {
 }
 
 -- ============================================
+-- PAINKILLER ADDICTION (Persistent opioid dependence)
+-- ============================================
+--[[
+    Trigger: Hidden dependency risk from repeated Base.Pills use.
+    Progression: Three manual stages over 48 hours. No natural recovery.
+    Treatment: Ten-dose buprenorphine course, one dose every 12 hours.
+]]--
+EHR.Disease.Diseases["painkiller_addiction"] = {
+    name = "Painkiller Addiction",
+    category = "mental",
+
+    incubationMin = 0,
+    incubationMax = 0,
+    durationMin = 72,
+    durationMax = 72,
+
+    stageCount = 3,
+    manualProgression = true,
+    noNaturalRecovery = true,
+    applyEffectsInStage1 = true,
+
+    baseSeverity = 0.65,
+    canKill = false,
+
+    symptoms = {"craving", "stress", "depression", "thirst"},
+
+    treatments = {
+        tier0 = {},
+        tier1 = {},
+        tier2 = {"ExtensiveHealth.Buprenorphine"},
+        tier3 = {},
+    },
+
+    stageEntryDialogue = {
+        [2] = "I need another dose. I can't settle down.",
+        [3] = "I can't stop thinking about the pills.",
+    },
+
+    dialogueChanceBase = {
+        [1] = 28,
+        [2] = 16,
+        [3] = 10,
+        default = 18,
+    },
+
+    dialogue = {
+        [1] = {
+            "I feel restless without them...",
+            "Maybe one more dose would help...",
+        },
+        [2] = {
+            "I can't get the pills out of my head.",
+            "Everything feels wrong without another dose.",
+        },
+        [3] = {
+            "I need those painkillers.",
+            "I can't keep pretending this is under control.",
+            "Just one dose. That's all I can think about.",
+        },
+    },
+}
+
+-- ============================================
 -- KNOX VIRUS INFECTION (Zombie Infection)
 -- ============================================
 --[[
@@ -1500,4 +1563,5 @@ EHR.Log("  - tetanus: Rusty wounds -> LETHAL lockjaw, spasms")
 EHR.Log("  - tuberculosis: Long-term corpse exposure -> LETHAL chronic illness")
 EHR.Log("  - concussion: Falls/crashes -> head trauma, nausea, dizziness")
 EHR.Log("  - insomnia: Prolonged exhaustion/stimulant crash -> sleep lock until treated")
+EHR.Log("  - painkiller_addiction: Repeated painkiller use -> persistent dependence until treated")
 EHR.Log("  - Knox_Infection: Zombie bite -> LETHAL without Knox cure items")

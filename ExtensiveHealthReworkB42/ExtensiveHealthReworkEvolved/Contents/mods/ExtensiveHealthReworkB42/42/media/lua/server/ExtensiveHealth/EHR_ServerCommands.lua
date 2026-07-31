@@ -23,6 +23,7 @@ pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Immunity" end)
+pcall(function() require "ExtensiveHealth/EHR_PainkillerAddiction" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -3362,6 +3363,12 @@ local function OnClientCommand(module, command, player, args)
                 symptomOnly = args.symptomOnly == true,
                 analgesicInitialPain = args.analgesicInitialPain,
             }
+
+            if args.medKey == "Base.Pills"
+                and EHR.PainkillerAddiction
+                and EHR.PainkillerAddiction.OnPainkillerDose then
+                EHR.PainkillerAddiction.OnPainkillerDose(player, args.lastDoseTime)
+            end
 
             syncModDataToClient(player)
             log("[EHR] Server: Tracked medication " .. args.medKey .. " for " .. player:getUsername())

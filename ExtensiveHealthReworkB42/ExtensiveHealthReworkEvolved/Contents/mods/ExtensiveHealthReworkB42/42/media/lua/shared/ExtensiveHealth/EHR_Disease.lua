@@ -1614,10 +1614,23 @@ local function EHR_DiseaseReduceStat(stats, stat, amount)
     end)
 end
 
+local function EHR_DiseaseGetStatScale(stat)
+    -- Most B42 CharacterStat values use a normalized 0..1 range, but
+    -- UNHAPPINESS still uses vanilla's 0..100 scale. Callers of the helpers
+    -- below use normalized targets so disease balance remains readable.
+    if CharacterStat and CharacterStat.UNHAPPINESS and stat == CharacterStat.UNHAPPINESS then
+        return 100
+    end
+
+    return 1
+end
+
 local function EHR_DiseaseRaiseStatToward(stats, stat, target, step, maxValue)
     if not stats or not stat or not target or not step or step <= 0 then return end
-    step = step * (EHR_DiseaseEffectTimeScale or 1)
-    maxValue = maxValue or 1
+    local statScale = EHR_DiseaseGetStatScale(stat)
+    target = target * statScale
+    step = step * statScale * (EHR_DiseaseEffectTimeScale or 1)
+    maxValue = (maxValue or 1) * statScale
 
     pcall(function()
         local current = stats:get(stat) or 0
@@ -1630,15 +1643,17 @@ end
 
 local function EHR_DiseaseLowerStatToward(stats, stat, target, step, minValue)
     if not stats or not stat or not target or not step or step <= 0 then return end
-    step = step * (EHR_DiseaseEffectTimeScale or 1)
-    minValue = minValue or 0
+    local statScale = EHR_DiseaseGetStatScale(stat)
+    target = target * statScale
+    step = step * statScale * (EHR_DiseaseEffectTimeScale or 1)
+    minValue = (minValue or 0) * statScale
 
     pcall(function()
         local current = stats:get(stat) or 0
         if current <= target then return end
 
         local nextValue = math.max(target, math.max(current - step, minValue))
-        stats:set(stat, math.min(1, nextValue))
+        stats:set(stat, math.min(statScale, nextValue))
     end)
 end
 
@@ -3811,6 +3826,61 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
             EHR_DiseaseSay(player, lines)
         end)
 
+    elseif diseaseId == "painkiller_addiction" then
+        local withdrawalSuppressed = false
+        if EHR.PainkillerAddiction and EHR.PainkillerAddiction.IsWithdrawalSuppressed then
+            withdrawalSuppressed = EHR.PainkillerAddiction.IsWithdrawalSuppressed(player)
+        elseif EHR.Medication and EHR.Medication.IsAnalgesicActive then
+            withdrawalSuppressed = EHR.Medication.IsAnalgesicActive(player)
+        end
+        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "painkiller_addiction", disease)
+
+        local stressTarget = 0.25
+        local unhappinessTarget = 0.25
+        local thirstTarget = 0.18
+        local dialogueChance = 0.0010
+        local dialogueCooldown = 2.2
+
+        if stage == 2 then
+            stressTarget = 0.60
+            unhappinessTarget = 0.60
+            thirstTarget = 0.28
+            dialogueChance = 0.0022
+            dialogueCooldown = 1.3
+        elseif stage >= 3 then
+            stressTarget = 0.80
+            unhappinessTarget = 1.00
+            thirstTarget = 0.40
+            dialogueChance = 0.0034
+            dialogueCooldown = 0.9
+        end
+
+        if CharacterStat then
+            if withdrawalSuppressed then
+                -- An active dose suppresses withdrawal. Stress and sadness
+                -- settle back down; extra thirst stops accumulating, while
+                -- existing dehydration still has to be treated with water.
+                EHR_DiseaseLowerStatToward(stats, CharacterStat.STRESS, 0.06, 0.00300 * severity, 0)
+                EHR_DiseaseLowerStatToward(stats, CharacterStat.UNHAPPINESS, 0.05, 0.00300 * severity, 0)
+            else
+                local activeMult = math.max(0.35, symptomMult)
+                EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * activeMult, 0.00200 * severity)
+                EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * activeMult, 0.00200 * severity)
+                EHR_DiseaseRaiseStatToward(stats, CharacterStat.THIRST, thirstTarget * activeMult, 0.00008 * severity)
+            end
+        end
+
+        if not withdrawalSuppressed then
+            trySymptom("painkiller_addiction_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+                local lines = stage >= 3
+                    and {"I need those painkillers.", "I can't stop thinking about the pills.", "Just one dose..."}
+                    or stage == 2
+                        and {"I need another dose.", "I can't settle down without them.", "Where did I put those pills?"}
+                        or {"I feel restless without them...", "Maybe one more dose would help..."}
+                EHR_DiseaseSay(player, lines)
+            end)
+        end
+
     elseif diseaseId == "tuberculosis" then
         local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
         local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
@@ -3850,6 +3920,14 @@ function EHR.Disease.CheckDialogue(player, data)
                     if EHR.DEBUG then
                         EHR.Log("Skipping hypothermia dialogue - player is warm")
                     end
+                end
+            end
+
+            if diseaseId == "painkiller_addiction" then
+                if EHR.PainkillerAddiction and EHR.PainkillerAddiction.IsWithdrawalSuppressed then
+                    skipDialogue = EHR.PainkillerAddiction.IsWithdrawalSuppressed(player)
+                elseif EHR.Medication and EHR.Medication.IsAnalgesicActive then
+                    skipDialogue = EHR.Medication.IsAnalgesicActive(player)
                 end
             end
 
@@ -5155,6 +5233,10 @@ function EHR.Disease.Cure(player, diseaseId)
             end
         end
 
+        if diseaseId == "painkiller_addiction" and EHR.PainkillerAddiction and EHR.PainkillerAddiction.ClearAfterCure then
+            EHR.PainkillerAddiction.ClearAfterCure(player)
+        end
+
         if diseaseId == "hyperkeratotic_scabies" and EHR.HyperkeratoticScabies and EHR.HyperkeratoticScabies.ClearAfterCure then
             EHR.HyperkeratoticScabies.ClearAfterCure(player)
         end
@@ -6264,6 +6346,13 @@ if not (EHR.Insomnia and EHR.Insomnia.UpdateTracking) then
     local okInsomnia, insomniaErr = pcall(require, "ExtensiveHealth/EHR_Insomnia")
     if not okInsomnia then
         EHR.Log("Disease module: failed to load insomnia detector: " .. tostring(insomniaErr))
+    end
+end
+
+if not (EHR.PainkillerAddiction and EHR.PainkillerAddiction.UpdateTracking) then
+    local okAddiction, addictionErr = pcall(require, "ExtensiveHealth/EHR_PainkillerAddiction")
+    if not okAddiction then
+        EHR.Log("Disease module: failed to load painkiller addiction detector: " .. tostring(addictionErr))
     end
 end
 

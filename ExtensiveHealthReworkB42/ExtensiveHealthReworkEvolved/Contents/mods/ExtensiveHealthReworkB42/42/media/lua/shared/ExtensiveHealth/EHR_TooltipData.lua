@@ -191,9 +191,11 @@ EHR.Tooltips.Data = {
         description = "Standard painkiller bottle.",
         relieves = {"Pain"},
         effects = {
-            "Uses vanilla painkiller behavior",
-            "Multi-dose bottle",
+            "Reduces perceived pain to zero over 30 minutes",
+            "Suppresses new pain for the remainder of its 3-hour duration",
+            "16-dose bottle",
         },
+        warning = "Frequent or closely spaced doses can cause Painkiller Addiction.",
     },
     ["ExtensiveHealth.HomemadePainkillers"] = {
         category = "Vanilla Medication",
@@ -667,6 +669,18 @@ EHR.Tooltips.Data = {
         effects = {
             "Allows sleep while the dose is active",
             "CURES insomnia over a full course",
+        },
+    },
+    ["ExtensiveHealth.Buprenorphine"] = {
+        category = "Prescription",
+        tier = 2,
+        description = "Prescription medication for painkiller dependence.",
+        relieves = {"Painkiller withdrawal"},
+        cures = {"Painkiller Addiction"},
+        treatmentTime = "120 hours (10-dose course)",
+        effects = {
+            "Suppresses withdrawal while the dose is active",
+            "CURES painkiller addiction over a full course",
         },
     },
 

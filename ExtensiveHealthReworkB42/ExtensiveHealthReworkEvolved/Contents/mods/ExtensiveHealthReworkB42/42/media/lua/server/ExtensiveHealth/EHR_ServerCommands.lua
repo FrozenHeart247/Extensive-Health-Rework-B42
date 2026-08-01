@@ -24,6 +24,7 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Immunity" end)
 pcall(function() require "ExtensiveHealth/EHR_PainkillerAddiction" end)
+pcall(function() require "ExtensiveHealth/EHR_WatchBatteryCore" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -178,7 +179,7 @@ local function playerHasMedicalMonitorWatch(player)
             end)
             if (fullType and MEDICAL_MONITOR_WATCH_ITEMS[fullType])
                     or (itemType and MEDICAL_MONITOR_WATCH_ITEMS[itemType]) then
-                return true
+                if not EHR.WatchBattery or EHR.WatchBattery.IsPowered(item) then return true end
             end
         end
     end
@@ -829,6 +830,123 @@ local function syncInventoryItemAdded(container, item)
         pcall(function() sendAddItemToContainer(container, item) end)
     end
     syncInventoryItem(item)
+end
+
+local function sendWatchBatteryState(player, watch)
+    if not player or not watch or not EHR.WatchBattery or not EHR.WatchBattery.IsMedicalWatch(watch) then return end
+    if not sendServerCommand then return end
+
+    local state = EHR.WatchBattery.GetState(watch)
+    if not state then return end
+    local itemID = nil
+    pcall(function() itemID = watch:getID() end)
+    if itemID == nil then return end
+
+    sendServerCommand(player, "EHR_WatchBattery", "Sync", {
+        itemID = itemID,
+        installed = state.installed == true,
+        charge = tonumber(state.charge) or 0,
+    })
+end
+
+local function getServerBatteryCharge(item)
+    if not item or not item.getFullType or not EHR.WatchBattery then return 0 end
+    if item:getFullType() ~= EHR.WatchBattery.BATTERY_TYPE then return 0 end
+    local ok, value = pcall(function() return item:getCurrentUsesFloat() end)
+    if not ok then return 0 end
+    return math.max(0, math.min(1, tonumber(value) or 0))
+end
+
+function EHR.ServerCommands.InsertWatchBattery(player, args)
+    if not player or not args or args.watchID == nil or args.batteryID == nil or not EHR.WatchBattery then return end
+
+    local watch = findInventoryItemByID(player, args.watchID)
+    local battery, batteryContainer = findInventoryItemByID(player, args.batteryID)
+    if not EHR.WatchBattery.IsMedicalWatch(watch) then return end
+
+    local state = EHR.WatchBattery.GetState(watch)
+    local charge = getServerBatteryCharge(battery)
+    if not state or state.installed or charge <= 0 then
+        sendWatchBatteryState(player, watch)
+        return
+    end
+    if not removeInventoryItem(battery, batteryContainer) then
+        sendWatchBatteryState(player, watch)
+        return
+    end
+
+    EHR.WatchBattery.SetState(watch, true, charge)
+    sendWatchBatteryState(player, watch)
+end
+
+function EHR.ServerCommands.RemoveWatchBattery(player, args)
+    if not player or not args or args.watchID == nil or not EHR.WatchBattery then return end
+
+    local watch = findInventoryItemByID(player, args.watchID)
+    if not EHR.WatchBattery.IsMedicalWatch(watch) then return end
+
+    local state = EHR.WatchBattery.GetState(watch)
+    if not state or not state.installed then
+        sendWatchBatteryState(player, watch)
+        return
+    end
+
+    local charge = state.charge
+    EHR.WatchBattery.SetState(watch, false, 0)
+    EHR.WatchBattery.DisableAlarm(watch)
+
+    local inventory = player:getInventory()
+    local battery = inventory and inventory:AddItem(EHR.WatchBattery.BATTERY_TYPE) or nil
+    if battery and battery.setUsedDelta then
+        pcall(function() battery:setUsedDelta(charge) end)
+    end
+    if battery then syncInventoryItemAdded(inventory, battery) end
+    sendWatchBatteryState(player, watch)
+end
+
+local function visitServerContainer(container, callback, visited)
+    if not container or not container.getItems then return end
+    visited = visited or {}
+    if visited[container] then return end
+    visited[container] = true
+
+    local items = container:getItems()
+    if not items or not items.size then return end
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            callback(item)
+            if item.getInventory then
+                local ok, nested = pcall(function() return item:getInventory() end)
+                if ok and nested then visitServerContainer(nested, callback, visited) end
+            end
+        end
+    end
+end
+
+function EHR.ServerCommands.RequestWatchBatterySync(player)
+    if not player or not EHR.WatchBattery then return end
+    visitServerContainer(player:getInventory(), function(item)
+        if EHR.WatchBattery.IsMedicalWatch(item) then sendWatchBatteryState(player, item) end
+    end)
+end
+
+local function drainOnlineWatchBatteries()
+    if not (isServer and isServer()) then return end
+    if not EHR.WatchBattery or not getOnlinePlayers then return end
+    local players = getOnlinePlayers()
+    if not players then return end
+
+    for i = 0, players:size() - 1 do
+        local player = players:get(i)
+        for _, watch in ipairs(EHR.WatchBattery.GetWornMedicalWatches(player)) do
+            local changed, depleted = EHR.WatchBattery.Drain(watch, EHR.WatchBattery.TEN_MINUTE_HOURS)
+            if changed then
+                if depleted then EHR.WatchBattery.DisableAlarm(watch) end
+                sendWatchBatteryState(player, watch)
+            end
+        end
+    end
 end
 
 local getSterilizedBandagePackDoseInfo
@@ -3314,6 +3432,15 @@ local function OnClientCommand(module, command, player, args)
         elseif command == "DrawBlood" then
             EHR.ServerCommands.DrawBlood(player, args)
             return
+        elseif command == "InsertWatchBattery" then
+            EHR.ServerCommands.InsertWatchBattery(player, args)
+            return
+        elseif command == "RemoveWatchBattery" then
+            EHR.ServerCommands.RemoveWatchBattery(player, args)
+            return
+        elseif command == "RequestWatchBatterySync" then
+            EHR.ServerCommands.RequestWatchBatterySync(player)
+            return
         elseif command == "RemoveItem" and args and args.itemID then
             -- Find and remove the item from player's inventory
             local item, container = findInventoryItemByID(player, args.itemID)
@@ -3768,6 +3895,11 @@ if Events and Events.OnClientCommand then
     log("[EHR] Server commands registered (full MP support)")
 else
     log("[EHR Server DEBUG] FAILED! Events.OnClientCommand not available!")
+end
+
+if Events and Events.EveryTenMinutes then
+    Events.EveryTenMinutes.Add(drainOnlineWatchBatteries)
+    log("[EHR Server] Medical Monitor Watch battery drain registered")
 end
 
 -- Register server-side player creation handler

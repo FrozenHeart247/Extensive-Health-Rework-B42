@@ -29,6 +29,7 @@ pcall(function() require "TimedActions/ISSplint" end)
 pcall(function() require "TimedActions/ISStitch" end)
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_WatchBatteryCore" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_BandagePack" end)
 pcall(function() require "ExtensiveHealth/EHR_Immunity" end)
@@ -2964,10 +2965,10 @@ function EHR_HealthPanelUI:hasMedicalMonitorWatch()
         if item and item.getFullType then
             local fullType = item:getFullType()
             if MEDICAL_MONITOR_WATCH_ITEMS[fullType] then
-                return true
+                if not EHR.WatchBattery or EHR.WatchBattery.IsPowered(item) then return true end
             end
             if item.getType and MEDICAL_MONITOR_WATCH_ITEMS[item:getType()] then
-                return true
+                if not EHR.WatchBattery or EHR.WatchBattery.IsPowered(item) then return true end
             end
         end
     end

@@ -1656,5 +1656,12 @@
     "UI_EHR_Immunity_InfectionRisk": "Infection risk",
     "UI_EHR_Immunity_NotApplied": "Not applied",
     "UI_EHR_Immunity_GameplayActive": "System state: Active",
-    "UI_EHR_Immunity_MonitoringOnly": "System state: Monitoring only"
+    "UI_EHR_Immunity_MonitoringOnly": "System state: Monitoring only",
+    "UI_EHR_WatchBattery_Insert": "Insert Battery (%1%)",
+    "UI_EHR_WatchBattery_Remove": "Remove Battery (%1%)",
+    "UI_EHR_WatchBattery_Battery": "Battery",
+    "UI_EHR_WatchBattery_NotInstalled": "Not installed",
+    "UI_EHR_WatchBattery_Depleted": "Depleted",
+    "UI_EHR_WatchBattery_Time": "Time",
+    "UI_EHR_WatchBattery_Alarm": "Alarm"
 }

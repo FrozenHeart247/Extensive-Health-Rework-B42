@@ -20,6 +20,7 @@ pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
+pcall(function() require "ExtensiveHealth/EHR_WatchBatteryCore" end)
 
 EHR = EHR or {}
 EHR.Tooltips = EHR.Tooltips or {}
@@ -264,13 +265,184 @@ else
     end
 end
 
+local function watchBatteryText(key, fallback)
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_WatchBattery_" .. tostring(key), fallback)
+    end
+    return fallback
+end
+
+local function formatWatchTime(hour, minute)
+    hour = math.floor(tonumber(hour) or 0) % 24
+    minute = math.floor(tonumber(minute) or 0) % 60
+
+    local use24Hour = true
+    if getCore then
+        local core = getCore()
+        if core and core.getOptionClock24Hour then
+            use24Hour = core:getOptionClock24Hour()
+        end
+    end
+
+    if use24Hour then
+        return string.format("%02d:%02d", hour, minute)
+    end
+
+    local suffix = hour >= 12 and "PM" or "AM"
+    local displayHour = hour % 12
+    if displayHour == 0 then displayHour = 12 end
+    return string.format("%d:%02d %s", displayHour, minute, suffix)
+end
+
+local function getCurrentWatchTime()
+    local gameTime = getGameTime and getGameTime() or nil
+    local timeOfDay = gameTime and gameTime.getTimeOfDay and tonumber(gameTime:getTimeOfDay()) or 0
+    local totalMinutes = math.floor((timeOfDay % 24) * 60 + 0.5) % (24 * 60)
+    return math.floor(totalMinutes / 60), totalMinutes % 60
+end
+
+local function renderMedicalWatchTooltip(self, item)
+    if not self or not item or not EHR.WatchBattery or not EHR.WatchBattery.IsMedicalWatch(item) then
+        return false
+    end
+    if not getTextManager or not UIFont or not getCore then return false end
+
+    local textManager = getTextManager()
+    if not textManager then return false end
+
+    local state = EHR.WatchBattery.GetState(item)
+    local installed = state and state.installed == true
+    local charge = installed and math.max(0, math.min(1, tonumber(state.charge) or 0)) or 0
+    local powered = installed and charge > 0
+    local percent = math.floor(charge * 100 + 0.5)
+    local font = UIFont.Small
+    local fontHeight = textManager:getFontHeight(font)
+    local lineGap = 4
+    local lineHeight = fontHeight + lineGap
+    local padding = 10
+    local barHeight = 10
+    local lines = {}
+
+    local displayName = item:getDisplayName() or item:getName() or "Medical Monitor Watch"
+    table.insert(lines, { text = displayName, color = { r = 1.0, g = 1.0, b = 1.0 }, header = true })
+
+    if powered then
+        local hour, minute = getCurrentWatchTime()
+        local timeText = watchBatteryText("Time", "Time") .. ": " .. formatWatchTime(hour, minute)
+        table.insert(lines, { text = timeText, color = { r = 0.45, g = 0.90, b = 1.0 } })
+
+        local alarmSet = false
+        pcall(function() alarmSet = item:isAlarmSet() == true end)
+        if alarmSet then
+            local alarmHour = 0
+            local alarmMinute = 0
+            pcall(function()
+                alarmHour = item:getHour()
+                alarmMinute = item:getMinute()
+            end)
+            local alarmText = watchBatteryText("Alarm", "Alarm") .. ": " .. formatWatchTime(alarmHour, alarmMinute)
+            table.insert(lines, { text = alarmText, color = { r = 0.90, g = 0.70, b = 0.25 } })
+        end
+    end
+
+    local batteryValue = tostring(percent) .. "%"
+    local batteryColor = { r = 0.20, g = 0.82, b = 0.36 }
+    if not installed then
+        batteryValue = watchBatteryText("NotInstalled", "Not installed")
+        batteryColor = { r = 0.70, g = 0.70, b = 0.70 }
+    elseif charge <= 0 then
+        batteryValue = watchBatteryText("Depleted", "Depleted")
+        batteryColor = { r = 0.95, g = 0.22, b = 0.14 }
+    elseif charge <= 0.20 then
+        batteryColor = { r = 0.95, g = 0.22, b = 0.14 }
+    elseif charge <= 0.50 then
+        batteryColor = { r = 0.95, g = 0.68, b = 0.12 }
+    end
+    table.insert(lines, {
+        text = watchBatteryText("Battery", "Battery") .. ": " .. batteryValue,
+        color = batteryColor,
+        batteryBar = true,
+    })
+
+    local weight = item.getUnequippedWeight and tonumber(item:getUnequippedWeight()) or nil
+    if weight then
+        table.insert(lines, {
+            text = tooltipFormat("Encumbrance", "Encumbrance: %1", string.format("%.1f", weight)),
+            color = { r = 0.62, g = 0.62, b = 0.62 },
+        })
+    end
+
+    local maxTextWidth = 210
+    for _, line in ipairs(lines) do
+        maxTextWidth = math.max(maxTextWidth, textManager:MeasureStringX(font, line.text))
+    end
+    local boxWidth = math.min(340, maxTextWidth + padding * 2)
+    local boxHeight = padding * 2 + (#lines * lineHeight) + barHeight + 6
+
+    local mx = getMouseX() + 24
+    local my = getMouseY() + 24
+    if self.followMouse == false then
+        mx = self:getX()
+        my = self:getY()
+        if self.anchorBottomLeft then
+            mx = self.anchorBottomLeft.x
+            my = self.anchorBottomLeft.y - boxHeight
+        end
+    end
+
+    local core = getCore()
+    mx = math.max(5, math.min(mx, core:getScreenWidth() - boxWidth - 5))
+    my = math.max(5, math.min(my, core:getScreenHeight() - boxHeight - 5))
+    self:setX(mx)
+    self:setY(my)
+    self:setWidth(boxWidth)
+    self:setHeight(boxHeight)
+
+    local border = { r = 0.30, g = 0.62, b = 0.50 }
+    self:drawRect(0, 0, boxWidth, boxHeight, 0.95, 0.08, 0.08, 0.10)
+    self:drawRectBorder(0, 0, boxWidth, boxHeight, 1.0, border.r, border.g, border.b)
+    self:drawRect(1, 1, boxWidth - 2, lineHeight + 2, 0.30, border.r, border.g, border.b)
+
+    local y = padding
+    for _, line in ipairs(lines) do
+        local c = line.color
+        self:drawText(line.text, padding, y, c.r, c.g, c.b, 1.0, font)
+        y = y + lineHeight
+
+        if line.batteryBar then
+            local barWidth = boxWidth - padding * 2
+            local innerWidth = math.max(0, barWidth - 2)
+            local fillWidth = math.floor(innerWidth * charge + 0.5)
+            self:drawRect(padding, y, barWidth, barHeight, 0.90, 0.02, 0.03, 0.03)
+            if fillWidth > 0 then
+                self:drawRect(padding + 1, y + 1, fillWidth, barHeight - 2, 0.95, batteryColor.r, batteryColor.g, batteryColor.b)
+            end
+            self:drawRectBorder(padding, y, barWidth, barHeight, 0.90, 0.34, 0.44, 0.40)
+            y = y + barHeight + 6
+        end
+    end
+
+    return true
+end
+
 -- Custom tooltip render with safety fallback
 function ISToolTipInv:render()
     local useVanilla = true
 
     -- Try EHR custom tooltip first
     local item = self.item
-    if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
+    if item and EHR and EHR.WatchBattery and EHR.WatchBattery.IsMedicalWatch(item) then
+        local success, rendered = pcall(function()
+            return renderMedicalWatchTooltip(self, item)
+        end)
+        if success and rendered then
+            useVanilla = false
+        elseif not success then
+            print("[EHR Tooltip] ERROR rendering Medical Monitor Watch: " .. tostring(rendered))
+        end
+    end
+
+    if useVanilla and item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
         local itemFullType = item.getFullType and item:getFullType() or nil
         local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
 

@@ -1631,4 +1631,11 @@ UI_UA = {
     UI_EHR_Immunity_NotApplied = "Не застосовується",
     UI_EHR_Immunity_GameplayActive = "Стан системи: Активна",
     UI_EHR_Immunity_MonitoringOnly = "Стан системи: Лише спостереження",
+    UI_EHR_WatchBattery_Insert = "Вставити батарейку (%1%)",
+    UI_EHR_WatchBattery_Remove = "Вийняти батарейку (%1%)",
+    UI_EHR_WatchBattery_Battery = "Батарейка",
+    UI_EHR_WatchBattery_NotInstalled = "Не встановлена",
+    UI_EHR_WatchBattery_Depleted = "Розряджена",
+    UI_EHR_WatchBattery_Time = "Час",
+    UI_EHR_WatchBattery_Alarm = "Будильник",
 }

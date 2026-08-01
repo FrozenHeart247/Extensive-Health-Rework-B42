@@ -52,6 +52,11 @@ local ICONS = {
     freezing = "media/textures/EHR_Disease_HypotermiaMoodle.png",
 }
 
+-- EHR moodle pictures are complete circular badges already.  Letting
+-- MoodleFramework draw its own solid background/border behind them produces
+-- the white box/ring visible around the badge on some MF configurations.
+local TRANSPARENT_MOODLE_TEXTURE = "media/textures/emptyTexture.png"
+
 local registeredNames = MODULE.registeredNames or {}
 MODULE.registeredNames = registeredNames
 
@@ -90,21 +95,21 @@ end
 
 local function isMFReady()
     return type(MF) == "table"
-        and type(MF.createMoodle) == "function"
         and type(MF.getMoodle) == "function"
+        and type(MF.ISMoodle) == "table"
+        and type(MF.ISMoodle.new) == "function"
 end
 
 local function registerMoodle(name)
     if registeredNames[name] then return true end
     if not isMFReady() then return false end
 
-    local ok = pcall(function()
-        MF.createMoodle(name)
-    end)
-    if ok then
-        registeredNames[name] = true
-    end
-    return ok
+    -- EHR owns creation through its existing OnCreatePlayer handler. Calling
+    -- MF.createMoodle() here would register a second OnCreatePlayer callback;
+    -- together with the immediate fallback below that leaves two live UI
+    -- elements for the same moodle (duplicate icons and overlapping tooltips).
+    registeredNames[name] = true
+    return true
 end
 
 local function ensureMoodlesRegistered()
@@ -118,25 +123,82 @@ local function ensureMoodlesRegistered()
     return true
 end
 
+local function releaseMoodleObject(moodle)
+    if not moodle then return end
+
+    safeCall(function()
+        if moodle.addedToUIManager and moodle.removeFromUIManager then
+            moodle:removeFromUIManager()
+            moodle.addedToUIManager = false
+        end
+    end)
+
+    if moodle.onPlayerDeathFunc and Events and Events.OnPlayerDeath then
+        safeCall(function()
+            Events.OnPlayerDeath.Remove(moodle.onPlayerDeathFunc)
+        end)
+        moodle.onPlayerDeathFunc = nil
+    end
+
+    if moodle.suspend then
+        safeCall(function() moodle:suspend() end)
+    else
+        moodle.disable = true
+    end
+end
+
 local function ensureMoodleObject(name, playerNum)
     if not ensureMoodlesRegistered() then return nil end
+
+    local player = getSpecificPlayer and getSpecificPlayer(playerNum) or nil
+    if not player then return nil end
 
     local moodle = safeCall(function()
         return MF.getMoodle(name, playerNum)
     end, nil)
 
-    if not moodle and MF.ISMoodle and MF.ISMoodle.new and getSpecificPlayer then
-        local player = getSpecificPlayer(playerNum)
-        if player then
-            moodle = safeCall(function()
-                return MF.ISMoodle:new(name, player)
-            end, nil)
+    -- MoodleFramework keeps its storage slot after death. Never reuse an
+    -- object bound to the previous IsoPlayer, otherwise a new object may be
+    -- drawn on top of the suspended one when the character is recreated.
+    if moodle and moodle.char ~= player then
+        releaseMoodleObject(moodle)
+        moodle = nil
+    end
+
+    if not moodle then
+        moodle = safeCall(function()
+            return MF.ISMoodle:new(name, player)
+        end, nil)
+    elseif moodle.disable then
+        if moodle.activate then
+            safeCall(function() moodle:activate() end)
+        else
+            moodle.disable = false
         end
     end
 
     if moodle and not moodle.ehrConfigured then
         moodle:setThresholds(-1.0, -0.75, -0.50, -0.01, nil, nil, nil, nil)
         moodle:setChevronCount(0)
+
+        local transparentTexture = getTextureCached(TRANSPARENT_MOODLE_TEXTURE)
+        if transparentTexture then
+            for level = 1, 4 do
+                moodle:setBackground(BAD, level, transparentTexture)
+            end
+            moodle.Border = transparentTexture
+
+            -- MF refreshes Border whenever the global moodle size changes.
+            -- Preserve EHR's transparent override across that refresh.
+            if type(moodle.updateTextures) == "function" then
+                local updateTextures = moodle.updateTextures
+                moodle.updateTextures = function(self, size)
+                    updateTextures(self, size)
+                    self.Border = transparentTexture
+                end
+            end
+        end
+
         moodle.ehrConfigured = true
     end
 

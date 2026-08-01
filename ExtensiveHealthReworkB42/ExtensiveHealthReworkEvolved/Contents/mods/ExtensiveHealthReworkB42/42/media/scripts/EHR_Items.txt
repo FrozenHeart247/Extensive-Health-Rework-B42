@@ -773,6 +773,17 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item WarmingPack
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:normal,
+        DisplayName = Warming Pack,
+        Icon = WarmingPackeges,
+        Weight = 0.15,
+        Tooltip = Tooltip_WarmingPack,
+        Medical = true,
+    }
+
     item Furosemide
     {
         DisplayCategory = FirstAid,

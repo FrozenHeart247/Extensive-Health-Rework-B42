@@ -418,6 +418,28 @@ local function EHR_InitDistributions()
     -- new loot loops does not make this file fail to compile.
     local function addProceduralLoot()
 
+    -- Disposable warming packs: most common among garage and warehouse
+    -- supplies, occasional in domestic utility storage, and deliberately rare
+    -- in medical buildings. These weights also follow MedicationLootMultiplier.
+    local warmingPackLoot = {
+        GarageTools = 2.2,
+        GarageCarpentry = 1.4,
+        GarageMechanics = 1.2,
+        GarageMetalwork = 1.0,
+        CrateCamping = 2.4,
+        CrateHumanitarian = 1.5,
+        CrateTools = 1.2,
+        CrateRandomJunk = 0.6,
+        ClosetShelfGeneric = 0.45,
+        LaundryCleaning = 0.35,
+        MedicalStorageTools = 0.4,
+        MedicalStorageDrugs = 0.35,
+        MedicalClinicDrugs = 0.2,
+    }
+    for listName, chance in pairs(warmingPackLoot) do
+        tryAddMed(listName, "ExtensiveHealth.WarmingPack", chance)
+    end
+
     -- Medical Storage Blood (hospitals)
     if ProceduralDistributions.list["MedicalStorageBlood"] then
         for item, chance in pairs(bloodBagRarity) do

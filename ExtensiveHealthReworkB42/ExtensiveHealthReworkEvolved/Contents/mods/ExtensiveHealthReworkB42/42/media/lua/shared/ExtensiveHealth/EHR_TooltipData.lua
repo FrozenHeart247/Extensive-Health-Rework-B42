@@ -588,6 +588,16 @@ EHR.Tooltips.Data = {
             "Reduces fever, confusion, collapse risk, dehydration and health loss",
         },
     },
+    ["ExtensiveHealth.WarmingPack"] = {
+        category = "Emergency",
+        description = "Single-use emergency warming pack.",
+        treatmentTime = "2 hours",
+        effects = {
+            "Gradually warms core body temperature toward 37 C",
+            "Cannot heat the body above 37 C",
+        },
+        warning = "Severe environmental cold can reduce its effectiveness.",
+    },
     ["ExtensiveHealth.TetanusAntitoxin"] = {
         category = "Prescription",
         tier = 2,

@@ -740,6 +740,25 @@ EHR.Medication.Database = {
         },
     },
 
+    ["ExtensiveHealth.WarmingPack"] = {
+        tier = 1,
+        treats = {},
+        displayName = "Warming Pack",
+        icon = "WarmingPackeges",
+        nameKey = "UI_EHR_Med_WarmingPack",
+        usageMessage = "You activate the warming pack and hold it close to your body.",
+        adminType = "emergency",
+        effectDurationHours = 2.0,
+        doseIntervalHours = 2.0,
+        totalDosesNeeded = 1,
+        overdoseRisk = false,
+        warmingSupport = {
+            durationHours = 2.0,
+            targetCoreTemp = 37.0,
+            warmingRatePerHour = 3.2,
+        },
+    },
+
     ["ExtensiveHealth.Furosemide"] = {
         tier = 2,
         treats = {"ahtr"},
@@ -3023,6 +3042,10 @@ function EHR.Medication.CanUseMedication(player, item)
         return false, medData.activeDoseMessage or "The current dose is still active"
     end
 
+    if medData.warmingSupport and EHR_MedicationHasActiveGeneralEffect(player, "warmingPack") then
+        return false, medData.activeDoseMessage or "A warming pack is already active"
+    end
+
     if medData.sleepAid and EHR_MedicationHasActiveGeneralEffect(player, "sleepAid") then
         return false, medData.activeDoseMessage or "A sleep-aid dose is still active"
     end
@@ -3446,6 +3469,9 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
     if medData.sleepAid and EHR.Medication.StartSleepAid then
         EHR.Medication.StartSleepAid(player, medData)
+    end
+    if medData.warmingSupport and EHR.Medication.StartWarmingSupport then
+        EHR.Medication.StartWarmingSupport(player, medData)
     end
 
     if medData.analgesic then
@@ -3894,6 +3920,32 @@ function EHR.Medication.StartHydrationSupport(player, medData)
         medicationName = medData.displayName or "Electrolyte Powder",
     }
 
+    return true
+end
+
+function EHR.Medication.StartWarmingSupport(player, medData)
+    if not player or not medData or type(medData.warmingSupport) ~= "table" then return false end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return false end
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+
+    local support = medData.warmingSupport
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local durationHours = math.max(0.05, tonumber(support.durationHours)
+        or tonumber(medData.effectDurationHours) or 2.0)
+
+    medTracking.activeGeneralEffects.warmingPack = {
+        startTime = currentHour,
+        endTime = currentHour + durationHours,
+        lastTemperatureUpdateHour = currentHour,
+        targetCoreTemp = math.max(36.0, math.min(37.0, tonumber(support.targetCoreTemp) or 37.0)),
+        warmingRatePerHour = math.max(0.1, math.min(4.0, tonumber(support.warmingRatePerHour) or 3.2)),
+        medicationName = medData.displayName or "Warming Pack",
+    }
+
+    EHRMedicationRequestSync(player)
     return true
 end
 
@@ -4381,6 +4433,15 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
         local endTime = tonumber(sleepAid.endTime) or currentHour
         if currentHour >= endTime then
             medTracking.activeGeneralEffects.sleepAid = nil
+            changed = true
+        end
+    end
+
+    local warmingPack = medTracking.activeGeneralEffects.warmingPack
+    if type(warmingPack) == "table" then
+        local endTime = tonumber(warmingPack.endTime) or currentHour
+        if currentHour >= endTime then
+            medTracking.activeGeneralEffects.warmingPack = nil
             changed = true
         end
     end
@@ -5723,6 +5784,7 @@ function EHR.Medication.ClearAllSideEffectState(player, resetStats)
             medTracking.activeGeneralEffects.fatigueBlock = nil
             medTracking.activeGeneralEffects.combatStimulants = nil
             medTracking.activeGeneralEffects.mpFatigueRecovery = nil
+            medTracking.activeGeneralEffects.warmingPack = nil
         end
     end
 

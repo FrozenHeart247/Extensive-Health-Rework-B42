@@ -40,6 +40,7 @@ ZombieLoot.ItemPool = {
     "ExtensiveHealth.SterilizedBandages",
     "ExtensiveHealth.AlchoholicBandage",
     "ExtensiveHealth.InstantIcePack",
+    "ExtensiveHealth.WarmingPack",
 
     -- Over-the-counter medication
     "ExtensiveHealth.ColdFluTablets",

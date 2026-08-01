@@ -25,14 +25,14 @@ EHR.PainkillerAddiction.Config = {
     -- fifth and sixth doses taken during a rolling 24-hour window.
     BASE_DOSE_RISK = 1,
     FIFTH_DOSE_RISK = 8,
-    SIXTH_DOSE_RISK = 14,
+    SIXTH_DOSE_RISK = 12,
     EXCESS_DOSE_RISK = 20,
     EARLY_REDOSE_RISK = 4,
     ADDICTION_THRESHOLD = 100,
 
     -- Latent risk begins to fade only after a full day without painkillers.
     RISK_DECAY_DELAY_HOURS = 24,
-    RISK_DECAY_PER_DAY = 10,
+    RISK_DECAY_PER_DAY = 50,
 }
 
 local function worldHour()

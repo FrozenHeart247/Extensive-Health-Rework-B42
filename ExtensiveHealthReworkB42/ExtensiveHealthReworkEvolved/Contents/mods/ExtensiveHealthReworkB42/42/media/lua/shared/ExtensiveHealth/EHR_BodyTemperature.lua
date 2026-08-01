@@ -407,6 +407,49 @@ function EHR.BodyTemp.GetTemperatureData(player)
     return modData[TEMP_DATA_KEY]
 end
 
+local function EHR_BodyTempIsRemoteMPClient()
+    return isClient and isClient() and not (isServer and isServer())
+end
+
+function EHR.BodyTemp.GetActiveWarmingPackEffect(player)
+    if not player then return nil end
+
+    local modData = nil
+    pcall(function() modData = player:getModData() end)
+    local medication = modData and modData.EHR_Medication or nil
+    local effects = type(medication) == "table" and medication.activeGeneralEffects or nil
+    local effect = type(effects) == "table" and effects.warmingPack or nil
+    if type(effect) ~= "table" then return nil end
+
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    if currentHour >= (tonumber(effect.endTime) or currentHour) then return nil end
+    return effect, currentHour
+end
+
+function EHR.BodyTemp.ApplyWarmingPackEffect(player, currentTemp)
+    currentTemp = tonumber(currentTemp)
+    if not currentTemp or EHR_BodyTempIsRemoteMPClient() then
+        return currentTemp, false, 0, false, nil
+    end
+
+    local effect, currentHour = EHR.BodyTemp.GetActiveWarmingPackEffect(player)
+    if not effect then return currentTemp, false, 0, false, nil end
+
+    local targetTemp = math.max(36.0, math.min(37.0, tonumber(effect.targetCoreTemp) or 37.0))
+    local lastUpdateHour = tonumber(effect.lastTemperatureUpdateHour) or currentHour
+    local deltaHours = math.max(0, math.min(0.25, currentHour - lastUpdateHour))
+    effect.lastTemperatureUpdateHour = currentHour
+
+    if deltaHours <= 0 or currentTemp >= targetTemp then
+        return currentTemp, false, 0, true, targetTemp
+    end
+
+    local warmingRate = math.max(0.1, math.min(4.0, tonumber(effect.warmingRatePerHour) or 3.2))
+    local warmingDelta = math.min(targetTemp - currentTemp, warmingRate * deltaHours)
+    return currentTemp + warmingDelta, warmingDelta > 0, warmingDelta, true, targetTemp
+end
+
 local function EHR_BodyTempNormalizeCelsius(value)
     value = tonumber(value)
     if not value then return nil end
@@ -2015,6 +2058,14 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
             math.min(EHR.BodyTemp.Config.maxBodyTemp or 42.0, managedCore + coreDelta)
         )
     end
+
+    local warmedCore, warmingApplied, warmingCoreDelta, warmingActive, warmingTarget =
+        EHR.BodyTemp.ApplyWarmingPackEffect(player, managedCore)
+    if warmingApplied then
+        managedCore = warmedCore
+        coreDelta = coreDelta + warmingCoreDelta
+        coreDeltaSource = coreDeltaSource .. "+WarmingPack"
+    end
     state.managedCore = managedCore
 
     tempData.bodyTemp = managedCore
@@ -2033,6 +2084,9 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
     tempData.lastAmbientCoreDelta = correctionCoreDelta
     tempData.lastAppliedCoreDelta = coreDelta
     tempData.lastCoreDeltaSource = coreDeltaSource
+    tempData.warmingPackActive = warmingActive
+    tempData.warmingPackTargetTemp = warmingActive and warmingTarget or nil
+    tempData.lastWarmingPackCoreDelta = warmingCoreDelta
     tempData.lastAppliedThermalStep = appliedThermalStep
     tempData.lastVanillaEnvironmentalHeat = state.vanillaEnvironmentalHeat
     tempData.lastDesiredEnvironmentalHeat = state.desiredEnvironmentalHeat
@@ -2043,7 +2097,10 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
     tempData.lastTemperatureSource = isIndoors
         and "IndoorClimateLiteVanillaAdapter"
         or "VanillaThermoregulator"
-    tempData.vanillaDirectCore = usesDirectVanillaCore
+    -- A listen-server/authoritative process may still enter direct-core mode.
+    -- When the pack contributed heat, allow the bridge below to publish that
+    -- adjusted core instead of immediately replacing it with the old snapshot.
+    tempData.vanillaDirectCore = usesDirectVanillaCore and not warmingApplied
 
     if multiplayerClient and state.lastLoggedDirectMode ~= usesDirectVanillaCore then
         state.lastLoggedDirectMode = usesDirectVanillaCore
@@ -2255,8 +2312,20 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
         tempData.environmentManagedBy = "Vanilla"
     end
 
+    local warmedTemp, warmingApplied, warmingDelta, warmingActive, warmingTarget =
+        EHR.BodyTemp.ApplyWarmingPackEffect(player, tempData.bodyTemp)
+    if warmingApplied then
+        tempData.bodyTemp = math.max(
+            cfg.minBodyTemp or 28.0,
+            math.min(cfg.maxBodyTemp or 42.0, warmedTemp)
+        )
+    end
+    tempData.warmingPackActive = warmingActive
+    tempData.warmingPackTargetTemp = warmingActive and warmingTarget or nil
+    tempData.lastWarmingPackCoreDelta = warmingDelta
+
     tempData.environmentTargetTemp = environmentTarget
-    tempData.targetTemp = environmentTarget
+    tempData.targetTemp = warmingActive and math.max(environmentTarget, warmingTarget) or environmentTarget
     local bodyTemperatureWriteAttempted = false
 
     if hasFeverSource then
@@ -2310,9 +2379,9 @@ function EHR.BodyTemp.UpdateBodyTemperature(player, deltaHours)
         tempData.diseaseFeverActive = false
     end
 
-    if managedEnvironment
+    if (managedEnvironment or warmingApplied)
             and not bodyTemperatureWriteAttempted
-            and not (tempData.vanillaDirectCore == true and not hasFeverSource)
+            and not (tempData.vanillaDirectCore == true and not hasFeverSource and not warmingApplied)
             and EHR.BodyTemp.WriteDiseaseBodyTemperature then
         EHR.BodyTemp.WriteDiseaseBodyTemperature(player, tempData.bodyTemp)
     end

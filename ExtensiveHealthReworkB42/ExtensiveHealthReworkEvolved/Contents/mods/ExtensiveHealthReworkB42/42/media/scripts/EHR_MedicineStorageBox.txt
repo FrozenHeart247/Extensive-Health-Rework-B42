@@ -11,7 +11,7 @@ module ExtensiveHealth
         DisplayCategory = Container,
         ItemType = base:container,
         Weight = 1.0,
-        Icon = FirstAid_Camping,
+        Icon = MedicalStorageBox,
         CanHaveHoles = false,
         Capacity = 5,
         WeightReduction = 50,
@@ -24,4 +24,3 @@ module ExtensiveHealth
         Tags = base:neverempty;base:bagsfillexception;base:alwayshasstuff,
     }
 }
-

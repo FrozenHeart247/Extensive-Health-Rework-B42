@@ -1,7 +1,7 @@
 --[[
     Extensive Health Rework B42
     Disease Module - Phase 1
-
+    Something Was Wrong With Steam Workshop Upload. Trying to Reupload
     Adds realistic disease system with:
     - Food Poisoning (Phase 1)
     - Multi-day progression with incubation
@@ -2867,6 +2867,148 @@ local function EHR_DiseaseApplyScabiesEffects(player, disease, stage, severity, 
     end
 end
 
+-- Keep the individual disease handlers out of ApplyEffects. Kahlua limits a
+-- function to 200 declared locals (including parameters), even when many of
+-- those locals live in mutually exclusive elseif branches.
+local function EHR_DiseaseApplyInsomniaEffects(player, disease, stage, severity, stats, trySymptom)
+    local sleepAidActive = EHR.Medication
+        and EHR.Medication.HasActiveSleepAid
+        and EHR.Medication.HasActiveSleepAid(player)
+    local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "insomnia", disease)
+
+    local fatigueTarget = 0.82
+    local stressTarget = 0.22
+    local unhappinessTarget = 0.10
+    local painTarget = 0.06
+    local headPainTarget = 8
+    local dialogueChance = 0.0009
+    local dialogueCooldown = 2.0
+
+    if stage == 2 then
+        fatigueTarget = 0.90
+        stressTarget = 0.34
+        unhappinessTarget = 0.18
+        painTarget = 0.12
+        headPainTarget = 18
+        dialogueChance = 0.0025
+        dialogueCooldown = 1.1
+    elseif stage >= 3 then
+        fatigueTarget = 0.96
+        stressTarget = 0.48
+        unhappinessTarget = 0.28
+        painTarget = 0.18
+        headPainTarget = 28
+        dialogueChance = 0.0038
+        dialogueCooldown = 0.75
+    end
+
+    if sleepAidActive then
+        symptomMult = math.min(symptomMult, 0.25)
+        fatigueTarget = math.min(fatigueTarget, 0.74)
+        stressTarget = math.min(stressTarget, 0.10)
+        unhappinessTarget = math.min(unhappinessTarget, 0.08)
+        painTarget = math.min(painTarget, 0.06)
+        headPainTarget = math.min(headPainTarget, 8)
+    end
+
+    if CharacterStat then
+        if not sleepAidActive then
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.FATIGUE, fatigueTarget, 0.00075 * severity * math.max(0.25, symptomMult))
+        end
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * math.max(0.35, symptomMult), 0.00055 * severity)
+        EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * math.max(0.35, symptomMult), 0.00035 * severity)
+        EHR_DiseaseMovePainToward(stats, painTarget * math.max(0.35, symptomMult), 0.0012 * severity, sleepAidActive and 0.020 or 0.006)
+    end
+
+    EHR_DiseaseMoveTargetedPainToward(
+        player,
+        headPainTarget * math.max(0.35, symptomMult),
+        0.55 * severity,
+        sleepAidActive and 4.0 or 1.25,
+        EHR_DiseaseIsHeadPart
+    )
+
+    trySymptom("insomnia_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+        local lines = sleepAidActive
+            and {"The medicine is finally quieting my head...", "Maybe I can sleep now...", "The edge is softening..."}
+            or stage >= 3
+                and {"I need sleep. I can't make myself sleep.", "My head won't shut up...", "I'm exhausted and still wide awake...", "Every sound is too sharp."}
+                or stage == 2
+                    and {"I'm so tired, but I can't sleep...", "My eyes burn. My brain won't stop.", "Just let me sleep..."}
+                    or {"I slept, but it didn't feel like sleep...", "I keep waking up...", "Rest isn't sticking."}
+        EHR_DiseaseSay(player, lines)
+    end)
+end
+
+local function EHR_DiseaseApplyPainkillerAddictionEffects(player, disease, stage, severity, stats, trySymptom)
+    local withdrawalSuppressed = false
+    if EHR.PainkillerAddiction and EHR.PainkillerAddiction.IsWithdrawalSuppressed then
+        withdrawalSuppressed = EHR.PainkillerAddiction.IsWithdrawalSuppressed(player)
+    elseif EHR.Medication and EHR.Medication.IsAnalgesicActive then
+        withdrawalSuppressed = EHR.Medication.IsAnalgesicActive(player)
+    end
+    local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "painkiller_addiction", disease)
+
+    local stressTarget = 0.25
+    local unhappinessTarget = 0.25
+    local thirstTarget = 0.18
+    local dialogueChance = 0.0010
+    local dialogueCooldown = 2.2
+
+    if stage == 2 then
+        stressTarget = 0.60
+        unhappinessTarget = 0.60
+        thirstTarget = 0.28
+        dialogueChance = 0.0022
+        dialogueCooldown = 1.3
+    elseif stage >= 3 then
+        stressTarget = 0.80
+        unhappinessTarget = 1.00
+        thirstTarget = 0.40
+        dialogueChance = 0.0034
+        dialogueCooldown = 0.9
+    end
+
+    if CharacterStat then
+        if withdrawalSuppressed then
+            -- An active dose suppresses withdrawal. Stress and sadness
+            -- settle back down; extra thirst stops accumulating, while
+            -- existing dehydration still has to be treated with water.
+            EHR_DiseaseLowerStatToward(stats, CharacterStat.STRESS, 0.06, 0.00300 * severity, 0)
+            EHR_DiseaseLowerStatToward(stats, CharacterStat.UNHAPPINESS, 0.05, 0.00300 * severity, 0)
+        else
+            local activeMult = math.max(0.35, symptomMult)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * activeMult, 0.00200 * severity)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * activeMult, 0.00200 * severity)
+            EHR_DiseaseRaiseStatToward(stats, CharacterStat.THIRST, thirstTarget * activeMult, 0.00008 * severity)
+        end
+    end
+
+    if not withdrawalSuppressed then
+        trySymptom("painkiller_addiction_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
+            local lines = stage >= 3
+                and {"I need those painkillers.", "I can't stop thinking about the pills.", "Just one dose..."}
+                or stage == 2
+                    and {"I need another dose.", "I can't settle down without them.", "Where did I put those pills?"}
+                    or {"I feel restless without them...", "Maybe one more dose would help..."}
+            EHR_DiseaseSay(player, lines)
+        end)
+    end
+end
+
+local function EHR_DiseaseApplyTuberculosisEffects(player, disease, stage, severity, stageMult, stats, trySymptom)
+    local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
+    local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
+    EHR_DiseaseDrainEndurance(stats, 0.0015 * severity * stageMult, 0.35)
+    EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.FATIGUE, 0.0006 * severity * stageMult)
+    EHR_DiseaseApplyBodyFever(player, "tuberculosis", disease, severity, symptomMult, curativeTreatment)
+
+    local coughChance = (stage == 3 and 0.006 or stage == 2 and 0.003 or 0.001) * severity
+    trySymptom("tb_cough", coughChance, 0.12, function()
+        EHR_DiseaseTriggerCough(player, stage == 3)
+    end)
+end
+
 function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
     local stats = player:getStats()
     if not stats then return end
@@ -3758,140 +3900,13 @@ function EHR.Disease.ApplyEffects(player, diseaseId, disease, def)
         end)
 
     elseif diseaseId == "insomnia" then
-        local sleepAidActive = EHR.Medication
-            and EHR.Medication.HasActiveSleepAid
-            and EHR.Medication.HasActiveSleepAid(player)
-        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "insomnia", disease)
-
-        local fatigueTarget = 0.82
-        local stressTarget = 0.22
-        local unhappinessTarget = 0.10
-        local painTarget = 0.06
-        local headPainTarget = 8
-        local dialogueChance = 0.0009
-        local dialogueCooldown = 2.0
-
-        if stage == 2 then
-            fatigueTarget = 0.90
-            stressTarget = 0.34
-            unhappinessTarget = 0.18
-            painTarget = 0.12
-            headPainTarget = 18
-            dialogueChance = 0.0025
-            dialogueCooldown = 1.1
-        elseif stage >= 3 then
-            fatigueTarget = 0.96
-            stressTarget = 0.48
-            unhappinessTarget = 0.28
-            painTarget = 0.18
-            headPainTarget = 28
-            dialogueChance = 0.0038
-            dialogueCooldown = 0.75
-        end
-
-        if sleepAidActive then
-            symptomMult = math.min(symptomMult, 0.25)
-            fatigueTarget = math.min(fatigueTarget, 0.74)
-            stressTarget = math.min(stressTarget, 0.10)
-            unhappinessTarget = math.min(unhappinessTarget, 0.08)
-            painTarget = math.min(painTarget, 0.06)
-            headPainTarget = math.min(headPainTarget, 8)
-        end
-
-        if CharacterStat then
-            if not sleepAidActive then
-                EHR_DiseaseRaiseStatToward(stats, CharacterStat.FATIGUE, fatigueTarget, 0.00075 * severity * math.max(0.25, symptomMult))
-            end
-            EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * math.max(0.35, symptomMult), 0.00055 * severity)
-            EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * math.max(0.35, symptomMult), 0.00035 * severity)
-            EHR_DiseaseMovePainToward(stats, painTarget * math.max(0.35, symptomMult), 0.0012 * severity, sleepAidActive and 0.020 or 0.006)
-        end
-
-        EHR_DiseaseMoveTargetedPainToward(
-            player,
-            headPainTarget * math.max(0.35, symptomMult),
-            0.55 * severity,
-            sleepAidActive and 4.0 or 1.25,
-            EHR_DiseaseIsHeadPart
-        )
-
-        trySymptom("insomnia_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
-            local lines = sleepAidActive
-                and {"The medicine is finally quieting my head...", "Maybe I can sleep now...", "The edge is softening..."}
-                or stage >= 3
-                    and {"I need sleep. I can't make myself sleep.", "My head won't shut up...", "I'm exhausted and still wide awake...", "Every sound is too sharp."}
-                    or stage == 2
-                        and {"I'm so tired, but I can't sleep...", "My eyes burn. My brain won't stop.", "Just let me sleep..."}
-                        or {"I slept, but it didn't feel like sleep...", "I keep waking up...", "Rest isn't sticking."}
-            EHR_DiseaseSay(player, lines)
-        end)
+        EHR_DiseaseApplyInsomniaEffects(player, disease, stage, severity, stats, trySymptom)
 
     elseif diseaseId == "painkiller_addiction" then
-        local withdrawalSuppressed = false
-        if EHR.PainkillerAddiction and EHR.PainkillerAddiction.IsWithdrawalSuppressed then
-            withdrawalSuppressed = EHR.PainkillerAddiction.IsWithdrawalSuppressed(player)
-        elseif EHR.Medication and EHR.Medication.IsAnalgesicActive then
-            withdrawalSuppressed = EHR.Medication.IsAnalgesicActive(player)
-        end
-        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "painkiller_addiction", disease)
-
-        local stressTarget = 0.25
-        local unhappinessTarget = 0.25
-        local thirstTarget = 0.18
-        local dialogueChance = 0.0010
-        local dialogueCooldown = 2.2
-
-        if stage == 2 then
-            stressTarget = 0.60
-            unhappinessTarget = 0.60
-            thirstTarget = 0.28
-            dialogueChance = 0.0022
-            dialogueCooldown = 1.3
-        elseif stage >= 3 then
-            stressTarget = 0.80
-            unhappinessTarget = 1.00
-            thirstTarget = 0.40
-            dialogueChance = 0.0034
-            dialogueCooldown = 0.9
-        end
-
-        if CharacterStat then
-            if withdrawalSuppressed then
-                -- An active dose suppresses withdrawal. Stress and sadness
-                -- settle back down; extra thirst stops accumulating, while
-                -- existing dehydration still has to be treated with water.
-                EHR_DiseaseLowerStatToward(stats, CharacterStat.STRESS, 0.06, 0.00300 * severity, 0)
-                EHR_DiseaseLowerStatToward(stats, CharacterStat.UNHAPPINESS, 0.05, 0.00300 * severity, 0)
-            else
-                local activeMult = math.max(0.35, symptomMult)
-                EHR_DiseaseRaiseStatToward(stats, CharacterStat.STRESS, stressTarget * activeMult, 0.00200 * severity)
-                EHR_DiseaseRaiseStatToward(stats, CharacterStat.UNHAPPINESS, unhappinessTarget * activeMult, 0.00200 * severity)
-                EHR_DiseaseRaiseStatToward(stats, CharacterStat.THIRST, thirstTarget * activeMult, 0.00008 * severity)
-            end
-        end
-
-        if not withdrawalSuppressed then
-            trySymptom("painkiller_addiction_dialogue", dialogueChance * severity * math.max(0.35, symptomMult), dialogueCooldown, function()
-                local lines = stage >= 3
-                    and {"I need those painkillers.", "I can't stop thinking about the pills.", "Just one dose..."}
-                    or stage == 2
-                        and {"I need another dose.", "I can't settle down without them.", "Where did I put those pills?"}
-                        or {"I feel restless without them...", "Maybe one more dose would help..."}
-                EHR_DiseaseSay(player, lines)
-            end)
-        end
+        EHR_DiseaseApplyPainkillerAddictionEffects(player, disease, stage, severity, stats, trySymptom)
 
     elseif diseaseId == "tuberculosis" then
-        local curativeTreatment = EHR_DiseaseGetActiveCurativeTreatment(player, "tuberculosis")
-        local symptomMult = EHR_DiseaseGetActiveSymptomMultiplier(player, "tuberculosis", disease)
-        EHR_DiseaseDrainEndurance(stats, 0.0015 * severity * stageMult, 0.35)
-        EHR_DiseaseAddStat(stats, CharacterStat and CharacterStat.FATIGUE, 0.0006 * severity * stageMult)
-        EHR_DiseaseApplyBodyFever(player, "tuberculosis", disease, severity, symptomMult, curativeTreatment)
-
-        local coughChance = (stage == 3 and 0.006 or stage == 2 and 0.003 or 0.001) * severity
-        trySymptom("tb_cough", coughChance, 0.12, function()
-            EHR_DiseaseTriggerCough(player, stage == 3)
-        end)
+        EHR_DiseaseApplyTuberculosisEffects(player, disease, stage, severity, stageMult, stats, trySymptom)
     end
 end
 
@@ -4936,6 +4951,21 @@ function EHR.Disease.CheckFoodRisk(player, item, amount)
     local looksUncooked = string.find(nameLower, "uncooked", 1, true) ~= nil
         or string.find(nameLower, "undercooked", 1, true) ~= nil
     local hiddenUncooked = EHR_DiseaseScriptItemHasTag(item, "base:hideuncooked")
+    local isPackaged = EHR_DiseaseGetItemFlag(item, {"isPackaged", "getPackaged"})
+    local scriptItem = EHR_DiseaseSafeItemMethod(item, "getScriptItem")
+    local scriptLootType = EHR_DiseaseSafeItemMethod(scriptItem, "getLootType")
+    local replaceOnUse = safeCall("getReplaceOnUse") or safeCall("getReplaceOnUseFullType")
+    if replaceOnUse == nil then
+        replaceOnUse = EHR_DiseaseSafeItemMethod(scriptItem, "getReplaceOnUse")
+    end
+    local scriptLootTypeLower = string.lower(tostring(scriptLootType or ""))
+    local replaceOnUseLower = string.lower(tostring(replaceOnUse or ""))
+    -- B42 marks canned food as cookable because it can optionally be heated.
+    -- It is already safe to eat after opening, so do not interpret that flag as
+    -- "uncooked". The replacement-container fallback also covers modded cans
+    -- which correctly return an empty tin but omit the vanilla loot category.
+    local cannedReadyToEat = scriptLootTypeLower == "cannedfood"
+        or (isPackaged == true and string.find(replaceOnUseLower, "tincanempty", 1, true) ~= nil)
     local rawSafeFoodTypes = {
         vegetable = true,
         vegetables = true,
@@ -5012,7 +5042,11 @@ function EHR.Disease.CheckFoodRisk(player, item, amount)
         end
     end
     local rawSafeUncooked = readyPreparedSafe == true or (rawSafeFoodTypes[foodTypeLower] == true and preparedUncooked ~= true)
-    local cookableUncooked = isCookable == true and hiddenUncooked ~= true and rawSafeUncooked ~= true and preparedUncooked == true
+    local cookableUncooked = isCookable == true
+        and hiddenUncooked ~= true
+        and rawSafeUncooked ~= true
+        and preparedUncooked == true
+        and cannedReadyToEat ~= true
     if trichinosisRisk <= 0
         and isBurnt ~= true
         and isCooked ~= true then
@@ -5051,7 +5085,7 @@ function EHR.Disease.CheckFoodRisk(player, item, amount)
             (tonumber(foodRisk.chance) or 0) * 100))
     end
     EHR_DiseaseDebugFood(player, "inspect", string.format(
-        "item=%s fullType=%s foodType=%s herbalist=%s portion=%.2f rotten=%s burnt=%s cooked=%s cookable=%s fresh=%s age=%.2f/off=%.2f poison=%.2f/%.2f detect=%.2f dangerousUncooked=%s looksUncooked=%s hiddenUncooked=%s rawSafe=%s prepared=%s cookableUncooked=%s trich=%.2f%%(%s) gastro=%.2f%%(%s) risks=[%s]",
+        "item=%s fullType=%s foodType=%s herbalist=%s portion=%.2f rotten=%s burnt=%s cooked=%s cookable=%s fresh=%s age=%.2f/off=%.2f poison=%.2f/%.2f detect=%.2f dangerousUncooked=%s looksUncooked=%s hiddenUncooked=%s packaged=%s lootType=%s replaceOnUse=%s cannedReady=%s rawSafe=%s prepared=%s cookableUncooked=%s trich=%.2f%%(%s) gastro=%.2f%%(%s) risks=[%s]",
         tostring(itemName or "unknown"),
         tostring(itemFullType or ""),
         tostring(foodType or ""),
@@ -5070,6 +5104,10 @@ function EHR.Disease.CheckFoodRisk(player, item, amount)
         tostring(dangerousUncooked),
         tostring(looksUncooked),
         tostring(hiddenUncooked),
+        tostring(isPackaged),
+        tostring(scriptLootType or "none"),
+        tostring(replaceOnUse or "none"),
+        tostring(cannedReadyToEat),
         tostring(rawSafeUncooked),
         tostring(preparedUncooked),
         tostring(cookableUncooked),

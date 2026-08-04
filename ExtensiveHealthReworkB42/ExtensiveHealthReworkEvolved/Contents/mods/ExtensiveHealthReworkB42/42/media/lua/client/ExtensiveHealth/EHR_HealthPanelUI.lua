@@ -56,8 +56,7 @@ EHR_HealthPanelUI.BLOOD_PANEL_HEIGHT = 122
 EHR_HealthPanelUI.LEFT_WIDTH = 390
 EHR_HealthPanelUI.SCROLL_STEP = 32
 EHR_HealthPanelUI.TEXT_DOCK_Y_BIAS = -2
-EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE = 4.0
-EHR_HealthPanelUI.REMOTE_EXAM_MOVE_TOLERANCE = 0.75
+EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE = 3.0
 
 EHR_HealthPanelUI.Colors = {
     background = { r = 0.025, g = 0.025, b = 0.028, a = 0.97 },
@@ -868,10 +867,8 @@ function EHR_HealthPanelUI:queueRemoteExamRefreshBurst()
     if not self.isRemoteHealthPanel then return end
 
     self.remoteExamRefreshBurst = {
-        8,
-        24,
-        55,
-        110,
+        30,
+        90,
     }
     self:markRemoteBodyDamageDirty(180)
 end
@@ -1166,21 +1163,7 @@ function EHR_HealthPanelUI:remoteExamShouldClose()
     local dz = doctorZ - patientZ
     if math.abs(dz or 0) > 0.1 then return true end
 
-    local moveTolerance = tonumber(EHR_HealthPanelUI.REMOTE_EXAM_MOVE_TOLERANCE) or 0.75
-    if self.remoteExamDoctorX and self.remoteExamDoctorY and self.remoteExamDoctorZ
-            and (math.abs(doctorX - self.remoteExamDoctorX) > moveTolerance
-            or math.abs(doctorY - self.remoteExamDoctorY) > moveTolerance
-            or math.abs(doctorZ - self.remoteExamDoctorZ) > 0.1) then
-        return true
-    end
-    if self.remoteExamPatientX and self.remoteExamPatientY and self.remoteExamPatientZ
-            and (math.abs(patientX - self.remoteExamPatientX) > moveTolerance
-            or math.abs(patientY - self.remoteExamPatientY) > moveTolerance
-            or math.abs(patientZ - self.remoteExamPatientZ) > 0.1) then
-        return true
-    end
-
-    local maxDistance = tonumber(EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE) or 4.0
+    local maxDistance = tonumber(EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE) or 3.0
     return (dx * dx + dy * dy) > (maxDistance * maxDistance)
 end
 
@@ -1370,8 +1353,11 @@ function EHR_HealthPanelUI:prepareRemoteHealthView(view)
             end)
         end
 
+        local remoteRange = tonumber(EHR_HealthPanelUI.REMOTE_EXAM_MAX_DISTANCE) or 3.0
+        local remoteDx = patientX - doctorX
+        local remoteDy = patientY - doctorY
         if not sameCar and not ISHealthPanel.cheat
-                and (math.abs(patientX - doctorX) > 2 or math.abs(patientY - doctorY) > 2) then
+                and (remoteDx * remoteDx + remoteDy * remoteDy) > (remoteRange * remoteRange) then
             viewSelf.blockingMessage = getText("IGUI_TradingUI_TooFarAway", patient.getDisplayName and patient:getDisplayName() or "")
             viewSelf.blockingAlpha = math.min(1.0, (tonumber(viewSelf.blockingAlpha) or 0) + 0.05)
             return
@@ -2911,7 +2897,7 @@ function EHR_HealthPanelUI:refreshRemoteExamDataIfNeeded()
 
     local now = getTimestampMs and getTimestampMs() or 0
     if now <= 0 then return end
-    if self.lastRemoteExamRefreshMs and (now - self.lastRemoteExamRefreshMs) < 5000 then
+    if self.lastRemoteExamRefreshMs and (now - self.lastRemoteExamRefreshMs) < 10000 then
         return
     end
 
@@ -3881,14 +3867,21 @@ end
 function EHR_HealthPanelUI:addRemotePoulticeOptions(context, bodyPart, snapshot)
     if snapshot.bandaged == true or not snapshotHasActionableStatus(snapshot) then return end
 
+    -- Vanilla permits only one active poultice of any kind on a body part.
+    if (tonumber(snapshot.plantainFactor) or 0) > 0
+            or (tonumber(snapshot.comfreyFactor) or 0) > 0
+            or (tonumber(snapshot.garlicFactor) or 0) > 0 then
+        return
+    end
+
     local definitions = {
-        { itemType = "PlantainCataplasm", label = "ContextMenu_PlantainCataplasm", factorMethod = "getPlantainFactor", actionClass = ISPlantainCataplasm },
-        { itemType = "ComfreyCataplasm", label = "ContextMenu_ComfreyCataplasm", factorMethod = "getComfreyFactor", actionClass = ISComfreyCataplasm },
-        { itemType = "WildGarlicCataplasm", label = "ContextMenu_GarlicCataplasm", factorMethod = "getGarlicFactor", actionClass = ISGarlicCataplasm },
+        { itemType = "PlantainCataplasm", label = "ContextMenu_PlantainCataplasm", actionClass = ISPlantainCataplasm },
+        { itemType = "ComfreyCataplasm", label = "ContextMenu_ComfreyCataplasm", actionClass = ISComfreyCataplasm },
+        { itemType = "WildGarlicCataplasm", label = "ContextMenu_GarlicCataplasm", actionClass = ISGarlicCataplasm },
     }
 
     for _, definition in ipairs(definitions) do
-        if definition.actionClass and (tonumber(callBodyPartMethod(bodyPart, definition.factorMethod, 0)) or 0) <= 0 then
+        if definition.actionClass then
             local items = self:collectDoctorInventoryItems(function(item)
                 return self:itemIsPoultice(item, definition.itemType)
             end)
@@ -4141,7 +4134,8 @@ function EHR_HealthPanelUI:onRemoteRemoveStitch(bodyPart)
                         and ISHealthPanel.DidPatientMove(actionSelf.character, actionSelf.otherPlayer, actionSelf.bandagedPlayerX, actionSelf.bandagedPlayerY) then
                     return false
                 end
-                return true
+                local latest = panel:getRemoteBodyPartSnapshotByType(bodyPartType)
+                return latest and latest.stitched == true
             end
         end
         panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
@@ -6083,6 +6077,13 @@ function EHR.UI.DestroyRemoteHealthPanel(patientOrKey)
     local panel = key and instances[key] or EHR.UI.GetRemoteHealthPanelForPatient(patientOrKey)
     if not panel then return end
     key = panel.ehrRemoteKey or key
+
+    if EHR.MPExamination and EHR.MPExamination.EndExamSession
+            and panel.remoteDoctor and panel.remotePatient then
+        pcall(function()
+            EHR.MPExamination.EndExamSession(panel.remoteDoctor, panel.remotePatient)
+        end)
+    end
 
     if panel.remoteDoctor and panel.remotePatient and panel.remoteDoctor.stopReceivingBodyDamageUpdates then
         pcall(function()

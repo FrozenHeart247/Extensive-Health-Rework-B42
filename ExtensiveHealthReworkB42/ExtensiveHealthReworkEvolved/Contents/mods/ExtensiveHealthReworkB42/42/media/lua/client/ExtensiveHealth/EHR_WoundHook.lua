@@ -23,7 +23,7 @@ require "ExtensiveHealth/EHR_Medication"
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
-EHR.WoundHook = {}
+EHR.WoundHook = EHR.WoundHook or {}
 
 local function woundHookText(key, fallback)
     if EHR and EHR.Locale and EHR.Locale.Text then
@@ -49,7 +49,9 @@ end
 
 
 -- Track initialization
-EHR.WoundHook.initialized = false
+if EHR.WoundHook.initialized == nil then
+    EHR.WoundHook.initialized = false
+end
 
 -- ============================================
 -- ITEM IDENTIFICATION
@@ -191,29 +193,10 @@ local function WoundHookPlayerName(player)
 end
 
 local function WoundHookNotifyServerOfDisinfect(doctor, patient, bodyPartType)
-    if not (isClient and isClient()) or not sendClientCommand then return end
-    if not doctor or not patient or not bodyPartType then return end
-
-    local args = { bodyPart = tostring(bodyPartType) }
-    if patient ~= doctor then
-        pcall(function()
-            if patient.getUsername then args.targetUsername = patient:getUsername() end
-        end)
-        pcall(function()
-            if patient.getOnlineID then args.targetOnlineID = tostring(patient:getOnlineID()) end
-        end)
-        pcall(function()
-            if patient.getDisplayName then args.targetDisplayName = tostring(patient:getDisplayName()) end
-        end)
-
-        if not args.targetUsername and not args.targetOnlineID and not args.targetDisplayName then
-            WoundHookDisinfectDebug("cannot notify server: remote patient has no stable identifier")
-            return
-        end
-    end
-
-    sendClientCommand(doctor, "EHR", "WoundDisinfected", args)
-    WoundHookDisinfectDebug("notified server of disinfect part=" .. tostring(bodyPartType))
+    -- MP completion is handled by the server-side ISDisinfect/ISApplyBandage
+    -- wrappers. A separate client completion packet was forgeable and could
+    -- disinfect a wound without consuming the medical item.
+    return
 end
 
 local function WoundHookItemName(item)
@@ -687,7 +670,8 @@ function EHR.WoundHook.OnGameStart()
     EHR.WoundHook.Initialize()
 end
 
-if Events then
+if Events and not EHR.WoundHook._eventsRegistered then
+    EHR.WoundHook._eventsRegistered = true
     Events.OnGameStart.Add(EHR.WoundHook.OnGameStart)
 
     -- Context menu hook for IV antibiotics
@@ -703,14 +687,15 @@ end
 
 -- Reset handler for death/respawn
 function EHR.WoundHook.Reset()
-    EHR.WoundHook.initialized = false
-    EHR.Log("WoundHook: Reset - will re-hook on next game start")
+    -- Hooks are class-level, not player-level. Resetting this flag on any
+    -- player's death caused the same functions to be wrapped a second time.
+    EHR.Log("WoundHook: Player death - class hooks remain installed")
 end
 
 -- Register death handler
-if Events and Events.OnPlayerDeath then
+if Events and Events.OnPlayerDeath and not EHR.WoundHook._deathEventRegistered then
+    EHR.WoundHook._deathEventRegistered = true
     Events.OnPlayerDeath.Add(function(player)
-        -- Reset on any player death
         EHR.WoundHook.Reset()
     end)
 end

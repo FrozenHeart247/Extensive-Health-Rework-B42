@@ -112,10 +112,6 @@ local function playerIdentifiers(player)
     pcall(function()
         if player.getOnlineID then data.targetOnlineID = tostring(player:getOnlineID()) end
     end)
-    pcall(function()
-        if player.getDisplayName then data.targetDisplayName = tostring(player:getDisplayName()) end
-    end)
-
     return data
 end
 
@@ -201,7 +197,6 @@ end
 function EHR.StitchMinigame.AllowRemoteBodyPart(bodyPart, milliseconds)
     if not bodyPart or not getTimestampMs then return end
     EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
-EHR.StitchMinigame.CELLULITIS_ROUGH_RISK = 0.40
     EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] = getTimestampMs() + (tonumber(milliseconds) or 180000)
 end
 
@@ -759,6 +754,13 @@ end
 function EHR.StitchMinigame.Open(character, otherPlayer, item, bodyPart)
     if EHR_StitchMinigameUI.instance then
         EHR_StitchMinigameUI.instance:close()
+    end
+
+    if isClient and isClient() and sendClientCommand and character and otherPlayer and item and bodyPart then
+        local args = playerIdentifiers(otherPlayer)
+        args.sourceBodyPart = bodyPartKey(bodyPart)
+        pcall(function() args.itemID = item:getID() end)
+        sendClientCommand(character, "EHR", "BeginStitchRiskSession", args)
     end
 
     local width = 560

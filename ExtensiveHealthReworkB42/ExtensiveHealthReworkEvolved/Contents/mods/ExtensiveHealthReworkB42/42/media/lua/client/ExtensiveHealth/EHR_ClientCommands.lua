@@ -333,6 +333,21 @@ local function OnExamServerCommand(module, command, args)
 
     log("[EHR Client] Exam command received: " .. tostring(command))
 
+    if command == "ExamSessionGranted" then
+        if EHR.MPExamination and EHR.MPExamination.OnExamSessionGranted then
+            EHR.MPExamination.OnExamSessionGranted(args or {})
+        end
+        return
+    end
+
+
+    if command == "ExamSessionDenied" then
+        if EHR.MPExamination and EHR.MPExamination.OnExamSessionDenied then
+            EHR.MPExamination.OnExamSessionDenied(args or {})
+        end
+        return
+    end
+
     if command == "ExamDataResponse" then
         if not args then
             log("[EHR Client] ExamDataResponse: No args received")
@@ -351,7 +366,7 @@ local function OnExamServerCommand(module, command, args)
 
             -- Notify MPExamination of failure
             if EHR.MPExamination and EHR.MPExamination.OnExamDataFailed then
-                EHR.MPExamination.OnExamDataFailed(targetUsername, args.error)
+                EHR.MPExamination.OnExamDataFailed(targetUsername, args.error, args.requestId)
             end
             return
         end

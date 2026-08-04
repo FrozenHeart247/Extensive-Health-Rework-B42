@@ -141,6 +141,7 @@ local function buildBodyStatusSnapshot(player)
                 splintFactor = tonumber(callBodyPartMethod(bodyPart, "getSplintFactor", 0)) or 0,
                 plantainFactor = tonumber(callBodyPartMethod(bodyPart, "getPlantainFactor", 0)) or 0,
                 comfreyFactor = tonumber(callBodyPartMethod(bodyPart, "getComfreyFactor", 0)) or 0,
+                garlicFactor = tonumber(callBodyPartMethod(bodyPart, "getGarlicFactor", 0)) or 0,
             }
         end
     end
@@ -194,6 +195,11 @@ log("[EHR] isClient() = " .. tostring(isClient()))
 log("=========================================")
 EHR.ServerCommands = {}
 EHR.ServerCommands.RecentMedicationRequests = {}
+EHR.ServerCommands.PendingExamConsents = {}
+EHR.ServerCommands.ExamSessions = {}
+EHR.ServerCommands.ExamRequestTimes = {}
+EHR.ServerCommands.EnvironmentalSnapshotTimes = {}
+EHR.ServerCommands.StitchRiskPermits = {}
 
 -- Network timed actions and overlapping vanilla consumption hooks can deliver
 -- the same completed dose more than once. Keep a short server-side idempotency
@@ -752,50 +758,6 @@ local function syncModDataToClient(player)
     end
 end
 
-local function findOnlinePlayerByArgs(args, fallbackPlayer)
-    if not args then return fallbackPlayer end
-
-    local targetUsername = args.targetUsername and tostring(args.targetUsername) or nil
-    local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
-    local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
-
-    if not targetUsername and not targetOnlineID and not targetDisplayName then
-        return fallbackPlayer
-    end
-
-    local onlinePlayers = getOnlinePlayers and getOnlinePlayers() or nil
-    if not onlinePlayers then return fallbackPlayer end
-
-    for i = 0, onlinePlayers:size() - 1 do
-        local candidate = onlinePlayers:get(i)
-        local username = nil
-        local onlineID = nil
-        local displayName = nil
-
-        if candidate then
-            pcall(function()
-                if candidate.getUsername then username = candidate:getUsername() end
-            end)
-            pcall(function()
-                if candidate.getOnlineID then onlineID = tostring(candidate:getOnlineID()) end
-            end)
-            pcall(function()
-                if candidate.getDisplayName then displayName = tostring(candidate:getDisplayName()) end
-            end)
-        end
-
-        if candidate and (
-            (targetUsername and username == targetUsername) or
-            (targetOnlineID and onlineID == targetOnlineID) or
-            (targetDisplayName and displayName == targetDisplayName)
-        ) then
-            return candidate
-        end
-    end
-
-    return nil
-end
-
 local function findItemInContainer(container, itemID, visited)
     if not container or itemID == nil then return nil, nil end
     visited = visited or {}
@@ -874,6 +836,74 @@ local function syncInventoryItemAdded(container, item)
         pcall(function() sendAddItemToContainer(container, item) end)
     end
     syncInventoryItem(item)
+end
+
+local function getPlayerOnlineIDString(player)
+    if not player or not player.getOnlineID then return nil end
+    local ok, value = pcall(function() return player:getOnlineID() end)
+    if not ok or value == nil then return nil end
+    return tostring(value)
+end
+
+local function getPlayerUsernameString(player)
+    if not player or not player.getUsername then return nil end
+    local ok, value = pcall(function() return player:getUsername() end)
+    if not ok or not value or value == "" then return nil end
+    return tostring(value)
+end
+
+local function getPlayerNetworkKey(player)
+    local onlineID = getPlayerOnlineIDString(player)
+    local username = getPlayerUsernameString(player)
+    if onlineID and username then return "id:" .. onlineID .. "|user:" .. username end
+    if onlineID then return "id:" .. onlineID end
+    if username then return "user:" .. username end
+    return tostring(player)
+end
+
+local function getServerNowMs()
+    if getTimestampMs then
+        local ok, value = pcall(getTimestampMs)
+        if ok and value then return tonumber(value) or 0 end
+    end
+    local gameTime = getGameTime and getGameTime() or nil
+    return gameTime and gameTime:getWorldAgeHours() * 3600000 or 0
+end
+
+-- Security-sensitive medical commands must never resolve by display name.
+-- Online ID is authoritative; an accompanying username must agree with it.
+local function findOnlinePlayerStrict(args, fallbackPlayer)
+    if type(args) ~= "table" then return fallbackPlayer end
+
+    local requestedID = args.targetOnlineID ~= nil and tostring(args.targetOnlineID) or nil
+    local requestedUsername = args.targetUsername and tostring(args.targetUsername) or nil
+    if not requestedID and not requestedUsername then return fallbackPlayer end
+
+    local onlinePlayers = getOnlinePlayers and getOnlinePlayers() or nil
+    if not onlinePlayers then return nil end
+
+    local matched = nil
+    for i = 0, onlinePlayers:size() - 1 do
+        local candidate = onlinePlayers:get(i)
+        if candidate then
+            local candidateID = getPlayerOnlineIDString(candidate)
+            local candidateUsername = getPlayerUsernameString(candidate)
+            local idMatches = requestedID and candidateID == requestedID
+            local usernameMatches = requestedUsername and candidateUsername == requestedUsername
+
+            if requestedID then
+                if idMatches then
+                    if requestedUsername and not usernameMatches then return nil end
+                    return candidate
+                end
+            elseif usernameMatches then
+                if matched then return nil end -- Reject ambiguous usernames.
+                matched = candidate
+            end
+        end
+    end
+
+    return matched
 end
 
 local function sendWatchBatteryState(player, watch)
@@ -1520,6 +1550,17 @@ function EHR.ServerCommands.EnvironmentalSnapshot(player, args)
         return
     end
 
+    -- The client normally sends on change or a 15-second heartbeat. Keep a
+    -- server-side floor as protection against outdated or modified clients
+    -- flooding the command dispatcher.
+    local playerKey = getPlayerNetworkKey(player)
+    local nowMs = getServerNowMs()
+    local previousMs = EHR.ServerCommands.EnvironmentalSnapshotTimes[playerKey]
+    if previousMs and nowMs >= previousMs and (nowMs - previousMs) < 1000 then
+        return
+    end
+    EHR.ServerCommands.EnvironmentalSnapshotTimes[playerKey] = nowMs
+
     local ok, result = pcall(function()
         return EHR.Environmental.StoreClientSnapshot(player, args or {})
     end)
@@ -1834,6 +1875,12 @@ local function playersAreCloseEnoughForTreatment(doctor, patient)
     if doctor == patient then return true end
 
     local ok, closeEnough = pcall(function()
+        if doctor.getVehicle and patient.getVehicle then
+            local doctorVehicle = doctor:getVehicle()
+            if doctorVehicle and doctorVehicle == patient:getVehicle() then
+                return true
+            end
+        end
         if math.abs((doctor:getZ() or 0) - (patient:getZ() or 0)) > 0.01 then return false end
         local dx = (doctor:getX() or 0) - (patient:getX() or 0)
         local dy = (doctor:getY() or 0) - (patient:getY() or 0)
@@ -1842,51 +1889,287 @@ local function playersAreCloseEnoughForTreatment(doctor, patient)
     return ok and closeEnough == true
 end
 
+local EXAM_CONSENT_TTL_MS = 45000
+local EXAM_SESSION_TTL_MS = 300000
+local EXAM_REQUEST_MIN_INTERVAL_MS = 750
+local STITCH_RISK_PERMIT_TTL_MS = 180000
+local STITCH_ROUGH_CELLULITIS_CHANCE = 0.40
+
+local function medicalPairKey(doctor, patient)
+    if not doctor or not patient then return nil end
+    return getPlayerNetworkKey(doctor) .. "->" .. getPlayerNetworkKey(patient)
+end
+
+local function pruneTimedEntries(entries, nowMs)
+    for key, entry in pairs(entries or {}) do
+        local expiresAt = type(entry) == "table" and tonumber(entry.expiresAt) or tonumber(entry)
+        if not expiresAt or nowMs < 0 or nowMs > expiresAt then
+            entries[key] = nil
+        end
+    end
+end
+
+local function hasActiveExamSession(doctor, patient, refresh)
+    if not doctor or not patient then return false end
+    if doctor == patient then return true end
+    if not playersAreCloseEnoughForTreatment(doctor, patient) then return false end
+
+    local nowMs = getServerNowMs()
+    local pairKey = medicalPairKey(doctor, patient)
+    local session = pairKey and EHR.ServerCommands.ExamSessions[pairKey] or nil
+    if not session or nowMs > (tonumber(session.expiresAt) or 0) then
+        if pairKey then EHR.ServerCommands.ExamSessions[pairKey] = nil end
+        return false
+    end
+
+    if refresh then
+        session.expiresAt = nowMs + EXAM_SESSION_TTL_MS
+        session.lastUsedAt = nowMs
+    end
+    return true
+end
+
+function EHR.ServerCommands.BeginExamConsent(player, args)
+    if not player then return end
+    local patient = findOnlinePlayerStrict(args, nil)
+    if not patient or patient == player then return end
+    if not playersAreCloseEnoughForTreatment(player, patient) then return end
+
+    local pairKey = medicalPairKey(player, patient)
+    if not pairKey then return end
+    local nowMs = getServerNowMs()
+    EHR.ServerCommands.PendingExamConsents[pairKey] = {
+        doctorKey = getPlayerNetworkKey(player),
+        patientKey = getPlayerNetworkKey(patient),
+        expiresAt = nowMs + EXAM_CONSENT_TTL_MS,
+    }
+end
+
+function EHR.ServerCommands.GrantExamConsent(patient, args)
+    if not patient then return end
+
+    local doctorArgs = {
+        targetOnlineID = args and args.doctorOnlineID,
+        targetUsername = args and args.doctorUsername,
+    }
+    local doctor = findOnlinePlayerStrict(doctorArgs, nil)
+    if not doctor or doctor == patient then return end
+
+    local pairKey = medicalPairKey(doctor, patient)
+    local nowMs = getServerNowMs()
+    local pending = pairKey and EHR.ServerCommands.PendingExamConsents[pairKey] or nil
+    if pending and nowMs > (tonumber(pending.expiresAt) or 0) then
+        EHR.ServerCommands.PendingExamConsents[pairKey] = nil
+        pending = nil
+    end
+    if not playersAreCloseEnoughForTreatment(doctor, patient) then
+        if pairKey then EHR.ServerCommands.PendingExamConsents[pairKey] = nil end
+        return
+    end
+
+    -- The command sender is the patient. This is sufficient proof of consent
+    -- even for a normal vanilla Medical Check that did not start through EHR.
+    -- A doctor cannot manufacture this packet on the patient's connection.
+    if pairKey then EHR.ServerCommands.PendingExamConsents[pairKey] = nil end
+    EHR.ServerCommands.ExamSessions[pairKey] = {
+        doctorKey = getPlayerNetworkKey(doctor),
+        patientKey = getPlayerNetworkKey(patient),
+        grantedBy = getPlayerNetworkKey(patient),
+        grantedAt = nowMs,
+        lastUsedAt = nowMs,
+        expiresAt = nowMs + EXAM_SESSION_TTL_MS,
+    }
+
+    sendServerCommand(doctor, "EHR_Exam", "ExamSessionGranted", {
+        targetOnlineID = getPlayerOnlineIDString(patient),
+        targetUsername = getPlayerUsernameString(patient),
+        expiresInMs = EXAM_SESSION_TTL_MS,
+    })
+end
+
+function EHR.ServerCommands.DenyExamConsent(patient, args)
+    if not patient then return end
+    local doctor = findOnlinePlayerStrict({
+        targetOnlineID = args and args.doctorOnlineID,
+        targetUsername = args and args.doctorUsername,
+    }, nil)
+    if not doctor or doctor == patient then return end
+
+    local pairKey = medicalPairKey(doctor, patient)
+    if not pairKey or not EHR.ServerCommands.PendingExamConsents[pairKey] then return end
+    EHR.ServerCommands.PendingExamConsents[pairKey] = nil
+    sendServerCommand(doctor, "EHR_Exam", "ExamSessionDenied", {
+        targetOnlineID = getPlayerOnlineIDString(patient),
+        targetUsername = getPlayerUsernameString(patient),
+    })
+end
+
+function EHR.ServerCommands.EndExamSession(player, args)
+    if not player then return end
+    local patient = findOnlinePlayerStrict(args, nil)
+    local pairKey = patient and medicalPairKey(player, patient) or nil
+    if pairKey then
+        EHR.ServerCommands.ExamSessions[pairKey] = nil
+        EHR.ServerCommands.ExamRequestTimes[pairKey] = nil
+    end
+end
+
+local function claimExamRequest(doctor, patient)
+    local pairKey = medicalPairKey(doctor, patient)
+    if not pairKey then return false end
+    local nowMs = getServerNowMs()
+    local previous = EHR.ServerCommands.ExamRequestTimes[pairKey]
+    if previous and nowMs >= previous and (nowMs - previous) < EXAM_REQUEST_MIN_INTERVAL_MS then
+        return false
+    end
+    EHR.ServerCommands.ExamRequestTimes[pairKey] = nowMs
+    return true
+end
+
+local function getServerBodyPart(player, partName)
+    local partType = resolveWoundBodyPartType(partName)
+    if not player or not partType or not player.getBodyDamage then return nil, nil end
+    local ok, bodyPart = pcall(function()
+        return player:getBodyDamage():getBodyPart(partType)
+    end)
+    if not ok then return nil, nil end
+    return bodyPart, partType
+end
+
+local function isStitchItem(item)
+    if not item then return false end
+    local itemType = nil
+    pcall(function() itemType = item:getType() end)
+    return itemType == "Thread" or itemType == "SutureNeedle"
+end
+
+function EHR.ServerCommands.BeginStitchRiskSession(player, args)
+    if not player or type(args) ~= "table" then return end
+    local patient = findOnlinePlayerStrict(args, player)
+    if not patient or not playersAreCloseEnoughForTreatment(player, patient) then return end
+    if patient ~= player and not hasActiveExamSession(player, patient, true) then return end
+
+    local bodyPart, partType = getServerBodyPart(patient, args.sourceBodyPart)
+    if not bodyPart or not partType then return end
+    local deepWounded = callBodyPartMethod(bodyPart, "deepWounded", false) == true
+    local hasGlass = callBodyPartMethod(bodyPart, "haveGlass", false) == true
+    local stitched = callBodyPartMethod(bodyPart, "stitched", false) == true
+    if not deepWounded or hasGlass or stitched then return end
+
+    local item = args.itemID and findInventoryItemByID(player, args.itemID) or nil
+    if not isStitchItem(item) then return end
+
+    local permitKey = medicalPairKey(player, patient) .. ":" .. tostring(partType)
+    EHR.ServerCommands.StitchRiskPermits[permitKey] = {
+        expiresAt = getServerNowMs() + STITCH_RISK_PERMIT_TTL_MS,
+        patientKey = getPlayerNetworkKey(patient),
+        bodyPart = tostring(partType),
+    }
+end
+
 function EHR.ServerCommands.WoundDisinfected(player, args)
-    if not player or not args then return end
+    -- Deprecated. MP disinfection is now applied from the authoritative
+    -- ISDisinfect/ISApplyBandage server timed-action hooks below. Accepting a
+    -- client completion command allowed treatment without consuming an item.
+    return
+end
 
-    local targetPlayer = findOnlinePlayerByArgs(args, player)
-    if not targetPlayer then
-        log("[EHR Server] WoundDisinfected rejected: target player not found")
+local SERVER_DISINFECTANT_BANDAGES = {
+    ["Base.AlcoholBandage"] = true,
+    ["ExtensiveHealth.AlchoholicBandage"] = true,
+}
+
+local function applyAuthoritativeWoundDisinfection(patient, bodyPart)
+    if not patient or not bodyPart or not EHR.WoundInfection or not EHR.WoundInfection.OnDisinfect then
         return
     end
-    if not playersAreCloseEnoughForTreatment(player, targetPlayer) then
-        log("[EHR Server] WoundDisinfected rejected: target player is too far away")
-        return
+    local partType = callBodyPartMethod(bodyPart, "getType", nil)
+    if not partType then return end
+    EHR.WoundInfection.OnDisinfect(patient, partType)
+    syncModDataToClient(patient)
+end
+
+local function installAuthoritativeMedicalActionHooks()
+    pcall(function() require "TimedActions/ISDisinfect" end)
+    pcall(function() require "TimedActions/ISApplyBandage" end)
+
+    if ISDisinfect and ISDisinfect.complete
+            and ISDisinfect.complete ~= ISDisinfect._ehrServerCompleteWrapper then
+        local originalComplete = ISDisinfect.complete
+        local wrapper = function(action)
+            local result = originalComplete(action)
+            if result ~= false and action then
+                applyAuthoritativeWoundDisinfection(action.otherPlayer or action.character, action.bodyPart)
+            end
+            return result
+        end
+        ISDisinfect._ehrServerCompleteOriginal = originalComplete
+        ISDisinfect._ehrServerCompleteWrapper = wrapper
+        ISDisinfect.complete = wrapper
     end
 
-    local partType = resolveWoundBodyPartType(args.bodyPart)
-    if not partType then
-        log("[EHR Server] WoundDisinfected rejected: invalid body part " .. tostring(args.bodyPart))
-        return
-    end
-    if not EHR.WoundInfection or not EHR.WoundInfection.OnDisinfect then
-        log("[EHR Server] WoundDisinfected rejected: wound infection module unavailable")
-        return
-    end
+    if ISApplyBandage and ISApplyBandage.complete
+            and ISApplyBandage.complete ~= ISApplyBandage._ehrServerCompleteWrapper then
+        local originalComplete = ISApplyBandage.complete
+        local wrapper = function(action)
+            local shouldDisinfect = false
+            if action and action.doIt == true and action.item then
+                local fullType = nil
+                pcall(function() fullType = action.item:getFullType() end)
+                shouldDisinfect = SERVER_DISINFECTANT_BANDAGES[fullType] == true
+            end
 
-    EHR.WoundInfection.OnDisinfect(targetPlayer, partType)
-    syncModDataToClient(targetPlayer)
-    log("[EHR Server] Disinfected wound state on " .. tostring(partType)
-        .. " for " .. tostring(targetPlayer:getUsername()))
+            local result = originalComplete(action)
+            if result ~= false and shouldDisinfect and action then
+                applyAuthoritativeWoundDisinfection(action.otherPlayer or action.character, action.bodyPart)
+            end
+            return result
+        end
+        ISApplyBandage._ehrServerCompleteOriginal = originalComplete
+        ISApplyBandage._ehrServerCompleteWrapper = wrapper
+        ISApplyBandage.complete = wrapper
+    end
+end
+
+if isServer and isServer() then
+    installAuthoritativeMedicalActionHooks()
 end
 
 function EHR.ServerCommands.StitchCellulitisRisk(player, args)
     if not player or not args then return end
 
-    local targetPlayer = findOnlinePlayerByArgs(args, player)
+    local targetPlayer = findOnlinePlayerStrict(args, player)
     if not targetPlayer then
         log("[EHR Server] StitchCellulitisRisk rejected: target player not found")
         return
     end
+    if not playersAreCloseEnoughForTreatment(player, targetPlayer) then return end
+    if targetPlayer ~= player and not hasActiveExamSession(player, targetPlayer, true) then return end
 
     if not EHR.Disease or not EHR.Disease.Contract then
         log("[EHR Server] StitchCellulitisRisk rejected: disease module unavailable")
         return
     end
 
-    local chance = math.max(0, math.min(1, tonumber(args.chance) or 0))
-    if chance <= 0 then return end
+    local bodyPart, partType = getServerBodyPart(targetPlayer, args.sourceBodyPart)
+    if not bodyPart or not partType then return end
+    local permitKey = medicalPairKey(player, targetPlayer) .. ":" .. tostring(partType)
+    local permit = EHR.ServerCommands.StitchRiskPermits[permitKey]
+    local nowMs = getServerNowMs()
+    if not permit or nowMs > (tonumber(permit.expiresAt) or 0) then
+        EHR.ServerCommands.StitchRiskPermits[permitKey] = nil
+        return
+    end
+    EHR.ServerCommands.StitchRiskPermits[permitKey] = nil -- One roll per minigame.
+
+    local quality = math.max(0, math.min(1, tonumber(args.quality) or 1))
+    if quality >= 0.72 then return end
+    args.quality = quality
+    args.misses = math.max(0, math.min(20, math.floor(tonumber(args.misses) or 0)))
+    args.sourceBodyPart = tostring(partType)
+
+    -- The client reports performance, but never controls probability.
+    local chance = STITCH_ROUGH_CELLULITIS_CHANCE
     if EHR.Immunity and EHR.Immunity.ModifyDiseaseChance then
         chance = EHR.Immunity.ModifyDiseaseChance(
             targetPlayer,
@@ -1936,13 +2219,9 @@ end
 function EHR.ServerCommands.CellulitisSepsisHandoff(player, args)
     if not player then return end
 
-    local targetPlayer = findOnlinePlayerByArgs(args, player)
-    if not targetPlayer then
-        log("[EHR Server] CellulitisSepsisHandoff rejected: target player not found")
-        return
-    end
-
-    triggerCellulitisSepsisHandoff(targetPlayer, args or {})
+    -- Disease progression may request this only for the command sender. Never
+    -- accept a client-selected remote target for a lethal disease transition.
+    triggerCellulitisSepsisHandoff(player, args or {})
 end
 
 function EHR.ServerCommands.FoodToxinRisk(player, args)
@@ -3464,6 +3743,21 @@ local function OnClientCommand(module, command, player, args)
         elseif command == "EnvironmentalSnapshot" then
             EHR.ServerCommands.EnvironmentalSnapshot(player, args)
             return
+        elseif command == "BeginExamConsent" then
+            EHR.ServerCommands.BeginExamConsent(player, args)
+            return
+        elseif command == "GrantExamConsent" then
+            EHR.ServerCommands.GrantExamConsent(player, args)
+            return
+        elseif command == "DenyExamConsent" then
+            EHR.ServerCommands.DenyExamConsent(player, args)
+            return
+        elseif command == "EndExamSession" then
+            EHR.ServerCommands.EndExamSession(player, args)
+            return
+        elseif command == "BeginStitchRiskSession" then
+            EHR.ServerCommands.BeginStitchRiskSession(player, args)
+            return
         elseif command == "HeatStrokeBath" then
             EHR.ServerCommands.HeatStrokeBath(player, args)
             return
@@ -3565,57 +3859,48 @@ local function OnClientCommand(module, command, player, args)
             log("[EHR] Server: Sync requested by " .. player:getUsername())
             return
         elseif command == "RequestExamData" then
-            -- Client requests another player's EHR data for examination
-            -- args.targetUsername/targetOnlineID/targetDisplayName = identifiers of player to examine
-            if not args or (not args.targetUsername and not args.targetOnlineID and not args.targetDisplayName and not args.targetKey) then
+            -- Remote medical data is available only inside a short-lived
+            -- patient-approved examination session.
+            if not args or (not args.targetUsername and args.targetOnlineID == nil) then
                 log("[EHR] Server: RequestExamData missing target identifier")
                 return
             end
 
-            local targetUsername = args.targetUsername
+            local targetUsername = args.targetUsername and tostring(args.targetUsername) or nil
             local targetOnlineID = args.targetOnlineID and tostring(args.targetOnlineID) or nil
-            local targetDisplayName = args.targetDisplayName and tostring(args.targetDisplayName) or nil
-            local requestKey = args.targetKey or targetUsername or (targetOnlineID and ("online_" .. targetOnlineID)) or targetDisplayName
-            local targetPlayer = nil
-
-            -- Find target player by the most stable identifiers available. In
-            -- MP/listen-server cases getUsername() can be missing on one side
-            -- of the client, while onlineID/displayName still resolve.
-            local onlinePlayers = getOnlinePlayers()
-            if onlinePlayers then
-                for i = 0, onlinePlayers:size() - 1 do
-                    local p = onlinePlayers:get(i)
-                    local username = nil
-                    local onlineID = nil
-                    local displayName = nil
-                    if p then
-                        pcall(function() username = p:getUsername() end)
-                        pcall(function()
-                            if p.getOnlineID then onlineID = tostring(p:getOnlineID()) end
-                        end)
-                        pcall(function()
-                            if p.getDisplayName then displayName = tostring(p:getDisplayName()) end
-                        end)
-                    end
-
-                    if p and (
-                        (targetUsername and username == targetUsername) or
-                        (targetOnlineID and onlineID == targetOnlineID) or
-                        (targetDisplayName and displayName == targetDisplayName)
-                    ) then
-                        targetPlayer = p
-                        break
-                    end
-                end
-            end
+            local requestKey = tostring(args.targetKey or targetUsername or ("online_" .. tostring(targetOnlineID)))
+            if #requestKey > 96 then requestKey = string.sub(requestKey, 1, 96) end
+            local requestId = tonumber(args.requestId)
+            local targetPlayer = findOnlinePlayerStrict(args, nil)
 
             if not targetPlayer then
                 log("[EHR] Server: RequestExamData - target player not found: " .. tostring(requestKey))
                 -- Send empty response so client knows request failed
                 sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
                     targetUsername = requestKey,
+                    requestId = requestId,
                     success = false,
                     error = "Player not found or offline",
+                })
+                return
+            end
+
+            if not hasActiveExamSession(player, targetPlayer, true) then
+                sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
+                    targetUsername = requestKey,
+                    requestId = requestId,
+                    success = false,
+                    error = "Examination session is not authorized or patient is out of range",
+                })
+                return
+            end
+
+            if not claimExamRequest(player, targetPlayer) then
+                sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
+                    targetUsername = requestKey,
+                    requestId = requestId,
+                    success = false,
+                    error = "rate_limited",
                 })
                 return
             end
@@ -3625,6 +3910,7 @@ local function OnClientCommand(module, command, player, args)
             if not targetData then
                 sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
                     targetUsername = requestKey,
+                    requestId = requestId,
                     success = false,
                     error = "No data available",
                 })
@@ -3673,6 +3959,8 @@ local function OnClientCommand(module, command, player, args)
             local examData = {
                 targetUsername = requestKey,
                 targetActualUsername = actualUsername,
+                targetOnlineID = getPlayerOnlineIDString(targetPlayer),
+                requestId = requestId,
                 success = true,
                 EHR_Blood = targetData.EHR_Blood,
                 EHR_Disease = targetData.EHR_Disease,
@@ -4173,6 +4461,21 @@ local function OnServerTick()
     if syncTickCounter >= SYNC_INTERVAL_TICKS then
         syncTickCounter = 0
         syncAllPlayers()
+
+        local nowMs = getServerNowMs()
+        pruneTimedEntries(EHR.ServerCommands.PendingExamConsents, nowMs)
+        pruneTimedEntries(EHR.ServerCommands.ExamSessions, nowMs)
+        pruneTimedEntries(EHR.ServerCommands.StitchRiskPermits, nowMs)
+        for key, timestamp in pairs(EHR.ServerCommands.ExamRequestTimes) do
+            if type(timestamp) ~= "number" or nowMs < timestamp or (nowMs - timestamp) > EXAM_SESSION_TTL_MS then
+                EHR.ServerCommands.ExamRequestTimes[key] = nil
+            end
+        end
+        for key, timestamp in pairs(EHR.ServerCommands.EnvironmentalSnapshotTimes) do
+            if type(timestamp) ~= "number" or nowMs < timestamp or (nowMs - timestamp) > 600000 then
+                EHR.ServerCommands.EnvironmentalSnapshotTimes[key] = nil
+            end
+        end
     end
 
     medicationTickCounter = medicationTickCounter + 1

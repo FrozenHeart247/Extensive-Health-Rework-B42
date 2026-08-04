@@ -22,7 +22,7 @@ pcall(function() require "TimedActions/ISMedicalCheckAction" end)
 pcall(function() require "XpSystem/ISUI/ISHealthPanel" end)
 
 EHR = EHR or {}
-EHR.MPExamination = {}
+EHR.MPExamination = EHR.MPExamination or {}
 
 local examinePlayerIcon = nil
 local examinePlayerIconLoaded = false
@@ -152,14 +152,18 @@ local function EHR_ClearVanillaRemoteHealthWindow(patient)
 end
 
 local function EHR_PatchVanillaMedicalCheck()
-    if not ISMedicalCheckAction or ISMedicalCheckAction.ehrRemoteHealthReusePatch then return end
+    if not ISMedicalCheckAction then return end
     if not ISBaseTimedAction or not ISHealthPanel then return end
+
+    if ISMedicalCheckAction._ehrRemoteHealthWrapper
+            and ISMedicalCheckAction.perform == ISMedicalCheckAction._ehrRemoteHealthWrapper then
+        return
+    end
 
     local originalPerform = ISMedicalCheckAction.perform
     if not originalPerform then return end
 
-    ISMedicalCheckAction.ehrRemoteHealthReusePatch = true
-    ISMedicalCheckAction.perform = function(actionSelf)
+    local wrapper = function(actionSelf)
         local doctor = actionSelf and actionSelf.character
         local patient = actionSelf and actionSelf.otherPlayer
         if doctor and patient and EHR_ConsumeEHRMedicalCheckIntent(doctor, patient) and EHR and EHR.UI and EHR.UI.ShowRemoteHealthPanel then
@@ -247,32 +251,72 @@ local function EHR_PatchVanillaMedicalCheck()
         end
         return result
     end
+
+    ISMedicalCheckAction._ehrRemoteHealthOriginal = originalPerform
+    ISMedicalCheckAction._ehrRemoteHealthWrapper = wrapper
+    ISMedicalCheckAction.perform = wrapper
+end
+
+local function EHR_PatchVanillaMedicalConsent()
+    if not ISHealthPanel or not ISHealthPanel.onAnswerMedicalCheckRequest then return end
+    if ISHealthPanel._ehrMedicalConsentWrapper
+            and ISHealthPanel.onAnswerMedicalCheckRequest == ISHealthPanel._ehrMedicalConsentWrapper then
+        return
+    end
+
+    local originalAnswer = ISHealthPanel.onAnswerMedicalCheckRequest
+    local wrapper = function(panelSelf, button, ...)
+        if button and button.parent and sendClientCommand then
+            local patient = button.parent.target
+            local doctor = button.parent.requester
+            if patient and doctor and isClient and isClient() then
+                local args = {}
+                pcall(function()
+                    if doctor.getOnlineID then args.doctorOnlineID = tostring(doctor:getOnlineID()) end
+                end)
+                pcall(function()
+                    if doctor.getUsername then args.doctorUsername = doctor:getUsername() end
+                end)
+                if args.doctorOnlineID or args.doctorUsername then
+                    local responseCommand = button.internal == "YES" and "GrantExamConsent" or "DenyExamConsent"
+                    sendClientCommand(patient, "EHR", responseCommand, args)
+                end
+            end
+        end
+        return originalAnswer(panelSelf, button, ...)
+    end
+
+    ISHealthPanel._ehrMedicalConsentOriginal = originalAnswer
+    ISHealthPanel._ehrMedicalConsentWrapper = wrapper
+    ISHealthPanel.onAnswerMedicalCheckRequest = wrapper
 end
 
 EHR_PatchVanillaMedicalCheck()
+EHR_PatchVanillaMedicalConsent()
 
 -- ============================================
 -- CONFIGURATION
 -- ============================================
 
 -- Maximum distance (in tiles) to examine another player
-EHR.MPExamination.EXAMINE_RANGE = 5
+EHR.MPExamination.EXAMINE_RANGE = 3
 
 -- Distance at which the monitor auto-closes (tiles)
-EHR.MPExamination.AUTO_CLOSE_RANGE = 10
+EHR.MPExamination.AUTO_CLOSE_RANGE = 3
 
 -- ============================================
 -- STATE
 -- ============================================
 
 -- Table of monitors keyed by target player ID
-EHR.MPExamination.ActiveMonitors = {}
+EHR.MPExamination.ActiveMonitors = EHR.MPExamination.ActiveMonitors or {}
 
 -- Cached exam data from server (keyed by username)
-EHR.MPExamination.ExamDataCache = {}
+EHR.MPExamination.ExamDataCache = EHR.MPExamination.ExamDataCache or {}
 
 -- Pending exam requests (username -> {localPlayer, targetPlayer, timestamp})
-EHR.MPExamination.PendingRequests = {}
+EHR.MPExamination.PendingRequests = EHR.MPExamination.PendingRequests or {}
+EHR.MPExamination.NextRequestId = tonumber(EHR.MPExamination.NextRequestId) or 0
 
 -- ============================================
 -- HELPER FUNCTIONS
@@ -287,13 +331,22 @@ EHR.MPExamination.PendingRequests = {}
 function EHR.MPExamination.GetDistance(player1, player2)
     if not player1 or not player2 then return -1 end
 
+    if ISHealthPanel and ISHealthPanel.IsCharactersInSameCar then
+        local ok, sameCar = pcall(function()
+            return ISHealthPanel.IsCharactersInSameCar(player1, player2)
+        end)
+        if ok and sameCar then return 0 end
+    end
+
     local sq1 = player1:getSquare()
     local sq2 = player2:getSquare()
 
     if not sq1 or not sq2 then return -1 end
 
-    local x1, y1 = sq1:getX(), sq1:getY()
-    local x2, y2 = sq2:getX(), sq2:getY()
+    local x1, y1, z1 = sq1:getX(), sq1:getY(), sq1:getZ()
+    local x2, y2, z2 = sq2:getX(), sq2:getY(), sq2:getZ()
+
+    if math.abs((z1 or 0) - (z2 or 0)) > 0.01 then return -1 end
 
     return math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
 end
@@ -336,6 +389,16 @@ function EHR.MPExamination.RequestMedicalCheck(localPlayer, targetPlayer)
 
     if requestMedicalCheck then
         EHR_MarkEHRMedicalCheckIntent(localPlayer, targetPlayer)
+        if isClient and isClient() and sendClientCommand then
+            local consentArgs = {}
+            pcall(function()
+                if targetPlayer.getUsername then consentArgs.targetUsername = targetPlayer:getUsername() end
+            end)
+            pcall(function()
+                if targetPlayer.getOnlineID then consentArgs.targetOnlineID = tostring(targetPlayer:getOnlineID()) end
+            end)
+            sendClientCommand(localPlayer, "EHR", "BeginExamConsent", consentArgs)
+        end
         requestMedicalCheck(targetPlayer, localPlayer)
         return true
     end
@@ -502,8 +565,11 @@ function EHR.MPExamination.ExaminePlayer(localPlayer, targetPlayer)
 
     local cachedData = nil
     local cached = EHR.MPExamination.ExamDataCache[targetName]
-    if cached then
+    local nowMs = getTimestampMs and getTimestampMs() or 0
+    if cached and (nowMs <= 0 or (nowMs - (tonumber(cached.timestamp) or 0)) <= 10000) then
         cachedData = cached.data
+    elseif cached then
+        EHR.MPExamination.ExamDataCache[targetName] = nil
     end
 
     -- Show the EHR panel immediately, then refresh server-side EHR data.
@@ -526,7 +592,6 @@ function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent, fo
 
     local targetName = getPlayerUsername(targetPlayer)
     local targetOnlineID = getPlayerOnlineID(targetPlayer)
-    local targetDisplayName = getPlayerDisplayName(targetPlayer)
     local requestKey = getExamRequestKey(targetPlayer)
 
     if not requestKey then
@@ -544,20 +609,24 @@ function EHR.MPExamination.RequestExamData(localPlayer, targetPlayer, silent, fo
         end
     end
 
+    EHR.MPExamination.NextRequestId = (EHR.MPExamination.NextRequestId % 1000000000) + 1
+    local requestId = EHR.MPExamination.NextRequestId
+
     -- Store pending request
     EHR.MPExamination.PendingRequests[requestKey] = {
         localPlayer = localPlayer,
         targetPlayer = targetPlayer,
         timestamp = getTimestampMs(),
         silent = silent == true,
+        requestId = requestId,
     }
 
     -- Send request to server
     sendClientCommand(localPlayer, "EHR", "RequestExamData", {
         targetUsername = targetName,
         targetOnlineID = targetOnlineID,
-        targetDisplayName = targetDisplayName,
         targetKey = requestKey,
+        requestId = requestId,
     })
 
     EHR.Log("MPExamination: Requested exam data for " .. requestKey)
@@ -576,7 +645,23 @@ end
 function EHR.MPExamination.OnExamDataReceived(targetUsername, data)
     EHR.Log("MPExamination: Received exam data for " .. targetUsername)
 
-    -- Store in cache
+    -- Get pending request
+    local pending = EHR.MPExamination.PendingRequests[targetUsername]
+    if not pending and data and data.targetActualUsername then
+        pending = EHR.MPExamination.PendingRequests[data.targetActualUsername]
+    end
+
+    if data and data.requestId and pending and pending.requestId
+            and tonumber(data.requestId) ~= tonumber(pending.requestId) then
+        EHR.Log("MPExamination: Ignored stale exam response for " .. targetUsername)
+        return
+    end
+    if data and data.requestId and not pending then
+        EHR.Log("MPExamination: Ignored orphaned exam response for " .. targetUsername)
+        return
+    end
+
+    -- Store only a response that still belongs to the current request.
     EHR.MPExamination.ExamDataCache[targetUsername] = {
         data = data,
         timestamp = getTimestampMs(),
@@ -586,12 +671,6 @@ function EHR.MPExamination.OnExamDataReceived(targetUsername, data)
             data = data,
             timestamp = getTimestampMs(),
         }
-    end
-
-    -- Get pending request
-    local pending = EHR.MPExamination.PendingRequests[targetUsername]
-    if not pending and data and data.targetActualUsername then
-        pending = EHR.MPExamination.PendingRequests[data.targetActualUsername]
     end
 
     if EHR.UI and EHR.UI.UpdateRemoteHealthPanelData then
@@ -629,17 +708,76 @@ end
     @param targetUsername - Username of examined player
     @param error - Error message
 ]]--
-function EHR.MPExamination.OnExamDataFailed(targetUsername, error)
+function EHR.MPExamination.OnExamDataFailed(targetUsername, error, requestId)
     EHR.Log("MPExamination: Exam data request failed for " .. targetUsername .. ": " .. tostring(error))
 
     -- Get pending request
     local pending = EHR.MPExamination.PendingRequests[targetUsername]
-    if pending and pending.localPlayer then
+    if pending and requestId and pending.requestId
+            and tonumber(requestId) ~= tonumber(pending.requestId) then
+        return
+    end
+    if pending and pending.localPlayer and not pending.silent and error ~= "rate_limited" then
         EHR.Locale.Say(pending.localPlayer, getText("UI_EHR_Exam_Failed") or "Cannot examine that player")
     end
 
     -- Clear pending request
     EHR.MPExamination.PendingRequests[targetUsername] = nil
+end
+
+function EHR.MPExamination.OnExamSessionGranted(args)
+    if type(args) ~= "table" then return end
+    local grantedOnlineID = args.targetOnlineID ~= nil and tostring(args.targetOnlineID) or nil
+    local grantedUsername = args.targetUsername and tostring(args.targetUsername) or nil
+
+    -- Usually consent arrives while the vanilla examination action is still
+    -- running. If a panel is already open (very fast/admin actions), refresh it
+    -- immediately instead of waiting for the regular poll.
+    for _, entry in pairs(EHR.MPExamination.ActiveMonitors or {}) do
+        local target = entry and entry.targetPlayer or nil
+        if target then
+            local targetID = getPlayerOnlineID(target)
+            local targetUsername = getPlayerUsername(target)
+            if (grantedOnlineID and targetID == grantedOnlineID)
+                    or (not grantedOnlineID and grantedUsername and targetUsername == grantedUsername) then
+                EHR.MPExamination.RequestExamData(entry.localPlayer, target, true, true)
+            end
+        end
+    end
+end
+
+function EHR.MPExamination.OnExamSessionDenied(args)
+    if type(args) ~= "table" then return end
+    local doctor = getPlayer and getPlayer() or nil
+    local patient = nil
+    if args.targetOnlineID ~= nil and getPlayerByOnlineID then
+        pcall(function() patient = getPlayerByOnlineID(tonumber(args.targetOnlineID)) end)
+    end
+    if not patient and getOnlinePlayers then
+        local online = getOnlinePlayers()
+        if online then
+            for i = 0, online:size() - 1 do
+                local candidate = online:get(i)
+                if candidate and getPlayerUsername(candidate) == args.targetUsername then
+                    patient = candidate
+                    break
+                end
+            end
+        end
+    end
+
+    local key = EHR_GetMedicalCheckIntentKey(doctor, patient)
+    if key and EHR.MPExamination.PendingEHRMedicalChecks then
+        EHR.MPExamination.PendingEHRMedicalChecks[key] = nil
+    end
+end
+
+function EHR.MPExamination.EndExamSession(localPlayer, targetPlayer)
+    if not localPlayer or not targetPlayer or not isClient or not isClient() or not sendClientCommand then return end
+    sendClientCommand(localPlayer, "EHR", "EndExamSession", {
+        targetUsername = getPlayerUsername(targetPlayer),
+        targetOnlineID = getPlayerOnlineID(targetPlayer),
+    })
 end
 
 --[[
@@ -744,6 +882,7 @@ function EHR.MPExamination.CloseMonitor(targetPlayer)
 
     local entry = EHR.MPExamination.ActiveMonitors[targetID]
     if entry and entry.monitor then
+        EHR.MPExamination.EndExamSession(entry.localPlayer, entry.targetPlayer or targetPlayer)
         if entry.monitor.isRemoteHealthPanel and EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
             EHR.UI.DestroyRemoteHealthPanel(targetPlayer)
         else
@@ -761,6 +900,7 @@ end
 function EHR.MPExamination.CloseAllMonitors()
     for targetID, entry in pairs(EHR.MPExamination.ActiveMonitors) do
         if entry.monitor then
+            EHR.MPExamination.EndExamSession(entry.localPlayer, entry.targetPlayer)
             if entry.monitor.isRemoteHealthPanel and EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
                 EHR.UI.DestroyRemoteHealthPanel(entry.targetPlayer or targetID)
             else
@@ -806,6 +946,7 @@ function EHR.MPExamination.UpdateDistanceCheck()
         local entry = EHR.MPExamination.ActiveMonitors[targetID]
         if entry then
             if entry.monitor then
+                EHR.MPExamination.EndExamSession(entry.localPlayer, entry.targetPlayer)
                 if entry.monitor.isRemoteHealthPanel and EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
                     EHR.UI.DestroyRemoteHealthPanel(entry.targetPlayer or targetID)
                 else
@@ -921,10 +1062,19 @@ local function OnPlayerDeath(player)
     EHR.MPExamination.CloseMonitor(player)
 end
 
+local function OnGameStart()
+    -- Re-assert wrappers after all normal client files have loaded. Wrapper
+    -- identity checks prevent double installation on Lua reload.
+    EHR_PatchVanillaMedicalCheck()
+    EHR_PatchVanillaMedicalConsent()
+end
+
 -- Register events
-if Events then
+if Events and not EHR.MPExamination._eventsRegistered then
+    EHR.MPExamination._eventsRegistered = true
     Events.OnFillWorldObjectContextMenu.Add(EHR.MPExamination.OnFillWorldObjectContextMenu)
     Events.OnTick.Add(OnTick)
     Events.OnPlayerDeath.Add(OnPlayerDeath)
+    Events.OnGameStart.Add(OnGameStart)
     EHR.Log("MPExamination module loaded")
 end

@@ -1095,6 +1095,7 @@ function EHR.Environmental.StoreClientSnapshot(player, args)
     EHR.Environmental.ClientSnapshots[playerID] = {
         hour = EHR_EnvironmentalClampNumber(args.hour, currentHour - 1.0, currentHour + 1.0, currentHour),
         receivedHour = currentHour,
+        receivedMs = getTimestampMs and getTimestampMs() or nil,
         airTemp = EHR_EnvironmentalClampNumber(args.airTemp, -80, 80, EHR.Environmental.GetAirTemperature(player)),
         heatAirTemp = EHR_EnvironmentalClampNumber(args.heatAirTemp, -80, 90, args.airTemp),
         isInVehicle = args.isInVehicle == true,
@@ -1135,9 +1136,18 @@ function EHR.Environmental.GetClientSnapshot(player)
     local snapshot = EHR.Environmental.ClientSnapshots[playerID]
     if not snapshot then return nil end
 
-    local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
-    if (currentHour - (snapshot.receivedHour or 0)) > 0.5 then
-        return nil
+    local nowMs = getTimestampMs and getTimestampMs() or nil
+    if nowMs and snapshot.receivedMs then
+        -- Snapshot freshness is real-time based. Using world age here made a
+        -- perfectly healthy connection look stale during sleep/fast-forward.
+        if nowMs < snapshot.receivedMs or (nowMs - snapshot.receivedMs) > 30000 then
+            return nil
+        end
+    else
+        local currentHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+        if (currentHour - (snapshot.receivedHour or 0)) > 0.5 then
+            return nil
+        end
     end
 
     return snapshot
@@ -4316,7 +4326,9 @@ end
 -- TICK MANAGEMENT
 -- ============================================
 
-local ENVIRONMENTAL_TICK_INTERVAL = 90  -- Check every 90 ticks (~3 seconds)
+local ENVIRONMENTAL_TICK_INTERVAL = 90  -- Disease/exposure update every ~3 seconds
+local VANILLA_SUPPRESSION_TICK_INTERVAL = 10 -- Cheap safety correction about 3x/second
+local CLIENT_SNAPSHOT_HEARTBEAT_MS = 15000
 
 local GAME_HOUR_CHECK_INTERVAL = 0.1    -- Check every ~6 game minutes
 
@@ -4331,51 +4343,20 @@ local function getTickState(player)
     local id = getPlayerId(player) or "0"
     local state = tickStateByPlayer[id]
     if not state then
-        state = { tick = 0, lastHour = 0 }
+        state = {
+            tick = 0,
+            suppressionTick = 0,
+            lastHour = 0,
+            lastSnapshotSentMs = 0,
+            lastSentSnapshot = nil,
+        }
         tickStateByPlayer[id] = state
     end
     return state
 end
 
-local function getActivePlayers()
-    local players = {}
-    if isServer and isServer() and getOnlinePlayers then
-        local online = getOnlinePlayers()
-        if online then
-            for i = 0, online:size() - 1 do
-                local p = online:get(i)
-                if p then
-                    table.insert(players, p)
-                end
-            end
-        end
-    end
-
-    if #players == 0 then
-        local player = getSpecificPlayer(0)
-        if player then
-            table.insert(players, player)
-        end
-    end
-
-    return players
-end
-
 local function processPlayerTick(player)
     if not player or not player:isAlive() then return end
-
-    -- CRITICAL: Suppress vanilla effects EVERY TICK
-    -- Must run before throttle to prevent vanilla from killing player between our checks
-
-    -- Temperature suppression: If body temp system is enabled, it handles this in its own OnTick
-    -- Only call old suppression if body temp system is disabled
-    if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
-        EHR.Environmental.SuppressVanillaTemperature(player)
-    end
-
-    -- Cold/Sickness suppression: Always run (handles SICKNESS stat for coughing moodle)
-    -- This is separate from body temperature suppression
-    EHR.Environmental.SuppressVanillaCold(player)
 
     -- Initialize if needed
     EHR.Environmental.InitializePlayer(player)
@@ -4385,6 +4366,20 @@ local function processPlayerTick(player)
     if not exposure then return end
 
     local state = getTickState(player)
+
+    -- Vanilla stats do not need to be rewritten every frame. Running the full
+    -- suppression path on every server tick was especially expensive because
+    -- it can inspect corpse exposure. A short sub-second interval still
+    -- prevents moodle flicker or vanilla damage between disease updates.
+    state.suppressionTick = (state.suppressionTick or 0) + 1
+    local suppressionInterval = (isServer and isServer()) and VANILLA_SUPPRESSION_TICK_INTERVAL or 1
+    if state.suppressionTick >= suppressionInterval then
+        state.suppressionTick = 0
+        if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
+            EHR.Environmental.SuppressVanillaTemperature(player)
+        end
+        EHR.Environmental.SuppressVanillaCold(player)
+    end
 
     -- Throttle updates
     state.tick = state.tick + 1
@@ -4453,6 +4448,59 @@ local function processPlayerTick(player)
     end
 end
 
+local SNAPSHOT_NUMERIC_THRESHOLDS = {
+    airTemp = 0.25,
+    heatAirTemp = 0.25,
+    bodyTemp = 0.01,
+    bodyTempC = 0.10,
+    wetness = 0.02,
+    headwearMultiplier = 0.05,
+    thirst = 0.02,
+    iclOutdoorAirTemp = 0.25,
+    iclVanillaAirTemp = 0.25,
+    iclTargetAirTemp = 0.25,
+    iclLeakScore = 0.02,
+}
+
+local SNAPSHOT_BOOLEAN_FIELDS = {
+    "isInVehicle",
+    "isIndoors",
+    "isNearHeat",
+    "isExerting",
+    "isInShade",
+    "controlledBathing",
+    "iclActive",
+    "iclPowered",
+}
+
+local function clientSnapshotChanged(previous, current)
+    if not previous or not current then return true end
+    if previous.temperatureSource ~= current.temperatureSource
+            or previous.iclVersion ~= current.iclVersion then
+        return true
+    end
+
+    for _, fieldName in ipairs(SNAPSHOT_BOOLEAN_FIELDS) do
+        if previous[fieldName] ~= current[fieldName] then return true end
+    end
+
+    for fieldName, threshold in pairs(SNAPSHOT_NUMERIC_THRESHOLDS) do
+        local oldValue = tonumber(previous[fieldName])
+        local newValue = tonumber(current[fieldName])
+        if (oldValue == nil) ~= (newValue == nil) then return true end
+        if oldValue and math.abs(newValue - oldValue) >= threshold then return true end
+    end
+
+    return false
+end
+
+local function shouldSendClientSnapshot(state, snapshot, nowMs)
+    if not state.lastSentSnapshot then return true end
+    if clientSnapshotChanged(state.lastSentSnapshot, snapshot) then return true end
+    if not nowMs or nowMs <= 0 then return true end
+    return (nowMs - (state.lastSnapshotSentMs or 0)) >= CLIENT_SNAPSHOT_HEARTBEAT_MS
+end
+
 local function processClientEnvironmentalTick(player, snapshotOnly)
     if not player or not player:isAlive() then return end
 
@@ -4478,8 +4526,12 @@ local function processClientEnvironmentalTick(player, snapshotOnly)
     state.lastHour = currentHour
 
     local snapshot = EHR.Environmental.BuildClientSnapshot(player)
-    if snapshot and isClient and isClient() and sendClientCommand then
+    local nowMs = getTimestampMs and getTimestampMs() or 0
+    if snapshot and isClient and isClient() and sendClientCommand
+            and shouldSendClientSnapshot(state, snapshot, nowMs) then
         sendClientCommand(player, "EHR", "EnvironmentalSnapshot", snapshot)
+        state.lastSentSnapshot = snapshot
+        state.lastSnapshotSentMs = nowMs
     end
 
     if snapshotOnly then return end
@@ -4522,8 +4574,20 @@ function EHR.Environmental.OnTick()
 
     if not diseaseEnabled then return end
 
-    local players = getActivePlayers()
-    for _, player in ipairs(players) do
+    -- Iterate the engine collection directly. The previous helper allocated a
+    -- Lua table and copied every online player on every server tick.
+    if isServer and isServer() and getOnlinePlayers then
+        local online = getOnlinePlayers()
+        if online and online:size() > 0 then
+            for i = 0, online:size() - 1 do
+                processPlayerTick(online:get(i))
+            end
+            return
+        end
+    end
+
+    local player = getSpecificPlayer and getSpecificPlayer(0) or nil
+    if player then
         processPlayerTick(player)
     end
 end

@@ -3026,8 +3026,12 @@ function EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData,
     return status.isDoseActive == true and not doseDue
 end
 
-function EHR.Medication.CanUseMedication(player, item)
+function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
     if not player or not item then return false, "Invalid parameters" end
+
+    -- When one player treats another, disease/effect checks belong to the
+    -- patient while required supplies belong to the practitioner.
+    supplyPlayer = supplyPlayer or player
 
     local itemFullType = item:getFullType()
     local medData = EHR.Medication.Database[itemFullType]
@@ -3074,14 +3078,14 @@ function EHR.Medication.CanUseMedication(player, item)
 
     -- Check for required supplies
     if medData.requiresIVKit then
-        local inventory = player:getInventory()
+        local inventory = supplyPlayer:getInventory()
         if not inventory:containsTypeRecurse("ExtensiveHealth.IVKit") then
             return false, "Requires IV Administration Kit"
         end
     end
 
     if medData.requiresSyringe then
-        local inventory = player:getInventory()
+        local inventory = supplyPlayer:getInventory()
         if not inventory:containsTypeRecurse("ExtensiveHealth.Syringe") then
             return false, "Requires Sterile Syringe"
         end
@@ -3258,7 +3262,7 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
     return true
 end
 
-function EHR.Medication.UseMedication(player, item)
+function EHR.Medication.UseMedication(player, item, administeringPlayer)
     if not player or not item then return false end
 
     -- In MP, medication effects and item consumption must be server-authoritative.
@@ -3267,7 +3271,8 @@ function EHR.Medication.UseMedication(player, item)
         return EHR.Medication.RequestUseMedication(player, item)
     end
 
-    local canUse, reason = EHR.Medication.CanUseMedication(player, item)
+    local inventoryOwner = administeringPlayer or player
+    local canUse, reason = EHR.Medication.CanUseMedication(player, item, inventoryOwner)
     if not canUse then
         if player.isLocalPlayer and player:isLocalPlayer() then
             EHR.Locale.Say(player, reason)
@@ -3283,14 +3288,14 @@ function EHR.Medication.UseMedication(player, item)
     local medTracking = EHR.Medication.GetMedicationData(player)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(player)
     local earlyDoseOverdose = EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
-    local inventory = player:getInventory()
+    local inventory = inventoryOwner:getInventory()
 
     if EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData, itemFullType) then
         if medData.activeDoseMessage and player.isLocalPlayer and player:isLocalPlayer() then
             EHR.Locale.Say(player, medData.activeDoseMessage)
         end
 
-        local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(player, item, inventory)
+        local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(inventoryOwner, item, inventory)
         if consumed and consumeMode == "dose" then
             if remainingDoses == nil and useDelta and useDelta > 0 then
                 remainingDoses = math.floor((newUsed / useDelta) + 0.0001)
@@ -3321,13 +3326,13 @@ function EHR.Medication.UseMedication(player, item)
     if medData.requiresIVKit then
         local ivKit = inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
         if ivKit then
-            EHR.Medication.ConsumeOneDose(player, ivKit, inventory)
+            EHR.Medication.ConsumeOneDose(inventoryOwner, ivKit, inventory)
         end
     end
     if medData.requiresSyringe then
         local syringe = inventory:getFirstTypeRecurse("ExtensiveHealth.Syringe")
         if syringe then
-            EHR.Medication.ConsumeOneDose(player, syringe, inventory)
+            EHR.Medication.ConsumeOneDose(inventoryOwner, syringe, inventory)
         end
     end
 
@@ -3417,7 +3422,7 @@ function EHR.Medication.UseMedication(player, item)
         EHR.Medication.RefreshImmunityForAntibiotic(player, itemFullType)
     end
 
-    local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(player, item, inventory)
+    local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(inventoryOwner, item, inventory)
     if consumed and consumeMode == "dose" then
         if remainingDoses == nil and useDelta and useDelta > 0 then
             remainingDoses = math.floor((newUsed / useDelta) + 0.0001)
@@ -3433,7 +3438,7 @@ function EHR.Medication.UseMedication(player, item)
 
     -- Award First Aid XP for taking medication
     if EHR.SkillXP and EHR.SkillXP.OnMedicationTaken then
-        EHR.SkillXP.OnMedicationTaken(player, {
+        EHR.SkillXP.OnMedicationTaken(inventoryOwner, {
             tier = tier,
             displayName = medData.displayName,
             medId = itemFullType,
@@ -3443,7 +3448,7 @@ function EHR.Medication.UseMedication(player, item)
 
     -- Award XP for correct treatment dose
     if treatedAny and EHR.SkillXP and EHR.SkillXP.OnTreatmentDose then
-        EHR.SkillXP.OnTreatmentDose(player, "disease", true)
+        EHR.SkillXP.OnTreatmentDose(inventoryOwner, "disease", true)
     end
 
     -- MP: Trigger server sync after medication use

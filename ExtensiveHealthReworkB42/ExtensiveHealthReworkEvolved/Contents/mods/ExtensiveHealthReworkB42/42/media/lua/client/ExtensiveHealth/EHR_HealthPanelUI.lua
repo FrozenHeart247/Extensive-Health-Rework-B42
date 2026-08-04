@@ -2,8 +2,8 @@
     Extensive Health Rework - Health Panel UI prototype
 
     Replacement-style health overview opened from the EHR health hotkey.
-    This is intentionally read-only: it presents EHR data without changing
-    disease, medication, blood, or vanilla health mechanics.
+    The local overview is read-only. A patient-approved remote examination may
+    launch server-authorized medical actions such as medication administration.
 ]]
 
 require "ISUI/ISPanel"
@@ -29,6 +29,7 @@ pcall(function() require "TimedActions/ISSplint" end)
 pcall(function() require "TimedActions/ISStitch" end)
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_DiseaseFlyers"
+pcall(function() require "ExtensiveHealth/EHR_MPAdministerMedication" end)
 pcall(function() require "ExtensiveHealth/EHR_WatchBatteryCore" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 pcall(function() require "ExtensiveHealth/EHR_BandagePack" end)
@@ -947,6 +948,21 @@ function EHR_HealthPanelUI:createChildren()
     self.antibodiesButton:setVisible(false)
     self:addChild(self.antibodiesButton)
 
+    self.administerMedicationButton = ISButton:new(self.width - 274, 6, 174, 24,
+        safeText("UI_EHR_MPMedication_Administer", "Administer Medication"),
+        self, EHR_HealthPanelUI.onOpenMedicationAdminister)
+    self.administerMedicationButton:initialise()
+    self.administerMedicationButton:instantiate()
+    self.administerMedicationButton.borderColor = { r = 0.72, g = 0.24, b = 0.20, a = 1 }
+    self.administerMedicationButton.backgroundColor = { r = 0.045, g = 0.025, b = 0.025, a = 0.88 }
+    self.administerMedicationButton.backgroundColorMouseOver = { r = 0.20, g = 0.055, b = 0.045, a = 0.95 }
+    self.administerMedicationButton:setTooltip(safeText(
+        "UI_EHR_MPMedication_ButtonTooltip",
+        "Administer a medication from your inventory to this patient."
+    ))
+    self.administerMedicationButton:setVisible(false)
+    self:addChild(self.administerMedicationButton)
+
     self:ensureBodyPartPanel()
     self:createEmbeddedVanillaTabs()
     self:syncTabVisibility()
@@ -983,6 +999,20 @@ function EHR_HealthPanelUI:onOpenAntibodiesPanel()
     pcall(function()
         antibodiesWindow.show(doctor, patient)
     end)
+end
+
+function EHR_HealthPanelUI:shouldShowMedicationAdministerButton()
+    return self.isRemoteHealthPanel == true
+        and self.activeTab == "ehr"
+        and self.remoteDoctor ~= nil
+        and (self.remotePatient or self.player) ~= nil
+        and EHR.MPMedication ~= nil
+        and EHR.MPMedication.Open ~= nil
+end
+
+function EHR_HealthPanelUI:onOpenMedicationAdminister()
+    if not self:shouldShowMedicationAdministerButton() then return end
+    EHR.MPMedication.Open(self, self.remoteDoctor, self.remotePatient or self.player)
 end
 
 function EHR_HealthPanelUI:ensureBodyPartPanel()
@@ -1748,6 +1778,9 @@ function EHR_HealthPanelUI:syncTabVisibility()
     if self.antibodiesButton then
         self.antibodiesButton:setVisible(self:shouldShowAntibodiesButton())
     end
+    if self.administerMedicationButton then
+        self.administerMedicationButton:setVisible(self:shouldShowMedicationAdministerButton())
+    end
     if self.embeddedTabs then
         for id, view in pairs(self.embeddedTabs) do
             local shouldShow = self.activeTab == id
@@ -1792,6 +1825,10 @@ function EHR_HealthPanelUI:repositionControls()
     if self.antibodiesButton then
         self.antibodiesButton:setX(self.width - 90)
         self.antibodiesButton:setY(math.floor((self.HEADER_HEIGHT - self.antibodiesButton.height) / 2))
+    end
+    if self.administerMedicationButton then
+        self.administerMedicationButton:setX(self.width - 274)
+        self.administerMedicationButton:setY(math.floor((self.HEADER_HEIGHT - self.administerMedicationButton.height) / 2))
     end
 end
 
@@ -3171,10 +3208,14 @@ function EHR_HealthPanelUI:drawHeader()
     self:drawRect(0, 0, self.width, self.HEADER_HEIGHT, c.header.a, c.header.r, c.header.g, c.header.b)
     self:drawRect(0, self.HEADER_HEIGHT - 1, self.width, 1, 0.85, c.border.r, c.border.g, c.border.b)
     self:drawRectBorder(0, 0, self.width, self.height, c.border.a, c.border.r, c.border.g, c.border.b)
-    self:drawDockedText(self:truncateText("EHR MEDICAL STATUS", math.max(90, self.width - 190), UIFont.Medium), 14, 0, math.max(90, self.width - 190), self.HEADER_HEIGHT, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
+    local titleWidth = math.max(90, self.width - (self.isRemoteHealthPanel and 388 or 190))
+    self:drawDockedText(self:truncateText("EHR MEDICAL STATUS", titleWidth, UIFont.Medium), 14, 0, titleWidth, self.HEADER_HEIGHT, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
     local rightReserve = self.activeTab == "ehr" and 86 or 50
     if self.antibodiesButton and self.antibodiesButton:isVisible() then
         rightReserve = rightReserve + 30
+    end
+    if self.administerMedicationButton and self.administerMedicationButton:isVisible() then
+        rightReserve = rightReserve + 184
     end
     self:drawDockedTextRight("[" .. tostring(summary.bloodType) .. "]", self.width - rightReserve, 0, self.HEADER_HEIGHT, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Medium)
 end
@@ -5761,6 +5802,9 @@ end
 
 function EHR_HealthPanelUI:onClose()
     if self.isRemoteHealthPanel then
+        if EHR.MPMedication and EHR.MPMedication.CloseForPanel then
+            EHR.MPMedication.CloseForPanel(self)
+        end
         if EHR.UI and EHR.UI.DestroyRemoteHealthPanel then
             EHR.UI.DestroyRemoteHealthPanel(self.remotePatient or self.player or self.ehrRemoteKey)
             return
@@ -6077,6 +6121,10 @@ function EHR.UI.DestroyRemoteHealthPanel(patientOrKey)
     local panel = key and instances[key] or EHR.UI.GetRemoteHealthPanelForPatient(patientOrKey)
     if not panel then return end
     key = panel.ehrRemoteKey or key
+
+    if EHR.MPMedication and EHR.MPMedication.CloseForPanel then
+        EHR.MPMedication.CloseForPanel(panel)
+    end
 
     if EHR.MPExamination and EHR.MPExamination.EndExamSession
             and panel.remoteDoctor and panel.remotePatient then

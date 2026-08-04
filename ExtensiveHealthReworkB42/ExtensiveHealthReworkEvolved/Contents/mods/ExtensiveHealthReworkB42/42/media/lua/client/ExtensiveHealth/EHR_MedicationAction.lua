@@ -73,6 +73,10 @@ function EHR.MedicationAction.GetAdminType(medData)
         return medData.adminType
     end
 
+    if medData.isEmergency then
+        return "emergency"
+    end
+
     -- Check for IV medications
     if medData.requiresIVKit then
         return "iv"
@@ -80,10 +84,11 @@ function EHR.MedicationAction.GetAdminType(medData)
 
     -- Check for injection medications
     if medData.requiresSyringe then
-        if medData.isEmergency then
-            return "emergency"
-        end
         return "injection"
+    end
+
+    if medData.isTopical then
+        return "cream"
     end
 
     -- Check display name for clues

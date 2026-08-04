@@ -200,6 +200,10 @@ EHR.ServerCommands.ExamSessions = {}
 EHR.ServerCommands.ExamRequestTimes = {}
 EHR.ServerCommands.EnvironmentalSnapshotTimes = {}
 EHR.ServerCommands.StitchRiskPermits = {}
+EHR.ServerCommands.PendingMedicationConsents = {}
+EHR.ServerCommands.PendingMedicationConsentByPair = {}
+EHR.ServerCommands.MedicationActionPermits = {}
+EHR.ServerCommands.NextMedicationActionId = 0
 
 -- Network timed actions and overlapping vanilla consumption hooks can deliver
 -- the same completed dose more than once. Keep a short server-side idempotency
@@ -1894,6 +1898,8 @@ local EXAM_SESSION_TTL_MS = 300000
 local EXAM_REQUEST_MIN_INTERVAL_MS = 750
 local STITCH_RISK_PERMIT_TTL_MS = 180000
 local STITCH_ROUGH_CELLULITIS_CHANCE = 0.40
+local MEDICATION_CONSENT_TTL_MS = 45000
+local MEDICATION_ACTION_TTL_MS = 180000
 
 local function medicalPairKey(doctor, patient)
     if not doctor or not patient then return nil end
@@ -2012,6 +2018,295 @@ function EHR.ServerCommands.EndExamSession(player, args)
         EHR.ServerCommands.ExamSessions[pairKey] = nil
         EHR.ServerCommands.ExamRequestTimes[pairKey] = nil
     end
+end
+
+local function medicationConsentKey(doctor, patient, requestId)
+    local pairKey = medicalPairKey(doctor, patient)
+    if not pairKey or requestId == nil then return nil end
+    return pairKey .. ":" .. tostring(requestId)
+end
+
+local function getServerMedicationAdminType(medData)
+    if not medData then return "default" end
+    if medData.adminType then return tostring(medData.adminType) end
+    if medData.requiresIVKit then return "iv" end
+    if medData.isEmergency then return "emergency" end
+    if medData.requiresSyringe then return "injection" end
+    if medData.isTopical then return "cream" end
+
+    local name = string.lower(tostring(medData.displayName or ""))
+    if string.find(name, "inhaler", 1, true) then return "inhaler" end
+    if string.find(name, "cream", 1, true) or string.find(name, "ointment", 1, true) then return "cream" end
+    if string.find(name, "syrup", 1, true) or string.find(name, "liquid", 1, true) then return "liquid" end
+    if string.find(name, "capsule", 1, true) then return "capsule" end
+    return "pill"
+end
+
+local function sendMedicationRequestRejected(doctor, requestId, reason, command)
+    if not doctor or not sendServerCommand then return end
+    sendServerCommand(doctor, "EHR_Exam", command or "MedicationRequestRejected", {
+        requestId = requestId,
+        reason = tostring(reason or "Medication administration request rejected"),
+    })
+end
+
+local function validateRemoteMedication(doctor, patient, itemID, expectedFullType)
+    if not doctor or not patient or doctor == patient then
+        return nil, nil, "Invalid doctor or patient"
+    end
+    if not hasActiveExamSession(doctor, patient, true) then
+        return nil, nil, "Examination session is not authorized or patient is out of range"
+    end
+
+    local doctorDead = false
+    local patientDead = false
+    pcall(function() doctorDead = doctor:isDead() end)
+    pcall(function() patientDead = patient:isDead() end)
+    if doctorDead or patientDead then return nil, nil, "Doctor or patient is no longer available" end
+
+    local item = itemID ~= nil and findInventoryItemByID(doctor, itemID) or nil
+    if not item then return nil, nil, "Medication is no longer in the doctor's inventory" end
+
+    local fullType = item.getFullType and item:getFullType() or nil
+    if not fullType or (expectedFullType and tostring(fullType) ~= tostring(expectedFullType)) then
+        return nil, nil, "Medication item changed"
+    end
+
+    local medData = EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[fullType] or nil
+    if not medData then return nil, nil, "Item is not a recognized medication" end
+
+    if EHR.Medication.GetItemDoseInfo then
+        local okDose, doseInfo = pcall(EHR.Medication.GetItemDoseInfo, item)
+        if okDose and doseInfo and (tonumber(doseInfo.remainingDoses) or 0) <= 0 then
+            return nil, nil, "Medication package is empty"
+        end
+    end
+
+    if EHR.Medication.CanUseMedication then
+        local okCanUse, canUse, reason = pcall(EHR.Medication.CanUseMedication, patient, item, doctor)
+        if not okCanUse then return nil, nil, "Medication validation failed" end
+        if canUse ~= true then return nil, nil, tostring(reason or "Medication cannot be used right now") end
+    end
+
+    return item, medData, nil
+end
+
+function EHR.ServerCommands.RequestAdministerMedication(doctor, args)
+    if not doctor or type(args) ~= "table" then return end
+    local requestId = math.floor(tonumber(args.requestId) or -1)
+    if requestId < 1 or requestId > 1000000000 then return end
+
+    local patient = findOnlinePlayerStrict(args, nil)
+    if not patient or patient == doctor then
+        sendMedicationRequestRejected(doctor, requestId, "Patient is unavailable")
+        return
+    end
+
+    local item, medData, reason = validateRemoteMedication(doctor, patient, args.itemID, args.itemFullType)
+    if not item then
+        sendMedicationRequestRejected(doctor, requestId, reason)
+        return
+    end
+
+    local pairKey = medicalPairKey(doctor, patient)
+    local consentKey = medicationConsentKey(doctor, patient, requestId)
+    if not pairKey or not consentKey then return end
+
+    local previousKey = EHR.ServerCommands.PendingMedicationConsentByPair[pairKey]
+    if previousKey and previousKey ~= consentKey then
+        EHR.ServerCommands.PendingMedicationConsents[previousKey] = nil
+    end
+
+    local nowMs = getServerNowMs()
+    local fullType = item:getFullType()
+    local medicationName = EHR.Medication.GetDisplayName
+        and EHR.Medication.GetDisplayName(fullType, medData)
+        or medData.displayName or fullType
+
+    EHR.ServerCommands.PendingMedicationConsents[consentKey] = {
+        requestId = requestId,
+        doctorKey = getPlayerNetworkKey(doctor),
+        patientKey = getPlayerNetworkKey(patient),
+        doctorOnlineID = getPlayerOnlineIDString(doctor),
+        doctorUsername = getPlayerUsernameString(doctor),
+        patientOnlineID = getPlayerOnlineIDString(patient),
+        patientUsername = getPlayerUsernameString(patient),
+        itemID = item:getID(),
+        itemFullType = fullType,
+        medicationName = tostring(medicationName),
+        adminType = getServerMedicationAdminType(medData),
+        expiresAt = nowMs + MEDICATION_CONSENT_TTL_MS,
+    }
+    EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] = consentKey
+
+    sendServerCommand(patient, "EHR_Exam", "MedicationConsentRequest", {
+        requestId = requestId,
+        doctorOnlineID = getPlayerOnlineIDString(doctor),
+        doctorUsername = getPlayerUsernameString(doctor),
+        doctorDisplayName = getPlayerUsernameString(doctor),
+        medicationName = tostring(medicationName),
+        itemFullType = fullType,
+        adminType = getServerMedicationAdminType(medData),
+        expiresInMs = MEDICATION_CONSENT_TTL_MS,
+    })
+end
+
+function EHR.ServerCommands.RespondAdministerMedicationConsent(patient, args)
+    if not patient or type(args) ~= "table" then return end
+    local requestId = math.floor(tonumber(args.requestId) or -1)
+    if requestId < 1 then return end
+
+    local doctor = findOnlinePlayerStrict({
+        targetOnlineID = args.doctorOnlineID,
+        targetUsername = args.doctorUsername,
+    }, nil)
+    if not doctor or doctor == patient then return end
+
+    local pairKey = medicalPairKey(doctor, patient)
+    local consentKey = medicationConsentKey(doctor, patient, requestId)
+    local pending = consentKey and EHR.ServerCommands.PendingMedicationConsents[consentKey] or nil
+    local nowMs = getServerNowMs()
+    if not pending or pending.patientKey ~= getPlayerNetworkKey(patient)
+            or pending.doctorKey ~= getPlayerNetworkKey(doctor)
+            or nowMs > (tonumber(pending.expiresAt) or 0) then
+        if consentKey then EHR.ServerCommands.PendingMedicationConsents[consentKey] = nil end
+        sendMedicationRequestRejected(doctor, requestId, "Medication consent request expired")
+        return
+    end
+
+    EHR.ServerCommands.PendingMedicationConsents[consentKey] = nil
+    if pairKey and EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] == consentKey then
+        EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] = nil
+    end
+
+    if args.accepted ~= true then
+        sendMedicationRequestRejected(doctor, requestId, "Patient declined the medication", "MedicationConsentDenied")
+        return
+    end
+
+    local item, medData, reason = validateRemoteMedication(
+        doctor, patient, pending.itemID, pending.itemFullType
+    )
+    if not item then
+        sendMedicationRequestRejected(doctor, requestId, reason)
+        return
+    end
+
+    EHR.ServerCommands.NextMedicationActionId = (EHR.ServerCommands.NextMedicationActionId % 1000000000) + 1
+    local actionId = EHR.ServerCommands.NextMedicationActionId
+    EHR.ServerCommands.MedicationActionPermits[tostring(actionId)] = {
+        actionId = actionId,
+        requestId = requestId,
+        doctorKey = getPlayerNetworkKey(doctor),
+        patientKey = getPlayerNetworkKey(patient),
+        patientOnlineID = getPlayerOnlineIDString(patient),
+        patientUsername = getPlayerUsernameString(patient),
+        itemID = item:getID(),
+        itemFullType = item:getFullType(),
+        medicationName = pending.medicationName,
+        adminType = getServerMedicationAdminType(medData),
+        expiresAt = nowMs + MEDICATION_ACTION_TTL_MS,
+    }
+
+    sendServerCommand(doctor, "EHR_Exam", "MedicationConsentGranted", {
+        requestId = requestId,
+        actionId = actionId,
+        targetOnlineID = getPlayerOnlineIDString(patient),
+        targetUsername = getPlayerUsernameString(patient),
+        itemID = item:getID(),
+        itemFullType = item:getFullType(),
+        medicationName = pending.medicationName,
+        adminType = getServerMedicationAdminType(medData),
+        expiresInMs = MEDICATION_ACTION_TTL_MS,
+    })
+end
+
+function EHR.ServerCommands.CancelAdministerMedicationRequest(doctor, args)
+    if not doctor or type(args) ~= "table" then return end
+    local requestId = math.floor(tonumber(args.requestId) or -1)
+    if requestId < 1 then return end
+    local patient = findOnlinePlayerStrict(args, nil)
+    if not patient or patient == doctor then return end
+
+    local pairKey = medicalPairKey(doctor, patient)
+    local consentKey = medicationConsentKey(doctor, patient, requestId)
+    local pending = consentKey and EHR.ServerCommands.PendingMedicationConsents[consentKey] or nil
+    if not pending or pending.doctorKey ~= getPlayerNetworkKey(doctor) then return end
+
+    EHR.ServerCommands.PendingMedicationConsents[consentKey] = nil
+    if pairKey and EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] == consentKey then
+        EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] = nil
+    end
+    sendServerCommand(patient, "EHR_Exam", "MedicationConsentCancelled", {
+        requestId = requestId,
+    })
+end
+
+function EHR.ServerCommands.CancelAdministerMedication(doctor, args)
+    if not doctor or type(args) ~= "table" or args.actionId == nil then return end
+    local key = tostring(math.floor(tonumber(args.actionId) or -1))
+    local permit = EHR.ServerCommands.MedicationActionPermits[key]
+    if permit and permit.doctorKey == getPlayerNetworkKey(doctor) then
+        EHR.ServerCommands.MedicationActionPermits[key] = nil
+    end
+end
+
+local function sendMedicationAdministerResult(player, role, success, permit, message)
+    if not player or not sendServerCommand then return end
+    sendServerCommand(player, "EHR_Exam", "MedicationAdministerResult", {
+        success = success == true,
+        role = role,
+        requestId = permit and permit.requestId or nil,
+        actionId = permit and permit.actionId or nil,
+        targetOnlineID = permit and permit.patientOnlineID or nil,
+        targetUsername = permit and permit.patientUsername or nil,
+        itemFullType = permit and permit.itemFullType or nil,
+        medicationName = permit and permit.medicationName or nil,
+        message = tostring(message or "Medication administration failed"),
+    })
+end
+
+function EHR.ServerCommands.CompleteAdministerMedication(doctor, args)
+    if not doctor or type(args) ~= "table" or args.actionId == nil then return end
+    local key = tostring(math.floor(tonumber(args.actionId) or -1))
+    local permit = EHR.ServerCommands.MedicationActionPermits[key]
+    if not permit or permit.doctorKey ~= getPlayerNetworkKey(doctor) then return end
+
+    -- One completion attempt per patient-approved permit, including failures.
+    EHR.ServerCommands.MedicationActionPermits[key] = nil
+    if getServerNowMs() > (tonumber(permit.expiresAt) or 0) then
+        sendMedicationAdministerResult(doctor, "doctor", false, permit, "Medication administration authorization expired")
+        return
+    end
+
+    local patient = findOnlinePlayerStrict({
+        targetOnlineID = permit.patientOnlineID,
+        targetUsername = permit.patientUsername,
+    }, nil)
+    local item, _, reason = validateRemoteMedication(doctor, patient, permit.itemID, permit.itemFullType)
+    if not item then
+        sendMedicationAdministerResult(doctor, "doctor", false, permit, reason)
+        return
+    end
+
+    local ok, used = pcall(EHR.Medication.UseMedication, patient, item, doctor)
+    local success = ok and used == true
+    if not success then
+        reason = ok and "Medication could not be used" or ("Medication administration failed: " .. tostring(used))
+        sendMedicationAdministerResult(doctor, "doctor", false, permit, reason)
+        sendMedicationAdministerResult(patient, "patient", false, permit, reason)
+        syncModDataToClient(patient)
+        return
+    end
+
+    syncModDataToClient(patient)
+    syncModDataToClient(doctor)
+    local patientName = getPlayerUsernameString(patient) or "patient"
+    local doctorMessage = "Administered " .. tostring(permit.medicationName) .. " to " .. tostring(patientName) .. "."
+    local patientMessage = tostring(getPlayerUsernameString(doctor) or "A doctor")
+        .. " administered " .. tostring(permit.medicationName) .. "."
+    sendMedicationAdministerResult(doctor, "doctor", true, permit, doctorMessage)
+    sendMedicationAdministerResult(patient, "patient", true, permit, patientMessage)
 end
 
 local function claimExamRequest(doctor, patient)
@@ -3755,6 +4050,21 @@ local function OnClientCommand(module, command, player, args)
         elseif command == "EndExamSession" then
             EHR.ServerCommands.EndExamSession(player, args)
             return
+        elseif command == "RequestAdministerMedication" then
+            EHR.ServerCommands.RequestAdministerMedication(player, args)
+            return
+        elseif command == "RespondAdministerMedicationConsent" then
+            EHR.ServerCommands.RespondAdministerMedicationConsent(player, args)
+            return
+        elseif command == "CancelAdministerMedicationRequest" then
+            EHR.ServerCommands.CancelAdministerMedicationRequest(player, args)
+            return
+        elseif command == "CompleteAdministerMedication" then
+            EHR.ServerCommands.CompleteAdministerMedication(player, args)
+            return
+        elseif command == "CancelAdministerMedication" then
+            EHR.ServerCommands.CancelAdministerMedication(player, args)
+            return
         elseif command == "BeginStitchRiskSession" then
             EHR.ServerCommands.BeginStitchRiskSession(player, args)
             return
@@ -4466,6 +4776,13 @@ local function OnServerTick()
         pruneTimedEntries(EHR.ServerCommands.PendingExamConsents, nowMs)
         pruneTimedEntries(EHR.ServerCommands.ExamSessions, nowMs)
         pruneTimedEntries(EHR.ServerCommands.StitchRiskPermits, nowMs)
+        pruneTimedEntries(EHR.ServerCommands.PendingMedicationConsents, nowMs)
+        pruneTimedEntries(EHR.ServerCommands.MedicationActionPermits, nowMs)
+        for pairKey, consentKey in pairs(EHR.ServerCommands.PendingMedicationConsentByPair) do
+            if not EHR.ServerCommands.PendingMedicationConsents[consentKey] then
+                EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] = nil
+            end
+        end
         for key, timestamp in pairs(EHR.ServerCommands.ExamRequestTimes) do
             if type(timestamp) ~= "number" or nowMs < timestamp or (nowMs - timestamp) > EXAM_SESSION_TTL_MS then
                 EHR.ServerCommands.ExamRequestTimes[key] = nil

@@ -205,9 +205,30 @@ local function trackMedicationDose(character, item, medData, itemFullType)
 end
 
 -- ============================================
--- HOOK: ISTakePillAction:complete()
+-- HOOK: ISTakePillAction completion
 -- For drainable pill bottles (Base.Pills, etc.)
 -- ============================================
+
+local function trackCompletedPillAction(action, source)
+    if not action or action.ehrMedicationTracked then return end
+    if not action.character or not action.item then return end
+
+    local ok, itemFullType = pcall(function()
+        return action.item:getFullType()
+    end)
+    if not ok or not itemFullType then return end
+
+    if not isMedicalItem(action.item) then return end
+
+    -- B42 MP completes the client copy of the timed action through perform(),
+    -- while complete() remains the reliable SP/server lifecycle point. Mark the
+    -- action before dispatch so both callbacks can safely be hooked together.
+    action.ehrMedicationTracked = true
+    log("ISTakePillAction:" .. tostring(source) .. "() - " .. tostring(itemFullType))
+
+    local medData = getOrCreateMedData(itemFullType, action.item)
+    trackMedicationDose(action.character, action.item, medData, itemFullType)
+end
 
 local function hookTakePillAction()
     if not ISTakePillAction then
@@ -215,38 +236,45 @@ local function hookTakePillAction()
         return false
     end
 
-    if EHR.MedicationHook.pillActionHooked then
-        log("ISTakePillAction already hooked")
-        return true
+    local hookedAny = false
+
+    -- Re-check the live method instead of trusting a boolean flag. Another mod
+    -- may wrap or replace the action after this file's immediate initialization.
+    if ISTakePillAction.complete
+        and ISTakePillAction.complete ~= EHR.MedicationHook.pillCompleteWrapper then
+        local originalComplete = ISTakePillAction.complete
+        local completeWrapper = function(self)
+            local result = originalComplete(self)
+            trackCompletedPillAction(self, "complete")
+            return result
+        end
+        EHR.MedicationHook.pillCompleteWrapper = completeWrapper
+        ISTakePillAction.complete = completeWrapper
+        hookedAny = true
     end
 
-    local originalComplete = ISTakePillAction.complete
-    if not originalComplete then
-        log("ERROR: ISTakePillAction.complete not found!")
+    if ISTakePillAction.perform
+        and ISTakePillAction.perform ~= EHR.MedicationHook.pillPerformWrapper then
+        local originalPerform = ISTakePillAction.perform
+        local performWrapper = function(self)
+            local result = originalPerform(self)
+            trackCompletedPillAction(self, "perform")
+            return result
+        end
+        EHR.MedicationHook.pillPerformWrapper = performWrapper
+        ISTakePillAction.perform = performWrapper
+        hookedAny = true
+    end
+
+    if not ISTakePillAction.complete and not ISTakePillAction.perform then
+        log("ERROR: ISTakePillAction completion methods not found!")
         return false
     end
 
-    ISTakePillAction.complete = function(self)
-        -- Call original first
-        local result = originalComplete(self)
-
-        -- Track the medication
-        if self.character and self.item then
-            local itemFullType = self.item:getFullType()
-            log("ISTakePillAction:complete() - " .. tostring(itemFullType))
-
-            -- Check if it's a medical item
-            if isMedicalItem(self.item) then
-                local medData = getOrCreateMedData(itemFullType, self.item)
-                trackMedicationDose(self.character, self.item, medData, itemFullType)
-            end
-        end
-
-        return result
-    end
-
     EHR.MedicationHook.pillActionHooked = true
-    log("Successfully hooked ISTakePillAction:complete()")
+    if hookedAny then
+        log("Successfully hooked ISTakePillAction:perform()/complete()")
+    end
     return true
 end
 

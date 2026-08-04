@@ -222,6 +222,10 @@ local function addRandomPoolItem(inventory)
 end
 
 function ZombieLoot.OnZombieDead(zombie)
+    -- In MP this event is raised in both Lua environments, and the client may
+    -- load this server script as part of a hosted session. Only the server may
+    -- mutate corpse loot; a client-side AddItem creates an untransferable ghost.
+    if isClient and isClient() then return end
     if not zombie or not ZombieLoot.IsEnabled() then return end
     if instanceof and not instanceof(zombie, "IsoZombie") then return end
 
@@ -239,6 +243,10 @@ function ZombieLoot.OnZombieDead(zombie)
     end)
     if not ok or not inventory then return end
 
+    -- The corpse inventory is replicated by the game's normal death/container
+    -- sync. Sending this item again with sendAddItemToContainer creates a second
+    -- client-side entry with the same server authority: a non-transferable
+    -- "ghost" duplicate.
     local item = addRandomPoolItem(inventory)
     if item and EHR and EHR.IsDebugMode and EHR.IsDebugMode() then
         local okType, fullType = pcall(function() return item:getFullType() end)

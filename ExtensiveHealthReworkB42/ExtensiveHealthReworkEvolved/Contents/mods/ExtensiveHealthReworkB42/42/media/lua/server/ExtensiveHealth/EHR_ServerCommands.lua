@@ -193,6 +193,50 @@ log("[EHR] isServer() = " .. tostring(isServer()))
 log("[EHR] isClient() = " .. tostring(isClient()))
 log("=========================================")
 EHR.ServerCommands = {}
+EHR.ServerCommands.RecentMedicationRequests = {}
+
+-- Network timed actions and overlapping vanilla consumption hooks can deliver
+-- the same completed dose more than once. Keep a short server-side idempotency
+-- window: normal pill actions take longer than this, while duplicate packets
+-- and action relaunches arrive nearly together.
+function EHR.ServerCommands.ClaimMedicationRequest(player, requestKey)
+    if not player or not requestKey then return false end
+
+    local now = getTimestampMs and getTimestampMs() or nil
+    if not now then
+        local gameTime = getGameTime and getGameTime() or nil
+        now = gameTime and gameTime:getWorldAgeHours() * 3600000 or 0
+    end
+
+    local playerKey = nil
+    pcall(function()
+        if player.getOnlineID then playerKey = "id:" .. tostring(player:getOnlineID()) end
+    end)
+    if not playerKey then
+        pcall(function()
+            if player.getUsername then playerKey = "user:" .. tostring(player:getUsername()) end
+        end)
+    end
+    playerKey = playerKey or tostring(player)
+
+    local recent = EHR.ServerCommands.RecentMedicationRequests
+    local playerRequests = recent[playerKey] or {}
+    recent[playerKey] = playerRequests
+
+    for key, timestamp in pairs(playerRequests) do
+        if type(timestamp) ~= "number" or now < timestamp or (now - timestamp) > 10000 then
+            playerRequests[key] = nil
+        end
+    end
+
+    local previous = playerRequests[requestKey]
+    if previous and (now - previous) < 2500 then
+        return false
+    end
+
+    playerRequests[requestKey] = now
+    return true
+end
 
 local DEBUG_WOUND_VANILLA_LEVELS = {
     [1] = 2,
@@ -1404,6 +1448,12 @@ function EHR.ServerCommands.UseMedication(player, args)
         return
     end
 
+    if not EHR.ServerCommands.ClaimMedicationRequest(player, "item:" .. tostring(args.itemID)) then
+        log("[EHR Server] Ignored duplicate medication request for item " .. tostring(args.itemID))
+        syncModDataToClient(player)
+        return
+    end
+
     local ok, result = pcall(function()
         return EHR.Medication.UseMedication(player, item)
     end)
@@ -1411,7 +1461,8 @@ function EHR.ServerCommands.UseMedication(player, args)
         log("[EHR Server] UseMedication failed: " .. tostring(result))
     end
 
-    syncInventoryItem(item)
+    -- ConsumeOneDose owns both drainable-stat and final-removal replication.
+    -- Sending the same item stats again here created a second competing update.
     syncModDataToClient(player)
 end
 
@@ -1422,8 +1473,16 @@ function EHR.ServerCommands.UseConsumedMedication(player, args)
         return
     end
 
+
+    local itemFullType = tostring(args.itemFullType)
+    if not EHR.ServerCommands.ClaimMedicationRequest(player, "consumed:" .. itemFullType) then
+        log("[EHR Server] Ignored duplicate vanilla medication effect for " .. itemFullType)
+        syncModDataToClient(player)
+        return
+    end
+
     local ok, result = pcall(function()
-        return EHR.Medication.UseConsumedMedication(player, tostring(args.itemFullType))
+        return EHR.Medication.UseConsumedMedication(player, itemFullType)
     end)
     if not ok then
         log("[EHR Server] UseConsumedMedication failed: " .. tostring(result))

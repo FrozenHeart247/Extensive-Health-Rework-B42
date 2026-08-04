@@ -2921,6 +2921,11 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
             if okSet then
                 if isClient() and itemID then
                     sendClientCommand(player, "EHR", "UpdateItemDelta", {itemID = itemID, usedDelta = newUsed})
+                elseif isServer and isServer() and sendItemStats then
+                    -- Server-authoritative EHR actions do not pass through a
+                    -- vanilla drainable timed action. Explicitly replicate the
+                    -- new fill level so MP clients do not keep a stale stack.
+                    pcall(function() sendItemStats(item) end)
                 end
                 return true, "dose", useDelta, newUsed, newRemaining
             end
@@ -2931,6 +2936,11 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
         sendClientCommand(player, "EHR", "RemoveItem", {itemID = itemID})
     end
     itemContainer:Remove(item)
+    if isServer and isServer() and sendRemoveItemFromContainer then
+        -- Removing the final dose only from the server container leaves a
+        -- ghost item on the owning client. Mirror the vanilla server helpers.
+        pcall(function() sendRemoveItemFromContainer(itemContainer, item) end)
+    end
 
     return true, "removed", useDelta, 1.0
 end
@@ -3095,6 +3105,32 @@ function EHR.Medication.RequestUseMedication(player, item)
     return EHR.Medication.UseMedication(player, item)
 end
 
+-- Vanilla antibiotics are intentionally weaker than EHR prescription drugs,
+-- but Wound Infection V2 still defines a direct one-stage treatment per dose.
+-- Its legacy client hook cannot authoritatively change the condition in MP, so
+-- both EHR and already-consumed vanilla action paths call this shared helper.
+function EHR.Medication.ApplyVanillaAntibioticWoundEffect(player, itemFullType)
+    if not player or itemFullType ~= "Base.Antibiotics" then return false end
+    if not (EHR.WoundInfection and EHR.WoundInfection.OnTakeAntibiotics) then return false end
+
+    local hasInfection = false
+    if EHR.WoundInfection.HasAnyInfection then
+        local ok, active = pcall(EHR.WoundInfection.HasAnyInfection, player)
+        hasInfection = ok and active == true
+    elseif EHR.Medication.IsModuleDiseaseActive then
+        local ok, active = pcall(EHR.Medication.IsModuleDiseaseActive, player, "wound_infection")
+        hasInfection = ok and active == true
+    end
+    if not hasInfection then return false end
+
+    local ok, err = pcall(EHR.WoundInfection.OnTakeAntibiotics, player)
+    if not ok then
+        EHR.Log("WARNING: Vanilla antibiotic wound treatment failed: " .. tostring(err))
+        return false
+    end
+    return true
+end
+
 function EHR.Medication.UseConsumedMedication(player, itemFullType)
     if not player or not itemFullType then return false end
 
@@ -3173,6 +3209,9 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
             end
         end
 
+        local appliedVanillaWoundEffect = EHR.Medication.ApplyVanillaAntibioticWoundEffect
+            and EHR.Medication.ApplyVanillaAntibioticWoundEffect(player, itemFullType)
+
         if medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
             EHR.Medication.StartHydrationSupport(player, medData)
         end
@@ -3183,6 +3222,7 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
             end
             EHR.Medication.TrackDoseOnly(player, medData, medKey)
         end
+        if appliedVanillaWoundEffect then treatedAny = true end
     end
 
     if medData.stressSupport and EHR.Medication.StartStressSupport then
@@ -3331,6 +3371,9 @@ function EHR.Medication.UseMedication(player, item)
         end
     end
 
+    local appliedVanillaWoundEffect = EHR.Medication.ApplyVanillaAntibioticWoundEffect
+        and EHR.Medication.ApplyVanillaAntibioticWoundEffect(player, itemFullType)
+
     if treatedAny and medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
         EHR.Medication.StartHydrationSupport(player, medData)
     end
@@ -3349,6 +3392,7 @@ function EHR.Medication.UseMedication(player, item)
         end
         EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
     end
+    if appliedVanillaWoundEffect then treatedAny = true end
 
     if earlyDoseOverdose then
         EHR.Medication.ApplyEarlyDoseOverdose(player, earlyDoseOverdose)
@@ -6090,6 +6134,15 @@ local function OnEatItemHandler(character, item)
 
             if shouldTrack then
                 EHR.Log("Vanilla medication consumed via native handler: " .. itemFullType)
+
+                -- In MP the server owns EHR disease and medication state. The
+                -- vanilla action has already consumed the physical dose, so
+                -- request the effect-only server path and do not mutate the
+                -- client's temporary copy of EHR modData.
+                if isClient and isClient() and EHR.Medication.UseConsumedMedication then
+                    EHR.Medication.UseConsumedMedication(character, itemFullType)
+                    return
+                end
 
                 if EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(character, medData, itemFullType) then
                     if medData.activeDoseMessage and character:isLocalPlayer() then

@@ -108,6 +108,10 @@ local function EHRMedicationActionHasItem(character, item)
     local inventory = character:getInventory()
     if not inventory then return false end
 
+    if isClient and isClient() and inventory.containsID and item.getID then
+        return inventory:containsID(item:getID())
+    end
+
     if inventory:contains(item) then return true end
     if inventory.containsRecursive and inventory:containsRecursive(item) then return true end
 
@@ -144,16 +148,41 @@ function EHRMedicationAction:isValid()
 end
 
 function EHRMedicationAction:update()
-    -- Animation updates if needed
-    self.character:faceThisObject(self.character)
+    if self.item and self.item.setJobDelta then
+        self.item:setJobDelta(self:getJobDelta())
+    end
+
+    if self.usesPillAnimation then
+        -- Use the same animation as vanilla ISTakePillAction.
+        self:setActionAnim(CharacterActionAnims.TakePills)
+    end
 end
 
 function EHRMedicationAction:start()
+    -- Inventory transfers in MP may replace the client-side item reference.
+    -- Resolve the authoritative local object by ID just like vanilla does.
+    if isClient and isClient() and self.item and self.item.getID then
+        local inventory = self.character:getInventory()
+        local resolved = inventory and inventory.getItemById
+            and inventory:getItemById(self.item:getID()) or nil
+        if resolved then self.item = resolved end
+    end
+
     -- Set animation based on admin type
     if self.adminType == "iv" or self.adminType == "injection" then
         self.character:setMetabolicTarget(Metabolics.HeavyWork)
     else
         self.character:setMetabolicTarget(Metabolics.LightWork)
+    end
+
+    if self.item then
+        if self.usesPillAnimation and self.item.setJobType then
+            self.item:setJobType(getText("ContextMenu_Take_pills"))
+        end
+        if self.item.setJobDelta then self.item:setJobDelta(0.0) end
+        if self.usesPillAnimation then
+            self:setOverrideHandModels(nil, self.item)
+        end
     end
 
     -- Play start sound if applicable
@@ -163,12 +192,23 @@ function EHRMedicationAction:start()
 end
 
 function EHRMedicationAction:stop()
+    if self.item and self.item.setJobDelta then self.item:setJobDelta(0.0) end
     ISBaseTimedAction.stop(self)
 end
 
 function EHRMedicationAction:perform()
-    -- Apply the medication effects
-    EHR.Medication.UseMedication(self.character, self.item)
+    -- A network timed action can be relaunched. Only one completed action may
+    -- issue the server-authoritative medication request.
+    if not self.ehrUseRequested then
+        self.ehrUseRequested = true
+        EHR.Medication.UseMedication(self.character, self.item)
+    end
+
+    if self.item then
+        local container = self.item.getContainer and self.item:getContainer() or nil
+        if container and container.setDrawDirty then container:setDrawDirty(true) end
+        if self.item.setJobDelta then self.item:setJobDelta(0.0) end
+    end
 
     -- Complete the action
     ISBaseTimedAction.perform(self)
@@ -185,6 +225,11 @@ function EHRMedicationAction:new(character, item, medData)
     -- Determine admin type and time
     o.adminType = EHR.MedicationAction.GetAdminType(medData)
     o.maxTime = EHR.MedicationAction.Times[o.adminType] or EHR.MedicationAction.Times.default
+    o.usesPillAnimation = o.adminType == "pill"
+        or o.adminType == "tablet"
+        or o.adminType == "capsule"
+    o.isEating = o.usesPillAnimation
+    o.ehrUseRequested = false
 
     return o
 end

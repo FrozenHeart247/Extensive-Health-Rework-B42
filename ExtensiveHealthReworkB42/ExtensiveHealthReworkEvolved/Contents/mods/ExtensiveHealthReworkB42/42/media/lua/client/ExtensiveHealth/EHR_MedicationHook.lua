@@ -82,6 +82,15 @@ local function trackMedicationDose(character, item, medData, itemFullType)
         return
     end
 
+    -- Vanilla ISTakePillAction owns the physical item consumption. In MP the
+    -- EHR effect must be applied to the server copy of the player instead of
+    -- being written to client modData and overwritten by the next sync.
+    if isClient and isClient() and EHR.Medication.UseConsumedMedication then
+        EHR.Medication.UseConsumedMedication(character, itemFullType)
+        log("Requested server tracking for vanilla medication: " .. tostring(itemFullType))
+        return
+    end
+
     local modData = character:getModData()
     if not modData then return end
 

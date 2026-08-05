@@ -891,11 +891,10 @@ end
 
 Events.OnGameStart.Add(OnGameStart)
 
--- Also register on load for clients joining MP
-local function OnMainMenuEnter()
-    EHR.Tooltips.RegisterTranslations()
-end
-
-Events.OnMainMenuEnter.Add(OnMainMenuEnter)
+-- Do not rebuild tooltip translations from OnMainMenuEnter. In 42.20.1,
+-- Core.ResetLua may fire this event while Translator still contains values
+-- cached before a Workshop update. Passing an old literal '%' through
+-- getText() then reaches Java Formatter and produces an exception. Tooltips
+-- are registered at OnGameStart, after the current translation files load.
 
 EHR.Log("EHR_TooltipSystem.lua loaded - Custom tooltip system active")

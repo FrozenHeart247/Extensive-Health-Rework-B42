@@ -29,6 +29,8 @@ EHR.Delirium.Config = {
     FIRST_EPISODE_MAX_MINUTES = 8,
     EPISODE_MIN_MINUTES = 30,
     EPISODE_MAX_MINUTES = 60,
+    ANTIPSYCHOTIC_EPISODE_INTERVAL_MULTIPLIER = 2.5,
+    ANTIPSYCHOTIC_IMPULSE_CHANCE = 0.40,
 
     OVERLAY_MIN_MINUTES = 4,
     OVERLAY_MAX_MINUTES = 8,
@@ -239,6 +241,8 @@ function EHR.Delirium.Contract(player, currentHour)
     if state then
         state.highStressSince = nil
         state.triggeredAt = currentHour
+        state.nextEpisodeHour = nil
+        state.nextEpisodeAntipsychoticActive = nil
     end
 
     if EHR and EHR.SafeTransmitModData then
@@ -249,13 +253,83 @@ function EHR.Delirium.Contract(player, currentHour)
     return true
 end
 
-function EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, first)
-    local cfg = EHR.Delirium.Config
-    if first then
-        runtime.nextEpisodeHour = currentHour + randomMinutes(cfg.FIRST_EPISODE_MIN_MINUTES, cfg.FIRST_EPISODE_MAX_MINUTES)
-    else
-        runtime.nextEpisodeHour = currentHour + randomMinutes(cfg.EPISODE_MIN_MINUTES, cfg.EPISODE_MAX_MINUTES)
+function EHR.Delirium.IsAntipsychoticDoseActive(player)
+    if not player or not EHR.Medication or not EHR.Medication.GetDoseStatus then
+        return false
     end
+
+    local ok, status = pcall(
+        EHR.Medication.GetDoseStatus,
+        player,
+        "ExtensiveHealth.Antipsychotics"
+    )
+    return ok == true and type(status) == "table" and status.isDoseActive == true
+end
+
+local function persistEpisodeSchedule(player, runtime, antipsychoticActive)
+    local state = getState(player)
+    if not state then return end
+
+    state.nextEpisodeHour = runtime and runtime.nextEpisodeHour or nil
+    state.nextEpisodeAntipsychoticActive = antipsychoticActive == true
+
+    if EHR and EHR.SafeTransmitModData then
+        EHR.SafeTransmitModData(player)
+    end
+end
+
+function EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, first, player)
+    local cfg = EHR.Delirium.Config
+    local antipsychoticActive = EHR.Delirium.IsAntipsychoticDoseActive(player)
+    local intervalMultiplier = antipsychoticActive
+        and cfg.ANTIPSYCHOTIC_EPISODE_INTERVAL_MULTIPLIER
+        or 1.0
+
+    if first then
+        runtime.nextEpisodeHour = currentHour + randomMinutes(
+            cfg.FIRST_EPISODE_MIN_MINUTES * intervalMultiplier,
+            cfg.FIRST_EPISODE_MAX_MINUTES * intervalMultiplier
+        )
+    else
+        runtime.nextEpisodeHour = currentHour + randomMinutes(
+            cfg.EPISODE_MIN_MINUTES * intervalMultiplier,
+            cfg.EPISODE_MAX_MINUTES * intervalMultiplier
+        )
+    end
+
+    persistEpisodeSchedule(player, runtime, antipsychoticActive)
+end
+
+
+function EHR.Delirium.RefreshScheduleForMedication(player, runtime, currentHour)
+    if not player or not runtime or not runtime.nextEpisodeHour then return end
+
+    local state = getState(player)
+    if not state then return end
+
+    local antipsychoticActive = EHR.Delirium.IsAntipsychoticDoseActive(player)
+    local scheduledWithAntipsychotic = state.nextEpisodeAntipsychoticActive == true
+    if antipsychoticActive == scheduledWithAntipsychotic then return end
+
+    local multiplier = math.max(
+        1.0,
+        tonumber(EHR.Delirium.Config.ANTIPSYCHOTIC_EPISODE_INTERVAL_MULTIPLIER) or 2.5
+    )
+    local remainingHours = math.max(0, (tonumber(runtime.nextEpisodeHour) or currentHour) - currentHour)
+
+    if remainingHours <= 0 then
+        EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, false, player)
+        return
+    end
+
+    if antipsychoticActive then
+        remainingHours = remainingHours * multiplier
+    else
+        remainingHours = remainingHours / multiplier
+    end
+
+    runtime.nextEpisodeHour = currentHour + remainingHours
+    persistEpisodeSchedule(player, runtime, antipsychoticActive)
 end
 
 local function getOverlayVisuals(runtime, currentHour)
@@ -628,9 +702,9 @@ function EHR.Delirium.TryDropWornBackpack(player)
     return ok
 end
 
-function EHR.Delirium.TryRandomImpulse(player, runtime, currentHour)
+function EHR.Delirium.TryRandomImpulse(player, runtime, currentHour, chance)
     if not isPlayerValid(player) or not runtime then return false end
-    if not impulseChancePassed(EHR.Delirium.Config.IMPULSE_CHANCE) then return false end
+    if not impulseChancePassed(chance or EHR.Delirium.Config.IMPULSE_CHANCE) then return false end
 
     local candidates = {}
     if isImpulseReady(runtime, "firearm", currentHour) and canFireWeapon(player, getHeldFirearm(player)) then
@@ -713,11 +787,16 @@ function EHR.Delirium.StartEpisode(player, playerIndex, currentHour)
     if isPlayerBusyForEpisode(player) then return end
 
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
+    local antipsychoticActive = EHR.Delirium.IsAntipsychoticDoseActive(player)
+    local impulseChance = antipsychoticActive
+        and EHR.Delirium.Config.ANTIPSYCHOTIC_IMPULSE_CHANCE
+        or EHR.Delirium.Config.IMPULSE_CHANCE
+
     playRandomSound(player, runtime)
     sayRandomLine(player, runtime)
     EHR.Delirium.StartOverlay(playerIndex, currentHour)
-    EHR.Delirium.TryRandomImpulse(player, runtime, currentHour)
-    EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, false)
+    EHR.Delirium.TryRandomImpulse(player, runtime, currentHour, impulseChance)
+    EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, false, player)
 end
 
 function EHR.Delirium.UpdateStressTrigger(player, currentHour)
@@ -740,16 +819,46 @@ end
 
 function EHR.Delirium.UpdateEpisodes(player, playerIndex, currentHour)
     local runtime = EHR.Delirium.GetRuntime(playerIndex)
+    local state = getState(player)
 
     if not EHR.Delirium.HasActive(player) then
+        local hadPersistentSchedule = state and (
+            state.nextEpisodeHour ~= nil
+            or state.nextEpisodeAntipsychoticActive ~= nil
+        )
         runtime.nextEpisodeHour = nil
+        if state then
+            state.nextEpisodeHour = nil
+            state.nextEpisodeAntipsychoticActive = nil
+        end
+        if hadPersistentSchedule and EHR and EHR.SafeTransmitModData then
+            EHR.SafeTransmitModData(player)
+        end
         EHR.Delirium.RemoveOverlay(playerIndex)
         return
     end
 
     if not runtime.nextEpisodeHour then
-        EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, true)
+        local savedNextEpisodeHour = state and tonumber(state.nextEpisodeHour) or nil
+        if savedNextEpisodeHour and savedNextEpisodeHour > currentHour then
+            runtime.nextEpisodeHour = savedNextEpisodeHour
+        elseif savedNextEpisodeHour then
+            -- The world may have advanced while an MP player was offline. Do not
+            -- fire an overdue hallucination immediately after joining.
+            EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, false, player)
+        else
+            -- Existing saves already have triggeredAt. Only genuinely new cases
+            -- should use the short 4-8 minute first-episode window.
+            local triggeredAt = state and tonumber(state.triggeredAt) or nil
+            local firstEpisodeWindow = EHR.Delirium.Config.FIRST_EPISODE_MAX_MINUTES / 60
+            local isNewCase = triggeredAt ~= nil
+                and currentHour >= triggeredAt
+                and (currentHour - triggeredAt) <= firstEpisodeWindow
+            EHR.Delirium.ScheduleNextEpisode(runtime, currentHour, isNewCase, player)
+        end
     end
+
+    EHR.Delirium.RefreshScheduleForMedication(player, runtime, currentHour)
 
     if currentHour >= runtime.nextEpisodeHour then
         EHR.Delirium.StartEpisode(player, playerIndex, currentHour)

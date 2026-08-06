@@ -131,6 +131,43 @@ local function OnServerCommand(module, command, args)
 
     local data = player:getModData()
 
+    if command == "ClearWoundInfections" then
+        local targets = args and type(args.parts) == "table" and args.parts or {}
+        local clearResidue = args and args.clearVanillaResidue == true
+        local bodyDamage = nil
+        pcall(function() bodyDamage = player:getBodyDamage() end)
+
+        if bodyDamage and bodyDamage.getBodyParts then
+            local bodyParts = nil
+            pcall(function() bodyParts = bodyDamage:getBodyParts() end)
+            if bodyParts and bodyParts.size and bodyParts.get then
+                for i = 0, bodyParts:size() - 1 do
+                    local bodyPart = bodyParts:get(i)
+                    if bodyPart then
+                        local partName = nil
+                        local infected = false
+                        local infectionLevel = 0
+                        pcall(function() partName = tostring(bodyPart:getType()) end)
+                        pcall(function() infected = bodyPart:isInfectedWound() == true end)
+                        pcall(function() infectionLevel = tonumber(bodyPart:getWoundInfectionLevel()) or 0 end)
+
+                        if (partName and targets[partName] == true)
+                                or (clearResidue and (infected or infectionLevel > 0.05)) then
+                            pcall(function() bodyPart:setWoundInfectionLevel(-1) end)
+                            pcall(function() bodyPart:setInfectedWound(false) end)
+                        end
+                    end
+                end
+                if bodyDamage.DamageUpdate then
+                    pcall(function() bodyDamage:DamageUpdate() end)
+                end
+            end
+        end
+
+        log("[EHR Client] Applied authoritative wound-infection clear")
+        return
+    end
+
     if command == "UpdateModData" then
         log("[EHR Client] Received UpdateModData from server")
 

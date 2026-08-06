@@ -4925,6 +4925,10 @@ function EHR.Medication.IsModuleDiseaseActive(player, diseaseId)
 
     if diseaseId == "wound_infection" then
         if EHR.WoundInfection and EHR.WoundInfection.GetData then
+            if EHR.WoundInfection.HasTreatableInfection then
+                local ok, active = pcall(EHR.WoundInfection.HasTreatableInfection, player)
+                if ok and active == true then return true end
+            end
             local woundData = EHR.WoundInfection.GetData(player)
             if woundData and (tonumber(woundData.worstStage) or 0) > 0 then
                 return true
@@ -5610,11 +5614,15 @@ function EHR.Medication.CureModuleDisease(player, diseaseId, treatment)
 
     if diseaseId == "wound_infection" then
         if EHR.WoundInfection and EHR.WoundInfection.CureAll then
-            EHR.WoundInfection.CureAll(player, treatment and treatment.medicationName or "medication")
+            return EHR.WoundInfection.CureAll(
+                player,
+                treatment and treatment.medicationName or "medication"
+            ) == true
         elseif EHR.WoundInfection and EHR.WoundInfection.OnTakeAntibiotics then
             EHR.WoundInfection.OnTakeAntibiotics(player)
+            return true
         end
-        return true
+        return false
     end
 
     if diseaseId == "sepsis" then
@@ -5662,13 +5670,15 @@ function EHR.Medication.Update(player)
             local cureTimeHours = EHR.Medication.GetTreatmentCompletionHours(player, treatment)
 
             if not startTime or not cureTimeHours or cureTimeHours <= 0 then
-                table.insert(treatmentsToRemove, diseaseId)
-                EHR.Log("Removed invalid active treatment data for " .. tostring(diseaseId))
+                if authoritative then
+                    table.insert(treatmentsToRemove, diseaseId)
+                    EHR.Log("Removed invalid active treatment data for " .. tostring(diseaseId))
+                end
             else
                 local elapsed = math.max(0, currentHour - startTime)
                 local courseComplete = EHR.Medication.IsTreatmentCourseComplete(player, treatment)
 
-                if elapsed >= cureTimeHours and courseComplete then
+                if authoritative and elapsed >= cureTimeHours and courseComplete then
                     -- Treatment complete - cure the disease
                     local moduleCured = EHR.Medication.CureModuleDisease
                         and EHR.Medication.CureModuleDisease(player, diseaseId, treatment)
@@ -5683,7 +5693,8 @@ function EHR.Medication.Update(player)
                         end
                     end
                     table.insert(treatmentsToRemove, diseaseId)
-                elseif elapsed >= cureTimeHours and not courseComplete then
+                    syncNeeded = true
+                elseif authoritative and elapsed >= cureTimeHours and not courseComplete then
                     if not treatment.awaitingDoses then
                         treatment.awaitingDoses = true
                         EHR.Log("Treatment time reached for " .. diseaseId .. " but course still needs more doses")
@@ -5695,6 +5706,7 @@ function EHR.Medication.Update(player)
 
     for _, diseaseId in ipairs(treatmentsToRemove) do
         medTracking.activeTreatments[diseaseId] = nil
+        syncNeeded = true
     end
 
     -- Update active side effects

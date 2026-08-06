@@ -2,11 +2,38 @@
 require "ExtensiveHealth/EHR_Main"
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
 pcall(function() require "OptionScreens/CharacterCreationProfession" end)
+pcall(function() require "OptionScreens/SandboxOptions" end)
 
 EHR = EHR or {}
 EHR.PatientZeroTraitToggle = EHR.PatientZeroTraitToggle or {}
 
+local function currentPatientZeroDisabledOption()
+    -- During new-world character creation SandboxVars may still contain the
+    -- defaults. getSandboxOptions() already contains the values selected on
+    -- the sandbox screen, so it must take priority in this frontend context.
+    if getSandboxOptions then
+        local ok, options = pcall(getSandboxOptions)
+        if ok and options and options.getOptionByName then
+            local optionOk, option = pcall(function()
+                return options:getOptionByName("ExtensiveHealthRework.PatientZeroTraitDisabled")
+            end)
+            if optionOk and option and option.getValue then
+                local valueOk, value = pcall(function() return option:getValue() end)
+                if valueOk and value ~= nil then
+                    return value == true
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local function isPatientZeroDisabled()
+    local currentOption = currentPatientZeroDisabledOption()
+    if currentOption ~= nil then
+        return currentOption
+    end
+
     if EHR.KnoxCure and EHR.KnoxCure.IsPatientZeroTraitEnabled then
         return not EHR.KnoxCure.IsPatientZeroTraitEnabled()
     end
@@ -43,6 +70,33 @@ local function isPatientZeroTrait(trait)
     end
 
     return false
+end
+
+local function removeAvailablePatientZero(self)
+    if not self or not isPatientZeroDisabled() then return end
+
+    local function removeFrom(list)
+        if not list or not list.items then return end
+        for i = #list.items, 1, -1 do
+            local entry = list.items[i]
+            local trait = entry and entry.item
+            if isPatientZeroTrait(trait) then
+                local label = nil
+                if trait and trait.getLabel then
+                    local ok, value = pcall(function() return trait:getLabel() end)
+                    if ok then label = value end
+                end
+                if label and list.removeMatchingItems then
+                    list:removeMatchingItems(label)
+                else
+                    table.remove(list.items, i)
+                end
+            end
+        end
+    end
+
+    removeFrom(self.listboxTrait)
+    removeFrom(self.listboxBadTrait)
 end
 
 local function removeSelectedPatientZero(self)
@@ -102,14 +156,52 @@ local function patchCharacterCreation()
     local originalRepopulateTraitLists = CharacterCreationProfession.repopulateTraitLists
     CharacterCreationProfession.repopulateTraitLists = function(self)
         local result = originalRepopulateTraitLists(self)
+        removeAvailablePatientZero(self)
         removeSelectedPatientZero(self)
+        return result
+    end
+
+    local originalSetVisible = CharacterCreationProfession.setVisible
+    CharacterCreationProfession.setVisible = function(self, visible, joypadData)
+        local result = originalSetVisible(self, visible, joypadData)
+        if visible then
+            -- Re-check after the sandbox screen has committed its values.
+            removeAvailablePatientZero(self)
+            removeSelectedPatientZero(self)
+        end
+        return result
+    end
+end
+
+local function patchSandboxCommit()
+    if not SandboxOptionsScreen or EHR.PatientZeroTraitToggle.sandboxPatched then return end
+    if not SandboxOptionsScreen.setSandboxVars then return end
+    EHR.PatientZeroTraitToggle.sandboxPatched = true
+
+    local originalSetSandboxVars = SandboxOptionsScreen.setSandboxVars
+    SandboxOptionsScreen.setSandboxVars = function(self, ...)
+        local result = originalSetSandboxVars(self, ...)
+
+        -- Vanilla 42.20.1 opens CharacterCreationProfession immediately
+        -- before calling setSandboxVars(). Refresh the already-visible lists
+        -- now that the checkbox value has actually reached SandboxVars.
+        local professionScreen = CharacterCreationProfession and CharacterCreationProfession.instance
+        if not professionScreen and MainScreen and MainScreen.instance then
+            professionScreen = MainScreen.instance.charCreationProfession
+        end
+        if professionScreen and professionScreen.repopulateTraitLists then
+            professionScreen:repopulateTraitLists()
+        end
+
         return result
     end
 end
 
 patchCharacterCreation()
+patchSandboxCommit()
 if Events and Events.OnGameBoot then
     Events.OnGameBoot.Add(patchCharacterCreation)
+    Events.OnGameBoot.Add(patchSandboxCommit)
 end
 
 if EHR.Log then EHR.Log("EHR_PatientZeroTraitToggle.lua loaded") end

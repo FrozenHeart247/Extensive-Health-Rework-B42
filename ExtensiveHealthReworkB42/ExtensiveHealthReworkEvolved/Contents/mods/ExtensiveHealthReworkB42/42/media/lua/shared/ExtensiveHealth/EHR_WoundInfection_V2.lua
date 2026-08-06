@@ -488,6 +488,27 @@ local function GetBodyPartByName(player, partName)
     return bodyPart, bodyDamage
 end
 
+local function ForEachBodyPart(player, callback)
+    if not player or type(callback) ~= "function" then return end
+
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+    if not bodyDamage or not bodyDamage.getBodyParts then return end
+
+    local bodyParts = nil
+    pcall(function() bodyParts = bodyDamage:getBodyParts() end)
+    if not bodyParts or not bodyParts.size or not bodyParts.get then return end
+
+    for i = 0, bodyParts:size() - 1 do
+        local bodyPart = bodyParts:get(i)
+        if bodyPart then
+            local partName = nil
+            pcall(function() partName = tostring(bodyPart:getType()) end)
+            callback(partName, bodyPart, bodyDamage)
+        end
+    end
+end
+
 local function SetWoundSymptomPain(player, partName, partData, targetPain)
     if not partData then return false end
     local bodyPart, bodyDamage = GetBodyPartByName(player, partName)
@@ -768,6 +789,30 @@ function EHR.WoundInfection.HasAnyInfection(player)
         end
     end
     return false
+end
+
+-- Medication may start before EHR's visible 12-hour incubation finishes, and
+-- it must also be able to repair a vanilla-only infection flag left behind by
+-- an out-of-order MP body-part update. Keep this separate from
+-- HasAnyInfection(): incubation should remain hidden from normal disease UI.
+function EHR.WoundInfection.HasTreatableInfection(player)
+    if not player then return false end
+    if EHR.WoundInfection.HasAnyInfection(player) then return true end
+
+    local data = EHR.WoundInfection.GetData(player)
+    if data and data.incubating then
+        for _, incubationData in pairs(data.incubating) do
+            if type(incubationData) == "table" then return true end
+        end
+    end
+
+    local found = false
+    ForEachBodyPart(player, function(_, bodyPart)
+        if not found and EHR.WoundInfection.IsVanillaInfected(bodyPart) then
+            found = true
+        end
+    end)
+    return found
 end
 
 function EHR.WoundInfection.IsTreatmentActive(player)
@@ -1547,15 +1592,9 @@ function EHR.WoundInfection.TreatPart(player, partName, partData)
     if partData.stage == Stage.CLEAN then
         ClearWoundSymptomPain(player, partName, partData)
 
-        local bodyDamage = player:getBodyDamage()
-        if bodyDamage then
-            local bpType = BodyPartType[partName]
-            if bpType then
-                local bodyPart = bodyDamage:getBodyPart(bpType)
-                if bodyPart then
-                    EHR.WoundInfection.ClearVanillaInfection(bodyPart, "antibiotic-cured")
-                end
-            end
+        local bodyPart = GetBodyPartByName(player, partName)
+        if bodyPart then
+            EHR.WoundInfection.ClearVanillaInfection(bodyPart, "antibiotic-cured")
         end
 
         -- Remove from tracking
@@ -1580,28 +1619,55 @@ function EHR.WoundInfection.CureAll(player, source)
     if not player then return false end
 
     local data = EHR.WoundInfection.GetData(player)
-    if not data or not data.parts then return false end
+    if not data then
+        EHR.WoundInfection.InitializePlayer(player)
+        data = EHR.WoundInfection.GetData(player)
+    end
+    if not data then return false end
+
+    data.parts = data.parts or {}
+    data.incubating = data.incubating or {}
+    data.antisepticBlocked = data.antisepticBlocked or {}
 
     local curedAny = false
-    local bodyDamage = nil
-    pcall(function() bodyDamage = player:getBodyDamage() end)
+    local targetParts = {}
 
     for partName, partData in pairs(data.parts) do
         if partData and (tonumber(partData.stage) or 0) > 0 then
             curedAny = true
+            targetParts[partName] = true
             ClearWoundSymptomPain(player, partName, partData)
-
-            if bodyDamage and BodyPartType and BodyPartType[partName] then
-                local bodyPart = nil
-                pcall(function() bodyPart = bodyDamage:getBodyPart(BodyPartType[partName]) end)
-                if bodyPart then
-                    EHR.WoundInfection.ClearVanillaInfection(bodyPart, "cure-all")
-                end
-            end
-
-            data.parts[partName] = nil
         end
     end
+
+    for partName, incubationData in pairs(data.incubating) do
+        if type(incubationData) == "table" then
+            curedAny = true
+            targetParts[partName] = true
+        end
+    end
+
+    for partName, blockedData in pairs(data.antisepticBlocked) do
+        if type(blockedData) == "table" then
+            targetParts[partName] = true
+        end
+    end
+
+    -- Clear both tracked targets and any vanilla-only residue. The latter is
+    -- what can remain visible to an MP patient after the server has already
+    -- removed the EHR condition.
+    local clearedPartNames = {}
+    ForEachBodyPart(player, function(partName, bodyPart)
+        if targetParts[partName] or EHR.WoundInfection.IsVanillaInfected(bodyPart) then
+            curedAny = true
+            EHR.WoundInfection.ClearVanillaInfection(bodyPart, "cure-all")
+            if partName then clearedPartNames[partName] = true end
+        end
+    end)
+
+    data.parts = {}
+    data.incubating = {}
+    data.antisepticBlocked = {}
 
     EHR.WoundInfection.RecalculateStats(player)
 
@@ -1610,6 +1676,16 @@ function EHR.WoundInfection.CureAll(player, source)
             EHR.BodyTemp.ResetDiseaseFeverIfStale(player, true)
         end
         EHR.Log("Wound infection fully cured by " .. tostring(source or "treatment"))
+    end
+
+    -- syncBodyPart() normally carries these fields, but an explicit targeted
+    -- acknowledgement prevents an older client body-part packet from leaving
+    -- a permanent visual infection after the authoritative server cure.
+    if curedAny and isServer and isServer() and sendServerCommand then
+        sendServerCommand(player, "EHR_Sync", "ClearWoundInfections", {
+            parts = clearedPartNames,
+            clearVanillaResidue = true,
+        })
     end
 
     if isClient() then

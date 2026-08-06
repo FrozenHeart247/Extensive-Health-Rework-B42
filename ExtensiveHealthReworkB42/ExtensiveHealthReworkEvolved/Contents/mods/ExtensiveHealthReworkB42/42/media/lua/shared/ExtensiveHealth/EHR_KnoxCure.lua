@@ -230,11 +230,8 @@ local function handleKnoxInfectionDialogue(player, data, isInfected, currentHour
 end
 
 local function getEHRKnoxSandboxBool(name, default)
-    if SandboxVars and SandboxVars.ExtensiveHealthRework then
-        local value = SandboxVars.ExtensiveHealthRework[name]
-        if value ~= nil then return value == true end
-    end
-
+    -- getSandboxOptions() is authoritative during new-world setup, before
+    -- the chosen values are copied into SandboxVars for the running world.
     if getSandboxOptions then
         local ok, options = pcall(getSandboxOptions)
         if ok and options and options.getOptionByName then
@@ -246,6 +243,11 @@ local function getEHRKnoxSandboxBool(name, default)
                 if valueOk and value ~= nil then return value == true end
             end
         end
+    end
+
+    if SandboxVars and SandboxVars.ExtensiveHealthRework then
+        local value = SandboxVars.ExtensiveHealthRework[name]
+        if value ~= nil then return value == true end
     end
 
     return default == true

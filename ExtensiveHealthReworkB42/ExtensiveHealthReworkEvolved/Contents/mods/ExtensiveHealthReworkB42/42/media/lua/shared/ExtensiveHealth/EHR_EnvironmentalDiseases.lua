@@ -34,7 +34,6 @@ EHR.Environmental.Config = {
     -- Cold exposure thresholds
     coldTemp = 5,               -- Below this is "cold" (Celsius)
     freezingTemp = 0,           -- Below this is "freezing"
-    hypothermiaTemp = -5,       -- Below this = rapid hypothermia risk
 
     -- Heat exposure thresholds
     hotTemp = 30,               -- Above this is "hot" (Celsius)
@@ -50,7 +49,6 @@ EHR.Environmental.Config = {
     coldExposureForCold = 2.0,      -- Hours of cold+wet for common cold
     soakedExposureForCold = 1.0,    -- Hours at 90%+ wetness before wet-only common cold rolls
     commonColdRiskCheckInterval = 1.0, -- Roll common cold risk at most once per game hour
-    coldExposureForHypo = 0.5,      -- Hours of freezing+wet for hypothermia
     heatExposureForExhaustion = 4.0,  -- Hours from clean exposure to full heat exhaustion risk at 30C
     heatExposureForStroke = 0.5,      -- Hours at extreme heat for heat stroke
     heatMinimumExposure = 1.0,        -- Minimum hours before disease check can trigger
@@ -310,7 +308,6 @@ function EHR.Environmental.InitializePlayer(player)
         -- Cold exposure tracking
         coldExposure = 0,           -- Accumulated cold exposure (hours)
         soakedColdExposure = 0,     -- Accumulated heavy-wetness exposure (hours)
-        hypothermiaExposure = 0,    -- Accumulated freezing exposure (hours)
         lastColdCheck = 0,          -- Last game hour we checked
 
         -- Heat exposure tracking
@@ -1227,7 +1224,6 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
     local isSoaked = wetness > config.soakedThreshold
     local isHeavilySoaked = wetness >= (config.commonColdSoakedThreshold or 0.90)
     local isFreezing = airTemp <= config.freezingTemp
-    local isHypoRisk = airTemp < config.hypothermiaTemp
 
     -- Common cold should require freezing world weather + wetness, or extreme wetness by itself.
     -- Indoor shelter protects from the weather route, but being soaked through still matters unless near heat.
@@ -1262,14 +1258,12 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
         -- Recover from cold exposure while warm
         exposure.coldExposure = math.max(0, exposure.coldExposure - deltaHours * 2)
         exposure.soakedColdExposure = math.max(0, (exposure.soakedColdExposure or 0) - deltaHours * 2)
-        exposure.hypothermiaExposure = math.max(0, exposure.hypothermiaExposure - deltaHours * 3)
         exposure.wetDuration = math.max(0, exposure.wetDuration - deltaHours)
         exposure.indoorDuration = exposure.indoorDuration + deltaHours
         EHR_EnvironmentalDebugCommonCold(player, exposure, "recovering", string.format(
-            "warm/no-risk; exp=%.2f soakedExp=%.2f hypoExp=%.2f",
+            "warm/no-risk; exp=%.2f soakedExp=%.2f",
             tonumber(exposure.coldExposure) or 0,
-            tonumber(exposure.soakedColdExposure) or 0,
-            tonumber(exposure.hypothermiaExposure) or 0
+            tonumber(exposure.soakedColdExposure) or 0
         ))
         return
     end
@@ -1307,19 +1301,6 @@ function EHR.Environmental.UpdateColdExposure(player, deltaHours)
             EHR.Log(string.format("Cold exposure: freezing=%.2f, soaked=%.2f (temp=%.1f, wet=%.2f, mult=%.2f, freezingWet=%s, soakedRisk=%s)",
                 exposure.coldExposure, exposure.soakedColdExposure or 0, airTemp, wetness, coldMultiplier,
                 tostring(freezingWetRisk), tostring(soakedRisk)))
-        end
-    end
-
-    -- Accumulate hypothermia exposure (requires freezing + wet OR extreme cold)
-    if (isFreezing and isSoaked) or isHypoRisk then
-        local hypoMultiplier = isHypoRisk and 2.0 or 1.0
-        if isSoaked then hypoMultiplier = hypoMultiplier * 1.5 end
-
-        exposure.hypothermiaExposure = exposure.hypothermiaExposure + (deltaHours * hypoMultiplier)
-
-        if EHR.DEBUG then
-            EHR.Log(string.format("Hypothermia exposure: %.2f hours (temp=%.1f, wet=%.2f)",
-                exposure.hypothermiaExposure, airTemp, wetness))
         end
     end
 
@@ -1708,49 +1689,6 @@ function EHR.Environmental.CheckColdDiseases(player, exposure)
         end
     end
 
-    -- Check for Hypothermia (separate from cold)
-    -- Check sandbox setting first (allows disabling for Realistic Temperatures compatibility)
-    local options = SandboxVars and SandboxVars.ExtensiveHealthRework
-    if options and options.HypothermiaEnabled == false then
-        -- Hypothermia disabled, skip check
-        return
-    end
-
-    -- If body temperature system is enabled, it handles hypothermia triggering
-    -- via body temperature thresholds instead of exposure time
-    if EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled() then
-        -- Body temp system handles disease triggering in EHR.BodyTemp.CheckDiseaseThresholds()
-        if EHR.DEBUG then
-            EHR.Log("Hypothermia: Deferring to body temperature system")
-        end
-        return
-    end
-
-    -- Fallback: Exposure-based triggering when body temp system is disabled
-    if exposure.hypothermiaExposure >= config.coldExposureForHypo then
-        local diseaseData = EHR.Disease.GetDiseaseData(player)
-        if diseaseData and diseaseData.active then
-            if diseaseData.active["hypothermia"] then
-                return -- Already have hypothermia
-            end
-            -- BUG-010 FIX: Block hypothermia if have heat diseases (mutual exclusion)
-            if diseaseData.active["heat_stroke"] then
-                return
-            end
-        end
-
-        -- Hypothermia is more certain when exposed
-        local exposureRatio = exposure.hypothermiaExposure / config.coldExposureForHypo
-        local baseChance = math.min(0.8, 0.3 * exposureRatio)  -- 30-80% based on exposure
-
-        EHR.Log(string.format("Hypothermia exposure check: %.2f hours, base chance %.0f%%",
-            exposure.hypothermiaExposure, baseChance * 100))
-
-        if EHR.Disease.TryContract(player, "hypothermia", baseChance) then
-            -- Reset exposure after contracting
-            exposure.hypothermiaExposure = 0
-        end
-    end
 end
 
 -- ============================================

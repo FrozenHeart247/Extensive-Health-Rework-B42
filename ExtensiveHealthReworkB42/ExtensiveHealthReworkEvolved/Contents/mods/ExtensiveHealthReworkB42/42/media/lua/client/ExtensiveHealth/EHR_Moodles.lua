@@ -411,7 +411,7 @@ end
 
 local function coldExposureLevels(player)
     if not (EHR.Environmental and EHR.Environmental.GetExposureData) then
-        return "None", 0, "None", 0
+        return "None", 0
     end
 
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and safeCall(function()
@@ -423,13 +423,12 @@ local function coldExposureLevels(player)
         return EHR.Environmental.GetExposureData(player)
     end, nil)
     if type(exposure) ~= "table" then
-        return "None", 0, "None", 0
+        return "None", 0
     end
 
     local config = EHR.Environmental.Config or {}
     local coldThreshold = tonumber(config.coldExposureForCold) or 2.0
     local soakedThreshold = tonumber(config.soakedExposureForCold) or coldThreshold
-    local hypoThreshold = tonumber(config.coldExposureForHypo) or 0.5
 
     local coldRatio = 0
     if coldThreshold > 0 then
@@ -458,13 +457,7 @@ local function coldExposureLevels(player)
         soakedRatio = math.max(soakedRatio, 0.05)
     end
 
-    local hypoRatio = 0
-    if hypoThreshold > 0 then
-        hypoRatio = (tonumber(exposure.hypothermiaExposure) or 0) / hypoThreshold
-    end
-
     local coldLevel, coldDisplayRatio = exposureLevelFromRatio(math.max(coldRatio, soakedRatio))
-    local freezingLevel, freezingDisplayRatio = exposureLevelFromRatio(hypoRatio)
 
     -- Cold Exposure is the high-wetness warning requested by EHR. Do not let a
     -- saved/decaying accumulator display it below the live 90% gate. This also
@@ -478,12 +471,9 @@ local function coldExposureLevels(player)
         if active.common_cold or active.pneumonia then
             coldLevel, coldDisplayRatio = "None", 0
         end
-        if active.hypothermia then
-            freezingLevel, freezingDisplayRatio = "None", 0
-        end
     end
 
-    return coldLevel, coldDisplayRatio, freezingLevel, freezingDisplayRatio
+    return coldLevel, coldDisplayRatio
 end
 
 local function makeExposureAlert(exposureLevel, icon, titleKey, titleFallback)
@@ -532,7 +522,7 @@ function MODULE.UpdatePlayer(playerNum)
     local corpseLevel = corpseExposureLevel(player)
     local cadavericLevel = cadavericExposureLevel(player)
     local heatLevel = heatExposureLevel(player)
-    local coldLevel, _, freezingLevel = coldExposureLevels(player)
+    local coldLevel = coldExposureLevels(player)
 
     applyMoodle(playerNum, MOODLE_MEDICAL, getMedicalAlert(player))
     applyMoodle(playerNum, MOODLE_CORPSE_EXPOSURE,
@@ -544,9 +534,9 @@ function MODULE.UpdatePlayer(playerNum)
         makeExposureAlert(heatLevel, ICONS.heat, "UI_EHR_Moodle_HeatExposure_Title", "Heat Exposure"))
     applyMoodle(playerNum, MOODLE_COLD_EXPOSURE,
         makeExposureAlert(coldLevel, ICONS.cold, "UI_EHR_Moodle_ColdRisk_Title", "Cold Risk"))
-    applyMoodle(playerNum, MOODLE_FREEZING_EXPOSURE,
-        makeExposureAlert(freezingLevel, ICONS.freezing,
-            "UI_EHR_Moodle_FreezingExposure_Title", "Freezing Exposure"))
+    -- Retain the old identifier only long enough to hide any framework object
+    -- left behind by an in-session Lua reload from a previous build.
+    applyMoodle(playerNum, MOODLE_FREEZING_EXPOSURE, nil)
     hideLegacyExposureMoodle(playerNum)
 end
 

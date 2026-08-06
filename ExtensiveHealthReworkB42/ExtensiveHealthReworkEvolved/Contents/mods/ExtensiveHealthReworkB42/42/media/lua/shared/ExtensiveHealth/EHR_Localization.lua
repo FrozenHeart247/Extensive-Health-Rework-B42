@@ -33,8 +33,24 @@ function EHR.Locale.Text(key, fallback)
 end
 
 function EHR.Locale.Format(key, fallback, ...)
-    local text = EHR.Locale.Text(key, fallback)
     local values = { ... }
+    local text = nil
+
+    -- Formatted translations must receive their arguments in the getText()
+    -- call itself. Since 42.20.1 the Translator validates placeholders such
+    -- as %1 immediately; fetching the value first through Locale.Text() made
+    -- it report a MissingFormatArgumentException before the Lua replacement
+    -- below had a chance to run.
+    if key and key ~= "" and getText then
+        local ok, result = pcall(getText, key, ...)
+        if ok then
+            text = result
+        end
+    end
+
+    if missing(text, key) then
+        text = fallback or key or ""
+    end
 
     for i, value in ipairs(values) do
         local replacement = tostring(value)

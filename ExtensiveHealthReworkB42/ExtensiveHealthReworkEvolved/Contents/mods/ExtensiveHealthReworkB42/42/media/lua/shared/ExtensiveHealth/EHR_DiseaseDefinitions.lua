@@ -471,6 +471,7 @@ EHR.Disease.Diseases["hypothermia"] = {
 ]]--
 EHR.Disease.Diseases["corpse_sickness"] = {
     name = "Corpse Exposure Illness",
+    category = "corpse",
     incubationMin = 6,
     incubationMax = 18,
     durationMin = 24,
@@ -484,6 +485,12 @@ EHR.Disease.Diseases["corpse_sickness"] = {
     baseSeverity = 0.6,
     canKill = false,
     stageCount = 4,
+    treatments = {
+        tier0 = {},
+        tier1 = {"ExtensiveHealth.AntiNauseaTablets", "ExtensiveHealth.BronchodilatorInhaler"},
+        tier2 = {},
+        tier3 = {"ExtensiveHealth.CorticosteroidInjection", "ExtensiveHealth.RespiratorySupportKit"},
+    },
     effects = {
         [1] = {
             fatigueDrain = 0.001,
@@ -567,7 +574,7 @@ EHR.Disease.Diseases["cadaveric_aspergillosis"] = {
     stageCount = 4,
     treatments = {
         tier0 = {},
-        tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.HomemadeCoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler"},
+        tier1 = {"ExtensiveHealth.CoughSyrup", "ExtensiveHealth.HomemadeCoughSyrup", "ExtensiveHealth.CoughSuppressant", "ExtensiveHealth.BronchodilatorInhaler", "ExtensiveHealth.AntipyreticTablets"},
         tier2 = {"ExtensiveHealth.AntifungalTablets"},
         tier3 = {"ExtensiveHealth.IVAmphotericin"},
     },

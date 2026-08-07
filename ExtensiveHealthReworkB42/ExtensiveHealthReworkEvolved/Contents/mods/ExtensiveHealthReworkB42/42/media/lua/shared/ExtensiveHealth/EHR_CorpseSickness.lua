@@ -58,6 +58,9 @@ EHR.CorpseSickness.Config = {
 
     -- Time to get sick (hours of exposure at threshold)
     MIN_EXPOSURE_TIME_HOURS = 1,
+    CORPSE_HIGH_RISK_RATIO = 0.85,
+    CORPSE_RISK_CHECK_INTERVAL_HOURS = 1.0,
+    CORPSE_HIGH_RISK_CHANCE = 0.30,
 
     -- Search radius for corpses (tiles)
     SEARCH_RADIUS = 10,
@@ -98,7 +101,9 @@ EHR.CorpseSickness.Config = {
     ASPERGILLOSIS_INDOOR_MULTIPLIER = 1.15,
     ASPERGILLOSIS_BASE_CHANCE = 0.35,
     ASPERGILLOSIS_MAX_CHANCE = 0.85,
-    ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN = true,
+    ASPERGILLOSIS_HIGH_RISK_RATIO = 0.85,
+    -- Development aid only. Production gameplay must use each corpse's real age.
+    ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN = false,
     ASPERGILLOSIS_DISPLAY_MIN_EXPOSURE = 1,
 
     -- Dialogue lines for smell warning
@@ -183,6 +188,7 @@ function EHR.CorpseSickness.GetExposureData(player)
         currentExposure = 0,
         maxExposure = 0,
         timeInArea = 0,
+        lastCorpseCheckHour = 0,
         lastUpdateHour = 0,
         lastWarningTime = 0,
         lastCorpseCount = 0,
@@ -208,6 +214,7 @@ function EHR.CorpseSickness.InitializePlayer(player)
         data.currentExposure = data.currentExposure or 0
         data.maxExposure = data.maxExposure or 0
         data.timeInArea = data.timeInArea or 0
+        data.lastCorpseCheckHour = data.lastCorpseCheckHour or 0
         data.lastUpdateHour = data.lastUpdateHour or 0
         data.lastWarningTime = data.lastWarningTime or 0
         data.lastCorpseCount = data.lastCorpseCount or 0
@@ -269,6 +276,7 @@ function EHR.CorpseSickness.ResetAfterCure(player)
     data.currentExposure = 0
     data.maxExposure = 0
     data.timeInArea = 0
+    data.lastCorpseCheckHour = 0
     data.lastCorpseCount = 0
     data.vanillaCorpseExposure = 0
     data.lastVanillaSickness = 0
@@ -332,6 +340,7 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
 
     local currentTime = getGameTime():getWorldAgeHours()
     local seenCorpses = {}
+    local usedNearbyCorpseLists = false
 
     local function safeCall(fn, fallback)
         local ok, value = pcall(fn)
@@ -442,12 +451,26 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
         if not cz and corpseSquare.getZ then cz = safeCall(function() return corpseSquare:getZ() end, nil) end
         if not cx or not cy or cz == nil then return end
 
-        if math.abs(cx - px) > config.SEARCH_RADIUS or math.abs(cy - py) > config.SEARCH_RADIUS then return end
+        local distanceX, distanceY = cx - px, cy - py
+        if (distanceX * distanceX) + (distanceY * distanceY) > (config.SEARCH_RADIUS * config.SEARCH_RADIUS) then return end
         if math.floor(cz) ~= math.floor(pz) then return end
 
+        local corpsePersistentKey = nil
+        if corpse.getObjectIDAsLong then
+            local objectId = safeCall(function() return corpse:getObjectIDAsLong() end, nil)
+            if objectId ~= nil and tostring(objectId) ~= "0" and tostring(objectId) ~= "-1" then
+                corpsePersistentKey = "body:" .. tostring(objectId)
+            end
+        end
+
+        -- The same IsoDeadBody may occur in more than one square list, but
+        -- several different bodies are also allowed to occupy one tile.
+        -- Coordinate-based deduplication collapsed an entire body pile into
+        -- one corpse, so use object identity for this scan instead.
+        if seenCorpses[corpse] then return end
+        seenCorpses[corpse] = true
+
         local corpseKey = string.format("%.0f_%.0f_%.0f", cx, cy, cz)
-        if seenCorpses[corpseKey] then return end
-        seenCorpses[corpseKey] = true
 
         result.count = result.count + 1
 
@@ -460,10 +483,11 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
         end
 
         if not deathTime then
-            if not EHR.CorpseSickness.FirstSeenCorpses[corpseKey] then
-                EHR.CorpseSickness.FirstSeenCorpses[corpseKey] = currentTime
+            local firstSeenKey = corpsePersistentKey or corpseKey
+            if not EHR.CorpseSickness.FirstSeenCorpses[firstSeenKey] then
+                EHR.CorpseSickness.FirstSeenCorpses[firstSeenKey] = currentTime
             end
-            deathTime = EHR.CorpseSickness.FirstSeenCorpses[corpseKey]
+            deathTime = EHR.CorpseSickness.FirstSeenCorpses[firstSeenKey]
         end
 
         local corpseAge = currentTime - deathTime
@@ -492,22 +516,36 @@ function EHR.CorpseSickness.ScanNearbyCorpses(player)
 
     for dx = -config.SEARCH_RADIUS, config.SEARCH_RADIUS do
         for dy = -config.SEARCH_RADIUS, config.SEARCH_RADIUS do
-            local sq = safeCall(function()
-                return cell:getGridSquare(math.floor(px + dx), math.floor(py + dy), math.floor(pz))
-            end, nil)
+            if (dx * dx) + (dy * dy) <= (config.SEARCH_RADIUS * config.SEARCH_RADIUS) then
+                local sq = safeCall(function()
+                    return cell:getGridSquare(math.floor(px + dx), math.floor(py + dy), math.floor(pz))
+                end, nil)
 
-            if sq then
-                if sq.getStaticMovingObjects then
-                    scanObjectList(safeCall(function() return sq:getStaticMovingObjects() end, nil))
-                end
-                if sq.getMovingObjects then
-                    scanObjectList(safeCall(function() return sq:getMovingObjects() end, nil))
+                if sq then
+                    -- B42 exposes a dedicated corpse list. Prefer it over two
+                    -- generic object lists and keep the latter as compatibility
+                    -- fallbacks for unusual/modded squares.
+                    if sq.getDeadBodys then
+                        usedNearbyCorpseLists = true
+                        scanObjectList(safeCall(function() return sq:getDeadBodys() end, nil))
+                    else
+                        if sq.getStaticMovingObjects then
+                            usedNearbyCorpseLists = true
+                            scanObjectList(safeCall(function() return sq:getStaticMovingObjects() end, nil))
+                        end
+                        if sq.getMovingObjects then
+                            usedNearbyCorpseLists = true
+                            scanObjectList(safeCall(function() return sq:getMovingObjects() end, nil))
+                        end
+                    end
                 end
             end
         end
     end
 
-    if result.count == 0 and cell.getObjectListForLua then
+    -- Never walk the entire loaded cell just because the nearby area contains
+    -- zero corpses. That made the common safe-area path scale with world size.
+    if result.count == 0 and not usedNearbyCorpseLists and cell.getObjectListForLua then
         scanObjectList(safeCall(function() return cell:getObjectListForLua() end, nil))
     end
 
@@ -570,13 +608,20 @@ end
 local function getDrainableLevel(item)
     if not item then return nil end
 
-    local methods = { "getCurrentUsesFloat", "getUsedDelta", "getDelta" }
-    for _, method in ipairs(methods) do
-        if item[method] then
-            local ok, value = pcall(function() return item[method](item) end)
-            if ok and type(value) == "number" then
-                return value
-            end
+    -- Filter-bearing clothing is still an InventoryItem with one ordinary use.
+    -- getCurrentUsesFloat() may therefore stay at 1.0 after the embedded filter
+    -- reaches zero. Read the actual drainable state first; this is the value the
+    -- vanilla gas-mask system changes while the filter is consumed.
+    local readers = {
+        function() return item:getUsedDelta() end,
+        function() return item:getDelta() end,
+        function() return item:getCurrentUsesFloat() end,
+    }
+    for _, reader in ipairs(readers) do
+        local ok, value = pcall(reader)
+        value = ok and tonumber(value) or nil
+        if value ~= nil and value == value then
+            return math.max(0, math.min(1, value))
         end
     end
 
@@ -604,12 +649,25 @@ local function hasUsableFilter(item)
         return false
     end
 
+    -- B42 masks with an installed replaceable filter point to the item that
+    -- replaces them on depletion. InventoryItem:getCurrentUsesFloat() exists
+    -- on ordinary non-drainable clothing too, so charge alone is not proof that
+    -- a generic/modded mask actually contains a filter.
+    local hasFilterState = false
+    if item and item.getWithoutDrainable then
+        local ok, replacement = pcall(function() return item:getWithoutDrainable() end)
+        hasFilterState = ok and replacement ~= nil and tostring(replacement) ~= ""
+    end
+    if not hasFilterState then
+        return false
+    end
+
     local level = getDrainableLevel(item)
     if level ~= nil then
         return level > 0.001
     end
 
-    return true
+    return false
 end
 
 local function getBodyLocationText(item)
@@ -680,13 +738,13 @@ local function getTaggedProtection(item, config)
         if hasUsableFilter(item) then
             return config.PROTECTION.gas_mask
         end
-        return config.PROTECTION.dust_mask
+        return config.PROTECTION.cloth_mask
     end
     if hasAnyTag(item, { "Respirator", "respirator", "base:respirator", "AirFilter", "airfilter", "FilterMask", "filtermask" }) then
         if hasUsableFilter(item) then
             return config.PROTECTION.respirator
         end
-        return config.PROTECTION.dust_mask
+        return config.PROTECTION.cloth_mask
     end
     if hasAnyTag(item, { "DustMask", "dustmask", "base:dustmask", "N95", "n95" }) then
         return config.PROTECTION.dust_mask
@@ -707,13 +765,13 @@ local function getNamedProtection(item, config)
         if hasUsableFilter(item) then
             return config.PROTECTION.gas_mask
         end
-        return config.PROTECTION.dust_mask
+        return config.PROTECTION.cloth_mask
     end
     if containsAny(text, { "respirator", "airfilter", "air filter" }) then
         if hasUsableFilter(item) then
             return config.PROTECTION.respirator
         end
-        return config.PROTECTION.dust_mask
+        return config.PROTECTION.cloth_mask
     end
     if containsAny(text, { "dustmask", "dust mask", "n95", "filtermask", "filter mask" }) then
         return config.PROTECTION.dust_mask
@@ -740,6 +798,12 @@ function EHR.CorpseSickness.GetProtectionLevel(player)
 
     for _, item in ipairs(items) do
         local itemProtection = getTaggedProtection(item, config) or getNamedProtection(item, config)
+        if itemProtection == nil then
+            local loc = getBodyLocationText(item)
+            if containsAny(loc, { "mask", "mouth", "face" }) then
+                itemProtection = config.PROTECTION.cloth_mask
+            end
+        end
         if itemProtection and itemProtection > protection then
             protection = itemProtection
         end
@@ -911,6 +975,7 @@ function EHR.CorpseSickness.IsProtectedInVehicle(player)
     local ok2, partCount = pcall(function() return vehicle:getPartCount() end)
     if not ok2 or not partCount or partCount <= 0 then return false end
 
+    local foundCabinBoundary = false
     for i = 0, partCount - 1 do
         local ok3, part = pcall(function() return vehicle:getPartByIndex(i) end)
         if ok3 and part then
@@ -930,6 +995,7 @@ function EHR.CorpseSickness.IsProtectedInVehicle(player)
 
                 -- Check doors
                 if typeLower:find("door") then
+                    foundCabinBoundary = true
                     local ok6, door = pcall(function() return part:getDoor() end)
                     if ok6 and door then
                         local ok7, isOpen = pcall(function() return door:isOpen() end)
@@ -946,6 +1012,7 @@ function EHR.CorpseSickness.IsProtectedInVehicle(player)
 
                 -- Check windows
                 if typeLower:find("window") then
+                    foundCabinBoundary = true
                     local ok9, window = pcall(function() return part:getWindow() end)
                     if ok9 and window then
                         local ok10, isOpen = pcall(function() return window:isOpen() end)
@@ -967,16 +1034,17 @@ function EHR.CorpseSickness.IsProtectedInVehicle(player)
         end
     end
 
-    -- All doors closed and windows intact - player is protected
-    return true
+    -- Open vehicles and modded bikes may have no door/window parts at all.
+    return foundCabinBoundary
 end
 
 -- ============================================
 -- EXPOSURE UPDATE
 -- ============================================
 
-function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
+function EHR.CorpseSickness.UpdateAspergillosisExposure(player, context)
     if not player then return end
+    context = context or {}
 
     local data = EHR.CorpseSickness.GetExposureData(player)
     if not data then return end
@@ -1004,13 +1072,21 @@ function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
     if diseaseData and diseaseData.active and diseaseData.active["cadaveric_aspergillosis"] then
         data.fungalExposure = 0
+        data.fungalMaxExposure = 0
         data.fungalTimeInArea = 0
+        data.lastFungalCheckHour = currentHour
         data.lastFungalCorpseCount = 0
+        data.lastFungalRiskReason = nil
         return
     end
 
     if not isAspergillosisEnabled() then
-        decayFungalExposure()
+        data.fungalExposure = 0
+        data.fungalMaxExposure = 0
+        data.fungalTimeInArea = 0
+        data.lastFungalCheckHour = currentHour
+        data.lastFungalCorpseCount = 0
+        data.lastFungalRiskReason = nil
         return
     end
 
@@ -1019,29 +1095,46 @@ function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
         return
     end
 
-    local protection = EHR.CorpseSickness.GetProtectionLevel(player)
+    local protection = context.protection
+    if protection == nil then
+        protection = EHR.CorpseSickness.GetProtectionLevel(player)
+        context.protection = protection
+    end
     if protection >= 1.0 then
         decayFungalExposure()
         return
     end
 
-    local corpseInfo = EHR.CorpseSickness.ScanNearbyCorpses(player)
+    local corpseInfo = context.corpseInfo
+    if not corpseInfo then
+        corpseInfo = EHR.CorpseSickness.ScanNearbyCorpses(player)
+        context.corpseInfo = corpseInfo
+    end
     data.lastFungalCorpseCount = corpseInfo.count or 0
 
-    local envMultiplier, hasFungalWeather, reason = EHR.CorpseSickness.GetFungalEnvironment(player)
+    local envMultiplier = context.fungalEnvironmentMultiplier
+    local hasFungalWeather = context.hasFungalWeather
+    local reason = context.fungalRiskReason
+    if envMultiplier == nil or hasFungalWeather == nil then
+        envMultiplier, hasFungalWeather, reason = EHR.CorpseSickness.GetFungalEnvironment(player)
+        context.fungalEnvironmentMultiplier = envMultiplier
+        context.hasFungalWeather = hasFungalWeather
+        context.fungalRiskReason = reason
+    end
     local sporeLoad
     if config.ASPERGILLOSIS_TEST_ALL_CORPSES_ROTTEN then
         sporeLoad = (corpseInfo.count or 0) * 2.0
     else
         sporeLoad = ((corpseInfo.decomposingCount or 0) * 1.0)
             + ((corpseInfo.rottenCount or 0) * 2.0)
-            + ((corpseInfo.freshCount or 0) * 0.05)
     end
 
     if sporeLoad <= 0 or not hasFungalWeather then
+        context.hasFungalCorpseRisk = false
         decayFungalExposure()
         return
     end
+    context.hasFungalCorpseRisk = true
 
     local gain = sporeLoad
         * (config.ASPERGILLOSIS_GAIN_RATE or 1.8)
@@ -1058,32 +1151,49 @@ function EHR.CorpseSickness.UpdateAspergillosisExposure(player)
     local threshold = config.ASPERGILLOSIS_EXPOSURE_THRESHOLD or 120
     local minTime = config.ASPERGILLOSIS_MIN_EXPOSURE_TIME_HOURS or 1.5
     local checkInterval = config.ASPERGILLOSIS_CHECK_INTERVAL_HOURS or 1.0
+    if threshold <= 0 then return end
 
-    if data.fungalExposure < threshold or data.fungalTimeInArea < minTime then
-        return
-    end
-
-    if currentHour - (data.lastFungalCheckHour or 0) < checkInterval then
-        return
-    end
-    data.lastFungalCheckHour = currentHour
-
-    local overThreshold = math.max(0, data.fungalExposure - threshold) / threshold
-    local chance = (config.ASPERGILLOSIS_BASE_CHANCE or 0.35) + (overThreshold * 0.30)
-    chance = math.min(config.ASPERGILLOSIS_MAX_CHANCE or 0.85, chance)
-
+    local exposureRatio = data.fungalExposure / threshold
     local contracted = false
-    if EHR.Disease and EHR.Disease.TryContract then
-        contracted = EHR.Disease.TryContract(player, "cadaveric_aspergillosis", chance)
-    elseif EHR.Disease and EHR.Disease.Contract then
-        EHR.Disease.Contract(player, "cadaveric_aspergillosis")
-        contracted = true
+
+    -- At a full meter the disease is guaranteed, exactly like Heat Stroke.
+    -- The minimum-time gate only controls the earlier risk rolls; it must not
+    -- leave a completed exposure bar stuck at 100%.
+    if exposureRatio >= 1.0 then
+        if EHR.Disease and EHR.Disease.Contract then
+            EHR.Disease.Contract(player, "cadaveric_aspergillosis")
+            local currentData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or nil
+            contracted = currentData and currentData.active
+                and currentData.active["cadaveric_aspergillosis"] ~= nil
+        end
+    else
+        local highRiskRatio = math.max(0, math.min(0.99,
+            tonumber(config.ASPERGILLOSIS_HIGH_RISK_RATIO) or 0.85))
+        if exposureRatio < highRiskRatio or data.fungalTimeInArea < minTime then
+            return
+        end
+
+        if currentHour - (data.lastFungalCheckHour or 0) < checkInterval then
+            return
+        end
+        data.lastFungalCheckHour = currentHour
+
+        local progress = (exposureRatio - highRiskRatio) / math.max(0.01, 1.0 - highRiskRatio)
+        progress = math.max(0, math.min(1, progress))
+        local baseChance = tonumber(config.ASPERGILLOSIS_BASE_CHANCE) or 0.35
+        local maxChance = tonumber(config.ASPERGILLOSIS_MAX_CHANCE) or 0.85
+        local chance = baseChance + ((maxChance - baseChance) * progress)
+
+        if EHR.Disease and EHR.Disease.TryContract then
+            contracted = EHR.Disease.TryContract(player, "cadaveric_aspergillosis", chance) == true
+        end
     end
 
     if contracted then
         data.fungalExposure = 0
         data.fungalMaxExposure = 0
         data.fungalTimeInArea = 0
+        data.lastFungalCheckHour = currentHour
         data.lastFungalCorpseCount = 0
         data.lastFungalRiskReason = nil
         if player.Say then
@@ -1099,7 +1209,8 @@ function EHR.CorpseSickness.UpdateExposure(player)
     local data = EHR.CorpseSickness.GetExposureData(player)
     if not data then return end
 
-    EHR.CorpseSickness.UpdateAspergillosisExposure(player)
+    local updateContext = {}
+    EHR.CorpseSickness.UpdateAspergillosisExposure(player, updateContext)
 
     if not isPutrefactionEnabled() then
         data.currentExposure = 0
@@ -1123,7 +1234,9 @@ function EHR.CorpseSickness.UpdateExposure(player)
 
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player)
     if diseaseData and diseaseData.active and diseaseData.active["corpse_sickness"] then
+        data.currentExposure = 0
         data.vanillaCorpseExposure = 0
+        data.timeInArea = 0
         return
     end
 
@@ -1166,20 +1279,37 @@ function EHR.CorpseSickness.UpdateExposure(player)
         return
     end
 
-    local corpseInfo = EHR.CorpseSickness.ScanNearbyCorpses(player)
+    local corpseInfo = updateContext.corpseInfo or EHR.CorpseSickness.ScanNearbyCorpses(player)
+    updateContext.corpseInfo = corpseInfo
     data.lastCorpseCount = corpseInfo.count
 
     local envMultiplier = EHR.CorpseSickness.GetEnvironmentMultiplier(player)
-    local _, hasFungalWeather = EHR.CorpseSickness.GetFungalEnvironment(player)
-    local protection = EHR.CorpseSickness.GetProtectionLevel(player)
+    local hasFungalWeather = updateContext.hasFungalWeather
+    if hasFungalWeather == nil then
+        local fungalMultiplier, fungalWeather, fungalReason = EHR.CorpseSickness.GetFungalEnvironment(player)
+        updateContext.fungalEnvironmentMultiplier = fungalMultiplier
+        updateContext.hasFungalWeather = fungalWeather
+        updateContext.fungalRiskReason = fungalReason
+        hasFungalWeather = fungalWeather
+    end
+    if updateContext.hasFungalCorpseRisk == nil then
+        local agedFungalCorpses = (corpseInfo.decomposingCount or 0) + (corpseInfo.rottenCount or 0)
+        updateContext.hasFungalCorpseRisk = hasFungalWeather == true and agedFungalCorpses > 0
+    end
+    local protection = updateContext.protection
+    if protection == nil then
+        protection = EHR.CorpseSickness.GetProtectionLevel(player)
+        updateContext.protection = protection
+    end
     local isFullyProtected = protection >= 1.0
 
     local hasActiveFoodDisease = EHR.CorpseSickness.HasActiveFoodDisease(player)
     local hasRecentFoodRisk = EHR.CorpseSickness.HasRecentFoodRisk(player, currentHour)
 
-    -- Damp/cold corpse fields are handled by cadaveric aspergillosis. Do not
-    -- also build acute putrefaction exposure from the same corpses/weather.
-    if isAspergillosisEnabled() and hasFungalWeather and (corpseInfo.count or 0) > 0 then
+    -- Damp/cold fields with genuinely decomposing corpses are handled by
+    -- cadaveric aspergillosis. Fresh corpses must still use the acute system;
+    -- routing every cold-weather corpse here made fresh bodies nearly harmless.
+    if isAspergillosisEnabled() and updateContext.hasFungalCorpseRisk == true then
         local decay = config.EXPOSURE_DECAY_PER_HOUR * deltaHours
         data.currentExposure = math.max(0, (data.currentExposure or 0) - decay)
 
@@ -1320,14 +1450,26 @@ function EHR.CorpseSickness.UpdateExposure(player)
     local canTriggerCorpseSickness = not EHR.CorpseSickness.HasActiveCorpseDisease(player)
 
     if canTriggerCorpseSickness and effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_HIGH then
-        if data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS then
-            logCorpseTrigger("high")
-            EHR.CorpseSickness.TriggerSickness(player)
-        end
-    elseif canTriggerCorpseSickness and effectiveExposureLevel >= config.EXPOSURE_THRESHOLD_MEDIUM then
-        if data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS and ZombRand(100) < 30 then
-            logCorpseTrigger("medium")
-            EHR.CorpseSickness.TriggerSickness(player)
+        logCorpseTrigger("high-guaranteed")
+        EHR.CorpseSickness.TriggerSickness(player, 1.0, true)
+    else
+        local highThreshold = tonumber(config.EXPOSURE_THRESHOLD_HIGH) or 100
+        local highRiskRatio = math.max(0, math.min(0.99,
+            tonumber(config.CORPSE_HIGH_RISK_RATIO) or 0.85))
+        local riskThreshold = highThreshold * highRiskRatio
+        local checkInterval = tonumber(config.CORPSE_RISK_CHECK_INTERVAL_HOURS) or 1.0
+        if canTriggerCorpseSickness and effectiveExposureLevel >= riskThreshold
+                and effectiveExposureLevel < highThreshold
+                and data.timeInArea >= config.MIN_EXPOSURE_TIME_HOURS
+                and currentHour - (data.lastCorpseCheckHour or 0) >= checkInterval then
+            data.lastCorpseCheckHour = currentHour
+            local progress = (effectiveExposureLevel - riskThreshold)
+                / math.max(1, highThreshold - riskThreshold)
+            progress = math.max(0, math.min(1, progress))
+            local baseChance = tonumber(config.CORPSE_HIGH_RISK_CHANCE) or 0.30
+            local chance = baseChance + ((1.0 - baseChance) * progress)
+            logCorpseTrigger(string.format("high-risk-roll-%.0f%%", chance * 100))
+            EHR.CorpseSickness.TriggerSickness(player, chance, false)
         end
     end
     EHR.CorpseSickness.ApplyNauseaMoodle(player, effectiveExposureLevel)
@@ -1592,8 +1734,10 @@ function EHR.CorpseSickness.QuickClampVanillaSickness(player)
     local shouldClamp = isImmune or fullyProtected
 
     if not shouldClamp then
-        local corpseInfo = EHR.CorpseSickness.ScanNearbyCorpses(player)
-        shouldClamp = corpseInfo and (corpseInfo.count or 0) > 0
+        -- The full 21x21 corpse scan is already performed by UpdateExposure.
+        -- Doing it again from this per-tick clamp was the hottest path in this
+        -- module once the nausea stat rose above 0.01.
+        shouldClamp = (tonumber(data.lastCorpseCount) or 0) > 0
     end
 
     if not shouldClamp then return end
@@ -1730,12 +1874,17 @@ function EHR.CorpseSickness.ApplyNauseaMoodle(player, exposure)
     end
 end
 
-function EHR.CorpseSickness.TriggerSickness(player)
-    if not player then return end
+function EHR.CorpseSickness.TriggerSickness(player, chance, guaranteed)
+    if not player then return false end
 
     local contracted = false
-    if EHR.Disease and EHR.Disease.TryContract then
-        contracted = EHR.Disease.TryContract(player, "corpse_sickness", 1.0)
+    if guaranteed and EHR.Disease and EHR.Disease.Contract then
+        EHR.Disease.Contract(player, "corpse_sickness")
+        local currentData = EHR.Disease.GetDiseaseData and EHR.Disease.GetDiseaseData(player) or nil
+        contracted = currentData and currentData.active
+            and currentData.active["corpse_sickness"] ~= nil
+    elseif EHR.Disease and EHR.Disease.TryContract then
+        contracted = EHR.Disease.TryContract(player, "corpse_sickness", chance or 1.0) == true
     elseif EHR.Disease and EHR.Disease.AddDisease then
         EHR.Disease.AddDisease(player, "corpse_sickness")
         contracted = true
@@ -1746,6 +1895,7 @@ function EHR.CorpseSickness.TriggerSickness(player)
         if data then
             data.currentExposure = 0
             data.timeInArea = 0
+            data.lastCorpseCheckHour = 0
             data.vanillaCorpseExposure = 0
             data.lastVanillaCorpseSignalHour = 0
             data.suppressFoodSicknessUntil = 0
@@ -1755,6 +1905,8 @@ function EHR.CorpseSickness.TriggerSickness(player)
         end
         EHR.Log("Player contracted corpse sickness")
     end
+
+    return contracted
 end
 
 -- ============================================
@@ -1768,7 +1920,10 @@ function EHR.CorpseSickness.GetExposureDisplay(player)
     local config = EHR.CorpseSickness.Config
     local exposure = math.max(data.currentExposure or 0, data.vanillaCorpseExposure or 0)
     local displayMin = tonumber(config.EXPOSURE_DISPLAY_MIN) or 1
-    if exposure >= config.EXPOSURE_THRESHOLD_HIGH then
+    local fullThreshold = tonumber(config.EXPOSURE_THRESHOLD_HIGH) or 100
+    local highRiskRatio = math.max(0, math.min(1,
+        tonumber(config.CORPSE_HIGH_RISK_RATIO) or 0.85))
+    if exposure >= fullThreshold * highRiskRatio then
         return "High"
     elseif exposure >= config.EXPOSURE_THRESHOLD_MEDIUM then
         return "Medium"

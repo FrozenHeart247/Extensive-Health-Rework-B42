@@ -346,12 +346,16 @@ local function cadavericExposureLevel(player)
     local config = EHR.CorpseSickness.Config or {}
     local exposure = tonumber(data.fungalExposure) or 0
     local highThreshold = tonumber(config.ASPERGILLOSIS_EXPOSURE_THRESHOLD) or 120
+    local highRiskRatio = math.max(0, math.min(1,
+        tonumber(config.ASPERGILLOSIS_HIGH_RISK_RATIO) or 0.85))
     local minExposure = tonumber(config.ASPERGILLOSIS_DISPLAY_MIN_EXPOSURE) or 1
 
     if highThreshold <= 0 or exposure <= 0 or exposure < minExposure then
         return "None", 0
     end
-    if exposure >= highThreshold then return "High", 1 end
+    if exposure >= highThreshold * highRiskRatio then
+        return "High", clamp(exposure / highThreshold, 0, 1)
+    end
     if exposure >= highThreshold * 0.60 then return "Medium", clamp(exposure / highThreshold, 0, 1) end
     return "Low", clamp(exposure / highThreshold, 0, 1)
 end

@@ -6,6 +6,9 @@
 ]]--
 
 EHR = EHR or {}
+if isServer and isServer() then
+    pcall(function() require "ExtensiveHealth/EHR_OfflineProgression" end)
+end
 require "ExtensiveHealth/EHR_Localization"
 EHR.VERSION = "2.8.1"  -- Temperature rework, blood spoilage, MP fixes, Lifestyle compat improvements
 
@@ -708,6 +711,14 @@ end
     Player creation handler - ensures clean state before initialization
 ]]--
 function EHR.OnCreatePlayer(playerIndex, player)
+    -- Rebase the persisted medical clocks before any existing-character
+    -- initialization can evaluate them against the newer world age.
+    if isServer and isServer()
+            and EHR.OfflineProgression
+            and EHR.OfflineProgression.EnsureSessionPrepared then
+        EHR.OfflineProgression.EnsureSessionPrepared(player)
+    end
+
     EHR.Log("OnCreatePlayer fired for index " .. playerIndex)
 
     -- Reset MP request flags for new session

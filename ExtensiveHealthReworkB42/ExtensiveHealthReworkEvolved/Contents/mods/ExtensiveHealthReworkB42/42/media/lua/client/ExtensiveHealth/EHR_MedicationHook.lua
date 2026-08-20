@@ -230,6 +230,13 @@ local function trackCompletedPillAction(action, source)
     trackMedicationDose(action.character, action.item, medData, itemFullType)
 end
 
+local function safelyTrackCompletedPillAction(action, source)
+    local ok, err = pcall(trackCompletedPillAction, action, source)
+    if not ok then
+        log("ERROR tracking ISTakePillAction:" .. tostring(source) .. "(): " .. tostring(err))
+    end
+end
+
 local function hookTakePillAction()
     if not ISTakePillAction then
         log("ERROR: ISTakePillAction not found!")
@@ -244,9 +251,13 @@ local function hookTakePillAction()
         and ISTakePillAction.complete ~= EHR.MedicationHook.pillCompleteWrapper then
         local originalComplete = ISTakePillAction.complete
         local completeWrapper = function(self)
-            local result = originalComplete(self)
-            trackCompletedPillAction(self, "complete")
-            return result
+            -- complete() is reached only after a successful timed action. Track
+            -- before the live vanilla/third-party chain: if a later wrapper
+            -- consumes the item and then errors, EHR must not silently lose the
+            -- dose and its analgesic effect. The action flag keeps perform()
+            -- and nested wrappers idempotent.
+            safelyTrackCompletedPillAction(self, "complete")
+            return originalComplete(self)
         end
         EHR.MedicationHook.pillCompleteWrapper = completeWrapper
         ISTakePillAction.complete = completeWrapper
@@ -257,9 +268,8 @@ local function hookTakePillAction()
         and ISTakePillAction.perform ~= EHR.MedicationHook.pillPerformWrapper then
         local originalPerform = ISTakePillAction.perform
         local performWrapper = function(self)
-            local result = originalPerform(self)
-            trackCompletedPillAction(self, "perform")
-            return result
+            safelyTrackCompletedPillAction(self, "perform")
+            return originalPerform(self)
         end
         EHR.MedicationHook.pillPerformWrapper = performWrapper
         ISTakePillAction.perform = performWrapper
@@ -337,6 +347,15 @@ end
 if Events and Events.OnGameStart then
     Events.OnGameStart.Add(initializeHooks)
     log("Registered OnGameStart hook for medication tracking")
+end
+
+-- Some UI/medical mods replace ISTakePillAction during game initialization.
+-- Re-check the live method once the player exists so load order cannot leave
+-- vanilla painkillers consumed but absent from EHR tracking.
+if Events and Events.OnCreatePlayer then
+    Events.OnCreatePlayer.Add(function()
+        hookTakePillAction()
+    end)
 end
 
 -- Also try immediate hook (might work if timed actions are already loaded)

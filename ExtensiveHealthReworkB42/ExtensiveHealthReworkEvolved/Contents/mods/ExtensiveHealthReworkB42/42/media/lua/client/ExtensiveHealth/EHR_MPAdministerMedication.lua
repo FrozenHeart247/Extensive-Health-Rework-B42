@@ -13,6 +13,8 @@ require "ISUI/ISModalDialog"
 require "TimedActions/ISBaseTimedAction"
 require "ExtensiveHealth/EHR_Main"
 require "ExtensiveHealth/EHR_Medication"
+pcall(function() require "ExtensiveHealth/EHR_Blood" end)
+pcall(function() require "ExtensiveHealth/EHR_Transfusion" end)
 pcall(function() require "ExtensiveHealth/EHR_MedicationAction" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
@@ -151,6 +153,77 @@ local function inventoryContainsType(player, fullType)
     return found
 end
 
+local function localizedText(fullKey, fallback)
+    if EHR.Locale and EHR.Locale.Text then
+        local ok, value = pcall(EHR.Locale.Text, fullKey, fallback)
+        if ok and value then return tostring(value) end
+    end
+    if getText then
+        local ok, value = pcall(getText, fullKey)
+        if ok and value and value ~= fullKey then return tostring(value) end
+    end
+    return fallback
+end
+
+local function getItemDisplayName(item, fallback)
+    local displayName = nil
+    if item and item.getDisplayName then
+        pcall(function() displayName = item:getDisplayName() end)
+    end
+    return tostring(displayName or fallback or "Unknown item")
+end
+
+local function isBloodBagFullType(fullType)
+    return fullType ~= nil
+        and EHR.Blood ~= nil
+        and EHR.Blood.BloodBagTypes ~= nil
+        and EHR.Blood.BloodBagTypes[fullType] ~= nil
+end
+
+local function getBloodBagSpoilageState(item)
+    if not item then return "rotten" end
+    if EHR.Transfusion and EHR.Transfusion.GetSpoilageState then
+        local ok, state = pcall(EHR.Transfusion.GetSpoilageState, item)
+        if ok and (state == "fresh" or state == "stale" or state == "rotten") then
+            return state
+        end
+    end
+    return "fresh"
+end
+
+local BLOOD_SPOILAGE_RANK = { fresh = 1, stale = 2, rotten = 3 }
+
+local function getMoreSevereBloodSpoilageState(first, second)
+    local firstRank = BLOOD_SPOILAGE_RANK[first] or 0
+    local secondRank = BLOOD_SPOILAGE_RANK[second] or 0
+    if secondRank > firstRank then return second end
+    if firstRank > 0 then return first end
+    return second
+end
+
+local function updateBloodBagEntryState(entry, item)
+    local state = getBloodBagSpoilageState(item or (entry and entry.item))
+    if not entry then return state end
+
+    entry.spoilageState = state
+    entry.unavailableReason = nil
+    local baseName = tostring(entry.baseName or entry.name or entry.fullType)
+    if state == "stale" then
+        entry.name = baseName .. " - "
+            .. localizedText("UI_EHR_Transfusion_StaleSuffix", "STALE!")
+    elseif state == "rotten" then
+        entry.name = baseName .. " - "
+            .. localizedText("UI_EHR_Transfusion_Unusable", "UNUSABLE")
+        entry.unavailableReason = localizedText(
+            "UI_EHR_Transfusion_BloodSpoiledDesc",
+            "This blood bag has completely spoiled and cannot be used."
+        )
+    else
+        entry.name = baseName
+    end
+    return state
+end
+
 local function getMedicationDisplayName(fullType, medData, item)
     if EHR.Medication and EHR.Medication.GetDisplayName then
         local ok, value = pcall(EHR.Medication.GetDisplayName, fullType, medData)
@@ -209,13 +282,32 @@ end
 
 function EHR.MPMedication.GetInventoryMedications(doctor)
     local grouped = {}
+    local bloodEntries = {}
     local inventory = doctor and doctor:getInventory() or nil
     if not inventory or not EHR.Medication or not EHR.Medication.Database then return {} end
 
     visitInventory(inventory, function(item)
         local fullType = item.getFullType and item:getFullType() or nil
+        if isBloodBagFullType(fullType) then
+            local baseName = getItemDisplayName(item, fullType)
+            local entry = {
+                fullType = fullType,
+                item = item,
+                itemID = item:getID(),
+                baseName = baseName,
+                name = baseName,
+                adminType = "iv",
+                treatmentKind = "blood_transfusion",
+                requiresIVKit = true,
+                doses = 1,
+            }
+            updateBloodBagEntryState(entry, item)
+            table.insert(bloodEntries, entry)
+            return
+        end
+
         local medData = fullType and EHR.Medication.Database[fullType] or nil
-        if not medData then return end
+        if not medData or medData.remoteAdministration == false then return end
 
         local doses = getItemDoseCount(item)
         if doses <= 0 then return end
@@ -229,6 +321,7 @@ function EHR.MPMedication.GetInventoryMedications(doctor)
                 itemID = item:getID(),
                 name = getMedicationDisplayName(fullType, medData, item),
                 adminType = getAdminType(medData),
+                treatmentKind = "medication",
                 doses = 0,
             }
             grouped[fullType] = entry
@@ -238,10 +331,16 @@ function EHR.MPMedication.GetInventoryMedications(doctor)
 
     local entries = {}
     for _, entry in pairs(grouped) do table.insert(entries, entry) end
+    for _, entry in ipairs(bloodEntries) do table.insert(entries, entry) end
     table.sort(entries, function(a, b)
         local aName = string.lower(tostring(a.name or a.fullType))
         local bName = string.lower(tostring(b.name or b.fullType))
-        if aName == bName then return tostring(a.fullType) < tostring(b.fullType) end
+        if aName == bName then
+            local aType = tostring(a.fullType)
+            local bType = tostring(b.fullType)
+            if aType == bType then return tostring(a.itemID or "") < tostring(b.itemID or "") end
+            return aType < bType
+        end
         return aName < bName
     end)
     return entries
@@ -326,11 +425,27 @@ function EHR_AdministerMedicationUI:getSelectedMedication()
 end
 
 function EHR_AdministerMedicationUI:getSelectedRequirementFailure(entry)
-    if not entry or not entry.medData then return nil end
-    if entry.medData.requiresIVKit and not inventoryContainsType(self.doctor, "ExtensiveHealth.IVKit") then
+    if not entry then return nil end
+
+    if entry.treatmentKind == "blood_transfusion" then
+        local currentItem = findInventoryItemByID(self.doctor, entry.itemID)
+        if not currentItem or not currentItem.getFullType or currentItem:getFullType() ~= entry.fullType then
+            return mpMedText("ItemMissing", "Medication or patient is no longer available.")
+        end
+        entry.item = currentItem
+        updateBloodBagEntryState(entry, currentItem)
+        if entry.unavailableReason then return entry.unavailableReason end
+    elseif entry.unavailableReason then
+        return entry.unavailableReason
+    end
+
+    local medData = entry.medData
+    if (entry.requiresIVKit or (medData and medData.requiresIVKit))
+            and not inventoryContainsType(self.doctor, "ExtensiveHealth.IVKit") then
         return mpMedText("RequiresIVKit", "Requires IV Administration Kit")
     end
-    if entry.medData.requiresSyringe and not inventoryContainsType(self.doctor, "ExtensiveHealth.Syringe") then
+    if medData and medData.requiresSyringe
+            and not inventoryContainsType(self.doctor, "ExtensiveHealth.Syringe") then
         return mpMedText("RequiresSyringe", "Requires Sterile Syringe")
     end
     return nil
@@ -433,6 +548,9 @@ function EHR_AdministerMedicationUI:onAdminister()
     args.requestId = requestId
     args.itemID = entry.itemID
     args.itemFullType = entry.fullType
+    args.treatmentKind = entry.treatmentKind or "medication"
+    args.spoilageState = entry.treatmentKind == "blood_transfusion"
+        and getBloodBagSpoilageState(entry.item) or nil
 
     self.pendingRequestId = requestId
     self.pendingStartedMs = getTimestampMs and getTimestampMs() or nil
@@ -443,6 +561,8 @@ function EHR_AdministerMedicationUI:onAdminister()
         patient = self.patient,
         itemID = entry.itemID,
         itemFullType = entry.fullType,
+        treatmentKind = args.treatmentKind,
+        spoilageState = args.spoilageState,
     }
     self.statusText = mpMedText("WaitingConsent", "Waiting for patient approval...")
     self:updateAdministerButton()
@@ -500,7 +620,14 @@ function EHR_AdministerMedicationAction:isValid()
     if self.character.isAlive and not self.character:isAlive() then return false end
     if self.patient.isAlive and not self.patient:isAlive() then return false end
     if not playersAreClose(self.character, self.patient) then return false end
-    return findInventoryItemByID(self.character, self.itemID) ~= nil
+    local item = findInventoryItemByID(self.character, self.itemID)
+    if not item or not item.getFullType or item:getFullType() ~= self.itemFullType then return false end
+    if self.treatmentKind == "blood_transfusion" then
+        if not inventoryContainsType(self.character, "ExtensiveHealth.IVKit") then return false end
+        if getBloodBagSpoilageState(item) == "rotten" then return false end
+    end
+    self.item = item
+    return true
 end
 
 function EHR_AdministerMedicationAction:update()
@@ -538,7 +665,20 @@ function EHR_AdministerMedicationAction:perform()
     if self.item and self.item.setJobDelta then self.item:setJobDelta(0.0) end
     if not self.completionRequested then
         self.completionRequested = true
-        sendClientCommand(self.character, "EHR", "CompleteAdministerMedication", { actionId = self.actionId })
+        local spoilageState = self.spoilageState
+        if self.treatmentKind == "blood_transfusion" then
+            spoilageState = getMoreSevereBloodSpoilageState(
+                spoilageState,
+                getBloodBagSpoilageState(self.item)
+            )
+        end
+        sendClientCommand(self.character, "EHR", "CompleteAdministerMedication", {
+            actionId = self.actionId,
+            itemID = self.itemID,
+            itemFullType = self.itemFullType,
+            treatmentKind = self.treatmentKind,
+            spoilageState = spoilageState,
+        })
     end
     ISBaseTimedAction.perform(self)
 end
@@ -553,6 +693,8 @@ function EHR_AdministerMedicationAction:new(doctor, patient, item, args)
     o.actionId = args.actionId
     o.medicationName = args.medicationName or args.itemFullType
     o.adminType = tostring(args.adminType or "default")
+    o.treatmentKind = tostring(args.treatmentKind or "medication")
+    o.spoilageState = args.spoilageState
     o.stopOnWalk = true
     o.stopOnRun = true
     o.stopOnAim = true
@@ -589,6 +731,10 @@ function EHR.MPMedication.OnConsentModal(_, button, request)
         requestId = request.requestId,
         doctorOnlineID = request.doctorOnlineID,
         doctorUsername = request.doctorUsername,
+        itemID = request.itemID,
+        itemFullType = request.itemFullType,
+        treatmentKind = request.treatmentKind,
+        spoilageState = request.spoilageState,
         accepted = accepted,
     })
     EHR.MPMedication.ActiveConsentModal = nil
@@ -614,7 +760,12 @@ function EHR.MPMedication.OnConsentRequest(args)
 
     local doctorName = tostring(args.doctorDisplayName or args.doctorUsername or mpMedText("UnknownPlayer", "Unknown player"))
     local medicationName = tostring(args.medicationName or args.itemFullType or mpMedText("UnknownMedication", "Unknown medication"))
-    local message = mpMedFormat("ConsentPrompt", "%1 wants to administer:\n%2\n\nAllow this dose?", doctorName, medicationName)
+    local message = nil
+    if args.treatmentKind == "blood_transfusion" then
+        message = mpMedFormat("ConsentPromptProcedure", "%1 wants to perform:\n%2\n\nAllow this procedure?", doctorName, medicationName)
+    else
+        message = mpMedFormat("ConsentPrompt", "%1 wants to administer:\n%2\n\nAllow this dose?", doctorName, medicationName)
+    end
     local core = getCore()
     local modal = ISModalDialog:new(
         math.floor(core:getScreenWidth() / 2 - 190),
@@ -651,9 +802,16 @@ function EHR.MPMedication.OnConsentGranted(args)
     local pending = EHR.MPMedication.PendingDoctorRequests and EHR.MPMedication.PendingDoctorRequests[tonumber(args.requestId)] or nil
     if not pending then return end
 
-    local item = findInventoryItemByID(doctor, args.itemID)
+    local itemID = args.itemID or pending.itemID
+    local itemFullType = args.itemFullType or pending.itemFullType
+    local treatmentKind = tostring(args.treatmentKind or pending.treatmentKind or "medication")
+    local exactGrant = tostring(itemID) == tostring(pending.itemID)
+        and tostring(itemFullType) == tostring(pending.itemFullType)
+        and treatmentKind == tostring(pending.treatmentKind or "medication")
+    local item = exactGrant and findInventoryItemByID(doctor, itemID) or nil
     local patient = resolveOnlinePlayer(args.targetOnlineID, args.targetUsername) or pending.patient
-    if not item or not patient then
+    local actualFullType = item and item.getFullType and item:getFullType() or nil
+    if not item or actualFullType ~= itemFullType or not patient then
         if pending.window then
             pending.window.statusText = mpMedText("ItemMissing", "Medication or patient is no longer available.")
             pending.window.pendingRequestId = nil
@@ -661,6 +819,16 @@ function EHR.MPMedication.OnConsentGranted(args)
         end
         EHR.MPMedication.PendingDoctorRequests[tonumber(args.requestId)] = nil
         return
+    end
+
+    args.itemID = itemID
+    args.itemFullType = itemFullType
+    args.treatmentKind = treatmentKind
+    if treatmentKind == "blood_transfusion" then
+        args.spoilageState = getMoreSevereBloodSpoilageState(
+            args.spoilageState or pending.spoilageState,
+            getBloodBagSpoilageState(item)
+        )
     end
 
     if pending.window then

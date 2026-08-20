@@ -13,6 +13,9 @@ EHR = EHR or {}
 EHR.StitchMinigame = EHR.StitchMinigame or {}
 EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
 EHR.StitchMinigame.CELLULITIS_ROUGH_RISK = 0.40
+EHR.StitchMinigame.TREATMENT_RANGE = 3.0
+EHR.StitchMinigame.DOCTOR_MOVE_TOLERANCE = 0.35
+EHR.StitchMinigame.PATIENT_MOVE_TOLERANCE = 0.45
 
 local C = {
     bg = { r = 0.018, g = 0.016, b = 0.016, a = 0.97 },
@@ -102,6 +105,49 @@ local function bodyPartKey(bodyPart)
     return bodyPartName(bodyPart)
 end
 
+local function getPlayerPosition(player)
+    if not player then return nil end
+    local ok, x, y, z = pcall(function()
+        local square = player:getSquare()
+        return player:getX(), player:getY(), square and square:getZ() or player:getZ()
+    end)
+    if not ok then return nil end
+    x, y, z = tonumber(x), tonumber(y), tonumber(z)
+    if not x or not y or not z then return nil end
+    return x, y, z
+end
+
+function EHR.StitchMinigame.HasPlayerMoved(player, startX, startY, tolerance)
+    local x, y = getPlayerPosition(player)
+    startX, startY = tonumber(startX), tonumber(startY)
+    if not x or not startX or not startY then return true end
+    tolerance = math.max(0, tonumber(tolerance) or 0)
+    local dx = x - startX
+    local dy = y - startY
+    return (dx * dx) + (dy * dy) > tolerance * tolerance
+end
+
+function EHR.StitchMinigame.IsTreatmentPairValid(doctor, patient, maxRange)
+    if not doctor or not patient then return false end
+    if doctor == patient then return true end
+
+    if ISHealthPanel and ISHealthPanel.IsCharactersInSameCar then
+        local ok, sameCar = pcall(function()
+            return ISHealthPanel.IsCharactersInSameCar(doctor, patient)
+        end)
+        if ok and sameCar then return true end
+    end
+
+    local doctorX, doctorY, doctorZ = getPlayerPosition(doctor)
+    local patientX, patientY, patientZ = getPlayerPosition(patient)
+    if not doctorX or not patientX or math.abs(doctorZ - patientZ) > 0.01 then return false end
+
+    local dx = patientX - doctorX
+    local dy = patientY - doctorY
+    maxRange = math.max(0, tonumber(maxRange) or EHR.StitchMinigame.TREATMENT_RANGE)
+    return (dx * dx) + (dy * dy) <= maxRange * maxRange
+end
+
 local function playerIdentifiers(player)
     local data = {}
     if not player then return data end
@@ -176,9 +222,21 @@ function EHR.StitchMinigame.TryCellulitisRisk(action, chance)
     return false
 end
 
-local function isBodyPartStillValid(bodyPart)
+local function remoteBodyPartPermitKey(patient, bodyPart)
+    if not patient or not bodyPart then return nil end
+    local ids = playerIdentifiers(patient)
+    local onlineID = tonumber(ids.targetOnlineID)
+    local patientKey = onlineID and onlineID >= 0 and tostring(onlineID) or ids.targetUsername
+    local partKey = bodyPartKey(bodyPart)
+    if not patientKey or not partKey then return nil end
+    return tostring(patientKey) .. ":" .. tostring(partKey)
+end
+
+local function isBodyPartStillValid(bodyPart, patient)
     if not bodyPart then return false end
-    local remoteValidUntil = EHR.StitchMinigame.RemoteValidBodyParts and EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] or nil
+    local permits = EHR.StitchMinigame.RemoteValidBodyParts
+    local stablePermitKey = remoteBodyPartPermitKey(patient, bodyPart)
+    local remoteValidUntil = permits and (permits[bodyPart] or (stablePermitKey and permits[stablePermitKey])) or nil
     if remoteValidUntil and getTimestampMs and getTimestampMs() <= remoteValidUntil then
         return true
     end
@@ -194,10 +252,15 @@ local function isBodyPartStillValid(bodyPart)
     return okDeep and deep == true and (not okGlass or glass ~= true) and (not okStitched or stitched ~= true)
 end
 
-function EHR.StitchMinigame.AllowRemoteBodyPart(bodyPart, milliseconds)
+function EHR.StitchMinigame.AllowRemoteBodyPart(bodyPart, milliseconds, patient)
     if not bodyPart or not getTimestampMs then return end
     EHR.StitchMinigame.RemoteValidBodyParts = EHR.StitchMinigame.RemoteValidBodyParts or {}
-    EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] = getTimestampMs() + (tonumber(milliseconds) or 180000)
+    local validUntil = getTimestampMs() + (tonumber(milliseconds) or 180000)
+    EHR.StitchMinigame.RemoteValidBodyParts[bodyPart] = validUntil
+    local stablePermitKey = remoteBodyPartPermitKey(patient, bodyPart)
+    if stablePermitKey then
+        EHR.StitchMinigame.RemoteValidBodyParts[stablePermitKey] = validUntil
+    end
 end
 
 function EHR.StitchMinigame.IsEnabled()
@@ -213,7 +276,8 @@ function EHR.StitchMinigame.ShouldIntercept(character, otherPlayer, item, bodyPa
     if not EHR.StitchMinigame.IsEnabled() then return false end
     if doIt ~= true then return false end
     if not character or not otherPlayer or not item or not bodyPart then return false end
-    if not isBodyPartStillValid(bodyPart) then return false end
+    if not EHR.StitchMinigame.IsTreatmentPairValid(character, otherPlayer) then return false end
+    if not isBodyPartStillValid(bodyPart, otherPlayer) then return false end
     if not hasInventoryItem(character, item) then return false end
     return true
 end
@@ -223,8 +287,12 @@ function EHR.StitchMinigame.CreateVanillaAction(character, otherPlayer, item, bo
     if not originalNew then return nil end
 
     EHR.StitchMinigame._bypass = true
-    local action = originalNew(ISStitch, character, otherPlayer, item, bodyPart, true)
+    local ok, action = pcall(originalNew, ISStitch, character, otherPlayer, item, bodyPart, true)
     EHR.StitchMinigame._bypass = false
+    if not ok then
+        if EHR and EHR.Log then EHR.Log("Stitch minigame: failed to create vanilla action: " .. tostring(action)) end
+        return nil
+    end
 
     if action then
         action._ehrStitchMinigameQuality = quality or 0.75
@@ -233,6 +301,24 @@ function EHR.StitchMinigame.CreateVanillaAction(character, otherPlayer, item, bo
         pcall(function()
             action._ehrWasInfectedBefore = bodyPart:isInfectedWound()
         end)
+        if character ~= otherPlayer then
+            action.isValid = function(actionSelf)
+                if not EHR.StitchMinigame.IsTreatmentPairValid(actionSelf.character, actionSelf.otherPlayer) then
+                    return false
+                end
+                if EHR.StitchMinigame.HasPlayerMoved(
+                        actionSelf.otherPlayer,
+                        actionSelf.bandagedPlayerX,
+                        actionSelf.bandagedPlayerY,
+                        EHR.StitchMinigame.PATIENT_MOVE_TOLERANCE) then
+                    return false
+                end
+                if not actionSelf.item then
+                    return actionSelf.bodyPart and actionSelf.bodyPart:stitched() == true
+                end
+                return hasInventoryItem(actionSelf.character, actionSelf.item)
+            end
+        end
     end
     return action
 end
@@ -283,7 +369,11 @@ end
 EHR_StitchMinigameAction = ISBaseTimedAction:derive("EHR_StitchMinigameAction")
 
 function EHR_StitchMinigameAction:isValid()
-    return self.character and self.otherPlayer and hasInventoryItem(self.character, self.item) and isBodyPartStillValid(self.bodyPart)
+    return self.character
+        and self.otherPlayer
+        and EHR.StitchMinigame.IsTreatmentPairValid(self.character, self.otherPlayer)
+        and hasInventoryItem(self.character, self.item)
+        and isBodyPartStillValid(self.bodyPart, self.otherPlayer)
 end
 
 function EHR_StitchMinigameAction:start()
@@ -517,25 +607,31 @@ function EHR_StitchMinigameUI:update()
     self:updatePointMotion()
 
     if self.finished then return end
-    if not hasInventoryItem(self.character, self.item) or not isBodyPartStillValid(self.bodyPart) then
+    if not hasInventoryItem(self.character, self.item) or not isBodyPartStillValid(self.bodyPart, self.otherPlayer) then
         self:close()
         return
     end
-    if self.character and self.character.getX and
-            (math.abs(self.character:getX() - self.doctorStartX) > 0.15 or math.abs(self.character:getY() - self.doctorStartY) > 0.15) then
+    if not EHR.StitchMinigame.IsTreatmentPairValid(self.character, self.otherPlayer) then
+        self:applyDirtyAttemptRisk("out_of_range")
+        self:close()
+        return
+    end
+    if EHR.StitchMinigame.HasPlayerMoved(
+            self.character,
+            self.doctorStartX,
+            self.doctorStartY,
+            EHR.StitchMinigame.DOCTOR_MOVE_TOLERANCE) then
         self:applyDirtyAttemptRisk("doctor_moved")
         self:close()
         return
     end
-    if self.character ~= self.otherPlayer and ISHealthPanel and ISHealthPanel.DidPatientMove then
-        local moved = false
-        pcall(function()
-            moved = ISHealthPanel.DidPatientMove(self.character, self.otherPlayer, self.patientStartX, self.patientStartY)
-        end)
-        if moved then
-            self:applyDirtyAttemptRisk("patient_moved")
-            self:close()
-        end
+    if self.character ~= self.otherPlayer and EHR.StitchMinigame.HasPlayerMoved(
+            self.otherPlayer,
+            self.patientStartX,
+            self.patientStartY,
+            EHR.StitchMinigame.PATIENT_MOVE_TOLERANCE) then
+        self:applyDirtyAttemptRisk("patient_moved")
+        self:close()
     end
 end
 
@@ -756,6 +852,13 @@ function EHR.StitchMinigame.Open(character, otherPlayer, item, bodyPart)
         EHR_StitchMinigameUI.instance:close()
     end
 
+    if not EHR.StitchMinigame.IsTreatmentPairValid(character, otherPlayer) then
+        if EHR and EHR.Locale and EHR.Locale.Say then
+            EHR.Locale.Say(character, L("TooFar", "The patient is too far away."))
+        end
+        return false
+    end
+
     if isClient and isClient() and sendClientCommand and character and otherPlayer and item and bodyPart then
         local args = playerIdentifiers(otherPlayer)
         args.sourceBodyPart = bodyPartKey(bodyPart)
@@ -773,6 +876,7 @@ function EHR.StitchMinigame.Open(character, otherPlayer, item, bodyPart)
     ui:addToUIManager()
     ui:bringToTop()
     EHR_StitchMinigameUI.instance = ui
+    return true
 end
 
 local function installHook()

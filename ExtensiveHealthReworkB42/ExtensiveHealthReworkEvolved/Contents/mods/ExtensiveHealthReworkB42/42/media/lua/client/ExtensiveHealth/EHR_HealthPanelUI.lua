@@ -725,6 +725,7 @@ function EHR_HealthPanelUI:new(x, y, player)
     o.remotePatient = nil
     o.remotePatientOnlineID = nil
     o.remoteExamData = nil
+    o.remoteExamError = nil
     o.remoteBodyDamageRefreshTicks = 0
     o.remoteBodyDamageAccessTicks = 0
     o.remoteBodyPartStatusCache = {}
@@ -2612,99 +2613,96 @@ function EHR_HealthPanelUI:getCorpseExposureColor(exposureLevel)
     return nil
 end
 
+function EHR_HealthPanelUI:getCorpseExposureDisplayFromData(exposureData, config)
+    if type(exposureData) ~= "table" then return "None" end
+    config = config or {}
+    local exposure = math.max(
+        tonumber(exposureData.currentExposure) or 0,
+        tonumber(exposureData.vanillaCorpseExposure) or 0
+    )
+    local displayMin = tonumber(config.EXPOSURE_DISPLAY_MIN) or 1
+    local highThreshold = tonumber(config.EXPOSURE_THRESHOLD_HIGH) or 100
+    local highRiskRatio = clamp(tonumber(config.CORPSE_HIGH_RISK_RATIO) or 0.85, 0, 1)
+    if exposure >= highThreshold * highRiskRatio then
+        return "High"
+    elseif exposure >= (tonumber(config.EXPOSURE_THRESHOLD_MEDIUM) or 60) then
+        return "Medium"
+    elseif exposure >= math.min(tonumber(config.EXPOSURE_THRESHOLD_LOW) or 30, displayMin) then
+        return "Low"
+    end
+    return "None"
+end
+
 function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
     data = data or {}
 
-    if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureDisplay and self.player then
-        local ok, exposureLevel = pcall(function()
-            return EHR.CorpseSickness.GetExposureDisplay(self.player)
+    local corpseExposureData = nil
+    if self.isRemoteHealthPanel then
+        corpseExposureData = data.EHR_CorpseSickness
+    elseif EHR.CorpseSickness and EHR.CorpseSickness.GetExposureData and self.player then
+        local ok, result = pcall(function()
+            return EHR.CorpseSickness.GetExposureData(self.player)
         end)
+        if ok then corpseExposureData = result end
+    end
 
-        if ok and exposureLevel and exposureLevel ~= "None" then
-            local exposureData = nil
-            if EHR.CorpseSickness.GetExposureData then
-                local dataOk, result = pcall(function()
-                    return EHR.CorpseSickness.GetExposureData(self.player)
-                end)
-                if dataOk then
-                    exposureData = result
-                end
-            end
+    local corpseConfig = EHR.CorpseSickness and EHR.CorpseSickness.Config or {}
+    local corpseExposureLevel = self:getCorpseExposureDisplayFromData(corpseExposureData, corpseConfig)
+    if corpseExposureLevel ~= "None" then
+        local exposure = math.max(
+            tonumber(corpseExposureData.currentExposure) or 0,
+            tonumber(corpseExposureData.vanillaCorpseExposure) or 0
+        )
+        local highThreshold = tonumber(corpseConfig.EXPOSURE_THRESHOLD_HIGH) or 100
+        local stageByLevel = { Low = 1, Medium = 2, High = 3 }
+        local stage = stageByLevel[corpseExposureLevel] or 1
+        activeDiseases["corpse_exposure"] = {
+            displayName = safeText("UI_EHR_CorpseExposure", "Corpse Exposure"),
+            exposureLevel = corpseExposureLevel,
+            exposureColor = self:getCorpseExposureColor(corpseExposureLevel),
+            severity = stage,
+            progress = highThreshold > 0 and clamp(exposure / highThreshold, 0, 1) or 0,
+            stage = stage,
+            isCorpseExposure = true,
+            iconKey = "corpse_exposure",
+        }
+    end
 
-            local exposure = 0
-            if type(exposureData) == "table" then
-                exposure = math.max(tonumber(exposureData.currentExposure) or 0, tonumber(exposureData.vanillaCorpseExposure) or 0)
-            end
+    if type(corpseExposureData) == "table" and not activeDiseases["cadaveric_aspergillosis"] then
+        local exposure = tonumber(corpseExposureData.fungalExposure) or 0
+        local exposureLevel = self:getCadavericExposureDisplay(exposure, corpseConfig)
 
-            local config = EHR.CorpseSickness.Config or {}
-            local highThreshold = tonumber(config.EXPOSURE_THRESHOLD_HIGH) or 100
+        if exposureLevel ~= "None" then
             local stageByLevel = { Low = 1, Medium = 2, High = 3 }
             local stage = stageByLevel[exposureLevel] or 1
-            local exposureColor = nil
-            if EHR.CorpseSickness.GetExposureColor then
-                local colorOk, result = pcall(function()
-                    return EHR.CorpseSickness.GetExposureColor(exposureLevel)
-                end)
-                if colorOk then
-                    exposureColor = result
-                end
-            end
 
-            activeDiseases["corpse_exposure"] = {
-                displayName = safeText("UI_EHR_CorpseExposure", "Corpse Exposure"),
+            activeDiseases["cadaveric_aspergillosis_exposure"] = {
+                displayName = safeText("UI_EHR_CadavericAspergillosisExposure", "Cadaveric Aspergillosis Exposure"),
                 exposureLevel = exposureLevel,
-                exposureColor = exposureColor,
+                exposureColor = self:getCorpseExposureColor(exposureLevel),
                 severity = stage,
-                progress = highThreshold > 0 and clamp(exposure / highThreshold, 0, 1) or 0,
+                progress = self:getCadavericExposureProgress(exposure, corpseConfig),
                 stage = stage,
                 isCorpseExposure = true,
-                iconKey = "corpse_exposure",
+                iconKey = "cadaveric_aspergillosis",
             }
         end
     end
 
-    if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureData and self.player and not activeDiseases["cadaveric_aspergillosis"] then
-        local ok, exposureData = pcall(function()
-            return EHR.CorpseSickness.GetExposureData(self.player)
-        end)
-
-        if ok and type(exposureData) == "table" then
-            local config = EHR.CorpseSickness.Config or {}
-            local exposure = tonumber(exposureData.fungalExposure) or 0
-            local exposureLevel = self:getCadavericExposureDisplay(exposure, config)
-
-            if exposureLevel ~= "None" then
-                local highThreshold = tonumber(config.ASPERGILLOSIS_EXPOSURE_THRESHOLD) or 120
-                local stageByLevel = { Low = 1, Medium = 2, High = 3 }
-                local stage = stageByLevel[exposureLevel] or 1
-
-                activeDiseases["cadaveric_aspergillosis_exposure"] = {
-                    displayName = safeText("UI_EHR_CadavericAspergillosisExposure", "Cadaveric Aspergillosis Exposure"),
-                    exposureLevel = exposureLevel,
-                    exposureColor = self:getCorpseExposureColor(exposureLevel),
-                    severity = stage,
-                    progress = self:getCadavericExposureProgress(exposure, config),
-                    stage = stage,
-                    isCorpseExposure = true,
-                    iconKey = "cadaveric_aspergillosis",
-                }
+    if not activeDiseases["heat_stroke"] then
+        local exposureLevel = nil
+        local ratio = 0
+        if self.isRemoteHealthPanel and type(data.EHR_EnvironmentalExposure) == "table" then
+            exposureLevel = data.EHR_EnvironmentalExposure.heatExposureLevel
+            ratio = tonumber(data.EHR_EnvironmentalExposure.heatExposureRatio) or 0
+        elseif EHR.Environmental and EHR.Environmental.GetHeatExposureDisplay and self.player then
+            pcall(function() exposureLevel = EHR.Environmental.GetHeatExposureDisplay(self.player) end)
+            if EHR.Environmental.GetHeatExposureRatio then
+                pcall(function() ratio = tonumber(EHR.Environmental.GetHeatExposureRatio(self.player)) or 0 end)
             end
         end
-    end
 
-    if EHR.Environmental and EHR.Environmental.GetHeatExposureDisplay and self.player
-            and not activeDiseases["heat_stroke"] then
-        local ok, exposureLevel = pcall(function()
-            return EHR.Environmental.GetHeatExposureDisplay(self.player)
-        end)
-
-        if ok and exposureLevel and exposureLevel ~= "None" then
-            local ratio = 0
-            local ratioOk, ratioResult = pcall(function()
-                return EHR.Environmental.GetHeatExposureRatio(self.player)
-            end)
-            if ratioOk then ratio = tonumber(ratioResult) or 0 end
-
+        if exposureLevel and exposureLevel ~= "None" then
             local stageByLevel = { Low = 1, Medium = 2, High = 3 }
             local stage = stageByLevel[exposureLevel] or 1
             local exposureColor = nil
@@ -2729,7 +2727,7 @@ function EHR_HealthPanelUI:addSpecialConditionEntries(activeDiseases, data)
     end
 
     local sepsisData = data.EHR_Sepsis
-    if EHR.Sepsis and EHR.Sepsis.GetData and self.player then
+    if not self.isRemoteHealthPanel and EHR.Sepsis and EHR.Sepsis.GetData and self.player then
         local ok, result = pcall(function()
             return EHR.Sepsis.GetData(self.player)
         end)
@@ -2847,26 +2845,31 @@ function EHR_HealthPanelUI:updateCachedData()
     end
 
     local data = nil
-    if self.isRemoteHealthPanel and type(self.remoteExamData) == "table" then
-        data = self.remoteExamData
-    elseif EHR.GetPlayerData and self.player then
-        data = EHR.GetPlayerData(self.player)
-    end
-    if not data and self.player and self.player.getModData then
-        data = self.player:getModData()
+    if self.isRemoteHealthPanel then
+        -- A remote IsoPlayer carries only a client replica and may be several
+        -- syncs behind the server. Never use it as a temporary fallback while
+        -- the authoritative examination response is still in flight.
+        data = type(self.remoteExamData) == "table" and self.remoteExamData or {}
+    else
+        if EHR.GetPlayerData and self.player then
+            data = EHR.GetPlayerData(self.player)
+        end
+        if not data and self.player and self.player.getModData then
+            data = self.player:getModData()
+        end
     end
     data = data or {}
 
     local diseaseData = nil
-    if self.isRemoteHealthPanel and data.EHR_Disease then
-        diseaseData = data.EHR_Disease
+    if self.isRemoteHealthPanel then
+        diseaseData = data.EHR_Disease or {}
     elseif EHR.Disease and EHR.Disease.GetDiseaseData and self.player then
         diseaseData = EHR.Disease.GetDiseaseData(self.player)
     end
     diseaseData = diseaseData or data.EHR_Disease or {}
 
     local medicationData = {}
-    if self.isRemoteHealthPanel and data.EHR_Medication then
+    if self.isRemoteHealthPanel then
         medicationData = data.EHR_Medication or {}
     elseif EHR.Medication and EHR.Medication.GetMedicationData and self.player then
         medicationData = EHR.Medication.GetMedicationData(self.player) or {}
@@ -2880,28 +2883,34 @@ function EHR_HealthPanelUI:updateCachedData()
     end
 
     local activeTreatments = {}
-    if medicationView and medicationView.activeTreatments then
+    if self.isRemoteHealthPanel then
+        activeTreatments = medicationView and medicationView.activeTreatments
+            or medicationData.activeTreatments
+            or {}
+    elseif medicationView and medicationView.activeTreatments then
         activeTreatments = medicationView.activeTreatments or {}
-    elseif self.isRemoteHealthPanel and medicationData.activeTreatments then
-        activeTreatments = medicationData.activeTreatments or {}
     elseif EHR.Medication and EHR.Medication.GetActiveTreatments and self.player then
         activeTreatments = EHR.Medication.GetActiveTreatments(self.player) or {}
     end
 
     local doseStatuses = {}
-    if medicationView and medicationView.activeDoses then
+    if self.isRemoteHealthPanel then
+        doseStatuses = medicationView and medicationView.activeDoses
+            or medicationData.activeDoses
+            or {}
+    elseif medicationView and medicationView.activeDoses then
         doseStatuses = medicationView.activeDoses or {}
-    elseif self.isRemoteHealthPanel and medicationData.activeDoses then
-        doseStatuses = medicationData.activeDoses or {}
     elseif EHR.Medication and EHR.Medication.GetAllDoseStatuses and self.player then
         doseStatuses = EHR.Medication.GetAllDoseStatuses(self.player) or {}
     end
 
     local activeSideEffects = {}
-    if medicationView and medicationView.activeSideEffects then
+    if self.isRemoteHealthPanel then
+        activeSideEffects = medicationView and medicationView.activeSideEffects
+            or medicationData.activeSideEffects
+            or {}
+    elseif medicationView and medicationView.activeSideEffects then
         activeSideEffects = medicationView.activeSideEffects or {}
-    elseif self.isRemoteHealthPanel and medicationData.activeSideEffects then
-        activeSideEffects = medicationData.activeSideEffects or {}
     elseif EHR.Medication and EHR.Medication.GetMonitorSideEffects and self.player then
         activeSideEffects = EHR.Medication.GetMonitorSideEffects(self.player) or {}
     elseif EHR.Medication and EHR.Medication.GetActiveSideEffects and self.player then
@@ -4155,7 +4164,11 @@ function EHR_HealthPanelUI:onRemoteApplyStitch(bodyPart, stitchItem, carriedNeed
         end
         if not actionBodyPart or not stitch then return end
         if EHR.StitchMinigame and EHR.StitchMinigame.AllowRemoteBodyPart then
-            EHR.StitchMinigame.AllowRemoteBodyPart(actionBodyPart)
+            EHR.StitchMinigame.AllowRemoteBodyPart(
+                actionBodyPart,
+                nil,
+                panel.remotePatient or panel.player
+            )
         end
         local action = ISStitch:new(panel.remoteDoctor, panel.remotePatient or panel.player, stitch, actionBodyPart, true)
         panel:queueActualMedicalAction(previousAction, action, actionBodyPart)
@@ -4171,8 +4184,16 @@ function EHR_HealthPanelUI:onRemoteRemoveStitch(bodyPart)
         local action = ISStitch:new(panel.remoteDoctor, panel.remotePatient or panel.player, nil, actionBodyPart, false)
         if action then
             action.isValid = function(actionSelf)
-                if ISHealthPanel and ISHealthPanel.DidPatientMove
-                        and ISHealthPanel.DidPatientMove(actionSelf.character, actionSelf.otherPlayer, actionSelf.bandagedPlayerX, actionSelf.bandagedPlayerY) then
+                if EHR.StitchMinigame and EHR.StitchMinigame.IsTreatmentPairValid
+                        and not EHR.StitchMinigame.IsTreatmentPairValid(actionSelf.character, actionSelf.otherPlayer) then
+                    return false
+                end
+                if EHR.StitchMinigame and EHR.StitchMinigame.HasPlayerMoved
+                        and EHR.StitchMinigame.HasPlayerMoved(
+                            actionSelf.otherPlayer,
+                            actionSelf.bandagedPlayerX,
+                            actionSelf.bandagedPlayerY,
+                            EHR.StitchMinigame.PATIENT_MOVE_TOLERANCE) then
                     return false
                 end
                 local latest = panel:getRemoteBodyPartSnapshotByType(bodyPartType)
@@ -5672,6 +5693,20 @@ function EHR_HealthPanelUI:prerender()
     self:drawHeader()
     self:drawTabBar()
 
+    if self.isRemoteHealthPanel and type(self.remoteExamData) ~= "table" then
+        local waitingText = self.remoteExamError
+            and safeText("UI_EHR_Exam_Failed", "Unable to receive patient data")
+            or safeText("IGUI_Loading", "Waiting for server data...")
+        local waitingColor = self.remoteExamError and c.red or c.textDim
+        self:drawDockedTextCenter(
+            waitingText,
+            24, math.floor(self.height / 2) - 18, self.width - 48, 36,
+            waitingColor.r, waitingColor.g, waitingColor.b, waitingColor.a, UIFont.Medium
+        )
+        self:drawWornFrame(0, 0, self.width, self.height, c.border, 14)
+        return
+    end
+
     if self.activeTab == "ehr" then
         self:drawBloodCompositionPanel()
         self:drawLeftPanel()
@@ -5846,6 +5881,13 @@ end
 function EHR.UI.ShowHealthPanel(player)
     player = player or (getSpecificPlayer and getSpecificPlayer(0)) or (getPlayer and getPlayer())
     if not player then return end
+
+    -- Refresh the patient's own server-authoritative EHR state when opening the
+    -- panel. This narrows the normal periodic-sync window when two MP players
+    -- compare the same diagnosis at the same time.
+    if isClient and isClient() and sendClientCommand then
+        sendClientCommand(player, "EHR", "RequestSync", {})
+    end
 
     suppressLegacyHealthUI(12)
 
@@ -6067,6 +6109,8 @@ function EHR.UI.ShowRemoteHealthPanel(doctor, patient, examData)
         panel.playerNum = doctor.getPlayerNum and doctor:getPlayerNum() or 0
         panel.ehrRemoteKey = key
         panel.remoteExamData = examData
+        panel.remoteExamError = nil
+        panel.remoteExamStale = false
         panel:initialise()
         panel:instantiate()
         panel:addToUIManager()
@@ -6076,6 +6120,10 @@ function EHR.UI.ShowRemoteHealthPanel(doctor, patient, examData)
 
     panel.ehrRemoteKey = key
     panel.remoteExamData = examData or panel.remoteExamData
+    if examData then
+        panel.remoteExamError = nil
+        panel.remoteExamStale = false
+    end
     panel:bindRemotePatient(doctor, patient, created or panel.remotePatient ~= patient)
     panel.activeTab = "ehr"
     panel.contentScrollY = 0
@@ -6098,6 +6146,8 @@ function EHR.UI.UpdateRemoteHealthPanelData(targetUsername, examData)
     end
 
     panel.remoteExamData = examData
+    panel.remoteExamError = nil
+    panel.remoteExamStale = false
     panel.cachedData = {}
     panel.remoteBodyPartStatusCache = {}
     panel.lastRemoteExamRefreshMs = getTimestampMs and getTimestampMs() or panel.lastRemoteExamRefreshMs

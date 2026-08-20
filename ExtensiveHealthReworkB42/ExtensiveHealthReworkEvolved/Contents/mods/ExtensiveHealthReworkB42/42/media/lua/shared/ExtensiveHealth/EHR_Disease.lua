@@ -2142,11 +2142,15 @@ local function EHR_DiseaseGetActiveSymptomMultiplier(player, diseaseId, disease)
     local activeDoses = medTracking and medTracking.activeDoses
     if activeDoses and EHR.Medication and EHR.Medication.TierEffectiveness then
         for medKey, doseData in pairs(activeDoses) do
-            if type(doseData) == "table" and doseData.treatingDisease == diseaseId and doseData.lastDoseTime and doseData.intervalHours then
+            local diseaseTargets = type(doseData) == "table" and doseData.diseaseTargets or nil
+            local matchesDisease = type(doseData) == "table"
+                and (doseData.treatingDisease == diseaseId
+                    or (type(diseaseTargets) == "table" and diseaseTargets[diseaseId] == true))
+            if matchesDisease and doseData.lastDoseTime and doseData.intervalHours then
                 local effectActive = false
                 if EHR.Medication.GetDoseStatus then
                     local status = EHR.Medication.GetDoseStatus(player, medKey)
-                    effectActive = status and status.isDoseActive and status.treatingDisease == diseaseId
+                    effectActive = status and status.isDoseActive
                 else
                     local elapsed = currentHour - doseData.lastDoseTime
                     effectActive = elapsed >= 0 and elapsed <= doseData.intervalHours
@@ -2183,8 +2187,10 @@ local function EHR_DiseaseGetActiveSymptomReduction(player, diseaseId, reduction
     local activeReduction = 0
     for medKey, doseData in pairs(activeDoses) do
         local moduleTargets = type(doseData) == "table" and doseData.moduleTargets or nil
+        local diseaseTargets = type(doseData) == "table" and doseData.diseaseTargets or nil
         local matchesDisease = type(doseData) == "table"
             and (doseData.treatingDisease == diseaseId
+                or (type(diseaseTargets) == "table" and diseaseTargets[diseaseId] == true)
                 or (type(moduleTargets) == "table" and moduleTargets[diseaseId] == true))
         if matchesDisease and doseData.lastDoseTime and doseData.intervalHours then
             local effectActive = false

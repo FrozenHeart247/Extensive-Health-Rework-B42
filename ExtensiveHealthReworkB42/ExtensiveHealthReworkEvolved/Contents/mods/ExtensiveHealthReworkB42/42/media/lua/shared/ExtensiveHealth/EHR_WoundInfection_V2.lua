@@ -839,13 +839,20 @@ function EHR.WoundInfection.IsAntisepticProtectionActive(player)
         return false
     end
 
-    local status = EHR.Medication.GetDoseStatus(player, "ExtensiveHealth.AntisepticCream")
-    if status and status.isDoseActive == true then
-        return true
+    local antisepticKeys = {
+        "ExtensiveHealth.AntisepticCream",
+        "ExtensiveHealth.HomemadeAntisepticCream",
+        "Antiseptic Cream",
+        "Homemade Antiseptic Cream",
+    }
+    for _, medKey in ipairs(antisepticKeys) do
+        local status = EHR.Medication.GetDoseStatus(player, medKey)
+        if status and status.isDoseActive == true then
+            return true
+        end
     end
 
-    status = EHR.Medication.GetDoseStatus(player, "Antiseptic Cream")
-    return status and status.isDoseActive == true
+    return false
 end
 
 -- ============================================

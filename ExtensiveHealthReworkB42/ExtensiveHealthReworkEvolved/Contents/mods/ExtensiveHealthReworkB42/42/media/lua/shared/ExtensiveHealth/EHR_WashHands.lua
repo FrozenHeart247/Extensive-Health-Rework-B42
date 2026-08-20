@@ -175,16 +175,39 @@ end
 
 EHRWashHandsAction = ISBaseTimedAction:derive("EHRWashHandsAction")
 
+local function safelyFaceWaterSource(character, sink)
+    if not (character and sink) then return end
+
+    -- B42.20 throws when faceThisObjectAlt is asked to normalize a zero-length
+    -- direction (the character and source can occasionally report identical
+    -- world coordinates in MP). Facing is cosmetic, so skip that frame rather
+    -- than aborting the entire timed action.
+    local okPosition, characterX, characterY, sinkX, sinkY = pcall(function()
+        return character:getX(), character:getY(), sink:getX(), sink:getY()
+    end)
+    if okPosition
+            and tonumber(characterX) and tonumber(characterY)
+            and tonumber(sinkX) and tonumber(sinkY) then
+        local dx = tonumber(sinkX) - tonumber(characterX)
+        local dy = tonumber(sinkY) - tonumber(characterY)
+        if (dx * dx) + (dy * dy) <= 0.000001 then return end
+    end
+
+    if character.faceThisObjectAlt then
+        local ok = pcall(function() character:faceThisObjectAlt(sink) end)
+        if ok then return end
+    end
+    if character.faceThisObject then
+        pcall(function() character:faceThisObject(sink) end)
+    end
+end
+
 function EHRWashHandsAction:isValid()
     return self.character ~= nil and self.sink ~= nil
 end
 
 function EHRWashHandsAction:update()
-    if self.character.faceThisObjectAlt then
-        self.character:faceThisObjectAlt(self.sink)
-    elseif self.character.faceThisObject then
-        self.character:faceThisObject(self.sink)
-    end
+    safelyFaceWaterSource(self.character, self.sink)
 
     if self.character.setMetabolicTarget and Metabolics then
         self.character:setMetabolicTarget(Metabolics.LightDomestic)

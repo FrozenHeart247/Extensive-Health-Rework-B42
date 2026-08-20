@@ -12,6 +12,7 @@ require "TimedActions/ISBaseTimedAction"
 require "TimedActions/ISInventoryTransferAction"
 pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Localization" end)
+pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 
 EHR = EHR or {}
 EHR.Transfusion = {}
@@ -36,6 +37,19 @@ local function transfusionFormat(key, fallback, ...)
         text = tostring(text):gsub("%%" .. tostring(i), tostring(value))
     end
     return text
+end
+
+local function transfusionIVKitText()
+    local key = "UI_EHR_MedAction_RequiresIVKit"
+    if EHR and EHR.Locale and EHR.Locale.Text then
+        local ok, value = pcall(EHR.Locale.Text, key, "Requires: IV Kit")
+        if ok and value then return tostring(value) end
+    end
+    if getText then
+        local ok, value = pcall(getText, key)
+        if ok and value and value ~= key then return tostring(value) end
+    end
+    return "Requires: IV Kit"
 end
 
 
@@ -87,6 +101,52 @@ end
 function EHR.Transfusion.IsSalineBag(item)
     if not item then return false end
     return item:getFullType() == "ExtensiveHealth.SalineBag"
+end
+
+function EHR.Transfusion.GetIVKit(player)
+    local inventory = player and player:getInventory() or nil
+    if not inventory then return nil end
+
+    if inventory.getFirstTypeRecurse then
+        local ok, item = pcall(function()
+            return inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
+        end)
+        if ok and item then return item end
+    end
+    if inventory.getFirstType then
+        local ok, item = pcall(function()
+            return inventory:getFirstType("ExtensiveHealth.IVKit")
+        end)
+        if ok and item then return item end
+    end
+    return nil
+end
+
+function EHR.Transfusion.HasIVKit(player)
+    return EHR.Transfusion.GetIVKit(player) ~= nil
+end
+
+function EHR.Transfusion.ConsumeIVKit(player)
+    local inventory = player and player:getInventory() or nil
+    local ivKit = EHR.Transfusion.GetIVKit(player)
+    if not inventory or not ivKit then return false end
+
+    if EHR.Medication and EHR.Medication.ConsumeOneDose then
+        local ok, consumed = pcall(EHR.Medication.ConsumeOneDose, player, ivKit, inventory)
+        if not ok then
+            EHR.Log("Transfusion: failed to consume IV kit through medication dose handling")
+            return false
+        end
+        return consumed == true
+    end
+
+    local container = inventory
+    if ivKit.getContainer then
+        local ok, itemContainer = pcall(function() return ivKit:getContainer() end)
+        if ok and itemContainer then container = itemContainer end
+    end
+    local ok = pcall(function() container:Remove(ivKit) end)
+    return ok
 end
 
 --[[
@@ -539,8 +599,11 @@ end
 EHRTransfusionAction = ISBaseTimedAction:derive("EHRTransfusionAction")
 
 function EHRTransfusionAction:isValid()
-    -- Check player is alive and has the item
-    return self.character:isAlive() and self.character:getInventory():contains(self.item)
+    -- Both blood and saline transfusions require a complete IV administration kit.
+    if not self.character:isAlive() then return false end
+    if not self.character:getInventory():contains(self.item) then return false end
+    if not EHR.Transfusion.HasIVKit(self.character) then return false end
+    return EHR.Transfusion.GetSpoilageState(self.item) ~= "rotten"
 end
 
 function EHRTransfusionAction:update()
@@ -567,14 +630,23 @@ function EHRTransfusionAction:perform()
         return
     end
 
-    -- Remove the item with MP sync
-    if isClient() then
-        sendClientCommand(self.character, "EHR", "RemoveItem", {itemID = self.item:getID()})
-    end
-    self.character:getInventory():Remove(self.item)
-
-    -- Check spoilage state
+    -- Single-player owns its inventory mutations. MP returned above and leaves
+    -- both the IV kit and transfusion item for the authoritative server to consume.
     local spoilageState = EHR.Transfusion.GetSpoilageState(self.item)
+    if spoilageState == "rotten" then
+        EHR.Locale.Say(self.character, transfusionText("Unusable", "UNUSABLE"))
+        ISBaseTimedAction.perform(self)
+        return
+    end
+
+    if not EHR.Transfusion.ConsumeIVKit(self.character) then
+        EHR.Locale.Say(self.character, transfusionIVKitText())
+        ISBaseTimedAction.perform(self)
+        return
+    end
+
+    local itemContainer = self.item:getContainer() or self.character:getInventory()
+    itemContainer:Remove(self.item)
 
     -- Apply effects based on item type
     if EHR.Transfusion.IsBloodBag(self.item) then
@@ -585,7 +657,8 @@ function EHRTransfusionAction:perform()
             if data and data.EHR_Blood then
                 EHR.Transfusion.ApplySpoiledBloodReaction(self.character, data, spoilageState)
             end
-            -- Still apply some blood (reduced effectiveness)
+            -- Stale blood still restores the normal 500 mL; its penalty is the
+            -- additional spoiled-blood reaction above.
             EHR.Transfusion.ApplyBloodTransfusion(self.character, self.item)
         elseif spoilageState == "rotten" then
             -- Rotten blood should not reach here (blocked in menu) but just in case
@@ -597,6 +670,10 @@ function EHRTransfusionAction:perform()
         else
             -- Fresh blood - normal transfusion
             EHR.Transfusion.ApplyBloodTransfusion(self.character, self.item)
+        end
+
+        if EHR.SkillXP and EHR.SkillXP.OnTransfusion then
+            EHR.SkillXP.OnTransfusion(self.character, true)
         end
     elseif EHR.Transfusion.IsSalineBag(self.item) then
         -- Check for contaminated saline
@@ -619,11 +696,6 @@ function EHRTransfusionAction:perform()
             -- Fresh saline - normal use
             EHR.Transfusion.ApplySaline(self.character, self.item)
         end
-    end
-
-    -- MP: Trigger server sync after transfusion
-    if isClient() then
-        sendClientCommand(self.character, "EHR", "RequestSync", {})
     end
 
     -- Complete the action
@@ -929,6 +1001,14 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
             table.insert(warningParts, transfusionText("SpoiledBloodRisk", "Using spoiled blood may cause infection and illness."))
         end
 
+        if not EHR.Transfusion.HasIVKit(player) then
+            option.notAvailable = true
+            if not tooltip.name or tooltip.name == "" then
+                tooltip:setName(transfusionText("Unusable", "UNUSABLE"))
+            end
+            table.insert(warningParts, "<RGB:1,0.3,0.3> " .. transfusionIVKitText())
+        end
+
         if #warningParts > 0 then
             tooltip.description = table.concat(warningParts, " <LINE> ")
             option.toolTip = tooltip
@@ -950,6 +1030,8 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
         end
         local option = context:addOption(transfusionText("UseSaline", "Use Saline IV"), player, EHR.Transfusion.OnUseTransfusion, item)
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
+        local hasIVKit = EHR.Transfusion.HasIVKit(player)
+        if not hasIVKit then option.notAvailable = true end
 
         -- Calculate current saline ratio for tooltip
         local data = EHR.GetPlayerData(player)
@@ -981,6 +1063,9 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
                               transfusionFormat("CurrentSaline", "Current saline: %1mL (%2%)", math.floor(currentSaline), math.floor(salineRatio * 100)) ..
                               warningText .. "<LINE> <LINE> " ..
                               "<RGB:1,0.5,0> " .. transfusionText("SalineDeathCaution", "CAUTION: >60% saline causes brain oxygen deprivation and DEATH. Use blood bags when possible.")
+        if not hasIVKit then
+            tooltip.description = tooltip.description .. " <LINE> <RGB:1,0.3,0.3> " .. transfusionIVKitText()
+        end
         option.toolTip = tooltip
 
     elseif EHR.Transfusion.IsEmptyBloodBag(item) then
@@ -1026,6 +1111,10 @@ function EHR.Transfusion.OnFillInventoryContextMenu(playerNum, context, items)
 end
 
 function EHR.Transfusion.OnUseTransfusion(player, item)
+    if not EHR.Transfusion.HasIVKit(player) then
+        EHR.Locale.Say(player, transfusionIVKitText())
+        return
+    end
     -- Transfer item to player's inventory if needed
     if item:getContainer() ~= player:getInventory() then
         ISTimedActionQueue.add(ISInventoryTransferAction:new(player, item, item:getContainer(), player:getInventory()))

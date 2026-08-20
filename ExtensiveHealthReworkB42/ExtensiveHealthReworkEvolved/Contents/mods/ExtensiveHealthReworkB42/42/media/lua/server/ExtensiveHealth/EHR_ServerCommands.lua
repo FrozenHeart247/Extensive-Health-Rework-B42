@@ -802,6 +802,46 @@ local function findInventoryItemByID(player, itemID)
     return findItemInContainer(inventory, itemID, {})
 end
 
+local function findItemTypeInContainer(container, fullType, visited)
+    if not container or not fullType then return nil, nil end
+    visited = visited or {}
+    if visited[container] then return nil, nil end
+    visited[container] = true
+
+    local items = container:getItems()
+    if not items then return nil, nil end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            local itemFullType = nil
+            pcall(function() itemFullType = item:getFullType() end)
+            if itemFullType == fullType then
+                return item, container
+            end
+
+            local nestedContainer = nil
+            if item.getInventory then
+                local okNested, nested = pcall(function() return item:getInventory() end)
+                if okNested then nestedContainer = nested end
+            end
+            if nestedContainer then
+                local found, owner = findItemTypeInContainer(nestedContainer, fullType, visited)
+                if found then return found, owner end
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function findInventoryItemByFullType(player, fullType)
+    if not player or not fullType then return nil, nil end
+    local inventory = player:getInventory()
+    if not inventory then return nil, nil end
+    return findItemTypeInContainer(inventory, fullType, {})
+end
+
 local function removeInventoryItem(item, fallbackContainer)
     if not item then return false end
 
@@ -1076,7 +1116,7 @@ function getSterilizedBandagePackDoseInfo(pack)
     end
 
     currentUsesFloat = math.max(0, math.min(1.0, currentUsesFloat))
-    local remaining = math.floor((currentUsesFloat / useDelta) + 0.0001)
+    local remaining = math.floor((currentUsesFloat / useDelta) + 0.5)
     remaining = math.max(0, math.min(maxDoses, remaining))
     return remaining, maxDoses, useDelta
 end
@@ -1294,31 +1334,53 @@ local function ensureServerBloodData(player)
     return data
 end
 
+local BLOOD_SPOILAGE_SEVERITY = {
+    fresh = 0,
+    stale = 1,
+    rotten = 2,
+}
+
+local function combineBloodSpoilageState(currentState, candidateState)
+    local currentSeverity = BLOOD_SPOILAGE_SEVERITY[currentState] or 0
+    local candidateSeverity = BLOOD_SPOILAGE_SEVERITY[candidateState]
+    if candidateSeverity and candidateSeverity > currentSeverity then
+        return candidateState
+    end
+    return BLOOD_SPOILAGE_SEVERITY[currentState] and currentState or "fresh"
+end
+
 local function getServerSpoilageState(item, clientState)
     if not item then return "rotten" end
 
+    -- Never let a client-provided state improve the server-observed state. The
+    -- worst valid state from modData, the Food API and the request wins.
+    local resolvedState = "fresh"
     local md = nil
     pcall(function() md = item:getModData() end)
     local spoilage = md and md.EHR_BloodSpoilage or nil
     if spoilage then
-        if spoilage.rotten then return "rotten" end
-        if spoilage.stale then return "stale" end
+        if spoilage.stale then
+            resolvedState = combineBloodSpoilageState(resolvedState, "stale")
+        end
+        if spoilage.rotten then
+            resolvedState = combineBloodSpoilageState(resolvedState, "rotten")
+        end
     end
 
     if item.isRotten then
         local okRotten, rotten = pcall(function() return item:isRotten() end)
-        if okRotten and rotten then return "rotten" end
+        if okRotten and rotten then
+            resolvedState = combineBloodSpoilageState(resolvedState, "rotten")
+        end
     end
     if item.isFresh then
         local okFresh, fresh = pcall(function() return item:isFresh() end)
-        if okFresh and fresh == false then return "stale" end
+        if okFresh and fresh == false then
+            resolvedState = combineBloodSpoilageState(resolvedState, "stale")
+        end
     end
 
-    if clientState == "fresh" or clientState == "stale" or clientState == "rotten" then
-        return clientState
-    end
-
-    return "fresh"
+    return combineBloodSpoilageState(resolvedState, clientState)
 end
 
 local function restoreServerBlood(player, data, amount)
@@ -2042,6 +2104,33 @@ local function getServerMedicationAdminType(medData)
     return "pill"
 end
 
+local REMOTE_TREATMENT_KIND_MEDICATION = "medication"
+local REMOTE_TREATMENT_KIND_BLOOD = "blood_transfusion"
+
+local function getServerBloodBagType(fullType)
+    if not fullType or not EHR.Blood or not EHR.Blood.BloodBagTypes then return nil end
+    return EHR.Blood.BloodBagTypes[fullType]
+end
+
+local function getServerTreatmentAdminType(treatmentKind, medData)
+    if treatmentKind == REMOTE_TREATMENT_KIND_BLOOD then return "iv" end
+    return getServerMedicationAdminType(medData)
+end
+
+local function getServerTreatmentDisplayName(item, fullType, treatmentKind, medData)
+    if treatmentKind == REMOTE_TREATMENT_KIND_MEDICATION then
+        return EHR.Medication.GetDisplayName
+            and EHR.Medication.GetDisplayName(fullType, medData)
+            or medData.displayName or fullType
+    end
+
+    local displayName = nil
+    if item and item.getDisplayName then
+        pcall(function() displayName = item:getDisplayName() end)
+    end
+    return displayName or fullType
+end
+
 local function sendMedicationRequestRejected(doctor, requestId, reason, command)
     if not doctor or not sendServerCommand then return end
     sendServerCommand(doctor, "EHR_Exam", command or "MedicationRequestRejected", {
@@ -2050,45 +2139,88 @@ local function sendMedicationRequestRejected(doctor, requestId, reason, command)
     })
 end
 
-local function validateRemoteMedication(doctor, patient, itemID, expectedFullType)
+local function validateRemoteTreatment(doctor, patient, itemID, expectedFullType,
+        expectedTreatmentKind, previousSpoilageState, expectedIVKitID)
     if not doctor or not patient or doctor == patient then
-        return nil, nil, "Invalid doctor or patient"
+        return nil, nil, nil, nil, nil, "Invalid doctor or patient"
     end
     if not hasActiveExamSession(doctor, patient, true) then
-        return nil, nil, "Examination session is not authorized or patient is out of range"
+        return nil, nil, nil, nil, nil, "Examination session is not authorized or patient is out of range"
     end
 
     local doctorDead = false
     local patientDead = false
     pcall(function() doctorDead = doctor:isDead() end)
     pcall(function() patientDead = patient:isDead() end)
-    if doctorDead or patientDead then return nil, nil, "Doctor or patient is no longer available" end
+    if doctorDead or patientDead then
+        return nil, nil, nil, nil, nil, "Doctor or patient is no longer available"
+    end
 
     local item = itemID ~= nil and findInventoryItemByID(doctor, itemID) or nil
-    if not item then return nil, nil, "Medication is no longer in the doctor's inventory" end
+    if not item then
+        return nil, nil, nil, nil, nil, "Treatment item is no longer in the doctor's inventory"
+    end
 
     local fullType = item.getFullType and item:getFullType() or nil
     if not fullType or (expectedFullType and tostring(fullType) ~= tostring(expectedFullType)) then
-        return nil, nil, "Medication item changed"
+        return nil, nil, nil, nil, nil, "Treatment item changed"
+    end
+
+    local treatmentKind = getServerBloodBagType(fullType)
+        and REMOTE_TREATMENT_KIND_BLOOD or REMOTE_TREATMENT_KIND_MEDICATION
+    if expectedTreatmentKind and treatmentKind ~= expectedTreatmentKind then
+        return nil, nil, nil, nil, nil, "Treatment type changed"
+    end
+
+    if treatmentKind == REMOTE_TREATMENT_KIND_BLOOD then
+        local spoilageState = getServerSpoilageState(item, previousSpoilageState)
+        if spoilageState == "rotten" then
+            return nil, nil, nil, nil, nil, "Rotten blood cannot be administered"
+        end
+
+        local ivKit = nil
+        if expectedIVKitID ~= nil then
+            ivKit = findInventoryItemByID(doctor, expectedIVKitID)
+            local ivKitType = ivKit and ivKit.getFullType and ivKit:getFullType() or nil
+            if ivKitType ~= "ExtensiveHealth.IVKit" then
+                return nil, nil, nil, nil, nil, "IV Administration Kit is no longer available"
+            end
+        else
+            ivKit = findInventoryItemByFullType(doctor, "ExtensiveHealth.IVKit")
+            if not ivKit then
+                return nil, nil, nil, nil, nil, "Requires IV Administration Kit"
+            end
+        end
+
+        return item, nil, treatmentKind, spoilageState, ivKit, nil
     end
 
     local medData = EHR.Medication and EHR.Medication.Database and EHR.Medication.Database[fullType] or nil
-    if not medData then return nil, nil, "Item is not a recognized medication" end
+    if not medData then
+        return nil, nil, nil, nil, nil, "Item is not a recognized medication"
+    end
+    if medData.remoteAdministration == false then
+        return nil, nil, nil, nil, nil, "This medication cannot be administered to another player"
+    end
 
     if EHR.Medication.GetItemDoseInfo then
         local okDose, doseInfo = pcall(EHR.Medication.GetItemDoseInfo, item)
         if okDose and doseInfo and (tonumber(doseInfo.remainingDoses) or 0) <= 0 then
-            return nil, nil, "Medication package is empty"
+            return nil, nil, nil, nil, nil, "Medication package is empty"
         end
     end
 
     if EHR.Medication.CanUseMedication then
         local okCanUse, canUse, reason = pcall(EHR.Medication.CanUseMedication, patient, item, doctor)
-        if not okCanUse then return nil, nil, "Medication validation failed" end
-        if canUse ~= true then return nil, nil, tostring(reason or "Medication cannot be used right now") end
+        if not okCanUse then
+            return nil, nil, nil, nil, nil, "Medication validation failed"
+        end
+        if canUse ~= true then
+            return nil, nil, nil, nil, nil, tostring(reason or "Medication cannot be used right now")
+        end
     end
 
-    return item, medData, nil
+    return item, medData, treatmentKind, nil, nil, nil
 end
 
 function EHR.ServerCommands.RequestAdministerMedication(doctor, args)
@@ -2102,7 +2234,9 @@ function EHR.ServerCommands.RequestAdministerMedication(doctor, args)
         return
     end
 
-    local item, medData, reason = validateRemoteMedication(doctor, patient, args.itemID, args.itemFullType)
+    local item, medData, treatmentKind, spoilageState, _, reason = validateRemoteTreatment(
+        doctor, patient, args.itemID, args.itemFullType, nil, args.spoilageState, nil
+    )
     if not item then
         sendMedicationRequestRejected(doctor, requestId, reason)
         return
@@ -2119,9 +2253,12 @@ function EHR.ServerCommands.RequestAdministerMedication(doctor, args)
 
     local nowMs = getServerNowMs()
     local fullType = item:getFullType()
-    local medicationName = EHR.Medication.GetDisplayName
-        and EHR.Medication.GetDisplayName(fullType, medData)
-        or medData.displayName or fullType
+    local medicationName = getServerTreatmentDisplayName(item, fullType, treatmentKind, medData)
+    if treatmentKind == REMOTE_TREATMENT_KIND_BLOOD and spoilageState == "stale" then
+        medicationName = tostring(medicationName) .. " - "
+            .. serverText("UI_EHR_Transfusion_StaleSuffix", "STALE!")
+    end
+    local adminType = getServerTreatmentAdminType(treatmentKind, medData)
 
     EHR.ServerCommands.PendingMedicationConsents[consentKey] = {
         requestId = requestId,
@@ -2134,7 +2271,9 @@ function EHR.ServerCommands.RequestAdministerMedication(doctor, args)
         itemID = item:getID(),
         itemFullType = fullType,
         medicationName = tostring(medicationName),
-        adminType = getServerMedicationAdminType(medData),
+        adminType = adminType,
+        treatmentKind = treatmentKind,
+        spoilageState = spoilageState,
         expiresAt = nowMs + MEDICATION_CONSENT_TTL_MS,
     }
     EHR.ServerCommands.PendingMedicationConsentByPair[pairKey] = consentKey
@@ -2146,7 +2285,9 @@ function EHR.ServerCommands.RequestAdministerMedication(doctor, args)
         doctorDisplayName = getPlayerUsernameString(doctor),
         medicationName = tostring(medicationName),
         itemFullType = fullType,
-        adminType = getServerMedicationAdminType(medData),
+        adminType = adminType,
+        treatmentKind = treatmentKind,
+        spoilageState = spoilageState,
         expiresInMs = MEDICATION_CONSENT_TTL_MS,
     })
 end
@@ -2184,8 +2325,9 @@ function EHR.ServerCommands.RespondAdministerMedicationConsent(patient, args)
         return
     end
 
-    local item, medData, reason = validateRemoteMedication(
-        doctor, patient, pending.itemID, pending.itemFullType
+    local item, medData, treatmentKind, spoilageState, ivKit, reason = validateRemoteTreatment(
+        doctor, patient, pending.itemID, pending.itemFullType,
+        pending.treatmentKind, pending.spoilageState, nil
     )
     if not item then
         sendMedicationRequestRejected(doctor, requestId, reason)
@@ -2194,6 +2336,15 @@ function EHR.ServerCommands.RespondAdministerMedicationConsent(patient, args)
 
     EHR.ServerCommands.NextMedicationActionId = (EHR.ServerCommands.NextMedicationActionId % 1000000000) + 1
     local actionId = EHR.ServerCommands.NextMedicationActionId
+    local adminType = getServerTreatmentAdminType(treatmentKind, medData)
+    local ivKitID = nil
+    if ivKit and ivKit.getID then
+        local okIVKitID = pcall(function() ivKitID = ivKit:getID() end)
+        if not okIVKitID or ivKitID == nil then
+            sendMedicationRequestRejected(doctor, requestId, "IV Administration Kit could not be reserved")
+            return
+        end
+    end
     EHR.ServerCommands.MedicationActionPermits[tostring(actionId)] = {
         actionId = actionId,
         requestId = requestId,
@@ -2204,7 +2355,10 @@ function EHR.ServerCommands.RespondAdministerMedicationConsent(patient, args)
         itemID = item:getID(),
         itemFullType = item:getFullType(),
         medicationName = pending.medicationName,
-        adminType = getServerMedicationAdminType(medData),
+        adminType = adminType,
+        treatmentKind = treatmentKind,
+        spoilageState = spoilageState,
+        ivKitID = ivKitID,
         expiresAt = nowMs + MEDICATION_ACTION_TTL_MS,
     }
 
@@ -2216,7 +2370,9 @@ function EHR.ServerCommands.RespondAdministerMedicationConsent(patient, args)
         itemID = item:getID(),
         itemFullType = item:getFullType(),
         medicationName = pending.medicationName,
-        adminType = getServerMedicationAdminType(medData),
+        adminType = adminType,
+        treatmentKind = treatmentKind,
+        spoilageState = spoilageState,
         expiresInMs = MEDICATION_ACTION_TTL_MS,
     })
 end
@@ -2262,8 +2418,91 @@ local function sendMedicationAdministerResult(player, role, success, permit, mes
         targetUsername = permit and permit.patientUsername or nil,
         itemFullType = permit and permit.itemFullType or nil,
         medicationName = permit and permit.medicationName or nil,
+        treatmentKind = permit and permit.treatmentKind or nil,
         message = tostring(message or "Medication administration failed"),
     })
+end
+
+local function applyRemoteBloodTransfusion(doctor, patient, bag, ivKit, spoilageState)
+    if not doctor or not patient or not bag or not ivKit then
+        return false, "Blood transfusion supplies are no longer available"
+    end
+
+    -- Request, consent and completion each validate the exact bag. Completion
+    -- also pins the exact IV kit selected when consent was granted, so neither
+    -- item can be substituted after the patient accepts.
+    local bloodData = ensureServerBloodData(patient)
+    if not bloodData or not bloodData.EHR_Blood then
+        return false, "Patient blood data is unavailable"
+    end
+
+    local okApply, applied = pcall(applyServerBloodBag, patient, bag, spoilageState)
+    if not okApply or applied ~= true then
+        local detail = okApply and "blood bag could not be applied" or tostring(applied)
+        return false, "Blood transfusion failed: " .. detail
+    end
+
+    -- All prerequisites are prevalidated above. Consume each exact object only
+    -- after the patient effect succeeds; the permit was already invalidated, so
+    -- this completion cannot be replayed.
+    local bagRemoved = removeInventoryItem(bag)
+    local ivKitRemoved = removeInventoryItem(ivKit)
+    if not bagRemoved or not ivKitRemoved then
+        log("[EHR Server] Blood transfusion inventory removal failed: bag="
+            .. tostring(bagRemoved) .. " ivKit=" .. tostring(ivKitRemoved))
+        return false, "Blood transfusion applied, but supply removal failed"
+    end
+
+    if EHR.SkillXP and EHR.SkillXP.OnTransfusion then
+        local okXP, xpError = pcall(EHR.SkillXP.OnTransfusion, doctor, true)
+        if not okXP then
+            log("[EHR Server] Blood transfusion XP failed: " .. tostring(xpError))
+        end
+    end
+
+    return true, nil
+end
+
+local REMOTE_VANILLA_PILL_TYPES = {
+    ["Base.Pills"] = true,
+    ["Base.PillsSleepingTablets"] = true,
+    ["Base.PillsAntiDep"] = true,
+}
+
+local function applyRemoteVanillaPill(doctor, patient, item, fullType)
+    if not doctor or not patient or not item or not REMOTE_VANILLA_PILL_TYPES[fullType] then
+        return false, "Vanilla pill administration data is invalid"
+    end
+    if not EHR.Medication or not EHR.Medication.UseConsumedMedication then
+        return false, "EHR medication tracking is unavailable"
+    end
+
+    -- Vanilla JustTookPill applies the native effect and calls UseAndSync on
+    -- the doctor's exact item. Use the effect-only EHR path first so the same
+    -- physical tablet is never consumed twice.
+    local okEHR, ehrApplied = pcall(
+        EHR.Medication.UseConsumedMedication, patient, fullType, doctor
+    )
+    if not okEHR or ehrApplied ~= true then
+        local detail = okEHR and "EHR effect could not be applied" or tostring(ehrApplied)
+        return false, "Vanilla pill administration failed: " .. detail
+    end
+
+    local bodyDamage = patient.getBodyDamage and patient:getBodyDamage() or nil
+    if not bodyDamage or not bodyDamage.JustTookPill then
+        return false, "Vanilla medication effect is unavailable"
+    end
+    local okVanilla, vanillaError = pcall(function()
+        bodyDamage:JustTookPill(item)
+    end)
+    if not okVanilla then
+        return false, "Vanilla medication effect failed: " .. tostring(vanillaError)
+    end
+
+    if sendPlayerEffects then
+        pcall(function() sendPlayerEffects(patient) end)
+    end
+    return true, nil
 end
 
 function EHR.ServerCommands.CompleteAdministerMedication(doctor, args)
@@ -2283,19 +2522,45 @@ function EHR.ServerCommands.CompleteAdministerMedication(doctor, args)
         targetOnlineID = permit.patientOnlineID,
         targetUsername = permit.patientUsername,
     }, nil)
-    local item, _, reason = validateRemoteMedication(doctor, patient, permit.itemID, permit.itemFullType)
+    local completionSpoilageState = combineBloodSpoilageState(
+        permit.spoilageState,
+        args.spoilageState
+    )
+    local item, medData, treatmentKind, spoilageState, ivKit, reason = validateRemoteTreatment(
+        doctor, patient, permit.itemID, permit.itemFullType,
+        permit.treatmentKind, completionSpoilageState, permit.ivKitID
+    )
     if not item then
         sendMedicationAdministerResult(doctor, "doctor", false, permit, reason)
+        if patient then
+            sendMedicationAdministerResult(patient, "patient", false, permit, reason)
+            syncModDataToClient(patient)
+        end
+        syncModDataToClient(doctor)
         return
     end
 
-    local ok, used = pcall(EHR.Medication.UseMedication, patient, item, doctor)
-    local success = ok and used == true
+    local success = false
+    if treatmentKind == REMOTE_TREATMENT_KIND_BLOOD then
+        success, reason = applyRemoteBloodTransfusion(doctor, patient, item, ivKit, spoilageState)
+    elseif medData and medData.useVanillaActionOnly == true
+            and REMOTE_VANILLA_PILL_TYPES[permit.itemFullType] then
+        success, reason = applyRemoteVanillaPill(
+            doctor, patient, item, permit.itemFullType
+        )
+    else
+        local ok, used = pcall(EHR.Medication.UseMedication, patient, item, doctor)
+        success = ok and used == true
+        if not success then
+            reason = ok and "Medication could not be used" or ("Medication administration failed: " .. tostring(used))
+        end
+    end
+
     if not success then
-        reason = ok and "Medication could not be used" or ("Medication administration failed: " .. tostring(used))
         sendMedicationAdministerResult(doctor, "doctor", false, permit, reason)
         sendMedicationAdministerResult(patient, "patient", false, permit, reason)
         syncModDataToClient(patient)
+        syncModDataToClient(doctor)
         return
     end
 
@@ -2619,23 +2884,59 @@ function EHR.ServerCommands.UseTransfusion(player, args)
     local fullType = item:getFullType()
     local spoilageState = getServerSpoilageState(item, args.spoilageState)
     local consumed = false
+    local isBloodBag = EHR.Blood.BloodBagTypes and EHR.Blood.BloodBagTypes[fullType] ~= nil
+    local isSalineBag = fullType == "ExtensiveHealth.SalineBag"
 
-    if EHR.Blood.BloodBagTypes and EHR.Blood.BloodBagTypes[fullType] then
+    if not isBloodBag and not isSalineBag then
+        log("[EHR Server] UseTransfusion rejected: unsupported item " .. tostring(fullType))
+        syncModDataToClient(player)
+        return
+    end
+
+    if spoilageState == "rotten" then
+        log("[EHR Server] UseTransfusion rejected: transfusion item is rotten")
+        serverSay(player, "This transfusion item is contaminated and cannot be used.")
+        syncModDataToClient(player)
+        return
+    end
+
+    -- The MP action leaves both supplies for the authoritative server. Resolve
+    -- and validate both before applying any patient effect or consuming either.
+    local ivKit, ivKitContainer = findInventoryItemByFullType(player, "ExtensiveHealth.IVKit")
+    if not ivKit then
+        log("[EHR Server] UseTransfusion rejected: IV Administration Kit not found")
+        serverSay(player, serverText("UI_EHR_MedAction_RequiresIVKit", "Requires: IV Kit"))
+        syncModDataToClient(player)
+        return
+    end
+
+    if isBloodBag then
         consumed = applyServerBloodBag(player, item, spoilageState)
         if consumed then
-            if EHR.SkillXP and EHR.SkillXP.OnTransfusion then
-                pcall(function() EHR.SkillXP.OnTransfusion(player, false) end)
+            local itemRemoved = removeInventoryItem(item, container)
+            local ivKitRemoved = removeInventoryItem(ivKit, ivKitContainer)
+            if not itemRemoved or not ivKitRemoved then
+                log("[EHR Server] UseTransfusion inventory removal failed: item="
+                    .. tostring(itemRemoved) .. " ivKit=" .. tostring(ivKitRemoved))
             end
-            removeInventoryItem(item, container)
+            if EHR.SkillXP and EHR.SkillXP.OnTransfusion then
+                pcall(function() EHR.SkillXP.OnTransfusion(player, true) end)
+            end
         end
-    elseif fullType == "ExtensiveHealth.SalineBag" then
+    elseif isSalineBag then
         local applied, consumedByBloodApi = applyServerSalineBag(player, item, spoilageState)
         consumed = applied
-        if consumed and not consumedByBloodApi then
-            removeInventoryItem(item, container)
+        if consumed then
+            local itemRemoved = true
+            if not consumedByBloodApi then
+                itemRemoved = removeInventoryItem(item, container)
+            end
+            local ivKitRemoved = removeInventoryItem(ivKit, ivKitContainer)
+            if not itemRemoved or not ivKitRemoved then
+                log("[EHR Server] UseTransfusion inventory removal failed: item="
+                    .. tostring(itemRemoved) .. " ivKit=" .. tostring(ivKitRemoved))
+            end
         end
-    else
-        log("[EHR Server] UseTransfusion rejected: unsupported item " .. tostring(fullType))
     end
 
     syncModDataToClient(player)
@@ -4266,6 +4567,31 @@ local function OnClientCommand(module, command, player, args)
             local hasMedicalMonitorWatch = playerHasMedicalMonitorWatch(targetPlayer)
             bodyStatusSnapshot.hasMedicalMonitorWatch = hasMedicalMonitorWatch
 
+            local environmentalExposureView = nil
+            if EHR.Environmental then
+                local exposureData = nil
+                if EHR.Environmental.GetExposureData then
+                    pcall(function() exposureData = EHR.Environmental.GetExposureData(targetPlayer) end)
+                end
+                environmentalExposureView = {
+                    heatExposure = tonumber(exposureData and exposureData.heatExposure) or 0,
+                    heatStrokeExposure = tonumber(exposureData and exposureData.heatStrokeExposure) or 0,
+                }
+                if EHR.Environmental.GetHeatExposureDisplay then
+                    pcall(function()
+                        environmentalExposureView.heatExposureLevel = EHR.Environmental.GetHeatExposureDisplay(targetPlayer)
+                    end)
+                end
+                if EHR.Environmental.GetHeatExposureRatio then
+                    pcall(function()
+                        environmentalExposureView.heatExposureRatio = EHR.Environmental.GetHeatExposureRatio(targetPlayer)
+                    end)
+                end
+            end
+
+            local serverWorldHour = nil
+            pcall(function() serverWorldHour = getGameTime():getWorldAgeHours() end)
+
             local examData = {
                 targetUsername = requestKey,
                 targetActualUsername = actualUsername,
@@ -4283,10 +4609,13 @@ local function OnClientCommand(module, command, player, args)
                 EHR_MedicalJournal = targetData.EHR_MedicalJournal,
                 EHR_Temperature = targetData.EHR_Temperature,
                 EHR_CorpseSickness = targetData.EHR_CorpseSickness,
+                EHR_EnvironmentalExposure = environmentalExposureView,
                 EHR_KnoxCure = targetData.EHR_KnoxCure,
                 EHR_KnoxStatus = knoxStatus,
                 EHR_Immunity = targetData.EHR_Immunity,
                 EHR_Initialized = targetData.EHR_Initialized,
+                serverWorldHour = serverWorldHour,
+                snapshotTimestamp = getTimestampMs and getTimestampMs() or 0,
             }
 
             -- Send data to requesting player
@@ -4602,11 +4931,9 @@ end
 -- Runs on dedicated server to process effects even when no client is "hosting"
 -- ============================================
 
-local PROGRESSION_INTERVAL_TICKS = 300  -- ~10 seconds
 local MEDICATION_INTERVAL_TICKS = 30    -- ~1 second; keeps delayed side effects responsive in MP
 local BLOOD_INTERVAL_TICKS = 30         -- ~1 second; server is authoritative for MP blood
 local BLOOD_SYNC_INTERVAL_TICKS = 90    -- ~3 seconds while bleeding; keeps UI responsive without spam
-local progressionTickCounter = 0
 local medicationTickCounter = 0
 local bloodTickCounter = 0
 local bloodSyncTickCounter = 0
@@ -4665,104 +4992,6 @@ local function processPlayerMedication(player)
             log("[EHR Server] Medication progression failed: " .. tostring(err))
         end
     end
-end
-
-local function processPlayerProgression(player)
-    if not player or not player:isAlive() then return end
-
-    local data = player:getModData()
-    if not data then return end
-
-    local gameTime = getGameTime()
-    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
-
-    -- Process Sepsis Progression
-    if data.EHR_Sepsis and data.EHR_Sepsis.active then
-        local sepsis = data.EHR_Sepsis
-        local stageTime = currentHour - (sepsis.stageStartTime or currentHour)
-
-        -- Stage progression times (hours per stage)
-        local stageDurations = {6, 12, 24, 48}  -- Stage 1→2, 2→3, 3→4, 4→death
-        local currentStage = sepsis.stage or 1
-
-        if currentStage < 4 and stageTime >= (stageDurations[currentStage] or 12) then
-            -- Progress to next stage
-            sepsis.stage = currentStage + 1
-            sepsis.stageStartTime = currentHour
-            sepsis.lastHealthDamageHour = currentHour
-            log("[EHR Server] Player " .. player:getUsername() .. " sepsis progressed to stage " .. sepsis.stage)
-        end
-
-        -- Stage 4 = death (handled by client, but server tracks)
-        if sepsis.stage >= 4 then
-            local stage4Time = currentHour - (sepsis.stageStartTime or currentHour)
-            if stage4Time >= 48 then
-                -- Player should be dead by now - client handles actual death
-                log("[EHR Server] Player " .. player:getUsername() .. " sepsis stage 4 exceeded 48 hours")
-            end
-        end
-    end
-
-    -- Process Disease Progression
-    if data.EHR_Disease and data.EHR_Disease.active then
-        for diseaseId, disease in pairs(data.EHR_Disease.active) do
-            if disease.endTime and currentHour >= disease.endTime then
-                -- Disease has run its course - cure it
-                data.EHR_Disease.active[diseaseId] = nil
-                if EHR.BodyTemp and EHR.BodyTemp.ResetDiseaseFeverIfStale then
-                    EHR.BodyTemp.ResetDiseaseFeverIfStale(player, false)
-                end
-                log("[EHR Server] Player " .. player:getUsername() .. " recovered from " .. diseaseId)
-            elseif disease.peakTime and disease.stage then
-                -- Update stage based on time
-                local totalDuration = (disease.endTime or currentHour) - (disease.startTime or currentHour)
-                local elapsed = currentHour - (disease.startTime or currentHour)
-                local progress = totalDuration > 0 and (elapsed / totalDuration) or 0
-
-                -- Stage progression: 1=incubation, 2=early, 3=peak, 4=recovery
-                local newStage = 2
-                if progress < 0.1 then
-                    newStage = 1  -- Incubation
-                elseif progress < 0.4 then
-                    newStage = 2  -- Early
-                elseif progress < 0.7 then
-                    newStage = 3  -- Peak
-                else
-                    newStage = 4  -- Recovery
-                end
-
-                if newStage ~= disease.stage then
-                    disease.stage = newStage
-                    log("[EHR Server] Player " .. player:getUsername() .. " " .. diseaseId .. " progressed to stage " .. newStage)
-                end
-
-                if diseaseId == "cellulitis" and disease.stage >= 4 and not disease.cellulitisSepsisTriggered then
-                    local hasTreatment = EHR.Disease
-                        and EHR.Disease.HasActiveCurativeTreatment
-                        and EHR.Disease.HasActiveCurativeTreatment(player, "cellulitis")
-
-                    if hasTreatment then
-                        disease.cellulitisSepsisBlockedByTreatment = true
-                    else
-                        disease.cellulitisSepsisTriggered = true
-                        triggerCellulitisSepsisHandoff(player, {
-                            sourceBodyPart = disease.sourceBodyPart or "cellulitis",
-                        })
-                    end
-                end
-            end
-        end
-    end
-
-    -- Wound infection detection, incubation, stage timing, treatment holds and
-    -- sepsis handoff are owned by EHR_WoundInfection_V2 on the server. Keeping
-    -- a second progression loop here made MP advance by two different clocks
-    -- and bypassed the WoundInfectionSpeed sandbox multiplier.
-
-    -- Blood regeneration is handled by EHR.Blood.UpdateBloodVolume through
-    -- EHR.Blood.ApplyBloodRegeneration. Keeping a second server-only regen here
-    -- bypassed sandbox delay/healing checks and made MP players recover too fast.
-    processPlayerMedication(player)
 end
 
 local function OnServerTick()
@@ -4825,19 +5054,11 @@ local function OnServerTick()
         end
     end
 
-    -- Disease/Sepsis/Wound progression
-    progressionTickCounter = progressionTickCounter + 1
-    if progressionTickCounter >= PROGRESSION_INTERVAL_TICKS then
-        progressionTickCounter = 0
-
-        local players = getOnlinePlayers()
-        if players then
-            for i = 0, players:size() - 1 do
-                local player = players:get(i)
-                processPlayerProgression(player)
-            end
-        end
-    end
+    -- Disease, sepsis and wound progression are owned by their canonical
+    -- shared modules, which already run authoritatively on the server. A second
+    -- simplified loop here used different stage rules and could overwrite
+    -- manual/reverse/permanent disease state. Medication remains on the
+    -- dedicated one-second path above.
 end
 
 -- Register server tick handler

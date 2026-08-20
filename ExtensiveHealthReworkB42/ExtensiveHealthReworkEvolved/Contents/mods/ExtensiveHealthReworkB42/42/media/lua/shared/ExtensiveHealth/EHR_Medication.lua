@@ -246,8 +246,10 @@ EHR.Medication.Database = {
         treats = {"common_cold"},
         displayName = "Herbal Tea",
         icon = "CommonColdTea",
+        adminType = "liquid",
         useVanillaActionOnly = true,
         consumeViaFoodHook = true,
+        remoteAdministration = false,
         usageMessage = "You drink the herbal tea. Warmth settles in your chest.",
         canCure = true,
         cureTimeHours = 28,
@@ -311,8 +313,10 @@ EHR.Medication.Database = {
         },
         displayName = "Antipyretic Tea",
         icon = "AntipyreticTea",
+        adminType = "liquid",
         useVanillaActionOnly = true,
         consumeViaFoodHook = true,
+        remoteAdministration = false,
         usageMessage = "You drink the antipyretic tea. The fever begins to ease.",
         appliesWithoutDisease = true,
         effectDurationHours = 4,
@@ -355,6 +359,7 @@ EHR.Medication.Database = {
         tier = 1,
         treats = {"dysentery", "food_poisoning", "gastroenteritis", "toxin_poisoning", "heat_stroke"},
         displayName = "Electrolyte Powder",
+        adminType = "liquid",
         usageMessage = "You mix and drink the electrolyte solution. You feel more hydrated.",
         appliesWithoutDisease = true,
         effectDurationHours = 0.5,
@@ -485,8 +490,10 @@ EHR.Medication.Database = {
         treats = {},
         displayName = "Relaxant Tea",
         icon = "RelaxantTea",
+        adminType = "liquid",
         useVanillaActionOnly = true,
         consumeViaFoodHook = true,
+        remoteAdministration = false,
         usageMessage = "You drink the relaxant tea. Your nerves begin to loosen.",
         appliesWithoutDisease = true,
         effectDurationHours = 3,
@@ -526,6 +533,7 @@ EHR.Medication.Database = {
         treats = {},
         displayName = "Combat Stimulants",
         icon = "CombatStimulants",
+        adminType = "pill",
         usageMessage = "You take combat stimulants. Everything sharpens, fast.",
         appliesWithoutDisease = true,
         effectDurationHours = 3,
@@ -699,6 +707,7 @@ EHR.Medication.Database = {
         tier = 2,
         treats = {"dysentery"},
         displayName = "Oral Rehydration Kit",
+        adminType = "liquid",
         usageMessage = "You prepare and drink the rehydration solution.",
         blockWhileDoseActive = true,
         consumeWhileDoseActive = true,
@@ -906,6 +915,7 @@ EHR.Medication.Database = {
         tier = 3,
         treats = {"corpse_sickness"},
         displayName = "Respiratory Support Kit",
+        adminType = "inhaler",
         usageMessage = "You use the respiratory support kit. Fresh oxygen and airway support help you recover.",
         blockWhileDoseActive = true,
         effectDurationHours = 3,
@@ -984,7 +994,7 @@ EHR.Medication.Database = {
 
     ["ExtensiveHealth.ChelationKit"] = {
         tier = 3,
-        treats = {},
+        treats = {"toxin_poisoning"},
         displayName = "Chelation Therapy Kit",
         usageMessage = "You begin chelation therapy. Heavy metals are being removed.",
         requiresIVKit = true,
@@ -1033,6 +1043,7 @@ EHR.Medication.Database = {
         tier = 3,
         treats = {"tuberculosis"},
         displayName = "Rifampicin Combination Pack",
+        adminType = "pill",
         usageMessage = "You begin the Rifampicin combination treatment. This is powerful.",
         cureTimeHours = 336, -- 14 days (still long but faster than Tier 2)
         sideEffects = {"orange_urine", "liver_stress", "fatigue"},
@@ -1117,6 +1128,7 @@ EHR.Medication.Database = {
         tier = 3,
         treats = {}, -- Knox cure handled via immediateEffects
         displayName = "Zomboxivir Ampule",
+        adminType = "injection",
         usageMessage = "*breaks ampule* The experimental cure enters your bloodstream...",
         isKnoxCure = true,
         totalDosesNeeded = 1, -- Single use cure
@@ -1142,6 +1154,8 @@ EHR.Medication.Database = {
         tier = 2,
         treats = {}, -- Symptom relief
         displayName = "Zomboxolone",
+        useVanillaActionOnly = true,
+        remoteAdministration = false,
         usageMessage = "You take Zomboxolone. It slows the infection...",
         isKnoxSuppressant = true,
         totalDosesNeeded = 10, -- Drainable bottle
@@ -1151,6 +1165,8 @@ EHR.Medication.Database = {
         tier = 2,
         treats = {},
         displayName = "Zomboxolone Pill",
+        useVanillaActionOnly = true,
+        remoteAdministration = false,
         usageMessage = "You take a Zomboxolone pill. It slows the infection...",
         isKnoxSuppressant = true,
         totalDosesNeeded = 1,
@@ -1160,6 +1176,8 @@ EHR.Medication.Database = {
         tier = 2,
         treats = {},
         displayName = "Zomboxycycline",
+        useVanillaActionOnly = true,
+        remoteAdministration = false,
         usageMessage = "You take Zomboxycycline. It fights the infection...",
         isKnoxSuppressant = true,
         totalDosesNeeded = 10, -- Drainable bottle
@@ -1169,6 +1187,8 @@ EHR.Medication.Database = {
         tier = 2,
         treats = {},
         displayName = "Zomboxycycline Pill",
+        useVanillaActionOnly = true,
+        remoteAdministration = false,
         usageMessage = "You take a Zomboxycycline pill. It fights the infection...",
         isKnoxSuppressant = true,
         totalDosesNeeded = 1,
@@ -2860,7 +2880,10 @@ function EHR.Medication.GetItemDoseInfo(item)
 
     local maxDoses = EHR.Medication.GetDoseCapacityFromDelta(useDelta)
     currentUsesFloat = math.max(0, math.min(1.0, currentUsesFloat))
-    local remaining = math.floor((currentUsesFloat / useDelta) + 0.0001)
+    -- Drainable values are floating-point fills, not exact integer counters.
+    -- Round to the nearest dose so a full 1/6 package is six doses rather than
+    -- five and legacy partial packages remain usable after the precision fix.
+    local remaining = math.floor((currentUsesFloat / useDelta) + 0.5)
     remaining = math.max(0, math.min(maxDoses, remaining))
 
     return {
@@ -2914,10 +2937,10 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
 
         if remainingDoses > 1 then
             local newRemaining = remainingDoses - 1
-            local newUsed = newRemaining * useDelta
-            if newRemaining >= (doseInfo.maxDoses or 1) then
-                newUsed = 1.0
-            end
+            -- Subtract from the actual fill. Reconstructing fill from an
+            -- already-rounded dose count could consume two doses at once on
+            -- old items whose UseDelta was 0.1667.
+            local newUsed = (tonumber(doseInfo.currentUsesFloat) or 0) - useDelta
             newUsed = math.max(0, math.min(1.0, newUsed))
 
             local okSet = pcall(function() item:setUsedDelta(newUsed) end)
@@ -3063,8 +3086,17 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
         return false, medData.activeDoseMessage or "A warming pack is already active"
     end
 
-    if medData.sleepAid and EHR_MedicationHasActiveGeneralEffect(player, "sleepAid") then
-        return false, medData.activeDoseMessage or "A sleep-aid dose is still active"
+    if medData.sleepAid and EHR_MedicationHasActiveGeneralEffect(player, "sleepAid")
+            and EHR.Medication.GetDoseStatus then
+        -- The general sleepAid flag is shared by antidepressants, sleeping
+        -- pills and other sleep supports. It means the patient may sleep; it
+        -- does not mean this exact medication was already administered.
+        local ok, status = pcall(EHR.Medication.GetDoseStatus, player, itemFullType)
+        local doseDue = ok and status and not status.treatmentComplete
+            and (status.isOverdue == true or (tonumber(status.hoursUntilNextDose) or 0) <= 0)
+        if ok and status and status.isDoseActive and not doseDue then
+            return false, medData.activeDoseMessage or "A sleep-aid dose is still active"
+        end
     end
 
     if medData.blockWhileDoseActive and EHR.Medication.GetDoseStatus then
@@ -3138,8 +3170,13 @@ function EHR.Medication.ApplyVanillaAntibioticWoundEffect(player, itemFullType)
     return true
 end
 
-function EHR.Medication.UseConsumedMedication(player, itemFullType)
+function EHR.Medication.UseConsumedMedication(player, itemFullType, administeringPlayer)
     if not player or not itemFullType then return false end
+
+    -- Self-use awards the patient as before. Remote vanilla-pill administration
+    -- can pass the doctor so the same procedure does not grant First Aid XP to
+    -- the person receiving the dose.
+    local xpOwner = administeringPlayer or player
 
     if isClient and isClient() and sendClientCommand then
         sendClientCommand(player, "EHR", "UseConsumedMedication", {
@@ -3219,7 +3256,7 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
         local appliedVanillaWoundEffect = EHR.Medication.ApplyVanillaAntibioticWoundEffect
             and EHR.Medication.ApplyVanillaAntibioticWoundEffect(player, itemFullType)
 
-        if medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
+        if treatedAny and medData.hydrationSupport and EHR.Medication.StartHydrationSupport then
             EHR.Medication.StartHydrationSupport(player, medData)
         end
 
@@ -3245,7 +3282,7 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
     end
 
     if EHR.SkillXP and EHR.SkillXP.OnMedicationTaken then
-        EHR.SkillXP.OnMedicationTaken(player, {
+        EHR.SkillXP.OnMedicationTaken(xpOwner, {
             tier = tier,
             displayName = medData.displayName,
             medId = medKey,
@@ -3254,7 +3291,7 @@ function EHR.Medication.UseConsumedMedication(player, itemFullType)
     end
 
     if treatedAny and EHR.SkillXP and EHR.SkillXP.OnTreatmentDose then
-        EHR.SkillXP.OnTreatmentDose(player, "disease", true)
+        EHR.SkillXP.OnTreatmentDose(xpOwner, "disease", true)
     end
 
     if isClient and isClient() and sendClientCommand then
@@ -3301,7 +3338,7 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
         local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(inventoryOwner, item, inventory)
         if consumed and consumeMode == "dose" then
             if remainingDoses == nil and useDelta and useDelta > 0 then
-                remainingDoses = math.floor((newUsed / useDelta) + 0.0001)
+                remainingDoses = math.floor((newUsed / useDelta) + 0.5)
             end
             EHR.Log("Consumed early dose without treatment progress: " .. itemFullType ..
                     " (" .. tostring(remainingDoses) .. " doses remaining)")
@@ -3428,7 +3465,7 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
     local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(inventoryOwner, item, inventory)
     if consumed and consumeMode == "dose" then
         if remainingDoses == nil and useDelta and useDelta > 0 then
-            remainingDoses = math.floor((newUsed / useDelta) + 0.0001)
+            remainingDoses = math.floor((newUsed / useDelta) + 0.5)
         end
         EHR.Log("Used dose of: " .. itemFullType .. " (" .. remainingDoses .. " doses remaining)")
     elseif consumed and consumeMode == "removed" then
@@ -4196,11 +4233,26 @@ function EHR.Medication.StartSleepAid(player, medData)
     local gameTime = getGameTime and getGameTime() or nil
     local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
     local duration = support.durationHours or medData.effectDurationHours or 8
+    local newEndTime = currentHour + math.max(0.05, duration)
+    local existing = medTracking.activeGeneralEffects.sleepAid
+    local existingEndTime = type(existing) == "table" and tonumber(existing.endTime) or nil
+    local existingIsActive = existingEndTime ~= nil and existingEndTime > currentHour
+    local combinedStartTime = currentHour
+    local combinedEndTime = newEndTime
+    local combinedMedicationName = medData.displayName or "Sleep Aid"
+
+    if existingIsActive then
+        combinedStartTime = math.min(tonumber(existing.startTime) or currentHour, currentHour)
+        combinedEndTime = math.max(existingEndTime, newEndTime)
+        if existingEndTime > newEndTime then
+            combinedMedicationName = existing.medicationName or combinedMedicationName
+        end
+    end
 
     medTracking.activeGeneralEffects.sleepAid = {
-        startTime = currentHour,
-        endTime = currentHour + math.max(0.05, duration),
-        medicationName = medData.displayName or "Sleep Aid",
+        startTime = combinedStartTime,
+        endTime = combinedEndTime,
+        medicationName = combinedMedicationName,
     }
 
     return true
@@ -5228,6 +5280,7 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
             medicationName = medData.displayName,
             tier = medData.tier,
             treatingDisease = diseaseId,
+            diseaseTargets = { [diseaseId] = true },
             symptomOnly = doseTiming.symptomOnly,
             requiresDoseCourse = canCure,
         }
@@ -5246,14 +5299,22 @@ function EHR.Medication.ApplyTreatment(player, diseaseId, medData, tierEffects, 
                 doseData.firstDoseTime = math.max(0, previousLastDose - ((previousDoseCount - 1) * intervalHours))
             end
         end
+        local sameDoseEvent = math.abs((tonumber(doseData.lastDoseTime) or -999999) - currentHour) < 0.001
         doseData.lastDoseTime = currentHour
-        doseData.doseCount = (doseData.doseCount or 0) + 1
+        if not sameDoseEvent then
+            doseData.doseCount = (doseData.doseCount or 0) + 1
+        end
         doseData.totalDosesNeeded = doseTiming.dosesRequired
         doseData.intervalHours = doseTiming.doseInterval
         doseData.activeHours = doseTiming.activeHours
         doseData.medicationName = medData.displayName
         doseData.tier = medData.tier
-        doseData.treatingDisease = diseaseId
+        doseData.diseaseTargets = doseData.diseaseTargets or {}
+        if doseData.treatingDisease then
+            doseData.diseaseTargets[doseData.treatingDisease] = true
+        end
+        doseData.diseaseTargets[diseaseId] = true
+        doseData.treatingDisease = doseData.treatingDisease or diseaseId
         doseData.symptomOnly = doseTiming.symptomOnly
         doseData.requiresDoseCourse = canCure
     end

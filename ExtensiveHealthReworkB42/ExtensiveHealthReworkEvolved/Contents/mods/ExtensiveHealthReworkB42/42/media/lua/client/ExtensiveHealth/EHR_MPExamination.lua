@@ -720,6 +720,13 @@ function EHR.MPExamination.OnExamDataFailed(targetUsername, error, requestId)
     if pending and pending.localPlayer and not pending.silent and error ~= "rate_limited" then
         EHR.Locale.Say(pending.localPlayer, getText("UI_EHR_Exam_Failed") or "Cannot examine that player")
     end
+    if pending and pending.targetPlayer and EHR.UI and EHR.UI.GetRemoteHealthPanelForPatient then
+        local panel = EHR.UI.GetRemoteHealthPanelForPatient(pending.targetPlayer)
+        if panel then
+            panel.remoteExamError = tostring(error or "unknown")
+            panel.remoteExamStale = type(panel.remoteExamData) == "table"
+        end
+    end
 
     -- Clear pending request
     EHR.MPExamination.PendingRequests[targetUsername] = nil

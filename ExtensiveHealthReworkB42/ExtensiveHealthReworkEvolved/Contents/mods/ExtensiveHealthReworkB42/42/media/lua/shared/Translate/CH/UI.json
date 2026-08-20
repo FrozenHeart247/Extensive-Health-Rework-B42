@@ -29,7 +29,7 @@
     "UI_EHR_Symptoms": "症狀：",
     "UI_EHR_Withdrawal": "！提款：",
     "UI_EHR_BlocksHealing": "[減緩癒合速度]",
-    "UI_EHR_DoseCount": "劑量 %d/%d",
+    "UI_EHR_DoseCount": "劑量 %1/%2",
     "UI_EHR_TimeLeft": "%.1fh 剩餘",
     "UI_EHR_SymptomRelief": "症狀緩解積極",
     "UI_EHR_RetakeOverdueMinutes": "現在重考！ （%.0fm 逾期）",

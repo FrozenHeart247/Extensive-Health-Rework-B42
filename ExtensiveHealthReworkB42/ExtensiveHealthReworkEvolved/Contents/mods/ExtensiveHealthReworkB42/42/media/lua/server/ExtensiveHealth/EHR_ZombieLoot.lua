@@ -76,6 +76,7 @@ ZombieLoot.ItemPool = {
 
     -- Clinical medication and equipment
     "ExtensiveHealth.CorticosteroidInjection",
+    "ExtensiveHealth.LastChanceEpinephrine",
     "ExtensiveHealth.RespiratorySupportKit",
     "ExtensiveHealth.IVAntibiotics",
     "ExtensiveHealth.IVMetronidazole",

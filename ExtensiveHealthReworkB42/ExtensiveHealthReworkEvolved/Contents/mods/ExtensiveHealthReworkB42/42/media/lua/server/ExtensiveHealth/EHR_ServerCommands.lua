@@ -1555,6 +1555,11 @@ function EHR.ServerCommands.UseMedication(player, args)
     end)
     if not ok then
         log("[EHR Server] UseMedication failed: " .. tostring(result))
+    elseif result ~= true then
+        -- A handled Lua call can still reject the dose without throwing. Keep
+        -- that visible in normal logs so MP item/action failures are diagnosable.
+        log("[EHR Server] UseMedication failed without exception for "
+            .. tostring(item:getFullType()) .. " (item " .. tostring(args.itemID) .. ")")
     end
 
     -- ConsumeOneDose owns both drainable-stat and final-removal replication.

@@ -312,6 +312,17 @@ module ExtensiveHealth
         Medical = true,
     }
 
+    item LastChanceEpinephrine
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:normal,
+        DisplayName = Emergency Epinephrine Auto-Injector,
+        Icon = Epinephrine,
+        Weight = 0.1,
+        Tooltip = Tooltip_LastChanceEpinephrine,
+        Medical = true,
+    }
+
     /** =========================================
         TIER 1 - OTC (OVER THE COUNTER)
         Balanced multi-dose package sizes

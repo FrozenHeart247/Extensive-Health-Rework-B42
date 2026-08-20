@@ -49,6 +49,7 @@ local clinicalItems = {
     "ExtensiveHealth.IVAmphotericin", 1.5,
     "ExtensiveHealth.ChelationKit", 1.5,
     "ExtensiveHealth.AlbendazoleInjection", 1.5,
+    "ExtensiveHealth.LastChanceEpinephrine", 1.0,
 }
 
 local medicalSpawns = {

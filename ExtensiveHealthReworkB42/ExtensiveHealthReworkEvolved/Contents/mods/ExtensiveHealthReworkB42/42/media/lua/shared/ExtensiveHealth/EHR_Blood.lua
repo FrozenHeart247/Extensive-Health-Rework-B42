@@ -175,6 +175,11 @@ EHR.Blood.BodyPartMultipliers = {
     ["Foot_R"] = 0.3,
 }
 
+-- Preserve the existing Neck value for scratches. More serious actively
+-- bleeding neck wounds receive the same increase below and at the per-wound
+-- cap, so the bonus is not silently erased by saturation.
+local NECK_NON_SCRATCH_LOSS_SCALE = 1.4
+
 -- Default multiplier for unknown body parts
 EHR.Blood.DefaultBodyPartMultiplier = 0.8
 
@@ -607,6 +612,18 @@ function EHR.Blood.UpdateBloodVolume(player, data)
 
                         local woundMultiplier = EHR.Blood.GetWoundTypeMultiplier(part)
                         local bodyPartMultiplier = EHR.Blood.GetBodyPartMultiplier(partType)
+                        local maxLossPerWound = 5.0
+
+                        -- GetWoundTypeMultiplier already resolves mixed wound flags
+                        -- to the dominant (highest) type. A pure scratch therefore
+                        -- stays at the original Neck multiplier, while a scratch plus
+                        -- any more serious wound follows the non-scratch path.
+                        local isNeckNonScratch = tostring(partType) == "Neck"
+                            and woundMultiplier > EHR.Blood.WoundTypeMultipliers.scratch
+                        if isNeckNonScratch then
+                            bodyPartMultiplier = bodyPartMultiplier * NECK_NON_SCRATCH_LOSS_SCALE
+                            maxLossPerWound = maxLossPerWound * NECK_NON_SCRATCH_LOSS_SCALE
+                        end
 
                         -- Calculate blood loss for this part (mL per tick)
                         -- Scale factor: 0.5 for meaningful blood loss rates
@@ -615,11 +632,11 @@ function EHR.Blood.UpdateBloodVolume(player, data)
                         local partLoss = damage * woundMultiplier * bodyPartMultiplier * 0.5
 
                         -- v2.7.2: Cap per-wound blood loss to prevent extreme bleed rates
-                        -- Maximum 5 mL per second from any single wound (300 mL/min)
+                        -- Base maximum is 5 mL per update; serious neck wounds use
+                        -- the same 1.4 scale as their vascularity multiplier.
                         -- Medically realistic: even severe wounds have limited flow
-                        local MAX_LOSS_PER_WOUND = 5.0
-                        if partLoss > MAX_LOSS_PER_WOUND then
-                            partLoss = MAX_LOSS_PER_WOUND
+                        if partLoss > maxLossPerWound then
+                            partLoss = maxLossPerWound
                         end
 
                         bloodLossThisTick = bloodLossThisTick + partLoss
@@ -1320,6 +1337,43 @@ EHR.ResetLockedHealth = function(playerID)
         lockedHealth = {}
         EHR.Log("lockedHealth cleared for ALL players")
     end
+end
+
+-- Accept an explicit, authorized body-part health change as the new healing-lock
+-- baseline. This does not alter wounds or bypass future ControlHealing checks; it
+-- only prevents the next tick from mistaking an emergency treatment for vanilla
+-- passive regeneration and rolling it back.
+function EHR.Blood.AcceptCurrentHealth(player)
+    if not player or not player.getBodyDamage then return false end
+
+    local bodyDamage = nil
+    local playerID = nil
+    local ok = pcall(function()
+        bodyDamage = player:getBodyDamage()
+        playerID = tostring(player:getUsername() or player:getPlayerNum())
+    end)
+    if not ok or not bodyDamage or not playerID then return false end
+    if not BodyPartType or not BodyPartType.ToIndex or not BodyPartType.FromIndex then return false end
+
+    lockedHealth[playerID] = lockedHealth[playerID] or {}
+    local locked = lockedHealth[playerID]
+    local accepted = 0
+    for i = 0, BodyPartType.ToIndex(BodyPartType.MAX) - 1 do
+        local partType = BodyPartType.FromIndex(i)
+        local part = partType and bodyDamage:getBodyPart(partType) or nil
+        if part and part.getHealth then
+            local okHealth, currentHealth = pcall(function() return part:getHealth() end)
+            if okHealth and tonumber(currentHealth) then
+                locked[tostring(partType)] = tonumber(currentHealth)
+                accepted = accepted + 1
+            end
+        end
+    end
+
+    if accepted > 0 then
+        EHR.Log("Blood healing lock accepted authorized health baseline for " .. tostring(playerID))
+    end
+    return accepted > 0
 end
 
 -- Thresholds for allowing healing

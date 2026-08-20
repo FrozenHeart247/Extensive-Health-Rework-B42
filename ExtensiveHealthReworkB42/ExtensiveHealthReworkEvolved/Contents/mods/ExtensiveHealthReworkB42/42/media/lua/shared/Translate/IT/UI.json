@@ -29,7 +29,7 @@
     "UI_EHR_Symptoms": "Sintomi: ",
     "UI_EHR_Withdrawal": "! ASTINENZA: ",
     "UI_EHR_BlocksHealing": "[Rallenta la guarigione]",
-    "UI_EHR_DoseCount": "Dosare %d/%d",
+    "UI_EHR_DoseCount": "Dosare %1/%2",
     "UI_EHR_TimeLeft": "%.1fh rimaste",
     "UI_EHR_SymptomRelief": "Sollievo sintomi attivo",
     "UI_EHR_RetakeOverdueMinutes": "ASSUMI ORA! (%.0fm in ritardo)",

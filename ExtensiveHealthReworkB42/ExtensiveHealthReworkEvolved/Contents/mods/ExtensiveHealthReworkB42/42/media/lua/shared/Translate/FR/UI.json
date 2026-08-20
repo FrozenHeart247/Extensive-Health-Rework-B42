@@ -29,7 +29,7 @@
     "UI_EHR_Symptoms": "Symptomes: ",
     "UI_EHR_Withdrawal": "! SEVRAGE: ",
     "UI_EHR_BlocksHealing": "[Ralenti la guerison]",
-    "UI_EHR_DoseCount": "Dose %d/%d",
+    "UI_EHR_DoseCount": "Dose %1/%2",
     "UI_EHR_TimeLeft": "%.1fh restantes",
     "UI_EHR_SymptomRelief": "Soulagement actif",
     "UI_EHR_RetakeOverdueMinutes": "REPRENDRE MAINTENANT! (%.0fm en retard)",

@@ -139,7 +139,7 @@ EHR.Medication.Database = {
 
     -- Base.PillsVitamins (B42 caffeine pills)
     ["Base.PillsVitamins"] = {
-        tier = 0,
+        tier = 1,
         treats = {},
         displayName = "Caffeine Pills",
         icon = "PillsCaffeine",
@@ -1119,6 +1119,42 @@ EHR.Medication.Database = {
         sideEffects = {"headache", "insomnia"},
     },
 
+    ["ExtensiveHealth.LastChanceEpinephrine"] = {
+        tier = 3,
+        treats = {},
+        displayName = "Emergency Epinephrine Auto-Injector",
+        icon = "Epinephrine",
+        adminType = "injection",
+        usageMessage = "You trigger the auto-injector. Adrenaline floods your system.",
+        isEmergency = true,
+        appliesWithoutDisease = true,
+        effectDurationHours = 1,
+        blockWhileDoseActive = true,
+        immediateEffectsMustSucceed = true,
+        activeDoseMessage = "The epinephrine surge is still active.",
+        overdoseRisk = false,
+        lastChanceEpinephrine = {
+            healthThreshold = 15,
+            targetOverallHealth = 75,
+            durationHours = 1,
+            speedMod = 1.20,
+            highHealthDeathChance = 50,
+            crashFatigueFloor = 0.50,
+            mildHeadacheSideEffect = "last_chance_epinephrine_headache",
+            thirstSideEffect = "last_chance_epinephrine_thirst",
+            severeHeadacheSideEffect = "last_chance_epinephrine_severe_headache",
+        },
+        immediateEffects = function(player)
+            if EHR.Medication.ApplyLastChanceEpinephrine then
+                return EHR.Medication.ApplyLastChanceEpinephrine(
+                    player,
+                    EHR.Medication.Database["ExtensiveHealth.LastChanceEpinephrine"]
+                )
+            end
+            return false
+        end,
+    },
+
     -- =========================================
     -- EXTERNAL MOD COMPATIBILITY: They Knew
     -- Knox Virus cure from They Knew mod
@@ -1769,6 +1805,123 @@ local function EHRMedicationClearCombatStimulantLimbPain(player)
     modData.EHR_CombatStimulantLimbPain = nil
 end
 
+local EHR_LAST_CHANCE_HEAD_PAIN_TARGETS = {
+    last_chance_epinephrine_headache = 22,
+    last_chance_epinephrine_severe_headache = 75,
+}
+
+local function EHRMedicationIsHeadPart(partName)
+    return tostring(partName or ""):lower() == "head"
+end
+
+-- CharacterStat.PAIN is recalculated by vanilla after OnPlayerUpdate, so a
+-- direct stat floor disappears in the same frame. Keep the headache on the
+-- Head body part instead and remember the pre-effect value so expiry removes
+-- only pain owned by this medication.
+local function EHRMedicationReconcileLastChanceHeadPain(player, ignoredEffectId)
+    if not player then return false end
+
+    local modData = player:getModData()
+    if not modData then return false end
+
+    local currentHour = 0
+    pcall(function()
+        local gameTime = getGameTime and getGameTime() or nil
+        currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    end)
+
+    local desiredPain = 0
+    local medTracking = modData.EHR_Medication
+    local activeSideEffects = type(medTracking) == "table" and medTracking.activeSideEffects or nil
+    if type(activeSideEffects) == "table" then
+        for effectId, painTarget in pairs(EHR_LAST_CHANCE_HEAD_PAIN_TARGETS) do
+            local effectData = effectId ~= ignoredEffectId and activeSideEffects[effectId] or nil
+            if type(effectData) == "table" and effectData.clientExpired ~= true then
+                local startTime = tonumber(effectData.startTime) or currentHour
+                local duration = tonumber(effectData.duration) or 3
+                if duration <= 0 or currentHour - startTime < duration then
+                    desiredPain = math.max(desiredPain, painTarget)
+                end
+            end
+        end
+    end
+
+    local tracked = modData.EHR_LastChanceHeadPain
+    if desiredPain > 0 and type(tracked) ~= "table" then
+        tracked = {}
+        modData.EHR_LastChanceHeadPain = tracked
+    end
+    if type(tracked) ~= "table" then return false end
+
+    local changed = EHRMedicationForEachBodyPart(player, function(bodyDamage, partType, part, partName)
+        if not EHRMedicationIsHeadPart(partName) then return false end
+        if not part.getAdditionalPain or not part.setAdditionalPain then return false end
+
+        local currentPain = 0
+        local okCurrent = pcall(function()
+            currentPain = tonumber(part:getAdditionalPain()) or 0
+        end)
+        if not okCurrent then return false end
+
+        local record = tracked[partName]
+        if desiredPain > 0 then
+            if type(record) ~= "table" then
+                record = {
+                    pain = currentPain,
+                    targetPain = math.max(currentPain, desiredPain),
+                    lastAppliedPain = currentPain,
+                }
+                tracked[partName] = record
+            end
+
+            local previousTarget = math.max(0, tonumber(record.targetPain) or 0)
+            local lastAppliedPain = math.max(0, tonumber(record.lastAppliedPain) or previousTarget)
+            -- Another wound/disease may legitimately change AdditionalPain while
+            -- the headache is active. Adopt that live value as the new baseline
+            -- before reapplying our floor so expiry never erases external pain.
+            if math.abs(currentPain - lastAppliedPain) > 0.5 then
+                record.pain = currentPain
+            end
+            local nextTarget = math.max(math.max(0, tonumber(record.pain) or 0), desiredPain)
+            local shouldRaise = currentPain < nextTarget - 0.01
+            local shouldLowerOwnedPain = nextTarget < previousTarget
+                and math.abs(currentPain - lastAppliedPain) <= 0.5
+                and currentPain > nextTarget + 0.01
+            record.targetPain = nextTarget
+
+            if shouldRaise or shouldLowerOwnedPain then
+                local okSet = pcall(function() part:setAdditionalPain(nextTarget) end)
+                if okSet then record.lastAppliedPain = nextTarget end
+                return okSet
+            end
+            record.lastAppliedPain = currentPain
+            return false
+        end
+
+        if type(record) == "table" then
+            local previousTarget = math.max(0, tonumber(record.targetPain) or 0)
+            local lastAppliedPain = math.max(0, tonumber(record.lastAppliedPain) or previousTarget)
+            if math.abs(currentPain - lastAppliedPain) > 0.5 then
+                record.pain = currentPain
+            end
+            local baseline = math.max(0, tonumber(record.pain) or 0)
+            tracked[partName] = nil
+            if math.abs(currentPain - baseline) > 0.01 then
+                return pcall(function() part:setAdditionalPain(baseline) end)
+            end
+        end
+        return false
+    end)
+
+    if desiredPain <= 0 then
+        modData.EHR_LastChanceHeadPain = nil
+    end
+    if changed then
+        EHRMedicationDamageUpdate(player)
+    end
+    return changed
+end
+
 local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     if not player then return end
 
@@ -1787,6 +1940,11 @@ local function EHRMedicationClearStaleSideEffectFlags(player, activeSideEffects)
     end
     if not activeSideEffects or not activeSideEffects.combat_stimulant_crash then
         EHRMedicationClearCombatStimulantLimbPain(player)
+    end
+    if not activeSideEffects
+        or (not activeSideEffects.last_chance_epinephrine_headache
+            and not activeSideEffects.last_chance_epinephrine_severe_headache) then
+        EHRMedicationReconcileLastChanceHeadPain(player)
     end
 end
 
@@ -1816,6 +1974,39 @@ EHR.Medication.SideEffects = {
                 EHRMedicationRaiseStat(stats, CharacterStat.PAIN, 0.35)
                 EHRMedicationRaiseStat(stats, CharacterStat.STRESS, 0.12)
             end
+        end,
+    },
+
+    ["last_chance_epinephrine_headache"] = {
+        displayName = "Epinephrine Crash Headache",
+        duration = 3,
+        severity = 1,
+        effects = function(player)
+            EHRMedicationReconcileLastChanceHeadPain(player)
+        end,
+        onEnd = function(player)
+            EHRMedicationReconcileLastChanceHeadPain(player, "last_chance_epinephrine_headache")
+        end,
+    },
+
+    ["last_chance_epinephrine_severe_headache"] = {
+        displayName = "Severe Epinephrine Headache",
+        duration = 3,
+        severity = 3,
+        effects = function(player)
+            EHRMedicationReconcileLastChanceHeadPain(player)
+        end,
+        onEnd = function(player)
+            EHRMedicationReconcileLastChanceHeadPain(player, "last_chance_epinephrine_severe_headache")
+        end,
+    },
+
+    ["last_chance_epinephrine_thirst"] = {
+        displayName = "Epinephrine Thirst",
+        duration = 3,
+        severity = 1,
+        effects = function(player, effectData)
+            EHRMedicationApplyTimedThirst(player, effectData, 0.10, 0.12, 0.85)
         end,
     },
 
@@ -2320,6 +2511,7 @@ EHR.Medication.DosingSchedules = {
     ["ExtensiveHealth.RifampicinComboPack"] = { doseInterval = 24, dosesRequired = 14 },  -- TB requires full course
     ["ExtensiveHealth.IVVancomycin"] = { doseInterval = 0, dosesRequired = 1 },  -- Single IV infusion
     ["ExtensiveHealth.EmergencySepsisKit"] = { doseInterval = 0, dosesRequired = 1 },  -- Emergency single use
+    ["ExtensiveHealth.LastChanceEpinephrine"] = { doseInterval = 1, dosesRequired = 1, activeHours = 1 },
 
     -- External mod compatibility (They Knew)
     ["TheyKnew.Zomboxivir"] = { doseInterval = 0, dosesRequired = 1 },  -- Single ampule cure
@@ -2851,6 +3043,251 @@ function EHR.Medication.GetMedicationData(player)
     return modData.EHR_Medication
 end
 
+function EHR.Medication.GetLastChanceOverallHealth(player)
+    if not player or not player.getBodyDamage then return nil end
+
+    local bodyDamage = nil
+    local health = nil
+    local ok = pcall(function()
+        bodyDamage = player:getBodyDamage()
+        if bodyDamage and bodyDamage.getOverallBodyHealth then
+            health = tonumber(bodyDamage:getOverallBodyHealth())
+        end
+    end)
+    if not ok or not bodyDamage or health == nil then return nil end
+    return math.max(0, math.min(100, health)), bodyDamage
+end
+
+-- Overall health is recalculated from weighted BodyPart.health every BodyDamage update.
+-- Scale every existing health deficit by the same factor, then set the aggregate
+-- value to the exact target. BodyPart:SetHealth only changes the numeric health
+-- field; wound flags, wound timers, bandages and bleeding are deliberately untouched.
+function EHR.Medication.RestoreLastChanceOverallHealth(player, targetHealth)
+    local currentHealth, bodyDamage = EHR.Medication.GetLastChanceOverallHealth(player)
+    targetHealth = math.max(0, math.min(100, tonumber(targetHealth) or 75))
+    if currentHealth == nil or not bodyDamage then return false, currentHealth end
+    if currentHealth >= targetHealth then return true, currentHealth, true end
+    if not bodyDamage.getBodyParts or not bodyDamage.calculateOverallHealth then
+        return false, currentHealth
+    end
+
+    local snapshot = {}
+    local targetReached = false
+    local restoredHealth = nil
+    local parts = nil
+    local ok, err = pcall(function()
+        parts = bodyDamage:getBodyParts()
+        if not parts or not parts.size or not parts.get then
+            error("body-part collection unavailable")
+        end
+
+        local count = tonumber(parts:size()) or 0
+        if count <= 0 then error("no body parts") end
+        for i = 0, count - 1 do
+            local part = parts:get(i)
+            if not part or not part.getHealth or not part.SetHealth then
+                error("body-part health API unavailable")
+            end
+            snapshot[#snapshot + 1] = {
+                part = part,
+                health = math.max(0, math.min(100, tonumber(part:getHealth()) or 0)),
+            }
+        end
+
+        local function applyDeficitFactor(factor)
+            factor = math.max(0, math.min(1, factor))
+            for _, entry in ipairs(snapshot) do
+                local deficit = 100 - entry.health
+                entry.part:SetHealth(100 - (deficit * factor))
+            end
+            bodyDamage:calculateOverallHealth()
+            return tonumber(bodyDamage:getOverallBodyHealth()) or 0
+        end
+
+        -- factor 0 is the maximum reachable aggregate without touching wound state;
+        -- factor 1 is the original body-part health layout.
+        local maxReachable = applyDeficitFactor(0)
+        if maxReachable < targetHealth - 0.1 then
+            error(string.format(
+                "target %.2f is unreachable (maximum %.2f)",
+                targetHealth,
+                maxReachable
+            ))
+        end
+
+        local low = 0
+        local high = 1
+        for _ = 1, 16 do
+            local mid = (low + high) * 0.5
+            local observed = applyDeficitFactor(mid)
+            if observed >= targetHealth then
+                low = mid
+            else
+                high = mid
+            end
+        end
+        local calculatedHealth = applyDeficitFactor(low)
+        targetReached = calculatedHealth >= targetHealth - 0.1
+        if not targetReached then
+            error(string.format(
+                "target %.2f was not reached after scaling (observed %.2f)",
+                targetHealth,
+                calculatedHealth
+            ))
+        end
+
+        -- Keep the immediate display exact. On the next vanilla recalculation the
+        -- proportional body-part layout remains at the same target (unless an
+        -- independent pill/temperature damage source makes 75 unreachable).
+        if bodyDamage.setOverallBodyHealth then
+            bodyDamage:setOverallBodyHealth(targetHealth)
+        end
+        restoredHealth = bodyDamage.getOverallBodyHealth
+            and tonumber(bodyDamage:getOverallBodyHealth()) or nil
+        if restoredHealth == nil or restoredHealth ~= restoredHealth
+                or restoredHealth == math.huge or restoredHealth == -math.huge
+                or restoredHealth < targetHealth - 0.1 then
+            error("final aggregate health verification failed")
+        end
+        if EHR.Blood and EHR.Blood.AcceptCurrentHealth then
+            if EHR.Blood.AcceptCurrentHealth(player) ~= true then
+                error("blood healing-lock baseline was not accepted")
+            end
+        end
+    end)
+
+    if not ok then
+        for _, entry in ipairs(snapshot) do
+            pcall(function() entry.part:SetHealth(entry.health) end)
+        end
+        if bodyDamage and bodyDamage.calculateOverallHealth then
+            pcall(function() bodyDamage:calculateOverallHealth() end)
+        end
+        if bodyDamage and bodyDamage.setOverallBodyHealth and currentHealth ~= nil then
+            pcall(function() bodyDamage:setOverallBodyHealth(currentHealth) end)
+        end
+        EHR.Log("Last-chance epinephrine health restore failed: " .. tostring(err))
+        return false, currentHealth
+    end
+
+    return true, restoredHealth, targetReached and restoredHealth >= targetHealth - 0.1
+end
+
+function EHR.Medication.CaptureLastChanceBodyPartHealth(player)
+    if not player or not player.getBodyDamage then return nil end
+
+    local snapshot = nil
+    local ok = pcall(function()
+        local bodyDamage = player:getBodyDamage()
+        local parts = bodyDamage and bodyDamage:getBodyParts() or nil
+        if not parts or not parts.size or not parts.get then return end
+
+        local count = tonumber(parts:size()) or 0
+        if count <= 0 then return end
+        local values = {
+            parts = {},
+            count = count,
+            overallHealth = tonumber(bodyDamage:getOverallBodyHealth()),
+        }
+        for i = 0, count - 1 do
+            local part = parts:get(i)
+            local partType = part and part.getType and part:getType() or nil
+            local partName = partType ~= nil and tostring(partType) or nil
+            local health = part and part.getHealth and tonumber(part:getHealth()) or nil
+            if not partName or partName == "" or health == nil or values.parts[partName] ~= nil then
+                error("invalid body-part snapshot source")
+            end
+            values.parts[partName] = { health = math.max(0, math.min(100, health)) }
+        end
+        snapshot = values
+    end)
+    if not ok then return nil end
+    return snapshot
+end
+
+-- The server sends its exact post-rescue BodyPart values to the owning client.
+-- Validate the complete named map before mutating anything, then apply atomically;
+-- this avoids independently scaling a stale client-side wound snapshot in MP.
+function EHR.Medication.ApplyLastChanceBodyPartHealth(player, snapshot, targetHealth)
+    if not player or type(snapshot) ~= "table" or type(snapshot.parts) ~= "table"
+            or not player.getBodyDamage then return false end
+
+    local bodyDamage = nil
+    local originalOverall = nil
+    local originals = {}
+    local validated = {}
+    local okValidate = pcall(function()
+        bodyDamage = player:getBodyDamage()
+        originalOverall = bodyDamage and bodyDamage.getOverallBodyHealth
+            and tonumber(bodyDamage:getOverallBodyHealth()) or nil
+        local parts = bodyDamage and bodyDamage:getBodyParts() or nil
+        if not parts or not parts.size or not parts.get then error("body-part collection unavailable") end
+
+        local count = tonumber(parts:size()) or 0
+        if count <= 0 then error("no body parts") end
+        if math.floor(tonumber(snapshot.count) or -1) ~= count then
+            error("body-part snapshot count mismatch")
+        end
+        local packetCount = 0
+        for _, _ in pairs(snapshot.parts) do packetCount = packetCount + 1 end
+        if packetCount ~= count then error("body-part snapshot map is incomplete") end
+
+        for i = 0, count - 1 do
+            local part = parts:get(i)
+            local partType = part and part.getType and part:getType() or nil
+            local partName = partType ~= nil and tostring(partType) or nil
+            local record = partName and snapshot.parts[partName] or nil
+            local health = type(record) == "table" and tonumber(record.health) or nil
+            if not part or not part.getHealth or not part.SetHealth or health == nil
+                    or health ~= health or health == math.huge or health == -math.huge then
+                error("invalid body-part snapshot")
+            end
+            originals[#originals + 1] = { part = part, health = tonumber(part:getHealth()) or 0 }
+            validated[#validated + 1] = { part = part, health = math.max(0, math.min(100, health)) }
+        end
+    end)
+    if not okValidate or not bodyDamage then return false end
+
+    local okApply = pcall(function()
+        for _, entry in ipairs(validated) do
+            entry.part:SetHealth(entry.health)
+        end
+        if bodyDamage.calculateOverallHealth then bodyDamage:calculateOverallHealth() end
+        local expectedOverall = tonumber(snapshot.overallHealth) or tonumber(targetHealth)
+        if expectedOverall ~= nil and (expectedOverall ~= expectedOverall
+                or expectedOverall == math.huge or expectedOverall == -math.huge) then
+            error("invalid body-part aggregate snapshot")
+        end
+        if bodyDamage.setOverallBodyHealth and expectedOverall then
+            expectedOverall = math.max(0, math.min(100, expectedOverall))
+            bodyDamage:setOverallBodyHealth(expectedOverall)
+            local observed = bodyDamage.getOverallBodyHealth and tonumber(bodyDamage:getOverallBodyHealth()) or nil
+            if observed == nil or math.abs(observed - expectedOverall) > 0.1 then
+                error("body-part snapshot aggregate mismatch")
+            end
+        end
+        if EHR.Blood and EHR.Blood.AcceptCurrentHealth then
+            if EHR.Blood.AcceptCurrentHealth(player) ~= true then
+                error("blood healing-lock baseline was not accepted")
+            end
+        end
+    end)
+    if okApply then return true end
+
+    for _, entry in ipairs(originals) do
+        pcall(function() entry.part:SetHealth(entry.health) end)
+    end
+    if bodyDamage.calculateOverallHealth then
+        pcall(function() bodyDamage:calculateOverallHealth() end)
+    end
+    if originalOverall ~= nil and originalOverall == originalOverall
+            and originalOverall ~= math.huge and originalOverall ~= -math.huge
+            and bodyDamage.setOverallBodyHealth then
+        pcall(function() bodyDamage:setOverallBodyHealth(originalOverall) end)
+    end
+    return false
+end
+
 -- ============================================
 -- MEDICATION APPLICATION
 -- ============================================
@@ -2958,17 +3395,121 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
         end
     end
 
+    local okRemove = pcall(function() itemContainer:Remove(item) end)
+    if not okRemove then return false, "remove_failed" end
+    if itemID ~= nil and inventory.containsID then
+        local okContains, stillPresent = pcall(function() return inventory:containsID(itemID) end)
+        if okContains and stillPresent == true then
+            return false, "remove_unconfirmed"
+        end
+        -- Remove() completed synchronously. If an optional verification helper
+        -- itself is unavailable, trust the successful mutation rather than
+        -- reporting failure after the item is already gone.
+    end
     if isClient() and itemID then
         sendClientCommand(player, "EHR", "RemoveItem", {itemID = itemID})
-    end
-    itemContainer:Remove(item)
-    if isServer and isServer() and sendRemoveItemFromContainer then
+    elseif isServer and isServer() and sendRemoveItemFromContainer then
         -- Removing the final dose only from the server container leaves a
         -- ghost item on the owning client. Mirror the vanilla server helpers.
         pcall(function() sendRemoveItemFromContainer(itemContainer, item) end)
     end
 
     return true, "removed", useDelta, 1.0
+end
+
+-- Strict, single-use emergency medications reserve their item before applying
+-- irreversible effects. The authoritative Lua call is synchronous, so no other
+-- inventory operation can interleave between this removal and commit/rollback.
+function EHR.Medication.ReserveSingleUseMedication(player, item, inventory)
+    if not player or not item or not inventory then return nil end
+
+    -- InventoryItem itself exposes getUseDelta() and B42 initializes that field
+    -- to 0.03125 even for ordinary base:normal items.  A positive useDelta is
+    -- therefore not proof that an item is drainable.  Reserve only true
+    -- single-use items and let ConsumeOneDose handle DrainableComboItem doses.
+    local isDrainable = false
+    local drainableTypeKnown = false
+    if instanceof then
+        local okType, value = pcall(function()
+            return instanceof(item, "DrainableComboItem")
+        end)
+        if okType then
+            isDrainable = value == true
+            drainableTypeKnown = true
+        end
+    end
+    if not drainableTypeKnown and item.IsDrainable then
+        local okType, value = pcall(function() return item:IsDrainable() end)
+        if okType then
+            isDrainable = value == true
+            drainableTypeKnown = true
+        end
+    end
+    if not drainableTypeKnown or isDrainable then return nil end
+
+    local container = inventory
+    if item.getContainer then
+        local okContainer, value = pcall(function() return item:getContainer() end)
+        if okContainer and value then container = value end
+    end
+    if not container or not container.Remove or not container.AddItem then return nil end
+
+    local itemID = nil
+    if item.getID then
+        local okID, value = pcall(function() return item:getID() end)
+        if okID then itemID = value end
+    end
+    if itemID ~= nil and inventory.containsID then
+        local okPresent, present = pcall(function() return inventory:containsID(itemID) end)
+        if not okPresent or present ~= true then return nil end
+    end
+
+    local okRemove = pcall(function() container:Remove(item) end)
+    if not okRemove then return nil end
+    if itemID ~= nil and inventory.containsID then
+        local okPresent, present = pcall(function() return inventory:containsID(itemID) end)
+        if okPresent and present == true then return nil end
+        -- As above, a failed optional post-check must not strand a successfully
+        -- reserved item in a no-effect/no-rollback state.
+    end
+
+    return {
+        player = player,
+        item = item,
+        inventory = inventory,
+        container = container,
+        itemID = itemID,
+    }
+end
+
+function EHR.Medication.RollbackReservedMedication(reservation)
+    if type(reservation) ~= "table" or not reservation.item or not reservation.container then return false end
+    local okAdd = pcall(function() reservation.container:AddItem(reservation.item) end)
+    if not okAdd then return false end
+    if reservation.itemID ~= nil and reservation.inventory and reservation.inventory.containsID then
+        local okPresent, present = pcall(function()
+            return reservation.inventory:containsID(reservation.itemID)
+        end)
+        return okPresent and present == true
+    end
+    return true
+end
+
+function EHR.Medication.CommitReservedMedication(reservation)
+    if type(reservation) ~= "table" or not reservation.item or not reservation.container then return false end
+    if isServer and isServer() and sendRemoveItemFromContainer then
+        local okSync = pcall(function()
+            sendRemoveItemFromContainer(reservation.container, reservation.item)
+        end)
+        if not okSync then
+            EHR.Log("WARNING: Reserved medication removal could not be replicated immediately")
+        end
+    elseif isClient and isClient() and sendClientCommand and reservation.itemID ~= nil then
+        pcall(function()
+            sendClientCommand(reservation.player, "EHR", "RemoveItem", { itemID = reservation.itemID })
+        end)
+    end
+    return true
 end
 
 local function EHR_MedicationBodyPartHasActiveWound(bodyPart)
@@ -3080,6 +3621,15 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
 
     if medData.combatStimulants and EHR_MedicationHasActiveGeneralEffect(player, "combatStimulants") then
         return false, medData.activeDoseMessage or "The current dose is still active"
+    end
+
+    if medData.lastChanceEpinephrine then
+        if EHR_MedicationHasActiveGeneralEffect(player, "lastChanceEpinephrine") then
+            return false, medData.activeDoseMessage or "The current dose is still active"
+        end
+        if EHR.Medication.GetLastChanceOverallHealth(player) == nil then
+            return false, "Overall health data is unavailable"
+        end
     end
 
     if medData.warmingSupport and EHR_MedicationHasActiveGeneralEffect(player, "warmingPack") then
@@ -3329,6 +3879,8 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
     local diseaseData = EHR.Disease and EHR.Disease.GetDiseaseData(player)
     local earlyDoseOverdose = EHR.Medication.GetEarlyDoseOverdoseInfo(player, medData, itemFullType)
     local inventory = inventoryOwner:getInventory()
+    local reservedImmediateDose = nil
+    local immediateDoseCommitted = false
 
     if EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData, itemFullType) then
         if medData.activeDoseMessage and player.isLocalPlayer and player:isLocalPlayer() then
@@ -3376,9 +3928,52 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
         end
     end
 
+    -- Strict emergency effects can kill or make a large immediate health change.
+    -- Reserve the exact single-use item first, but replicate removal only after
+    -- the transactional effect succeeds. A rejected restore returns the same
+    -- object to its original container.
+    if medData.immediateEffectsMustSucceed then
+        reservedImmediateDose = EHR.Medication.ReserveSingleUseMedication(
+            inventoryOwner,
+            item,
+            inventory
+        )
+        if not reservedImmediateDose then
+            EHR.Log("Could not reserve strict emergency medication: " .. itemFullType)
+            return false
+        end
+    end
+
     -- Apply immediate effects (for emergency medications like Epinephrine)
     if medData.immediateEffects then
-        medData.immediateEffects(player)
+        local okImmediate, immediateResult = pcall(medData.immediateEffects, player)
+        if not okImmediate then
+            if reservedImmediateDose
+                    and not EHR.Medication.RollbackReservedMedication(reservedImmediateDose) then
+                EHR.Log("ERROR: Failed to restore reserved medication after immediate-effect error: " .. itemFullType)
+            end
+            EHR.Log("Immediate effects failed for " .. (medData.displayName or itemFullType)
+                .. ": " .. tostring(immediateResult))
+            return false
+        end
+        if immediateResult == false
+                or (medData.immediateEffectsMustSucceed and immediateResult ~= true) then
+            if reservedImmediateDose
+                    and not EHR.Medication.RollbackReservedMedication(reservedImmediateDose) then
+                EHR.Log("ERROR: Failed to restore reserved medication after rejected immediate effect: " .. itemFullType)
+            end
+            EHR.Log("Immediate effects did not complete for: " .. (medData.displayName or itemFullType))
+            return false
+        end
+        if reservedImmediateDose then
+            immediateDoseCommitted = EHR.Medication.CommitReservedMedication(reservedImmediateDose) == true
+            if not immediateDoseCommitted then
+                EHR.Medication.RollbackReservedMedication(reservedImmediateDose)
+                EHR.Log("Immediate medication reservation could not be committed: " .. itemFullType)
+                return false
+            end
+            reservedImmediateDose = nil
+        end
         EHR.Log("Applied immediate effects for: " .. (medData.displayName or itemFullType))
     end
 
@@ -3462,7 +4057,16 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
         EHR.Medication.RefreshImmunityForAntibiotic(player, itemFullType)
     end
 
-    local consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(inventoryOwner, item, inventory)
+    local consumed, consumeMode, useDelta, newUsed, remainingDoses
+    if immediateDoseCommitted then
+        consumed, consumeMode, useDelta, newUsed, remainingDoses = true, "removed", 0, 1.0, 0
+    else
+        consumed, consumeMode, useDelta, newUsed, remainingDoses = EHR.Medication.ConsumeOneDose(
+            inventoryOwner,
+            item,
+            inventory
+        )
+    end
     if consumed and consumeMode == "dose" then
         if remainingDoses == nil and useDelta and useDelta > 0 then
             remainingDoses = math.floor((newUsed / useDelta) + 0.5)
@@ -4495,6 +5099,226 @@ function EHR.Medication.StartCombatStimulants(player, medData)
     return true
 end
 
+function EHR.Medication.KillFromLastChanceEpinephrine(player)
+    if not player then return false end
+    local cause = "Emergency Epinephrine Auto-Injector - fatal stroke after administration above 15% overall health"
+    local bodyDamage = nil
+    pcall(function() bodyDamage = player:getBodyDamage() end)
+
+    local originalOverall = nil
+    if bodyDamage and bodyDamage.getOverallBodyHealth then
+        local okHealth, value = pcall(function() return tonumber(bodyDamage:getOverallBodyHealth()) end)
+        if okHealth and value ~= nil and value == value
+                and value ~= math.huge and value ~= -math.huge then
+            originalOverall = value
+        end
+    end
+    local originalPlayerHealth = nil
+    if player.getHealth then
+        local okHealth, value = pcall(function() return tonumber(player:getHealth()) end)
+        if okHealth and value ~= nil and value == value
+                and value ~= math.huge and value ~= -math.huge then
+            originalPlayerHealth = value
+        end
+    end
+    if originalOverall == nil and originalPlayerHealth == nil then
+        EHR.Log("ERROR: Fatal epinephrine reaction could not snapshot authoritative health")
+        return false
+    end
+
+    if originalOverall ~= nil and bodyDamage and bodyDamage.setOverallBodyHealth then
+        pcall(function() bodyDamage:setOverallBodyHealth(0) end)
+    end
+    if originalPlayerHealth ~= nil and player.setHealth then
+        pcall(function() player:setHealth(0) end)
+    end
+
+    local confirmed = false
+    if bodyDamage and bodyDamage.getOverallBodyHealth then
+        local okHealth, value = pcall(function() return tonumber(bodyDamage:getOverallBodyHealth()) end)
+        confirmed = okHealth and value ~= nil and value <= 0
+    end
+    if not confirmed and player.getHealth then
+        local okHealth, value = pcall(function() return tonumber(player:getHealth()) end)
+        confirmed = okHealth and value ~= nil and value <= 0
+    end
+    if not confirmed then
+        if originalOverall ~= nil and bodyDamage and bodyDamage.setOverallBodyHealth then
+            pcall(function() bodyDamage:setOverallBodyHealth(originalOverall) end)
+        end
+        if originalPlayerHealth ~= nil and player.setHealth then
+            pcall(function() player:setHealth(originalPlayerHealth) end)
+        end
+        EHR.Log("ERROR: Fatal epinephrine reaction could not set authoritative health to zero")
+        return false
+    end
+
+    if EHR.RecordDeathCause then
+        pcall(function() EHR.RecordDeathCause(player, cause) end)
+    end
+    if player.isLocalPlayer and player:isLocalPlayer() and player.Say then
+        EHR.Locale.Say(player, "My heart--")
+    end
+    EHR.Log(cause)
+    return true
+end
+
+function EHR.Medication.RollLastChanceEpinephrineDeath(chancePercent)
+    local chance = math.max(0, math.min(100, tonumber(chancePercent) or 50))
+    if chance <= 0 then return false end
+    if chance >= 100 then return true end
+
+    local roll = nil
+    if ZombRand then
+        local ok, value = pcall(function() return ZombRand(100) end)
+        if ok then roll = tonumber(value) end
+    end
+    if roll == nil then
+        roll = math.random(0, 99)
+    end
+    return roll < chance
+end
+
+function EHR.Medication.ApplyLastChanceRescueVitals(player, targetHealth, highRiskSurvivor, bodyPartSnapshot)
+    if not player then return false end
+
+    local dead = false
+    if player.isDead then
+        local okDead, value = pcall(function() return player:isDead() end)
+        dead = okDead and value == true
+    end
+    if not dead and player.getHealth then
+        local okHealth, value = pcall(function() return tonumber(player:getHealth()) end)
+        dead = okHealth and value ~= nil and value <= 0
+    end
+    if dead then return false end
+
+    local restored = false
+    local reachedTarget = false
+    if type(bodyPartSnapshot) == "table" and EHR.Medication.ApplyLastChanceBodyPartHealth then
+        restored = EHR.Medication.ApplyLastChanceBodyPartHealth(player, bodyPartSnapshot, targetHealth)
+        reachedTarget = restored
+    else
+        local restoreResult, _, targetResult = EHR.Medication.RestoreLastChanceOverallHealth(player, targetHealth)
+        restored = restoreResult
+        reachedTarget = targetResult
+    end
+    if restored ~= true or reachedTarget ~= true then return false end
+
+    EHR_MedicationSetStat(player, CharacterStat and CharacterStat.ENDURANCE, 1.0)
+    EHR_MedicationSetStat(player, CharacterStat and CharacterStat.FATIGUE, 0.0)
+
+    if highRiskSurvivor then
+        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.SICKNESS, 1.0)
+        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.FOOD_SICKNESS, 1.0)
+        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.STRESS, 1.0)
+        EHR_MedicationSetStat(player, CharacterStat and CharacterStat.UNHAPPINESS, 1.0)
+    end
+    EHRMedicationRefreshMoodles(player, true)
+    return true, EHR.Medication.CaptureLastChanceBodyPartHealth(player)
+end
+
+function EHR.Medication.ApplyLastChanceEpinephrine(player, medData)
+    local support = medData and medData.lastChanceEpinephrine
+    if not player or not support or not EHRMedicationIsAuthoritative() then return false end
+
+    if player.isDead then
+        local okDead, dead = pcall(function() return player:isDead() end)
+        if okDead and dead == true then return false end
+    end
+    if player.getHealth then
+        local okHealth, health = pcall(function() return tonumber(player:getHealth()) end)
+        if okHealth and health ~= nil and health <= 0 then return false end
+    end
+
+    local currentHealth = EHR.Medication.GetLastChanceOverallHealth(player)
+    if currentHealth == nil or currentHealth <= 0 then return false end
+    local threshold = tonumber(support.healthThreshold) or 15
+    local highRisk = currentHealth > threshold
+
+    if highRisk and EHR.Medication.RollLastChanceEpinephrineDeath(support.highHealthDeathChance) then
+        local fatalToken = "fatal:" .. tostring(currentHealth)
+        pcall(function()
+            fatalToken = "fatal:" .. tostring(player:getUsername() or player:getOnlineID() or "player")
+                .. ":" .. tostring(getTimestampMs and getTimestampMs() or currentHealth)
+        end)
+        if EHR.Medication.KillFromLastChanceEpinephrine(player) ~= true then
+            return false
+        end
+        if EHRMedicationIsServer() and sendServerCommand then
+            pcall(function()
+                sendServerCommand(player, "EHR_LastChanceEpinephrine", "ApplyFatal", {
+                    token = fatalToken,
+                })
+            end)
+        end
+        -- A fatal roll is still a successfully administered, consumed dose.
+        return true
+    end
+
+    local targetHealth = tonumber(support.targetOverallHealth) or 75
+    local rescued, bodyPartSnapshot = EHR.Medication.ApplyLastChanceRescueVitals(player, targetHealth, highRisk)
+    if not rescued then
+        EHR.Log("Last-chance epinephrine rescue aborted: target health was not safely reached")
+        return false
+    end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    medTracking.activeGeneralEffects = medTracking.activeGeneralEffects or {}
+    local gameTime = getGameTime and getGameTime() or nil
+    local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
+    local duration = math.max(0.05, tonumber(support.durationHours) or 1)
+    medTracking.lastChanceUseSerial = (tonumber(medTracking.lastChanceUseSerial) or 0) + 1
+    local playerKey = "player"
+    pcall(function()
+        playerKey = tostring(player:getUsername() or player:getOnlineID() or player:getPlayerNum() or "player")
+    end)
+    local applicationToken = string.format(
+        "%s:%.6f:%d",
+        playerKey,
+        currentHour,
+        medTracking.lastChanceUseSerial
+    )
+    medTracking.activeGeneralEffects.lastChanceEpinephrine = {
+        startTime = currentHour,
+        endTime = currentHour + duration,
+        lastUpdateHour = currentHour,
+        speedMod = math.max(1.0, math.min(1.25, tonumber(support.speedMod) or 1.20)),
+        crashFatigueFloor = math.max(0, math.min(1, tonumber(support.crashFatigueFloor) or 0.50)),
+        mildHeadacheSideEffect = support.mildHeadacheSideEffect,
+        thirstSideEffect = support.thirstSideEffect,
+        applicationToken = applicationToken,
+        medicationName = medData.displayName or "Emergency Epinephrine Auto-Injector",
+    }
+
+    if highRisk and support.severeHeadacheSideEffect and EHR.Medication.ApplySideEffect then
+        EHR.Medication.ApplySideEffect(player, support.severeHeadacheSideEffect, {
+            force = true,
+            duration = 3,
+        })
+    end
+
+    if EHRMedicationIsServer() and sendServerCommand then
+        pcall(function()
+            sendServerCommand(player, "EHR_LastChanceEpinephrine", "ApplyRescueVitals", {
+                token = applicationToken,
+                targetHealth = targetHealth,
+                highRiskSurvivor = highRisk == true,
+                bodyPartHealth = bodyPartSnapshot,
+                boostEndTime = currentHour + duration,
+                speedMod = medTracking.activeGeneralEffects.lastChanceEpinephrine.speedMod,
+            })
+        end)
+    end
+    EHRMedicationRequestSync(player)
+    EHR.Log(string.format(
+        "Last-chance epinephrine survived (health %.2f, high-risk=%s)",
+        currentHealth,
+        tostring(highRisk)
+    ))
+    return true
+end
+
 local function EHRMedicationRollInsomniaCrash(player, source)
     if not player then return false end
     if not (EHR.Insomnia and EHR.Insomnia.RollStimulantCrash) then
@@ -4688,6 +5512,42 @@ function EHR.Medication.UpdateGeneralEffects(player, medTracking, currentHour)
             if modDataCombat then
                 modDataCombat.EHR_CombatStimulantsActive = true
             end
+        end
+    end
+
+    local lastChance = medTracking.activeGeneralEffects.lastChanceEpinephrine
+    if type(lastChance) == "table" then
+        local endTime = tonumber(lastChance.endTime) or currentHour
+        if currentHour >= endTime then
+            local crashFatigueFloor = math.max(0, math.min(1, tonumber(lastChance.crashFatigueFloor) or 0.50))
+            local mildHeadache = lastChance.mildHeadacheSideEffect
+            local thirstEffect = lastChance.thirstSideEffect
+            medTracking.activeGeneralEffects.lastChanceEpinephrine = nil
+            changed = true
+
+            if authoritative then
+                local currentFatigue = EHR_MedicationGetStat(player, CharacterStat and CharacterStat.FATIGUE) or 0
+                if currentFatigue < crashFatigueFloor then
+                    EHR_MedicationSetStat(player, CharacterStat and CharacterStat.FATIGUE, crashFatigueFloor)
+                end
+                if EHRMedicationIsServer() and sendServerCommand then
+                    pcall(function()
+                        sendServerCommand(player, "EHR_LastChanceEpinephrine", "ApplyCrashFatigue", {
+                            token = tostring(lastChance.applicationToken or lastChance.startTime or currentHour) .. ":crash",
+                            fatigueFloor = crashFatigueFloor,
+                        })
+                    end)
+                end
+                if mildHeadache and EHR.Medication.ApplySideEffect then
+                    EHR.Medication.ApplySideEffect(player, mildHeadache, { force = true, duration = 3 })
+                end
+                if thirstEffect and EHR.Medication.ApplySideEffect then
+                    EHR.Medication.ApplySideEffect(player, thirstEffect, { force = true, duration = 3 })
+                end
+                EHRMedicationRefreshMoodles(player, true)
+            end
+        else
+            lastChance.lastUpdateHour = currentHour
         end
     end
 
@@ -5908,6 +6768,7 @@ function EHR.Medication.ClearAllSideEffectState(player, resetStats)
             medTracking.activeGeneralEffects.staminaLock = nil
             medTracking.activeGeneralEffects.fatigueBlock = nil
             medTracking.activeGeneralEffects.combatStimulants = nil
+            medTracking.activeGeneralEffects.lastChanceEpinephrine = nil
             medTracking.activeGeneralEffects.mpFatigueRecovery = nil
             medTracking.activeGeneralEffects.warmingPack = nil
         end
@@ -5924,7 +6785,6 @@ function EHR.Medication.ClearAllSideEffectState(player, resetStats)
     EHRMedicationClearKidneyBackPain(player)
     EHRMedicationClearWholeBodyMusclePain(player)
     EHRMedicationClearCombatStimulantLimbPain(player)
-
     modData.EHR_TendonWeakness = nil
     modData.EHR_KidneyStress = nil
     modData.EHR_Insomnia = nil

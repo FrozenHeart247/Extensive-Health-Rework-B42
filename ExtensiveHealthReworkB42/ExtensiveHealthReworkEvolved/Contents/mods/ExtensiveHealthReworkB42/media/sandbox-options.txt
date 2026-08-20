@@ -52,7 +52,7 @@ option ExtensiveHealthRework.BloodRegenDelayHours
 {
     type = double,
     min = 0.5,
-    max = 12.0,
+    max = 336.0,
     default = 2.0,
     page = EHR_Blood,
     translation = EHR_BloodRegenDelayHours,

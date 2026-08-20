@@ -181,6 +181,22 @@ EHR.Tooltips.Data = {
             "Immediate effect",
         },
     },
+    ["ExtensiveHealth.LastChanceEpinephrine"] = {
+        category = "Emergency Stimulant",
+        tier = 3,
+        description = "Single-use emergency epinephrine auto-injector.",
+        effects = {
+            "At 15% overall health or below, raises overall health to at least 75%",
+            "Does not close, disinfect or stabilize wounds and does not stop bleeding",
+            "Fully restores endurance and removes fatigue",
+            "Increases movement speed by 20% for 1 hour",
+        },
+        sideEffects = {
+            "50% fatigue when the 1-hour boost ends",
+            "Mild headache and increased thirst for 3 hours after the boost",
+        },
+        warning = "ABOVE 15% HEALTH: 50% chance of a fatal stroke. Survivors suffer maximum nausea, stress and unhappiness plus a severe headache.",
+    },
 
     -- =========================================
     -- TIER 1 - OTC (OVER THE COUNTER)
@@ -209,8 +225,8 @@ EHR.Tooltips.Data = {
         },
     },
     ["Base.PillsVitamins"] = {
-        category = "Stimulant",
-        tier = 0,
+        category = "OTC Medication",
+        tier = 1,
         description = "Strong caffeine pills.",
         relieves = {"Fatigue"},
         effects = {
@@ -940,6 +956,7 @@ function EHR.Tooltips.GetCategoryColor(category)
         ["Emergency"] = {r=1.0, g=0.3, b=0.1},
         ["Stimulant"] = {r=1.0, g=0.65, b=0.2},
         ["Military Stimulant"] = {r=1.0, g=0.65, b=0.2},
+        ["Emergency Stimulant"] = {r=1.0, g=0.65, b=0.2},
         ["OTC Medication"] = {r=0.3, g=0.8, b=0.3},
         ["Prescription"] = {r=0.3, g=0.6, b=1.0},
         ["Clinical"] = {r=0.8, g=0.3, b=0.8},

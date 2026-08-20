@@ -472,6 +472,7 @@ local function EHR_InitDistributions()
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.SterilizedBandages", 5)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.AlchoholicBandage", 3)
         tryAddMed("AmbulanceMedical", "ExtensiveHealth.InstantIcePack", 4)
+        tryAddMed("AmbulanceMedical", "ExtensiveHealth.LastChanceEpinephrine", 1.5)
     end
 
     -- B42 pharmacies use StoreShelfMedical for public shelves and
@@ -706,6 +707,7 @@ local function EHR_InitDistributions()
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.RespiratorySupportKit", 2.4)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.ChelationKit", 2.4)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.AlbendazoleInjection", 2.4)
+    tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.LastChanceEpinephrine", 1.2)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.TetanusImmunoglobulin", 2.4)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Furosemide", 3)
     tryAddMed("MedicalStorageOutfit", "ExtensiveHealth.Antipsychotics", 2)
@@ -794,6 +796,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.ChelationKit"] = 0.8,
         ["ExtensiveHealth.AlbendazoleInjection"] = 0.8,
         ["ExtensiveHealth.TetanusImmunoglobulin"] = 1.2,
+        ["ExtensiveHealth.LastChanceEpinephrine"] = 0.7,
         ["ExtensiveHealth.IVKit"] = 3.0,
         ["ExtensiveHealth.Syringe"] = 4.0,
         ["ExtensiveHealth.SalineBag"] = 3.0,
@@ -916,6 +919,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.InstantIcePack"] = 1.5,
         ["ExtensiveHealth.AntibioticOintment"] = 1.5,
         ["ExtensiveHealth.ActivatedCharcoal"] = 1,
+        ["ExtensiveHealth.LastChanceEpinephrine"] = 0.35,
     }
 
     local ambulanceSeatMeds = {
@@ -932,6 +936,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.ActivatedCharcoal"] = 1.2,
         ["ExtensiveHealth.PrescriptionAntibiotics"] = 3,
         ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 2,
+        ["ExtensiveHealth.LastChanceEpinephrine"] = 0.5,
     }
 
     local ambulanceTruckMeds = {
@@ -961,6 +966,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.RespiratorySupportKit"] = 5,
         ["ExtensiveHealth.CorticosteroidInjection"] = 5,
         ["ExtensiveHealth.EmergencySepsisKit"] = 4,
+        ["ExtensiveHealth.LastChanceEpinephrine"] = 3,
         ["ExtensiveHealth.IVCiprofloxacin"] = 4,
         ["ExtensiveHealth.IVAntibiotics"] = 4,
         ["ExtensiveHealth.IVMetronidazole"] = 3,
@@ -1026,6 +1032,7 @@ local function EHR_InitDistributions()
         ["ExtensiveHealth.EmptyBloodBag"] = 18,
         ["ExtensiveHealth.RespiratorySupportKit"] = 3,
         ["ExtensiveHealth.CorticosteroidInjection"] = 3,
+        ["ExtensiveHealth.LastChanceEpinephrine"] = 1.2,
         ["ExtensiveHealth.EmergencySepsisKit"] = 2.5,
         ["ExtensiveHealth.PrescriptionAntibiotics"] = 8,
         ["ExtensiveHealth.BroadSpectrumAntibiotics"] = 6,

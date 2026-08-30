@@ -14,8 +14,8 @@ EHR.VERSION = "2.8.1"  -- Temperature rework, blood spoilage, MP fixes, Lifestyl
 
 -- Debug flag - default value (overridden by sandbox setting)
 EHR.DEBUG = false
--- Temporary focused debug for wound disinfect flow. Set to false to silence.
-EHR.DISINFECT_DEBUG = true
+-- Temporary focused debug for wound disinfect flow. Keep disabled in release.
+EHR.DISINFECT_DEBUG = false
 
 -- ============================================
 -- DEATH CAUSE TRACKING (for debugging mystery deaths)
@@ -286,7 +286,7 @@ function EHR.OnPlayerDeath(player)
     print("=====================================")
 
     -- CRITICAL: Reset all player-specific state
-    EHR.ResetPlayerState(playerID)
+    EHR.ResetPlayerState(playerID, player)
 
     -- CRITICAL: Reset lockedHealth for this player
     if EHR.ResetLockedHealth then
@@ -509,10 +509,18 @@ local MAX_INIT_REQUEST_ATTEMPTS = 5
 
 -- MP: per-player tick state (avoid shared counters across players)
 local tickStateByPlayer = {}
+local tickStateIdByPlayer = setmetatable({}, { __mode = "k" })
 
 -- CRITICAL FIX: Cleanup function to prevent memory leak
 -- Called when player logs out or dies to free their tick state
-local function cleanupTickState(playerID)
+local function cleanupTickState(playerID, player)
+    if player then
+        local exactID = tickStateIdByPlayer[player]
+        if exactID then
+            tickStateByPlayer[exactID] = nil
+        end
+        tickStateIdByPlayer[player] = nil
+    end
     if playerID and tickStateByPlayer[playerID] then
         tickStateByPlayer[playerID] = nil
         EHR.Log("Cleaned up tickStateByPlayer for: " .. tostring(playerID))
@@ -537,37 +545,26 @@ local function getPlayerId(player)
 end
 
 local function getTickState(player)
-    local id = getPlayerId(player) or "0"
+    local id = tickStateIdByPlayer[player]
+    if not id then
+        id = getPlayerId(player) or "0"
+        tickStateIdByPlayer[player] = id
+    end
     local state = tickStateByPlayer[id]
     if not state then
-        state = { tick = 0, sync = 0 }
+        -- Spread periodic server work across frames instead of making every
+        -- connected player run blood and full-sync updates on the same tick.
+        local phase = 0
+        for index = 1, #id do
+            phase = ((phase * 33) + string.byte(id, index)) % SYNC_TICK_INTERVAL
+        end
+        state = {
+            tick = phase % TICK_INTERVAL,
+            sync = phase % SYNC_TICK_INTERVAL,
+        }
         tickStateByPlayer[id] = state
     end
     return state
-end
-
-local function getActivePlayers()
-    local players = {}
-    if isServer and isServer() and getOnlinePlayers then
-        local online = getOnlinePlayers()
-        if online then
-            for i = 0, online:size() - 1 do
-                local p = online:get(i)
-                if p then
-                    table.insert(players, p)
-                end
-            end
-        end
-    end
-
-    if #players == 0 then
-        local player = getSpecificPlayer(0)
-        if player then
-            table.insert(players, player)
-        end
-    end
-
-    return players
 end
 
 local function handleInitDataRequest(player, data)
@@ -649,50 +646,69 @@ local function processPlayerTick(player)
     if not player then return end
     if not player:isAlive() then return end
 
+    local state = getTickState(player)
+
+    state.tick = state.tick + 1
+    local bloodUpdateDue = state.tick >= TICK_INTERVAL
+    if bloodUpdateDue then
+        state.tick = 0
+    end
+
+    local syncDue = false
+    if isServer and isServer() then
+        state.sync = state.sync + 1
+        if state.sync >= SYNC_TICK_INTERVAL then
+            state.sync = 0
+            syncDue = true
+        end
+    end
+
+    local healingCheckDue = state.healingPrimed ~= true or bloodUpdateDue
+
+    -- Most frames now stop here without reading ModData, five character stats,
+    -- or every body part. ControlHealing's own 0.5 HP tolerance makes a
+    -- one-second cadence sufficient to undo vanilla regeneration safely.
+    if not healingCheckDue and not bloodUpdateDue and not syncDue then return end
+
+    -- Preserve the former initialization gate so a phased sync cannot send a
+    -- joining player a payload made entirely of nil EHR fields.
     local data = EHR.GetPlayerData(player)
     if not data then return end
 
-    -- Healing control runs every tick to catch and block vanilla healing
-    if EHR.Blood and EHR.Blood.ControlHealing then
-        EHR.Blood.ControlHealing(player, data)
+    if healingCheckDue then
+        state.healingPrimed = true
+        if EHR.Blood and EHR.Blood.ControlHealing then
+            EHR.Blood.ControlHealing(player, data)
+        end
     end
 
-    local state = getTickState(player)
-
-    -- Blood volume update runs every ~1 second
-    state.tick = state.tick + 1
-    if state.tick >= TICK_INTERVAL then
-        state.tick = 0
-
-        if EHR.Blood and EHR.Blood.UpdateBloodVolume then
+    if bloodUpdateDue then
+        -- Dedicated/listen servers already own this exact one-second update
+        -- in EHR_ServerCommands. Running it here as well doubled MP blood
+        -- loss and regeneration in addition to doubling the CPU work.
+        if not (isServer and isServer())
+                and EHR.Blood and EHR.Blood.UpdateBloodVolume then
             EHR.Blood.UpdateBloodVolume(player, data)
         end
-
-        -- Effects run less frequently
         if EHR.Blood and EHR.Blood.ApplyEffects then
             EHR.Blood.ApplyEffects(player, data)
         end
     end
 
-    if isServer and isServer() then
-        state.sync = state.sync + 1
-        if state.sync >= SYNC_TICK_INTERVAL then
-            state.sync = 0
-            if not EHR.SyncEHRModDataToClient(player) then
-                EHR.Log("EHR MP sync skipped: sendServerCommand unavailable")
-            end
-        end
+    if syncDue and not EHR.SyncEHRModDataToClient(player) then
+        EHR.Log("EHR MP sync skipped: sendServerCommand unavailable")
     end
 end
 
 --[[
     Main update loop
     Blood display updates every ~1 second
-    Healing control runs every tick to catch vanilla healing
+    Healing control and blood effects update every ~1 second
 ]]--
 function EHR.OnTick()
     -- MP: client-only init request flow
     if isClient and isClient() and not (isServer and isServer()) then
+        if hasRequestedInitData then return end
         local player = getSpecificPlayer(0)
         if not player or not player:isAlive() then return end
         local data = EHR.GetPlayerData(player)
@@ -701,8 +717,20 @@ function EHR.OnTick()
         return
     end
 
-    local players = getActivePlayers()
-    for _, player in ipairs(players) do
+    -- Avoid allocating and filling a temporary Lua player table every tick.
+    if isServer and isServer() and getOnlinePlayers then
+        local online = getOnlinePlayers()
+        local count = online and online:size() or 0
+        if count > 0 then
+            for index = 0, count - 1 do
+                processPlayerTick(online:get(index))
+            end
+            return
+        end
+    end
+
+    local player = getSpecificPlayer and getSpecificPlayer(0) or nil
+    if player then
         processPlayerTick(player)
     end
 end
@@ -781,7 +809,7 @@ function EHR.OnCreatePlayer(playerIndex, player)
     print("[EHR WARNING] OnCreatePlayer: No existing EHR data found for player " .. playerID .. " - initializing fresh state")
 
     -- Ensure any stale state is cleared before initialization
-    EHR.ResetPlayerState(playerID)
+    EHR.ResetPlayerState(playerID, player)
     if EHR.ResetLockedHealth then
         EHR.ResetLockedHealth(playerID)
     end
@@ -862,11 +890,12 @@ function EHR.OnPlayerDisconnect(player)
     local playerID = tostring(player:getUsername() or player:getPlayerNum())
     EHR.Log("Player disconnecting: " .. playerID)
     -- Clean up per-player tick state
-    cleanupTickState(playerID)
+    cleanupTickState(playerID, player)
 end
 
--- Register events
-if Events then
+-- Register events once; repeated Lua entry must not multiply per-tick work.
+if Events and not EHR._mainEventsRegistered then
+    EHR._mainEventsRegistered = true
     Events.OnTick.Add(EHR.OnTick)
     Events.OnCreatePlayer.Add(EHR.OnCreatePlayer)
     Events.OnGameStart.Add(EHR.OnGameStart)
@@ -894,13 +923,13 @@ end
 
     @param playerID - The player identifier to clear (username or playerNum string)
 ]]--
-function EHR.ResetPlayerState(playerID)
+function EHR.ResetPlayerState(playerID, player)
     if not playerID then return end
 
     EHR.Log("=== RESETTING STATE FOR PLAYER: " .. tostring(playerID) .. " ===")
 
     -- CRITICAL FIX: Clean up per-player tick state to prevent memory leak
-    cleanupTickState(playerID)
+    cleanupTickState(playerID, player)
 
     -- 1. Reset Blood module state
     if EHR.Blood then

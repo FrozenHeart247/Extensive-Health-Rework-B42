@@ -379,7 +379,18 @@ end
     Prefers an existing multiplayer client snapshot, then ICL's local sample,
     and finally the global ClimateManager outdoor temperature.
 ]]--
-function EHR.Environmental.GetAirTemperature(player)
+function EHR.Environmental.GetClimateManagerAirTemperature()
+    local climate = getClimateManager()
+    if climate and climate.getTemperature then
+        local success, temp = pcall(function() return climate:getTemperature() end)
+        if success and temp then
+            return temp
+        end
+    end
+    return 15 -- Default moderate temp if can't read
+end
+
+function EHR.Environmental.GetAirTemperature(player, skipIndoorClimateProbe)
     if player and EHR.Environmental.GetClientSnapshot then
         local okSnapshot, snapshot = pcall(EHR.Environmental.GetClientSnapshot, player)
         if okSnapshot
@@ -391,19 +402,14 @@ function EHR.Environmental.GetAirTemperature(player)
         end
     end
 
-    local iclSample = EHR.Environmental.GetIndoorClimateLiteSample(player)
-    if iclSample then
-        return tonumber(iclSample.airC)
-    end
-
-    local climate = getClimateManager()
-    if climate and climate.getTemperature then
-        local success, temp = pcall(function() return climate:getTemperature() end)
-        if success and temp then
-            return temp
+    if not skipIndoorClimateProbe then
+        local iclSample = EHR.Environmental.GetIndoorClimateLiteSample(player)
+        if iclSample then
+            return tonumber(iclSample.airC)
         end
     end
-    return 15 -- Default moderate temp if can't read
+
+    return EHR.Environmental.GetClimateManagerAirTemperature()
 end
 
 function EHR.Environmental.GetVehicleInsideTemperature(player)
@@ -573,6 +579,14 @@ end
 
     This fixes the "coughing moodle appearing when mod shows no conditions" bug.
 ]]--
+EHR.Environmental.RespiratoryDiseaseIds = EHR.Environmental.RespiratoryDiseaseIds or {
+    "common_cold",
+    "pneumonia",
+    "corpse_sickness",
+    "cadaveric_aspergillosis",
+    "tuberculosis",
+}
+
 function EHR.Environmental.SuppressVanillaCold(player)
     if not player then return end
 
@@ -613,9 +627,13 @@ function EHR.Environmental.SuppressVanillaCold(player)
             currentFoodSickness = foodValue
         end
     end
-    local corpseSuppressesFoodSickness = EHR.CorpseSickness
-        and EHR.CorpseSickness.ShouldSuppressFoodSickness
-        and EHR.CorpseSickness.ShouldSuppressFoodSickness(player)
+    local corpseSuppressesFoodSickness = false
+    if currentFoodSickness > 0.01
+            and EHR.CorpseSickness
+            and EHR.CorpseSickness.ShouldSuppressFoodSickness then
+        corpseSuppressesFoodSickness =
+            EHR.CorpseSickness.ShouldSuppressFoodSickness(player) == true
+    end
 
     if corpseSuppressesFoodSickness and EHR.CorpseSickness.SuppressFoodSicknessComponent then
         EHR.CorpseSickness.SuppressFoodSicknessComponent(player)
@@ -625,36 +643,32 @@ function EHR.Environmental.SuppressVanillaCold(player)
         or (currentFoodSickness > 0.01 and not corpseSuppressesFoodSickness)
 
     local hasCorpseExposure = false
-    if EHR.CorpseSickness and EHR.CorpseSickness.GetExposureDisplay then
-        local level = EHR.CorpseSickness.GetExposureDisplay(player)
-        if level and level ~= "None" then
-            hasCorpseExposure = true
-        end
-    end
 
     -- Do not erase vanilla corpse sickness while EHR exposure is still below its
     -- own display threshold. B42 vanilla sickness can start rising before EHR
     -- reaches "Low" exposure, so nearby corpses must opt out of suppression too.
-    if not hasCorpseExposure and EHR.CorpseSickness then
+    -- None of this is needed while an EHR respiratory disease owns SICKNESS, or
+    -- while the vanilla value is too low to be suppressed in the first place.
+    if not hasAnyModRespiratory and currentSickness > 0.15 and EHR.CorpseSickness then
         local corpseData = modData.EHR_CorpseSickness
         local exposure = corpseData and (corpseData.currentExposure or 0) or 0
         local vanillaExposure = corpseData and (corpseData.vanillaCorpseExposure or 0) or 0
         local residualExposure = math.max(exposure, vanillaExposure)
-        local fullyProtectedFromCorpses = EHR.CorpseSickness.GetProtectionLevel
-            and EHR.CorpseSickness.GetProtectionLevel(player) >= 1.0
         if residualExposure > 0 then
             hasCorpseExposure = true
-        elseif not fullyProtectedFromCorpses and currentSickness > 0.01 and not hasFoodSicknessSignal and EHR.CorpseSickness.ScanNearbyCorpses then
-            local ok, corpseInfo = pcall(function() return EHR.CorpseSickness.ScanNearbyCorpses(player) end)
-            if ok and corpseInfo and (corpseInfo.count or 0) > 0 then
-                hasCorpseExposure = true
+        elseif not hasFoodSicknessSignal and EHR.CorpseSickness.ScanNearbyCorpses then
+            -- Mask classification and the nearby-corpse scan are the most
+            -- expensive part of this safety branch, so evaluate them lazily.
+            local fullyProtectedFromCorpses = EHR.CorpseSickness.GetProtectionLevel
+                and EHR.CorpseSickness.GetProtectionLevel(player) >= 1.0
+            if not fullyProtectedFromCorpses then
+                local ok, corpseInfo = pcall(function() return EHR.CorpseSickness.ScanNearbyCorpses(player) end)
+                if ok and corpseInfo and (corpseInfo.count or 0) > 0 then
+                    hasCorpseExposure = true
+                end
             end
         end
     end
-
-    local realisticTemperatureActive = EHR.BodyTemp
-        and EHR.BodyTemp.IsRealisticTemperatureActive
-        and EHR.BodyTemp.IsRealisticTemperatureActive()
 
     if hasAnyModRespiratory then
         -- Mod HAS a respiratory disease - sync SICKNESS to mod's disease stage
@@ -666,12 +680,11 @@ function EHR.Environmental.SuppressVanillaCold(player)
             [3] = 60,
             [4] = 20,
         }
-        local respiratoryDiseases = {"common_cold", "pneumonia", "corpse_sickness", "cadaveric_aspergillosis", "tuberculosis"}
         local corpseReliefCapped = false
         local gameTime = getGameTime and getGameTime() or nil
         local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
 
-        for _, diseaseId in ipairs(respiratoryDiseases) do
+        for _, diseaseId in ipairs(EHR.Environmental.RespiratoryDiseaseIds) do
             local disease = active[diseaseId]
             if disease and disease.stage then
                 local stageValue = vanillaSicknessLevels[disease.stage] or 0
@@ -717,7 +730,14 @@ function EHR.Environmental.SuppressVanillaCold(player)
             end
         end
     else
-        if realisticTemperatureActive then
+        -- No write is possible below this threshold. FOOD_SICKNESS cleanup, if
+        -- needed, has already happened above, so healthy players can stop here
+        -- without any RT, mask or corpse work.
+        if currentSickness <= 0.15 then return end
+
+        if EHR.BodyTemp
+                and EHR.BodyTemp.IsRealisticTemperatureActive
+                and EHR.BodyTemp.IsRealisticTemperatureActive() then
             -- Let Realistic Temperature own vanilla cold/sickness when EHR is
             -- not currently managing a respiratory/food/corpse sickness source.
             return
@@ -1044,7 +1064,9 @@ function EHR.Environmental.BuildClientSnapshot(player)
     local usesIndoorClimateLite = iclSample ~= nil
     local airTemp = usesIndoorClimateLite
         and tonumber(iclSample.airC)
-        or EHR.Environmental.GetAirTemperature(player)
+        -- Keep the public override point for compatibility, while telling the
+        -- built-in implementation that ICL was already probed above.
+        or EHR.Environmental.GetAirTemperature(player, true)
     local heatAirTemp, isInVehicle = EHR.Environmental.GetEffectiveHeatAirTemperature(player, airTemp)
     local isIndoors = EHR.Environmental.IsIndoors(player) == true
     if usesIndoorClimateLite and iclSample.indoors ~= nil then
@@ -1089,12 +1111,20 @@ function EHR.Environmental.StoreClientSnapshot(player, args)
         iclVersion = string.sub(iclVersion, 1, 32)
     end
 
+    -- Do not eagerly calculate a complete fallback environment when the client
+    -- already supplied a valid air temperature.
+    local airTemp = tonumber(args.airTemp)
+    if not airTemp or airTemp ~= airTemp then
+        airTemp = EHR.Environmental.GetAirTemperature(player)
+    end
+    airTemp = EHR_EnvironmentalClampNumber(airTemp, -80, 80, 15)
+
     EHR.Environmental.ClientSnapshots[playerID] = {
         hour = EHR_EnvironmentalClampNumber(args.hour, currentHour - 1.0, currentHour + 1.0, currentHour),
         receivedHour = currentHour,
         receivedMs = getTimestampMs and getTimestampMs() or nil,
-        airTemp = EHR_EnvironmentalClampNumber(args.airTemp, -80, 80, EHR.Environmental.GetAirTemperature(player)),
-        heatAirTemp = EHR_EnvironmentalClampNumber(args.heatAirTemp, -80, 90, args.airTemp),
+        airTemp = airTemp,
+        heatAirTemp = EHR_EnvironmentalClampNumber(args.heatAirTemp, -80, 90, airTemp),
         isInVehicle = args.isInVehicle == true,
         bodyTemp = EHR_EnvironmentalClampNumber(args.bodyTemp, 0, 1.5, 0.5),
         bodyTempC = EHR_EnvironmentalClampNumber(args.bodyTempC, 20, 42, nil),
@@ -1110,13 +1140,13 @@ function EHR.Environmental.StoreClientSnapshot(player, args)
         iclActive = usesIndoorClimateLite,
         iclVersion = iclVersion,
         iclOutdoorAirTemp = usesIndoorClimateLite
-            and EHR_EnvironmentalClampNumber(args.iclOutdoorAirTemp, -80, 80, args.airTemp)
+            and EHR_EnvironmentalClampNumber(args.iclOutdoorAirTemp, -80, 80, airTemp)
             or nil,
         iclVanillaAirTemp = usesIndoorClimateLite
-            and EHR_EnvironmentalClampNumber(args.iclVanillaAirTemp, -80, 80, args.airTemp)
+            and EHR_EnvironmentalClampNumber(args.iclVanillaAirTemp, -80, 80, airTemp)
             or nil,
         iclTargetAirTemp = usesIndoorClimateLite
-            and EHR_EnvironmentalClampNumber(args.iclTargetAirTemp, -80, 80, args.airTemp)
+            and EHR_EnvironmentalClampNumber(args.iclTargetAirTemp, -80, 80, airTemp)
             or nil,
         iclLeakScore = usesIndoorClimateLite
             and EHR_EnvironmentalClampNumber(args.iclLeakScore, 0, 1, 0)
@@ -1163,13 +1193,16 @@ end
     Update cold exposure tracking
     Called periodically from main tick handler
 ]]--
-function EHR.Environmental.UpdateColdExposure(player, deltaHours)
+function EHR.Environmental.UpdateColdExposure(player, deltaHours, runtimeEnvironment)
     local config = EHR.Environmental.Config
     local exposure = EHR.Environmental.GetExposureData(player)
     if not exposure then return end
     local coldExposureMultiplier = EHR.Environmental.GetCommonColdExposureMultiplier()
 
-    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local env = type(runtimeEnvironment) == "table"
+        and runtimeEnvironment
+        or EHR.Environmental.GetRuntimeEnvironment(player)
+        or {}
     local airTemp = tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
     local bodyTemp = tonumber(env.bodyTemp) or EHR.Environmental.GetBodyTemperature(player)
     local wetness = tonumber(env.wetness) or EHR.Environmental.GetWetness(player)
@@ -1321,7 +1354,7 @@ end
     Update heat exposure tracking
     Called periodically from main tick handler
 ]]--
-function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
+function EHR.Environmental.UpdateHeatExposure(player, deltaHours, runtimeEnvironment)
     local config = EHR.Environmental.Config
     local exposure = EHR.Environmental.GetExposureData(player)
     if not exposure then return end
@@ -1351,7 +1384,10 @@ function EHR.Environmental.UpdateHeatExposure(player, deltaHours)
         return
     end
 
-    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local env = type(runtimeEnvironment) == "table"
+        and runtimeEnvironment
+        or EHR.Environmental.GetRuntimeEnvironment(player)
+        or {}
     local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
     local isIndoors = env.isIndoors == true
     local isInShade = env.isInShade == true
@@ -1553,11 +1589,14 @@ end
 --[[
     Check if heat disease should be blocked from recovering
 ]]--
-function EHR.Environmental.CheckHeatCooling(player, deltaHours)
+function EHR.Environmental.CheckHeatCooling(player, deltaHours, runtimeEnvironment)
     local diseaseData = EHR.Disease.GetDiseaseData(player)
     if not diseaseData or not diseaseData.active then return end
 
-    local env = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+    local env = type(runtimeEnvironment) == "table"
+        and runtimeEnvironment
+        or EHR.Environmental.GetRuntimeEnvironment(player)
+        or {}
     local airTemp = tonumber(env.heatAirTemp) or tonumber(env.airTemp) or EHR.Environmental.GetAirTemperature(player)
 
     -- Heat exhaustion is exposure only; cooling recovery applies to heat stroke.
@@ -2461,12 +2500,17 @@ local EHR_EnvironmentalHeatStrokeRegenFields = {
 function EHR.Environmental.SetHeatStrokeSleepRegenSuppressed(player, suppressed)
     if not player or not player.getBodyDamage or not player.getModData then return false end
 
+    local modData = player:getModData()
+    if not modData then return false end
+    local state = modData.EHR_HeatStrokeRegenState
+    -- The healthy-player path calls this periodically. Avoid touching
+    -- BodyDamage at all when there is no saved suppression state to restore.
+    if not suppressed and type(state) ~= "table" then return false end
+
     local bodyDamage = nil
     pcall(function() bodyDamage = player:getBodyDamage() end)
-    local modData = player:getModData()
-    if not bodyDamage or not modData then return false end
+    if not bodyDamage then return false end
 
-    local state = modData.EHR_HeatStrokeRegenState
     if suppressed then
         if type(state) ~= "table" then
             state = { active = true }
@@ -2487,7 +2531,6 @@ function EHR.Environmental.SetHeatStrokeSleepRegenSuppressed(player, suppressed)
         return true
     end
 
-    if type(state) ~= "table" then return false end
     for _, field in ipairs(EHR_EnvironmentalHeatStrokeRegenFields) do
         local original = tonumber(state[field.key])
         if original then
@@ -4058,7 +4101,9 @@ function EHR.Environmental.IsWarmEnoughForRecovery(player)
     -- High body temp (>0.55) = actively warming up (works anywhere)
     -- This covers hot baths, exercise, heaters, etc.
     if bodyTemp > 0.55 then
-        EHR.Log(string.format("Hypothermia recovery: Body temp %.2f is warm enough", bodyTemp))
+        if EHR.DEBUG then
+            EHR.Log(string.format("Hypothermia recovery: Body temp %.2f is warm enough", bodyTemp))
+        end
         return true
     end
 
@@ -4118,7 +4163,9 @@ function EHR.Environmental.CheckHypothermiaWarmth(player)
 
         -- If warm and was previously blocked, allow recovery to happen
         if isWarm and hypothermia.stage == 3 then
-            EHR.Log("Hypothermia: Player is warm, recovery can proceed")
+            if EHR.DEBUG then
+                EHR.Log("Hypothermia: Player is warm, recovery can proceed")
+            end
         end
     end
 end
@@ -4271,37 +4318,31 @@ local CLIENT_SNAPSHOT_HEARTBEAT_MS = 15000
 local GAME_HOUR_CHECK_INTERVAL = 0.1    -- Check every ~6 game minutes
 
 -- MP: per-player tick state (avoid shared counters across players)
-local tickStateByPlayer = {}
-
-local function getPlayerId(player)
-    return EHR.Environmental.GetPlayerKey(player)
-end
+local tickStateByPlayer = setmetatable({}, { __mode = "k" })
 
 local function getTickState(player)
-    local id = getPlayerId(player) or "0"
-    local state = tickStateByPlayer[id]
+    local state = tickStateByPlayer[player]
     if not state then
+        local id = EHR.Environmental.GetPlayerKey(player) or "0"
+        local phase = 0
+        for index = 1, #id do
+            phase = ((phase * 33) + string.byte(id, index)) % ENVIRONMENTAL_TICK_INTERVAL
+        end
         state = {
-            tick = 0,
-            suppressionTick = 0,
+            -- Preserve both cadences while distributing players across frames.
+            tick = phase,
+            suppressionTick = phase % VANILLA_SUPPRESSION_TICK_INTERVAL,
             lastHour = 0,
             lastSnapshotSentMs = 0,
             lastSentSnapshot = nil,
         }
-        tickStateByPlayer[id] = state
+        tickStateByPlayer[player] = state
     end
     return state
 end
 
 local function processPlayerTick(player)
     if not player or not player:isAlive() then return end
-
-    -- Initialize if needed
-    EHR.Environmental.InitializePlayer(player)
-
-    -- Get exposure data
-    local exposure = EHR.Environmental.GetExposureData(player)
-    if not exposure then return end
 
     local state = getTickState(player)
 
@@ -4310,8 +4351,8 @@ local function processPlayerTick(player)
     -- it can inspect corpse exposure. A short sub-second interval still
     -- prevents moodle flicker or vanilla damage between disease updates.
     state.suppressionTick = (state.suppressionTick or 0) + 1
-    local suppressionInterval = (isServer and isServer()) and VANILLA_SUPPRESSION_TICK_INTERVAL or 1
-    if state.suppressionTick >= suppressionInterval then
+    local suppressionDue = state.suppressionTick >= VANILLA_SUPPRESSION_TICK_INTERVAL
+    if suppressionDue then
         state.suppressionTick = 0
         if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
             EHR.Environmental.SuppressVanillaTemperature(player)
@@ -4321,10 +4362,15 @@ local function processPlayerTick(player)
 
     -- Throttle updates
     state.tick = state.tick + 1
-    if state.tick < ENVIRONMENTAL_TICK_INTERVAL then
-        return
-    end
+    local fullUpdateDue = state.tick >= ENVIRONMENTAL_TICK_INTERVAL
+    if not fullUpdateDue then return end
     state.tick = 0
+
+    -- Initialization and exposure lookup are only needed for the full update,
+    -- not for every frame spent waiting for its 90-tick cadence.
+    EHR.Environmental.InitializePlayer(player)
+    local exposure = EHR.Environmental.GetExposureData(player)
+    if not exposure then return end
 
     -- Calculate delta time in game hours
     local gameTime = getGameTime()
@@ -4338,11 +4384,16 @@ local function processPlayerTick(player)
     end
     state.lastHour = currentHour
 
+    -- All consumers use one coherent environment sample for this update. In SP
+    -- this removes duplicate 3x3 heat, clothing and shade scans; on clients it
+    -- avoids rebuilding the explicit snapshot during prediction.
+    local runtimeEnvironment = EHR.Environmental.GetRuntimeEnvironment(player) or {}
+
     -- Update cold exposure
-    EHR.Environmental.UpdateColdExposure(player, deltaHours)
+    EHR.Environmental.UpdateColdExposure(player, deltaHours, runtimeEnvironment)
 
     -- Update heat exposure
-    EHR.Environmental.UpdateHeatExposure(player, deltaHours)
+    EHR.Environmental.UpdateHeatExposure(player, deltaHours, runtimeEnvironment)
 
     -- Check cold -> pneumonia progression
     EHR.Environmental.CheckColdProgression(player, exposure)
@@ -4351,7 +4402,7 @@ local function processPlayerTick(player)
     EHR.Environmental.CheckHypothermiaWarmth(player)
 
     -- Check heat cooling requirement
-    EHR.Environmental.CheckHeatCooling(player, deltaHours)
+    EHR.Environmental.CheckHeatCooling(player, deltaHours, runtimeEnvironment)
 
     -- Apply disease-specific effects for active diseases
     local diseaseData = EHR.Disease.GetDiseaseData(player)
@@ -4442,17 +4493,27 @@ end
 local function processClientEnvironmentalTick(player, snapshotOnly)
     if not player or not player:isAlive() then return end
 
-    EHR.Environmental.InitializePlayer(player)
-
-    local exposure = EHR.Environmental.GetExposureData(player)
-    if not exposure then return end
-
     local state = getTickState(player)
+    state.suppressionTick = (state.suppressionTick or 0) + 1
+    if state.suppressionTick >= VANILLA_SUPPRESSION_TICK_INTERVAL then
+        state.suppressionTick = 0
+        if not snapshotOnly then
+            if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
+                EHR.Environmental.SuppressVanillaTemperature(player)
+            end
+            EHR.Environmental.SuppressVanillaCold(player)
+        end
+    end
+
     state.tick = state.tick + 1
     if state.tick < ENVIRONMENTAL_TICK_INTERVAL then
         return
     end
     state.tick = 0
+
+    EHR.Environmental.InitializePlayer(player)
+    local exposure = EHR.Environmental.GetExposureData(player)
+    if not exposure then return end
 
     local gameTime = getGameTime()
     local currentHour = gameTime and gameTime:getWorldAgeHours() or 0
@@ -4477,8 +4538,8 @@ local function processClientEnvironmentalTick(player, snapshotOnly)
     -- Keep local exposure cards responsive in multiplayer, but leave disease
     -- contraction/progression to the server-authoritative tick.
     EHR.Environmental._skipDiseaseChecks = true
-    local okCold, errCold = pcall(EHR.Environmental.UpdateColdExposure, player, deltaHours)
-    local okHeat, errHeat = pcall(EHR.Environmental.UpdateHeatExposure, player, deltaHours)
+    local okCold, errCold = pcall(EHR.Environmental.UpdateColdExposure, player, deltaHours, snapshot)
+    local okHeat, errHeat = pcall(EHR.Environmental.UpdateHeatExposure, player, deltaHours, snapshot)
     EHR.Environmental._skipDiseaseChecks = false
 
     if EHR.DEBUG then
@@ -4497,12 +4558,6 @@ function EHR.Environmental.OnTick()
     if isClient and isClient() and not (isServer and isServer()) then
         local player = getSpecificPlayer(0)
         if player then
-            if diseaseEnabled then
-                if not (EHR.BodyTemp and EHR.BodyTemp.IsEnabled and EHR.BodyTemp.IsEnabled()) then
-                    EHR.Environmental.SuppressVanillaTemperature(player)
-                end
-                EHR.Environmental.SuppressVanillaCold(player)
-            end
             -- The snapshot also carries ICL ambient data for EHR body
             -- temperature, so keep it alive when diseases are disabled.
             processClientEnvironmentalTick(player, not diseaseEnabled)
@@ -4516,8 +4571,9 @@ function EHR.Environmental.OnTick()
     -- Lua table and copied every online player on every server tick.
     if isServer and isServer() and getOnlinePlayers then
         local online = getOnlinePlayers()
-        if online and online:size() > 0 then
-            for i = 0, online:size() - 1 do
+        local count = online and online:size() or 0
+        if count > 0 then
+            for i = 0, count - 1 do
                 processPlayerTick(online:get(i))
             end
             return

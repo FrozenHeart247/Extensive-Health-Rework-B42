@@ -208,7 +208,21 @@ function EHR.BodyTemp.IsRealisticTemperatureActive()
     if mode == "enabled" then return true end
     if mode == "disabled" then return false end
 
-    return EHR.BodyTemp.DetectRealisticTemperatureActive()
+    -- RT's Lua API can become visible after this shared file was evaluated.
+    -- Promote a previous negative cache when that happens.
+    if _G and _G.RC_TempSim then
+        EHR.BodyTemp._realisticTemperatureDetected = true
+        return true
+    end
+
+    -- The activated-mod list cannot change during a running Lua session. Cache
+    -- the automatic result instead of crossing the Java boundary several times
+    -- per player and frame. An explicit sandbox override is still read live.
+    if EHR.BodyTemp._realisticTemperatureDetected == nil then
+        EHR.BodyTemp._realisticTemperatureDetected =
+            EHR.BodyTemp.DetectRealisticTemperatureActive() == true
+    end
+    return EHR.BodyTemp._realisticTemperatureDetected == true
 end
 
 local ICL_BODY_ENVIRONMENT_HEAT_PROBE_TICKS = 30
@@ -217,6 +231,7 @@ local iclBodyEnvironmentCache = setmetatable({}, { __mode = "k" })
 function EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
     if not player or not EHR.Environmental then return nil end
 
+    local serverProcess = isServer and isServer()
     local dedicatedServer = isServer and isServer()
         and not (isClient and isClient())
 
@@ -247,26 +262,37 @@ function EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
                 end
             end
 
-            return {
-                airTemp = tonumber(sample.airC),
-                isIndoors = sample.indoors == true,
-                isNearHeat = cache.isNearHeat == true,
-                temperatureSource = "IndoorClimateLite",
-                iclActive = true,
-                iclVersion = sample.version,
-                iclOutdoorAirTemp = tonumber(sample.outdoorC),
-                iclVanillaAirTemp = tonumber(sample.vanillaAirC),
-                iclTargetAirTemp = tonumber(sample.targetC),
-                iclLeakScore = tonumber(sample.leakScore),
-                iclPowered = sample.powered == true,
-                roomKey = sample.roomKey,
-                buildingKey = sample.buildingKey,
-            }
+            -- Reuse the view: the adapter consumes it immediately and never
+            -- retains it, so allocating a 15-field table every frame is waste.
+            local environment = cache.environment
+            if not environment then
+                environment = {}
+                cache.environment = environment
+            end
+            environment.airTemp = tonumber(sample.airC)
+            environment.isIndoors = sample.indoors == true
+            environment.isNearHeat = cache.isNearHeat == true
+            environment.temperatureSource = "IndoorClimateLite"
+            environment.iclActive = true
+            environment.iclVersion = sample.version
+            environment.iclOutdoorAirTemp = tonumber(sample.outdoorC)
+            environment.iclVanillaAirTemp = tonumber(sample.vanillaAirC)
+            environment.iclTargetAirTemp = tonumber(sample.targetC)
+            environment.iclLeakScore = tonumber(sample.leakScore)
+            environment.iclPowered = sample.powered == true
+            environment.roomKey = sample.roomKey
+            environment.buildingKey = sample.buildingKey
+            return environment
         end
     end
 
-    if not EHR.Environmental.GetRuntimeEnvironment then return nil end
-    local ok, env = pcall(EHR.Environmental.GetRuntimeEnvironment, player)
+    -- A local/SP miss means ICL is not supplying this player. Never fall back
+    -- to GetRuntimeEnvironment here: on those paths it builds the complete
+    -- environmental-disease snapshot (including object and clothing scans)
+    -- every frame only for us to reject its non-ICL result. Servers may consume
+    -- the already-received client snapshot directly without rebuilding it.
+    if not serverProcess or not EHR.Environmental.GetClientSnapshot then return nil end
+    local ok, env = pcall(EHR.Environmental.GetClientSnapshot, player)
     if not ok
             or type(env) ~= "table"
             or env.temperatureSource ~= "IndoorClimateLite"
@@ -571,7 +597,15 @@ function EHR.BodyTemp.WriteDiseaseBodyTemperature(player, bodyTemp)
     return wrote
 end
 
-function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+function EHR.BodyTemp.HasCachedDiseaseFever(tempData)
+    if not tempData then return false end
+    if tempData.diseaseFeverActive == true then return true end
+    local target = tonumber(tempData.diseaseTargetTemp)
+    local normal = EHR.BodyTemp.Config.normalTemp or 36.6
+    return target ~= nil and target > normal + 0.2
+end
+
+function EHR.BodyTemp.MaintainDiseaseFeverBridge(player, knownTempData)
     if not player then return false end
     if EHR.RealisticTemperatureCompat
             and EHR.RealisticTemperatureCompat.ShouldOwnFever
@@ -579,15 +613,18 @@ function EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
         return false
     end
 
-    local tempData = EHR.BodyTemp.GetTemperatureData and EHR.BodyTemp.GetTemperatureData(player) or nil
+    local tempData = knownTempData
+        or (EHR.BodyTemp.GetTemperatureData and EHR.BodyTemp.GetTemperatureData(player) or nil)
     local bodyTemp = tempData and tonumber(tempData.bodyTemp) or nil
     local indoorClimateManaged = tempData
         and (
             tempData.environmentManagedBy == "IndoorClimateLite"
             or tempData.environmentManagedBy == "VanillaHeatAdapter"
         )
-    local hasFeverSource = EHR.BodyTemp.HasActiveDiseaseFeverSource
-        and EHR.BodyTemp.HasActiveDiseaseFeverSource(player)
+    -- UpdateBodyTemperature performs the authoritative disease scan every
+    -- BODY_TEMP_TICK_INTERVAL and maintains this marker. The bridge only needs
+    -- the cached answer while protecting the value from vanilla each frame.
+    local hasFeverSource = EHR.BodyTemp.HasCachedDiseaseFever(tempData)
     if not indoorClimateManaged and not hasFeverSource then return false end
 
     local normalTemp = EHR.BodyTemp.Config.normalTemp or 36.6
@@ -1686,15 +1723,21 @@ end
 -- holes, garment/body wetness, wind resistance and physiological responses.
 -- ICL only needs to replace the environmental-air part of that balance.
 local vanillaHeatAdapterStates = setmetatable({}, { __mode = "k" })
-local VANILLA_ADAPTER_NODE_REFRESH_TICKS = 6
-local VANILLA_ADAPTER_AIR_EPSILON = 0.01
+local VANILLA_ADAPTER_NODE_REFRESH_TICKS = 15
+local VANILLA_ADAPTER_AIR_EPSILON = 0.05
+local VANILLA_ADAPTER_AIR_REFRESH_JUMP = 1.0
+
+local function EHR_BodyTempCallNumber(object, methodName)
+    local method = object[methodName]
+    if not method then return nil end
+    return method(object)
+end
 
 local function EHR_BodyTempSafeMethodNumber(object, methodName)
     if not object then return nil end
-    local okMethod, method = pcall(function() return object[methodName] end)
-    if not okMethod or not method then return nil end
-
-    local ok, value = pcall(method, object)
+    -- One protected call covers both Java-method lookup and invocation. The old
+    -- form allocated a closure and entered pcall twice for every getter.
+    local ok, value = pcall(EHR_BodyTempCallNumber, object, methodName)
     value = ok and tonumber(value) or nil
     if not value or value ~= value or value == math.huge or value == -math.huge then
         return nil
@@ -1721,14 +1764,9 @@ end
 -- Reproduces the environmental part of B42 Thermoregulator.updateNodesHeatDelta.
 -- The remaining node terms and metabolic heat are kept from vanilla's
 -- getDbg_totalHeat(), so this must only be used as a difference calculation.
-function EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(node, airTemp, airAndWindTemp)
-    if not node then return nil end
-
-    local skinTemp = EHR_BodyTempSafeMethodNumber(node, "getSkinCelcius")
-    local skinSurface = EHR_BodyTempSafeMethodNumber(node, "getSkinSurface")
-    local insulation = EHR_BodyTempSafeMethodNumber(node, "getInsulation")
-    local windResistance = EHR_BodyTempSafeMethodNumber(node, "getWindresist")
-    local bodyWetness = EHR_BodyTempSafeMethodNumber(node, "getBodyWetness")
+function EHR.BodyTemp.CalculateNodeEnvironmentalHeatFromValues(
+        skinTemp, skinSurface, insulation, windResistance, bodyWetness,
+        airTemp, airAndWindTemp)
     airTemp = tonumber(airTemp)
     airAndWindTemp = tonumber(airAndWindTemp) or airTemp
 
@@ -1757,6 +1795,20 @@ function EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(node, airTemp, airAn
     return heatDelta * 0.3 / (1 + insulation) * skinSurface
 end
 
+function EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(node, airTemp, airAndWindTemp)
+    if not node then return nil end
+
+    local skinTemp = EHR_BodyTempSafeMethodNumber(node, "getSkinCelcius")
+    local skinSurface = EHR_BodyTempSafeMethodNumber(node, "getSkinSurface")
+    local insulation = EHR_BodyTempSafeMethodNumber(node, "getInsulation")
+    local windResistance = EHR_BodyTempSafeMethodNumber(node, "getWindresist")
+    local bodyWetness = EHR_BodyTempSafeMethodNumber(node, "getBodyWetness")
+    return EHR.BodyTemp.CalculateNodeEnvironmentalHeatFromValues(
+        skinTemp, skinSurface, insulation, windResistance, bodyWetness,
+        airTemp, airAndWindTemp
+    )
+end
+
 local function EHR_BodyTempCalculateAmbientCorrection(thermo, vanillaAir, vanillaWindAir, desiredAir, desiredWindAir)
     local nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
     if not nodeCount then return nil end
@@ -1769,11 +1821,20 @@ local function EHR_BodyTempCalculateAmbientCorrection(thermo, vanillaAir, vanill
         local okNode, node = pcall(function() return thermo:getNode(index) end)
         if not okNode or not node then return nil end
 
-        local vanillaNodeHeat = EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(
-            node, vanillaAir, vanillaWindAir
+        -- Both heat values describe the same body node under two air samples.
+        -- Read its five Java properties once instead of twice.
+        local skinTemp = EHR_BodyTempSafeMethodNumber(node, "getSkinCelcius")
+        local skinSurface = EHR_BodyTempSafeMethodNumber(node, "getSkinSurface")
+        local insulation = EHR_BodyTempSafeMethodNumber(node, "getInsulation")
+        local windResistance = EHR_BodyTempSafeMethodNumber(node, "getWindresist")
+        local bodyWetness = EHR_BodyTempSafeMethodNumber(node, "getBodyWetness")
+        local vanillaNodeHeat = EHR.BodyTemp.CalculateNodeEnvironmentalHeatFromValues(
+            skinTemp, skinSurface, insulation, windResistance, bodyWetness,
+            vanillaAir, vanillaWindAir
         )
-        local desiredNodeHeat = EHR.BodyTemp.CalculateVanillaNodeEnvironmentalHeat(
-            node, desiredAir, desiredWindAir
+        local desiredNodeHeat = EHR.BodyTemp.CalculateNodeEnvironmentalHeatFromValues(
+            skinTemp, skinSurface, insulation, windResistance, bodyWetness,
+            desiredAir, desiredWindAir
         )
         if vanillaNodeHeat == nil or desiredNodeHeat == nil then return nil end
 
@@ -1787,17 +1848,33 @@ local function EHR_BodyTempCalculateAmbientCorrection(thermo, vanillaAir, vanill
         nodeCount
 end
 
-local function EHR_BodyTempGetAdapterState(player)
+local function EHR_BodyTempGetAdapterState(player, refreshPhase)
     local state = vanillaHeatAdapterStates[player]
     if not state then
         state = {
             refreshTick = VANILLA_ADAPTER_NODE_REFRESH_TICKS,
+            refreshStagger = (tonumber(refreshPhase) or 0) % VANILLA_ADAPTER_NODE_REFRESH_TICKS,
             ambientCorrection = 0,
             warnings = {},
         }
         vanillaHeatAdapterStates[player] = state
     end
     return state
+end
+
+local function EHR_BodyTempResetAdapterRefreshClock(state, desiredAir, vanillaAir)
+    local stagger = tonumber(state.refreshStagger)
+    if stagger then
+        -- Everyone gets the mandatory first sample immediately. Only the next
+        -- refresh is delayed by a per-player phase; subsequent 15-tick samples
+        -- then remain naturally separated across server frames.
+        state.refreshTick = -stagger
+        state.refreshStagger = nil
+    else
+        state.refreshTick = 0
+    end
+    state.refreshDesiredAir = desiredAir
+    state.refreshVanillaAir = vanillaAir
 end
 
 local function EHR_BodyTempAdapterWarnOnce(state, key, message)
@@ -1814,11 +1891,10 @@ local function EHR_BodyTempAdapterWarnOnce(state, key, message)
 end
 
 local function EHR_BodyTempHasActiveFeverSafely(player, tempData)
-    if tempData and tempData.diseaseFeverActive == true then return true end
-    if not EHR.BodyTemp.HasActiveDiseaseFeverSource then return false end
-
-    local ok, hasFever = pcall(EHR.BodyTemp.HasActiveDiseaseFeverSource, player)
-    return ok and hasFever == true
+    -- The authoritative 60-tick temperature update owns fever-source scans and
+    -- maintains this marker. Re-scanning every disease here every frame made
+    -- healthy-player cost scale with the full disease catalogue.
+    return EHR.BodyTemp.HasCachedDiseaseFever(tempData)
 end
 
 local function EHR_BodyTempGetEnvironmentIdentity(environment)
@@ -1835,11 +1911,11 @@ end
 function EHR.BodyTemp.GetClientReportedBodyTemperature(player)
     if not EHR_BodyTempIsDedicatedServer()
             or not EHR.Environmental
-            or not EHR.Environmental.GetRuntimeEnvironment then
+            or not EHR.Environmental.GetClientSnapshot then
         return nil
     end
 
-    local ok, environment = pcall(EHR.Environmental.GetRuntimeEnvironment, player)
+    local ok, environment = pcall(EHR.Environmental.GetClientSnapshot, player)
     if not ok or type(environment) ~= "table" then return nil end
 
     local bodyTemp = tonumber(environment.bodyTempC)
@@ -1849,22 +1925,34 @@ end
 
 -- Applies one vanilla-sized core-temperature step. This runs every game tick;
 -- the expensive 17-node environmental correction is cached for a few ticks.
-function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
+function EHR.BodyTemp.UpdateVanillaHeatAdapter(player, knownTempData, refreshPhase)
     if not player then return false end
     if EHR.BodyTemp.IsRealisticTemperatureActive
             and EHR.BodyTemp.IsRealisticTemperatureActive() then
         return false
     end
 
-    local state = EHR_BodyTempGetAdapterState(player)
+    local state = EHR_BodyTempGetAdapterState(player, refreshPhase)
     local multiplayerClient = isClient and isClient()
     local dedicatedServer = EHR_BodyTempIsDedicatedServer()
     local environment = EHR.BodyTemp.GetIndoorClimateLiteEnvironment
         and EHR.BodyTemp.GetIndoorClimateLiteEnvironment(player)
         or nil
     if not environment then
+        local firstMissingTick = not state.missingEnvironmentTicks
+            or state.missingEnvironmentTicks <= 0
+        if firstMissingTick then
+            local staleTempData = knownTempData or EHR.BodyTemp.GetTemperatureData(player)
+            if staleTempData and staleTempData.environmentManagedBy == "VanillaHeatAdapter" then
+                staleTempData.vanillaHeatAdapterAvailable = false
+                staleTempData.environmentManagedBy = "Vanilla"
+                state.hadEnvironment = true
+            end
+            state.managedCore = nil
+            state.ambientCorrection = 0
+        end
         state.missingEnvironmentTicks = (state.missingEnvironmentTicks or 0) + 1
-        if state.missingEnvironmentTicks >= 300 then
+        if state.hadEnvironment and state.missingEnvironmentTicks >= 300 then
             EHR_BodyTempAdapterWarnOnce(
                 state,
                 "missingIndoorClimateSample",
@@ -1874,8 +1962,9 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
         return false
     end
     state.missingEnvironmentTicks = 0
+    state.hadEnvironment = true
 
-    local tempData = EHR.BodyTemp.GetTemperatureData(player)
+    local tempData = knownTempData or EHR.BodyTemp.GetTemperatureData(player)
     local thermo = EHR_BodyTempGetThermoregulator(player)
     if not tempData or not thermo then
         if tempData then tempData.vanillaHeatAdapterAvailable = false end
@@ -1958,10 +2047,10 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
     local environmentIdentity = EHR_BodyTempGetEnvironmentIdentity(environment)
     state.refreshTick = (state.refreshTick or 0) + 1
 
-    local airChanged = state.desiredAir == nil
-        or math.abs(desiredAir - state.desiredAir) >= VANILLA_ADAPTER_AIR_EPSILON
-        or state.vanillaAir == nil
-        or math.abs(vanillaAir - state.vanillaAir) >= VANILLA_ADAPTER_AIR_EPSILON
+    local airChanged = state.refreshDesiredAir == nil
+        or math.abs(desiredAir - state.refreshDesiredAir) >= VANILLA_ADAPTER_AIR_REFRESH_JUMP
+        or state.refreshVanillaAir == nil
+        or math.abs(vanillaAir - state.refreshVanillaAir) >= VANILLA_ADAPTER_AIR_REFRESH_JUMP
     local environmentChanged = state.environmentIdentity ~= environmentIdentity
     local shouldRefresh = airChanged
         or environmentChanged
@@ -1974,15 +2063,19 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
         state.ambientCorrection = 0
         state.vanillaEnvironmentalHeat = nil
         state.desiredEnvironmentalHeat = nil
-        state.nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
-        state.refreshTick = 0
+        if shouldRefresh or state.nodeCount == nil then
+            state.nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
+            EHR_BodyTempResetAdapterRefreshClock(state, desiredAir, vanillaAir)
+        end
     elseif math.abs(desiredAir - vanillaAir) < VANILLA_ADAPTER_AIR_EPSILON
             and math.abs(desiredWindAir - vanillaWindAir) < VANILLA_ADAPTER_AIR_EPSILON then
         state.ambientCorrection = 0
         state.vanillaEnvironmentalHeat = nil
         state.desiredEnvironmentalHeat = nil
-        state.nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
-        state.refreshTick = 0
+        if shouldRefresh or state.nodeCount == nil then
+            state.nodeCount = EHR_BodyTempSafeMethodNumber(thermo, "getNodeSize")
+            EHR_BodyTempResetAdapterRefreshClock(state, desiredAir, vanillaAir)
+        end
     elseif shouldRefresh then
         local correction, vanillaEnvironmentalHeat, desiredEnvironmentalHeat, nodeCount =
             EHR_BodyTempCalculateAmbientCorrection(
@@ -2001,7 +2094,7 @@ function EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
         state.vanillaEnvironmentalHeat = vanillaEnvironmentalHeat
         state.desiredEnvironmentalHeat = desiredEnvironmentalHeat
         state.nodeCount = nodeCount
-        state.refreshTick = 0
+        EHR_BodyTempResetAdapterRefreshClock(state, desiredAir, vanillaAir)
     end
 
     state.desiredAir = desiredAir
@@ -2850,88 +2943,68 @@ end
 local BODY_TEMP_TICK_INTERVAL = 60  -- Every ~2 seconds at 30 ticks/sec
 
 -- MP: per-player tick state (avoid shared counters across players)
-local tickStateByPlayer = {}
-
-local function getPlayerId(player)
-    if not player then return nil end
-    local onlineId = nil
-    pcall(function() onlineId = player:getOnlineID() end)
-    if onlineId and onlineId >= 0 then
-        return tostring(onlineId)
-    end
-    local username = nil
-    pcall(function() username = player:getUsername() end)
-    if username and username ~= "" then
-        return username
-    end
-    local num = nil
-    pcall(function() num = player:getPlayerNum() end)
-    return tostring(num or "0")
-end
+local tickStateByPlayer = setmetatable({}, { __mode = "k" })
 
 local function getTickState(player)
-    local id = getPlayerId(player) or "0"
-    local state = tickStateByPlayer[id]
+    local state = tickStateByPlayer[player]
     if not state then
-        state = { tick = 0 }
-        tickStateByPlayer[id] = state
+        local id = nil
+        if player and player.getOnlineID then
+            pcall(function()
+                local onlineID = player:getOnlineID()
+                if onlineID and onlineID >= 0 then id = tostring(onlineID) end
+            end)
+        end
+        if not id and player and player.getUsername then
+            pcall(function() id = tostring(player:getUsername() or "") end)
+        end
+        if not id or id == "" then id = "0" end
+
+        local phase = 0
+        for index = 1, #id do
+            phase = ((phase * 33) + string.byte(id, index)) % BODY_TEMP_TICK_INTERVAL
+        end
+        state = {
+            tick = phase,
+            adapterPhase = phase % VANILLA_ADAPTER_NODE_REFRESH_TICKS,
+        }
+        tickStateByPlayer[player] = state
     end
     return state
 end
 
-local function getActivePlayers()
-    local players = {}
-    if isServer and isServer() and getOnlinePlayers then
-        local online = getOnlinePlayers()
-        if online then
-            for i = 0, online:size() - 1 do
-                local p = online:get(i)
-                if p then
-                    table.insert(players, p)
-                end
-            end
-        end
-    end
-
-    if #players == 0 then
-        local player = getSpecificPlayer(0)
-        if player then
-            table.insert(players, player)
-        end
-    end
-
-    return players
-end
-
-local function processPlayerTick(player, clientPredictionOnly)
+local function processPlayerTick(player, clientPredictionOnly, systemEnabled)
     if not player or not player:isAlive() then return end
 
     -- Check if custom body temp system is enabled
     -- If disabled, don't suppress vanilla temp - allows other temp mods to work
-    if not EHR.BodyTemp.IsEnabled() then return end
+    if not systemEnabled then return end
+
+    local state = getTickState(player)
+
+    -- Resolve ModData once for the complete per-frame path. Previously
+    -- InitializePlayer, the adapter and the fever bridge each looked it up.
+    local tempData = EHR.BodyTemp.GetTemperatureData(player)
+    if not tempData then
+        tempData = EHR.BodyTemp.InitializePlayer(player)
+    end
+    if not tempData then return end
 
     -- Initialization and the vanilla adapter run before the slower medical
     -- checks. Vanilla's heat delta is a per-tick value and must not be sampled
     -- only once every BODY_TEMP_TICK_INTERVAL.
-    EHR.BodyTemp.InitializePlayer(player)
     if EHR.BodyTemp.UpdateVanillaHeatAdapter then
-        EHR.BodyTemp.UpdateVanillaHeatAdapter(player)
+        EHR.BodyTemp.UpdateVanillaHeatAdapter(player, tempData, state.adapterPhase)
     end
 
-    -- Legacy no-op: vanilla is authoritative for environmental temperature.
-    EHR.BodyTemp.SuppressVanillaTemperature(player)
     if EHR.BodyTemp.MaintainDiseaseFeverBridge then
-        EHR.BodyTemp.MaintainDiseaseFeverBridge(player)
+        EHR.BodyTemp.MaintainDiseaseFeverBridge(player, tempData)
     end
 
     -- Throttled updates for our system
-    local state = getTickState(player)
     state.tick = state.tick + 1
     if state.tick < BODY_TEMP_TICK_INTERVAL then return end
     state.tick = 0
-
-    local tempData = EHR.BodyTemp.GetTemperatureData(player)
-    if not tempData then return end
 
     -- Calculate delta time
     local currentHour = getGameTime():getWorldAgeHours()
@@ -2976,17 +3049,33 @@ local function processPlayerTick(player, clientPredictionOnly)
 end
 
 function EHR.BodyTemp.OnTick()
+    local systemEnabled = EHR.BodyTemp.IsEnabled()
+    if not systemEnabled then return end
+
     -- MP: the local client owns its live Thermoregulator/ICL heat balance.
     -- Disease contraction remains server-authoritative via bodyTempC snapshots.
     if isClient and isClient() and not (isServer and isServer()) then
         local player = getSpecificPlayer(0)
-        processPlayerTick(player, true)
+        processPlayerTick(player, true, systemEnabled)
         return
     end
 
-    local players = getActivePlayers()
-    for _, player in ipairs(players) do
-        processPlayerTick(player, false)
+    -- Iterate the engine collection directly instead of allocating and filling
+    -- a temporary Lua array on every server frame.
+    if isServer and isServer() and getOnlinePlayers then
+        local online = getOnlinePlayers()
+        local count = online and online:size() or 0
+        if count > 0 then
+            for index = 0, count - 1 do
+                processPlayerTick(online:get(index), false, systemEnabled)
+            end
+            return
+        end
+    end
+
+    local player = getSpecificPlayer and getSpecificPlayer(0) or nil
+    if player then
+        processPlayerTick(player, false, systemEnabled)
     end
 end
 
@@ -2994,7 +3083,8 @@ end
 -- EVENT REGISTRATION
 -- ============================================
 
-if Events and Events.OnTick then
+if Events and Events.OnTick and not EHR.BodyTemp._eventsRegistered then
+    EHR.BodyTemp._eventsRegistered = true
     Events.OnTick.Add(EHR.BodyTemp.OnTick)
     EHR.Log("Body Temperature module events registered")
 end

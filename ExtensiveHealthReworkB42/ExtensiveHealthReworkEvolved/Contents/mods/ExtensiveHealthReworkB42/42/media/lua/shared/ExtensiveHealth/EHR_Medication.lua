@@ -7138,6 +7138,11 @@ Events.OnFillInventoryObjectContextMenu.Add(OnMedicationContextMenu)
 
 local function OnPlayerUpdate(player)
     if not player or player:isDead() then return end
+    -- The dedicated/listen server already owns authoritative medication
+    -- progression in EHR_ServerCommands at a one-second cadence. Running the
+    -- shared per-player callback there as well duplicated the full medication
+    -- update every frame for every connected player.
+    if EHRMedicationIsServer() then return end
     EHR.Medication.Update(player)
 end
 

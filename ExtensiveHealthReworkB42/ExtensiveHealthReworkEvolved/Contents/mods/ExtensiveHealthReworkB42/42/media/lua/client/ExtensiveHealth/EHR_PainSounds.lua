@@ -204,9 +204,14 @@ end
 function EHR.PainSounds.IsPainkillerActive(player)
     if not player then return false end
 
-    -- Check ModData for EHR painkiller tracking
+    if EHR.Medication and EHR.Medication.IsAnalgesicActive then
+        local ok, active = pcall(EHR.Medication.IsAnalgesicActive, player)
+        if ok and active == true then return true end
+    end
+
+    -- Keep both the current and legacy ModData flags as lightweight fallbacks.
     local modData = player:getModData()
-    if modData and modData.EHR_PainkillerActive then
+    if modData and (modData.EHR_AnalgesicActive or modData.EHR_PainkillerActive) then
         return true
     end
 

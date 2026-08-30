@@ -14,6 +14,7 @@ pcall(function() require "ExtensiveHealth/EHR_WoundInfection" end)
 pcall(function() require "ExtensiveHealth/EHR_Sepsis" end)
 pcall(function() require "ExtensiveHealth/EHR_Medication" end)
 pcall(function() require "ExtensiveHealth/EHR_KnoxCure" end)
+pcall(function() require "MF_ISMoodle" end)
 
 local MODULE = EHR.Moodles
 
@@ -23,8 +24,9 @@ local MOODLE_CORPSE_EXPOSURE = "EHR_CorpseExposure"
 local MOODLE_CADAVERIC_EXPOSURE = "EHR_CadavericExposure"
 local MOODLE_HEAT_EXPOSURE = "EHR_HeatExposure"
 local MOODLE_COLD_EXPOSURE = "EHR_ColdExposure"
-local MOODLE_FREEZING_EXPOSURE = "EHR_FreezingExposure"
+local RETIRED_MOODLE_FREEZING_EXPOSURE = "EHR_FreezingExposure"
 local UPDATE_TICKS = 90
+local NEUTRAL_VALUE = 0.50
 
 local MOODLE_NAMES = {
     MOODLE_MEDICAL,
@@ -32,15 +34,14 @@ local MOODLE_NAMES = {
     MOODLE_CADAVERIC_EXPOSURE,
     MOODLE_HEAT_EXPOSURE,
     MOODLE_COLD_EXPOSURE,
-    MOODLE_FREEZING_EXPOSURE,
 }
 
 local BAD = 2
 local LEVEL_VALUE = {
-    [1] = -0.25,
-    [2] = -0.50,
-    [3] = -0.75,
-    [4] = -1.00,
+    [1] = 0.35,
+    [2] = 0.25,
+    [3] = 0.15,
+    [4] = 0.05,
 }
 
 local ICONS = {
@@ -49,18 +50,18 @@ local ICONS = {
     cadaveric = "media/textures/EHR_Disease_CadavericAspergillosisMoodle.png",
     heat = "media/textures/EHR_Disease_HeatExhaustionMoodle.png",
     cold = "media/textures/EHR_Disease_CommonColdMoodle.png",
-    freezing = "media/textures/EHR_Disease_HypotermiaMoodle.png",
 }
 
--- EHR moodle pictures are complete circular badges already.  Letting
--- MoodleFramework draw its own solid background/border behind them produces
--- the white box/ring visible around the badge on some MF configurations.
+-- EHR moodle pictures are complete circular badges already. Use MF's public
+-- background override to prevent its solid fill from becoming a white square.
 local TRANSPARENT_MOODLE_TEXTURE = "media/textures/emptyTexture.png"
 
-local registeredNames = MODULE.registeredNames or {}
-MODULE.registeredNames = registeredNames
-
 local textureCache = {}
+local configuredObjects = MODULE.configuredObjects or {}
+MODULE.configuredObjects = configuredObjects
+local registrationErrors = MODULE.registrationErrors or {}
+MODULE.registrationErrors = registrationErrors
+local registrationComplete = false
 
 local function L(key, fallback)
     if EHR.Locale and EHR.Locale.Text then
@@ -95,90 +96,91 @@ end
 
 local function isMFReady()
     return type(MF) == "table"
+        and type(MF.createMoodle) == "function"
         and type(MF.getMoodle) == "function"
-        and type(MF.ISMoodle) == "table"
-        and type(MF.ISMoodle.new) == "function"
+end
+
+local function shouldShowEHRMoodles()
+    if EHR.Keybinds and EHR.Keybinds.ShouldShowMoodles then
+        return safeCall(function()
+            return EHR.Keybinds.ShouldShowMoodles()
+        end, true) ~= false
+    end
+    return true
 end
 
 local function registerMoodle(name)
-    if registeredNames[name] then return true end
     if not isMFReady() then return false end
 
-    -- EHR owns creation through its existing OnCreatePlayer handler. Calling
-    -- MF.createMoodle() here would register a second OnCreatePlayer callback;
-    -- together with the immediate fallback below that leaves two live UI
-    -- elements for the same moodle (duplicate icons and overlapping tooltips).
-    registeredNames[name] = true
-    return true
+    -- MoodleFramework owns the complete object lifecycle. createMoodle() is
+    -- idempotent and registers its own OnCreatePlayer callback once per name.
+    local ok, err = pcall(MF.createMoodle, name)
+    if ok then return true end
+
+    if not registrationErrors[name] then
+        registrationErrors[name] = true
+        if EHR.Log then
+            EHR.Log("MoodleFramework registration failed for " .. tostring(name) .. ": " .. tostring(err))
+        end
+    end
+    return false
 end
 
 local function ensureMoodlesRegistered()
+    if registrationComplete then return true end
     if not isMFReady() then return false end
     for _, name in ipairs(MOODLE_NAMES) do
-        registerMoodle(name)
+        if not registerMoodle(name) then return false end
     end
-    for _, name in ipairs(MOODLE_NAMES) do
-        if registeredNames[name] ~= true then return false end
-    end
+    registrationComplete = true
     return true
 end
 
-local function releaseMoodleObject(moodle)
-    if not moodle then return end
-
-    safeCall(function()
-        if moodle.addedToUIManager and moodle.removeFromUIManager then
-            moodle:removeFromUIManager()
-            moodle.addedToUIManager = false
-        end
-    end)
-
-    if moodle.onPlayerDeathFunc and Events and Events.OnPlayerDeath then
-        safeCall(function()
-            Events.OnPlayerDeath.Remove(moodle.onPlayerDeathFunc)
-        end)
-        moodle.onPlayerDeathFunc = nil
+local function installMF27ConstructorGuard()
+    if not isMFReady()
+        or type(MF.MoodleData) ~= "table"
+        or type(MF.ISMoodle) ~= "table"
+        or type(MF.ISMoodle.new) ~= "function"
+        or MF.ISMoodle._EHRMF27ConstructorGuard
+        or MF.ISMoodle._TrueSmokingCtorHotfix then
+        return
     end
 
-    if moodle.suspend then
-        safeCall(function() moodle:suspend() end)
-    else
-        moodle.disable = true
+    -- MF 2.7/B42.20 initializes storage through MF.ISMoodle:getMoodleData()
+    -- instead of the newly-created object. Temporarily exposing the constructor
+    -- arguments on the class lets the upstream createMoodle lifecycle finish.
+    -- This guard does not create, store, position, or dispose EHR moodles.
+    local originalNew = MF.ISMoodle.new
+    MF.ISMoodle._EHRMF27ConstructorGuard = true
+
+    function MF.ISMoodle:new(moodleName, character)
+        local oldName = rawget(self, "name")
+        local oldChar = rawget(self, "char")
+        self.name = moodleName
+        self.char = character
+
+        local ok, result = pcall(originalNew, self, moodleName, character)
+
+        self.name = oldName
+        self.char = oldChar
+        if not ok then error(result) end
+        return result
     end
 end
 
 local function ensureMoodleObject(name, playerNum)
     if not ensureMoodlesRegistered() then return nil end
 
-    local player = getSpecificPlayer and getSpecificPlayer(playerNum) or nil
-    if not player then return nil end
-
     local moodle = safeCall(function()
         return MF.getMoodle(name, playerNum)
     end, nil)
+    if not moodle then return nil end
 
-    -- MoodleFramework keeps its storage slot after death. Never reuse an
-    -- object bound to the previous IsoPlayer, otherwise a new object may be
-    -- drawn on top of the suspended one when the character is recreated.
-    if moodle and moodle.char ~= player then
-        releaseMoodleObject(moodle)
-        moodle = nil
-    end
-
-    if not moodle then
-        moodle = safeCall(function()
-            return MF.ISMoodle:new(name, player)
-        end, nil)
-    elseif moodle.disable then
-        if moodle.activate then
-            safeCall(function() moodle:activate() end)
-        else
-            moodle.disable = false
-        end
-    end
-
-    if moodle and not moodle.ehrConfigured then
-        moodle:setThresholds(-1.0, -0.75, -0.50, -0.01, nil, nil, nil, nil)
+    local objectKey = tostring(playerNum) .. ":" .. tostring(name)
+    if configuredObjects[objectKey] ~= moodle then
+        -- Keep all values inside MoodleFramework's documented 0..1 contract.
+        -- 0.50 is neutral/hidden; lower values map to bad levels 1..4.
+        moodle:setThresholds(0.05, 0.15, 0.25, 0.35, nil, nil, nil, nil)
         moodle:setChevronCount(0)
 
         local transparentTexture = getTextureCached(TRANSPARENT_MOODLE_TEXTURE)
@@ -186,20 +188,9 @@ local function ensureMoodleObject(name, playerNum)
             for level = 1, 4 do
                 moodle:setBackground(BAD, level, transparentTexture)
             end
-            moodle.Border = transparentTexture
-
-            -- MF refreshes Border whenever the global moodle size changes.
-            -- Preserve EHR's transparent override across that refresh.
-            if type(moodle.updateTextures) == "function" then
-                local updateTextures = moodle.updateTextures
-                moodle.updateTextures = function(self, size)
-                    updateTextures(self, size)
-                    self.Border = transparentTexture
-                end
-            end
         end
 
-        moodle.ehrConfigured = true
+        configuredObjects[objectKey] = moodle
     end
 
     return moodle
@@ -497,7 +488,7 @@ local function applyMoodle(playerNum, name, alert)
     if not moodle then return end
 
     if not alert then
-        moodle:setValue(0)
+        moodle:setValue(NEUTRAL_VALUE)
         return
     end
 
@@ -511,17 +502,48 @@ local function applyMoodle(playerNum, name, alert)
     moodle:setValue(LEVEL_VALUE[level] or LEVEL_VALUE[1])
 end
 
-local function hideLegacyExposureMoodle(playerNum)
+local function hideRetiredMoodles(playerNum)
     if not isMFReady() then return end
-    local moodle = safeCall(function()
-        return MF.getMoodle(LEGACY_MOODLE_EXPOSURE, playerNum)
-    end, nil)
-    if moodle then moodle:setValue(0) end
+
+    local retiredNames = {
+        LEGACY_MOODLE_EXPOSURE,
+        RETIRED_MOODLE_FREEZING_EXPOSURE,
+    }
+    for _, name in ipairs(retiredNames) do
+        local moodle = safeCall(function()
+            return MF.getMoodle(name, playerNum)
+        end, nil)
+        if moodle then
+            safeCall(function() moodle:setValue(NEUTRAL_VALUE) end)
+        end
+    end
+end
+
+local function hideAllEHRMoodles(playerNum)
+    if not isMFReady() then return end
+
+    for _, name in ipairs(MOODLE_NAMES) do
+        local moodle = safeCall(function()
+            return MF.getMoodle(name, playerNum)
+        end, nil)
+        if moodle then
+            safeCall(function() moodle:setValue(NEUTRAL_VALUE) end)
+        end
+    end
+
+    hideRetiredMoodles(playerNum)
 end
 
 function MODULE.UpdatePlayer(playerNum)
     local player = getSpecificPlayer and getSpecificPlayer(playerNum) or nil
     if not player then return end
+
+    -- This is a client-only display preference. Keep every disease/exposure
+    -- system active and only clear EHR's MoodleFramework objects.
+    if not shouldShowEHRMoodles() then
+        hideAllEHRMoodles(playerNum)
+        return
+    end
 
     local corpseLevel = corpseExposureLevel(player)
     local cadavericLevel = cadavericExposureLevel(player)
@@ -538,10 +560,9 @@ function MODULE.UpdatePlayer(playerNum)
         makeExposureAlert(heatLevel, ICONS.heat, "UI_EHR_Moodle_HeatExposure_Title", "Heat Exposure"))
     applyMoodle(playerNum, MOODLE_COLD_EXPOSURE,
         makeExposureAlert(coldLevel, ICONS.cold, "UI_EHR_Moodle_ColdRisk_Title", "Cold Risk"))
-    -- Retain the old identifier only long enough to hide any framework object
-    -- left behind by an in-session Lua reload from a previous build.
-    applyMoodle(playerNum, MOODLE_FREEZING_EXPOSURE, nil)
-    hideLegacyExposureMoodle(playerNum)
+    -- Hide framework objects left behind by an in-session Lua reload from an
+    -- older EHR build, without registering those retired identifiers again.
+    hideRetiredMoodles(playerNum)
 end
 
 function MODULE.UpdateAll()
@@ -575,6 +596,11 @@ local function onGameStart()
     MODULE.tickCounter = UPDATE_TICKS
     MODULE.UpdateAll()
 end
+
+-- Register before EHR's own OnCreatePlayer callback so MoodleFramework creates
+-- every object first and EHR only configures/updates the returned instances.
+installMF27ConstructorGuard()
+ensureMoodlesRegistered()
 
 if not MODULE.eventsRegistered then
     MODULE.eventsRegistered = true

@@ -83,6 +83,33 @@ function EHR.Locale.TextForLine(text)
     end
 
     text = tostring(text)
+
+    -- Antibody-test results contain runtime values, so hashing the completed
+    -- English sentence would create a different, untranslatable key for every
+    -- blood type/rating/chance combination. Localize the stable template and
+    -- rating before falling back to the regular raw-line hash system.
+    local bloodType, rating, chance = string.match(
+        text,
+        "^Test complete%.%.%. Blood type (.-)%. (.-) %- (%d+)%% survival chance%.$"
+    )
+    if bloodType and rating and chance then
+        local ratingKeys = {
+            ["High Compatibility"] = "UI_EHR_KnoxCure_Rating_High",
+            ["Moderate Compatibility"] = "UI_EHR_KnoxCure_Rating_Moderate",
+            ["Low Compatibility"] = "UI_EHR_KnoxCure_Rating_Low",
+            ["Critical Risk"] = "UI_EHR_KnoxCure_Rating_Critical",
+        }
+        local ratingKey = ratingKeys[rating]
+        local localizedRating = ratingKey and EHR.Locale.Text(ratingKey, rating) or rating
+        return EHR.Locale.Format(
+            "UI_EHR_KnoxCure_TestResult",
+            "Test complete... Blood type %1. %2 - %3 survival chance.",
+            bloodType,
+            localizedRating,
+            tostring(chance) .. "%"
+        )
+    end
+
     if string.match(text, "^[A-Za-z0-9_]+$") then
         local byKey = EHR.Locale.Text(text, nil)
         if byKey and byKey ~= text then

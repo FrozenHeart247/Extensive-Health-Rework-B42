@@ -29,6 +29,33 @@ local function knoxMenuText(key, fallback)
     return fallback
 end
 
+local function knoxMenuFormat(key, fallback, ...)
+    if EHR and EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format("UI_EHR_KnoxCure_" .. tostring(key), fallback, ...)
+    end
+
+    local text = knoxMenuText(key, fallback)
+    local args = {...}
+    for i, value in ipairs(args) do
+        local replacement = tostring(value)
+        text = tostring(text):gsub("%%" .. tostring(i) .. "%$[%a]", function() return replacement end)
+        text = tostring(text):gsub("%%" .. tostring(i), function() return replacement end)
+    end
+    return text
+end
+
+local function knoxRatingText(rating)
+    local ratingKeys = {
+        ["High Compatibility"] = "Rating_High",
+        ["Moderate Compatibility"] = "Rating_Moderate",
+        ["Low Compatibility"] = "Rating_Low",
+        ["Critical Risk"] = "Rating_Critical",
+    }
+    local key = ratingKeys[tostring(rating or "")]
+    if not key then return tostring(rating or "") end
+    return knoxMenuText(key, tostring(rating))
+end
+
 local function useKnoxCureItem(player, item, action)
     if not player or not item then return end
 
@@ -113,12 +140,12 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
 
     -- Check if already immune
     if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
-        local option = context:addOption("Gene Therapy (Already Immune)", nil, nil)
+        local option = context:addOption(knoxMenuText("GeneTherapyAlreadyImmuneOption", "Gene Therapy (Already Immune)"), nil, nil)
         option.notAvailable = true
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         option.toolTip = ISWorldObjectContextMenu.addToolTip()
-        option.toolTip:setName("Already Immune")
-        option.toolTip.description = "You survived Gene Therapy and are permanently immune to the Knox Virus."
+        option.toolTip:setName(knoxMenuText("AlreadyImmuneTitle", "Already Immune"))
+        option.toolTip.description = knoxMenuText("AlreadyImmuneDescription", "You survived Gene Therapy and are permanently immune to the Knox Virus.")
         return
     end
 
@@ -126,29 +153,29 @@ function EHR.KnoxCureMenu.AddGeneTherapyOption(context, player, item)
     local isInfected = EHR.KnoxCure.IsInfected(player)
 
     -- Create option
-    local optionText = "Use Gene Therapy Injector"
+    local optionText = knoxMenuText("UseGeneTherapy", "Use Gene Therapy Injector")
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseGeneTherapy, item)
     if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
-    option.toolTip:setName("Gene Therapy Injector")
+    option.toolTip:setName(knoxMenuText("GeneTherapyTitle", "Gene Therapy Injector"))
 
-    local desc = "Experimental gene therapy that can cure Knox Virus infection.\n\n"
-    desc = desc .. "Success depends on blood type compatibility.\n"
-    desc = desc .. "Use an Antibody Test first to check your odds.\n\n"
+    local desc = knoxMenuText("GeneTherapyDescription", "Experimental gene therapy that can cure Knox Virus infection.\n\n")
+    desc = desc .. knoxMenuText("GeneTherapyCompatibility", "Success depends on blood type compatibility.\n")
+    desc = desc .. knoxMenuText("GeneTherapyTestAdvice", "Use an Antibody Test first to check your odds.\n\n")
 
     if isInfected then
-        desc = desc .. "<RGB:1,0.5,0.5> WARNING: You are infected. This is a gamble between cure and death."
+        desc = desc .. knoxMenuText("GeneTherapyInfectedWarning", "<RGB:1,0.5,0.5> WARNING: You are infected. This is a gamble between cure and death.")
     else
-        desc = desc .. "<RGB:0.5,0.5,1> You are not infected. Using this would be wasteful."
+        desc = desc .. knoxMenuText("GeneTherapyNotInfected", "<RGB:0.5,0.5,1> You are not infected. Using this would be wasteful.")
         option.notAvailable = true
     end
 
     if EHR.KnoxCure.IsPatientZeroTraitEnabled and not EHR.KnoxCure.IsPatientZeroTraitEnabled() then
-        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: current Knox infection cured. Patient Zero immunity is disabled by sandbox."
+        desc = desc .. knoxMenuText("GeneTherapySuccessNoImmunity", "\n\n<RGB:0.7,0.7,0.7> If successful: current Knox infection cured. Patient Zero immunity is disabled by sandbox.")
     else
-        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity"
+        desc = desc .. knoxMenuText("GeneTherapySuccessImmunity", "\n\n<RGB:0.7,0.7,0.7> If successful: Permanent immunity")
     end
 
     option.toolTip.description = desc
@@ -160,7 +187,7 @@ function EHR.KnoxCureMenu.OnUseGeneTherapy(player, item)
         getCore():getScreenWidth() / 2 - 150,
         getCore():getScreenHeight() / 2 - 50,
         300, 100,
-        "Use Gene Therapy?\nSuccess depends on blood type compatibility.\nFailure is fatal.",
+        knoxMenuText("GeneTherapyConfirmation", "Use Gene Therapy?\nSuccess depends on blood type compatibility.\nFailure is fatal."),
         true, nil,
         EHR.KnoxCureMenu.OnGeneTherapyConfirm,
         player:getPlayerNum(),
@@ -185,7 +212,7 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
 
     -- Check if immune
     if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
-        local option = context:addOption("Take Phalanx (Already Immune)", nil, nil)
+        local option = context:addOption(knoxMenuText("PhalanxAlreadyImmuneOption", "Take Phalanx (Already Immune)"), nil, nil)
         option.notAvailable = true
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         return
@@ -199,11 +226,11 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
     -- Create option text
     local optionText
     if resetTo >= 100 then
-        optionText = "Take Phalanx (Body Adapted - No Effect)"
+        optionText = knoxMenuText("PhalanxNoEffectOption", "Take Phalanx (Body Adapted - No Effect)")
     elseif resetTo > 0 then
-        optionText = string.format("Take Phalanx (Reset to %d%%)", resetTo)
+        optionText = knoxMenuFormat("PhalanxResetToOption", "Take Phalanx (Reset to %1)", tostring(resetTo) .. "%")
     else
-        optionText = "Take Phalanx (Full Reset)"
+        optionText = knoxMenuText("PhalanxFullResetOption", "Take Phalanx (Full Reset)")
     end
 
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUsePhalanx, item)
@@ -218,28 +245,28 @@ function EHR.KnoxCureMenu.AddPhalanxOption(context, player, item)
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
-    option.toolTip:setName("Phalanx Suppressant")
+    option.toolTip:setName(knoxMenuText("PhalanxTitle", "Phalanx Suppressant"))
 
-    local desc = "Resets Knox Virus infection progress. Does NOT cure - only buys time.\n\n"
-    desc = desc .. "Times Used: " .. usageCount .. "/4\n"
+    local desc = knoxMenuText("PhalanxDescription", "Resets Knox Virus infection progress. Does NOT cure - only buys time.\n\n")
+    desc = desc .. knoxMenuFormat("PhalanxTimesUsed", "Times Used: %1/%2\n", usageCount, 4)
 
     if resetTo < 100 then
         if resetTo == 0 then
-            desc = desc .. "Next Use: Full reset (0%)\n"
+            desc = desc .. knoxMenuFormat("PhalanxNextFullReset", "Next Use: Full reset (%1)\n", "0%")
         else
-            desc = desc .. "Next Use: Reset to " .. resetTo .. "%\n"
+            desc = desc .. knoxMenuFormat("PhalanxNextResetTo", "Next Use: Reset to %1\n", tostring(resetTo) .. "%")
         end
     else
-        desc = desc .. "<RGB:1,0.5,0.5> Body has adapted - pills no longer effective\n"
+        desc = desc .. knoxMenuText("PhalanxBodyAdapted", "<RGB:1,0.5,0.5> Body has adapted - pills no longer effective\n")
     end
 
-    desc = desc .. "\nSide Effects:\n"
-    desc = desc .. "- Extreme nausea (6 hours)\n"
-    desc = desc .. "- Fever (12 hours)\n"
-    desc = desc .. "- Weakened immune system (48 hours)"
+    desc = desc .. knoxMenuText("SideEffectsHeading", "\nSide Effects:\n")
+    desc = desc .. knoxMenuText("PhalanxSideEffectNausea", "- Extreme nausea (6 hours)\n")
+    desc = desc .. knoxMenuText("PhalanxSideEffectFever", "- Fever (12 hours)\n")
+    desc = desc .. knoxMenuText("PhalanxSideEffectImmunity", "- Weakened immune system (48 hours)")
 
     if not isInfected then
-        desc = desc .. "\n\n<RGB:0.5,0.5,1> You are not infected."
+        desc = desc .. knoxMenuText("NotInfected", "\n\n<RGB:0.5,0.5,1> You are not infected.")
     end
 
     option.toolTip.description = desc
@@ -256,22 +283,26 @@ end
 function EHR.KnoxCureMenu.AddAntibodyTestOption(context, player, item)
     local data = EHR.KnoxCure.GetData(player)
 
-    local option = context:addOption("Use Antibody Test", player, EHR.KnoxCureMenu.OnUseAntibodyTest, item)
+    local option = context:addOption(knoxMenuText("UseAntibodyTest", "Use Antibody Test"), player, EHR.KnoxCureMenu.OnUseAntibodyTest, item)
     if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
-    option.toolTip:setName("Antibody Compatibility Test")
+    option.toolTip:setName(knoxMenuText("AntibodyTestTitle", "Antibody Compatibility Test"))
 
-    local desc = "Tests your compatibility with Gene Therapy treatment.\n\n"
-    desc = desc .. "Shows your survival chance before risking the injector.\n\n"
-    desc = desc .. "Single use - test kit is consumed."
+    local desc = knoxMenuText("AntibodyTestDescription", "Tests your compatibility with Gene Therapy treatment.\n\n")
+    desc = desc .. knoxMenuText("AntibodyTestChance", "Shows your survival chance before risking the injector.\n\n")
+    desc = desc .. knoxMenuText("AntibodyTestSingleUse", "Single use - test kit is consumed.")
 
     -- Show cached result if available
     if data and data.lastTestResult then
         local result = data.lastTestResult
-        desc = desc .. "\n\n<RGB:0.7,0.7,0.7> Last Result: " .. result.rating
-        desc = desc .. " (" .. result.chance .. "% survival)"
+        desc = desc .. knoxMenuFormat(
+            "AntibodyLastResult",
+            "\n\n<RGB:0.7,0.7,0.7> Last Result: %1 (%2 survival)",
+            knoxRatingText(result.rating),
+            tostring(result.chance) .. "%"
+        )
     end
 
     option.toolTip.description = desc
@@ -297,7 +328,7 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
 
     -- Check if already immune
     if data and EHR.KnoxCure.HasPermanentKnoxImmunity and EHR.KnoxCure.HasPermanentKnoxImmunity(player, data) then
-        local option = context:addOption("Use Immunobooster (Already Immune)", nil, nil)
+        local option = context:addOption(knoxMenuText("ImmunoboosterAlreadyImmuneOption", "Use Immunobooster (Already Immune)"), nil, nil)
         option.notAvailable = true
         if EHR.SetContextOptionIcon then EHR.SetContextOptionIcon(option, item) end
         return
@@ -316,15 +347,15 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
     -- Create option
     local optionText
     if isActive then
-        optionText = string.format("Immunobooster (Active - %.0fh left)", remaining)
+        optionText = knoxMenuFormat("ImmunoboosterActiveOption", "Immunobooster (Active - %1h left)", string.format("%.0f", remaining))
     elseif isOnCooldown then
-        optionText = string.format("Use Immunobooster (Cooldown %.0fh)", cooldownRemaining)
+        optionText = knoxMenuFormat("ImmunoboosterCooldownOption", "Use Immunobooster (Cooldown %1h)", string.format("%.0f", cooldownRemaining))
     elseif isInfected then
-        optionText = "Use Immunobooster (Already Infected)"
+        optionText = knoxMenuText("ImmunoboosterAlreadyInfectedOption", "Use Immunobooster (Already Infected)")
     elseif hasBites then
-        optionText = "Use Immunobooster (Already Bitten)"
+        optionText = knoxMenuText("ImmunoboosterAlreadyBittenOption", "Use Immunobooster (Already Bitten)")
     else
-        optionText = "Use Immunobooster (24h Protection)"
+        optionText = knoxMenuText("UseImmunobooster", "Use Immunobooster (24h Protection)")
     end
 
     local option = context:addOption(optionText, player, EHR.KnoxCureMenu.OnUseImmunobooster, item)
@@ -337,27 +368,27 @@ function EHR.KnoxCureMenu.AddImmunoboosterOption(context, player, item)
 
     -- Add tooltip
     option.toolTip = ISWorldObjectContextMenu.addToolTip()
-    option.toolTip:setName("Immunobooster Shot")
+    option.toolTip:setName(knoxMenuText("ImmunoboosterTitle", "Immunobooster Shot"))
 
-    local desc = "Pre-exposure prophylaxis. Grants 24 hours of Knox Virus immunity.\n\n"
-    desc = desc .. "Must be taken BEFORE infection - does not help if already infected.\n\n"
+    local desc = knoxMenuText("ImmunoboosterDescription", "Pre-exposure prophylaxis. Grants 24 hours of Knox Virus immunity.\n\n")
+    desc = desc .. knoxMenuText("ImmunoboosterTiming", "Must be taken BEFORE infection - does not help if already infected.\n\n")
 
     if isActive then
-        desc = desc .. "<RGB:0.2,0.8,0.2> Currently Active: " .. string.format("%.1f hours remaining", remaining) .. "\n"
+        desc = desc .. knoxMenuFormat("ImmunoboosterCurrentlyActive", "<RGB:0.2,0.8,0.2> Currently Active: %1 hours remaining\n", string.format("%.1f", remaining))
     elseif isOnCooldown then
-        desc = desc .. "<RGB:1,0.5,0.5> On Cooldown: " .. string.format("%.1f hours remaining", cooldownRemaining) .. "\n"
+        desc = desc .. knoxMenuFormat("ImmunoboosterOnCooldown", "<RGB:1,0.5,0.5> On Cooldown: %1 hours remaining\n", string.format("%.1f", cooldownRemaining))
     elseif isInfected then
-        desc = desc .. "<RGB:1,0.5,0.5> Already Infected: Too late for prevention\n"
+        desc = desc .. knoxMenuText("ImmunoboosterAlreadyInfected", "<RGB:1,0.5,0.5> Already Infected: Too late for prevention\n")
     elseif hasBites then
-        desc = desc .. "<RGB:1,0.5,0.5> Already Bitten: this must be used before exposure\n"
+        desc = desc .. knoxMenuText("ImmunoboosterAlreadyBitten", "<RGB:1,0.5,0.5> Already Bitten: this must be used before exposure\n")
     else
-        desc = desc .. "<RGB:0.5,1,0.5> Ready to use\n"
+        desc = desc .. knoxMenuText("ImmunoboosterReady", "<RGB:0.5,1,0.5> Ready to use\n")
     end
 
-    desc = desc .. "\nSide Effects (while active):\n"
-    desc = desc .. "- Mild nausea\n"
-    desc = desc .. "- Reduced stamina regeneration\n"
-    desc = desc .. "- Occasional tremors"
+    desc = desc .. knoxMenuText("ImmunoboosterSideEffectsHeading", "\nSide Effects (while active):\n")
+    desc = desc .. knoxMenuText("ImmunoboosterSideEffectNausea", "- Mild nausea\n")
+    desc = desc .. knoxMenuText("ImmunoboosterSideEffectStamina", "- Reduced stamina regeneration\n")
+    desc = desc .. knoxMenuText("ImmunoboosterSideEffectTremors", "- Occasional tremors")
 
     option.toolTip.description = desc
 end

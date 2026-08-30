@@ -34,18 +34,18 @@ local function ehrSafeText(key, fallback)
 end
 
 local function ehrFormatText(key, fallback, ...)
-    local template = ehrSafeText(key, fallback)
-    if not template then return fallback end
-    template = template:gsub("%%%%([sd])", "%%%1")
-    local ok, result = pcall(string.format, template, ...)
-    if ok and result then
-        return result
+    if EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format(key, fallback, ...)
     end
-    ok, result = pcall(string.format, fallback, ...)
-    if ok and result then
-        return result
+
+    local text = fallback or key or ""
+    local values = { ... }
+    for i, value in ipairs(values) do
+        text = string.gsub(text, "%%" .. tostring(i), function()
+            return tostring(value)
+        end)
     end
-    return fallback
+    return text
 end
 
 local function ehrClamp(value, minValue, maxValue)
@@ -681,7 +681,12 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
     if conditions.bloodPercent < 50 then
         if skillTier >= 2 then
             local status = conditions.bloodPercent < 30 and "Need a transfusion urgently!" or "Moderate blood loss."
-            dialogue = string.format(getText("UI_EHR_Examine_BloodDetailed") or "Blood volume at approximately %d%%. %s", math.floor(conditions.bloodPercent), status)
+            dialogue = ehrFormatText(
+                "UI_EHR_Examine_BloodDetailed",
+                "Blood volume at approximately %1%. %2",
+                math.floor(conditions.bloodPercent),
+                status
+            )
         elseif skillTier >= 1 then
             dialogue = conditions.bloodPercent < 30 and (getText("UI_EHR_Examine_BloodCritical") or "I've lost too much blood! I need a transfusion!") or (getText("UI_EHR_Examine_BloodLow") or "I've lost blood... I feel weak.")
         else
@@ -694,7 +699,11 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
     if conditions.hasSepsis and conditions.diseaseCount <= 1 then
         if skillTier >= 3 then
             -- Expert: Full diagnosis
-            dialogue = string.format(getText("UI_EHR_Examine_SepsisDetailed") or "Sepsis confirmed, Stage %d. Need IV antibiotics immediately!", conditions.sepsisStage)
+            dialogue = ehrFormatText(
+                "UI_EHR_Examine_SepsisDetailed",
+                "Sepsis confirmed, Stage %1. Need IV antibiotics immediately!",
+                conditions.sepsisStage
+            )
         elseif canIdentifyDisease("Sepsis") then
             -- Novice: Can identify sepsis
             dialogue = getText("UI_EHR_Examine_SepsisIdentified") or "I think I have blood poisoning... sepsis!"
@@ -729,12 +738,12 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
                 if unknownCount > 0 then
                     identifiedText = identifiedText .. string.format(" (+%d unknown)", unknownCount)
                 end
-                dialogue = ehrFormatText("UI_EHR_Examine_DiseasesIdentified", "I can identify: %s.", identifiedText)
+                dialogue = ehrFormatText("UI_EHR_Examine_DiseasesIdentified", "I can identify: %1.", identifiedText)
             elseif skillTier >= 2 then
                 dialogue = getText("UI_EHR_Examine_MultipleIssues") or "I have multiple health issues to deal with."
             elseif diseaseKnownFromFlyer then
                 local displayName = getDiseaseDisplayName(disease.id)
-                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %s.", displayName)
+                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %1.", displayName)
             else
                 dialogue = getText("UI_EHR_Examine_FeelSick") or "I feel sick... but I can't tell what's wrong."
             end
@@ -746,11 +755,11 @@ function EHR_MedicalMonitorUI:generateExamineDialogue(skillTier, skillLevel, con
                 local displayName = getDiseaseDisplayName(disease.id)
                 local stage = disease.data.stage or 1
                 local severity = disease.data.severity or 1
-                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseDetailed", "Diagnosis: %s, Stage %d. Severity: %d/5.", displayName, stage, severity)
+                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseDetailed", "Diagnosis: %1, Stage %2. Severity: %3/5.", displayName, stage, severity)
             elseif diseaseCanIdentify or diseaseKnownFromFlyer then
                 -- Novice or flyer knowledge: can identify disease, but not numeric details.
                 local displayName = getDiseaseDisplayName(disease.id)
-                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %s.", displayName)
+                dialogue = ehrFormatText("UI_EHR_Examine_DiseaseIdentified", "I believe I have %1.", displayName)
             else
                 -- Clueless: Vague
                 dialogue = getText("UI_EHR_Examine_DiseaseVague") or "I think I might be sick with something..."
@@ -1310,7 +1319,7 @@ function EHR_MedicalMonitorUI:prerender()
 
     local titleText = getText("UI_EHR_MonitorTitle")
     if self.isRemoteExamination and self.targetPlayerName then
-        titleText = string.format(getText("UI_EHR_Examining"), self.targetPlayerName)
+        titleText = ehrFormatText("UI_EHR_Examining", "Examining: %1", self.targetPlayerName)
     end
 
     local bloodTypeRight = self.width - 85
@@ -2578,7 +2587,7 @@ function EHR_MedicalMonitorUI:renderCompactView(startY)
         healText = ehrSafeText("UI_EHR_Compact_HealingActive", "Healing: Active")
     else
         local reason = bloodData.healBlockReason or "?"
-        healText = ehrFormatText("UI_EHR_Compact_HealingSlowed", "Healing: Slowed (%s)", reason)
+        healText = ehrFormatText("UI_EHR_Compact_HealingSlowed", "Healing: Slowed (%1)", reason)
     end
     local healColor = bloodData.canHeal and c.safe or c.danger
     self:drawText(self:truncateText(healText, self.width - padding * 2, UIFont.Small), padding, y, healColor.r, healColor.g, healColor.b, healColor.a, UIFont.Small)

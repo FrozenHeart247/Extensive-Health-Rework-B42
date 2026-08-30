@@ -219,10 +219,12 @@ EHR.Tooltips.Data = {
         description = "Homemade painkiller preparation.",
         relieves = {"Pain"},
         effects = {
-            "Reduces body-part pain",
-            "Multi-dose bottle",
+            "Reduces perceived pain to zero over 30 minutes",
+            "Suppresses new pain for the remainder of its 3-hour duration",
+            "16-dose bottle",
             "Crafted from black sage, chamomile and lemongrass",
         },
+        warning = "Frequent or closely spaced doses can cause Painkiller Addiction.",
     },
     ["Base.PillsVitamins"] = {
         category = "OTC Medication",

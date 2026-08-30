@@ -1025,8 +1025,9 @@ function EHR.MPExamination.OnFillWorldObjectContextMenu(playerNum, context, worl
                 option.notAvailable = true
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
                 tooltip:setName(getText("UI_EHR_Context_TooFar") or "Too Far Away")
-                tooltip.description = string.format(
-                    getText("UI_EHR_Context_TooFarDesc") or "You need to be within %d tiles to examine this player.",
+                tooltip.description = EHR.Locale.Format(
+                    "UI_EHR_Context_TooFarDesc",
+                    "You need to be within %1 tiles to examine this player.",
                     EHR.MPExamination.EXAMINE_RANGE
                 )
                 option.toolTip = tooltip

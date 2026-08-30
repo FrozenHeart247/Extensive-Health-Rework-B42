@@ -25,6 +25,7 @@ pcall(function() require "ExtensiveHealth/EHR_DiseaseFlyers" end)
 pcall(function() require "ExtensiveHealth/EHR_Immunity" end)
 pcall(function() require "ExtensiveHealth/EHR_PainkillerAddiction" end)
 pcall(function() require "ExtensiveHealth/EHR_WatchBatteryCore" end)
+pcall(function() require "ExtensiveHealth/EHR_Concussion" end)
 
 local function isEHRDebug()
     if EHR and EHR.IsDebugMode then
@@ -199,6 +200,7 @@ EHR.ServerCommands.PendingExamConsents = {}
 EHR.ServerCommands.ExamSessions = {}
 EHR.ServerCommands.ExamRequestTimes = {}
 EHR.ServerCommands.EnvironmentalSnapshotTimes = {}
+EHR.ServerCommands.ConcussionCandidateTimes = {}
 EHR.ServerCommands.StitchRiskPermits = {}
 EHR.ServerCommands.PendingMedicationConsents = {}
 EHR.ServerCommands.PendingMedicationConsentByPair = {}
@@ -912,6 +914,53 @@ local function getServerNowMs()
     end
     local gameTime = getGameTime and getGameTime() or nil
     return gameTime and gameTime:getWorldAgeHours() * 3600000 or 0
+end
+
+local CONCUSSION_CANDIDATE_MIN_INTERVAL_MS = 750
+local CONCUSSION_CANDIDATE_RETENTION_MS = 600000
+
+function EHR.ServerCommands.ConcussionCandidate(player, args)
+    if not player or type(args) ~= "table" then return false end
+    if not EHR.Concussion or not EHR.Concussion.TryStart
+            or not EHR.Concussion.GetChanceForSource then
+        return false
+    end
+
+    local dead = false
+    pcall(function()
+        if player.isDead then dead = player:isDead() == true end
+    end)
+    if dead then return false end
+
+    -- Never accept a client-provided target or chance. The command may only
+    -- nominate its sender and one of the two detector-owned trauma sources.
+    local source = tostring(args.source or "")
+    local allowedSources = {
+        ["fall"] = true,
+        ["vehicle crash"] = true,
+    }
+    if not allowedSources[source] then return false end
+
+    -- Rate-limit before any roll, disease lookup or verbose logging so a
+    -- modified client cannot turn this rare event into backend spam.
+    local playerKey = getPlayerNetworkKey(player)
+    local nowMs = getServerNowMs()
+    local previousMs = EHR.ServerCommands.ConcussionCandidateTimes[playerKey]
+    if previousMs and nowMs >= previousMs
+            and (nowMs - previousMs) < CONCUSSION_CANDIDATE_MIN_INTERVAL_MS then
+        return false
+    end
+    EHR.ServerCommands.ConcussionCandidateTimes[playerKey] = nowMs
+
+    local chance = EHR.Concussion.GetChanceForSource(source)
+    if chance == nil then return false end
+
+    local ok, result = pcall(EHR.Concussion.TryStart, player, source, chance)
+    if not ok then
+        log("[EHR Server] ConcussionCandidate failed: " .. tostring(result))
+        return false
+    end
+    return result == true
 end
 
 -- Security-sensitive medical commands must never resolve by display name.
@@ -4319,6 +4368,7 @@ local function OnClientCommand(module, command, player, args)
     local isEHRCommand = module == "EHR" or module == "EHR_Flyers"
     local quietCommand = module == "EHR" and (
         command == "EnvironmentalSnapshot"
+        or command == "ConcussionCandidate"
         or (command == "HeatStrokeBath" and args and args.action == "heartbeat")
     )
     if isEHRCommand and not quietCommand then
@@ -4343,6 +4393,9 @@ local function OnClientCommand(module, command, player, args)
             return
         elseif command == "EnvironmentalSnapshot" then
             EHR.ServerCommands.EnvironmentalSnapshot(player, args)
+            return
+        elseif command == "ConcussionCandidate" then
+            EHR.ServerCommands.ConcussionCandidate(player, args)
             return
         elseif command == "BeginExamConsent" then
             EHR.ServerCommands.BeginExamConsent(player, args)
@@ -4460,7 +4513,9 @@ local function OnClientCommand(module, command, player, args)
                 analgesicInitialPain = args.analgesicInitialPain,
             }
 
-            if args.medKey == "Base.Pills"
+            if EHR.Medication
+                and EHR.Medication.CountsForPainkillerAddiction
+                and EHR.Medication.CountsForPainkillerAddiction(args.medKey)
                 and EHR.PainkillerAddiction
                 and EHR.PainkillerAddiction.OnPainkillerDose then
                 EHR.PainkillerAddiction.OnPainkillerDose(player, args.lastDoseTime)
@@ -5025,6 +5080,12 @@ local function OnServerTick()
         for key, timestamp in pairs(EHR.ServerCommands.EnvironmentalSnapshotTimes) do
             if type(timestamp) ~= "number" or nowMs < timestamp or (nowMs - timestamp) > 600000 then
                 EHR.ServerCommands.EnvironmentalSnapshotTimes[key] = nil
+            end
+        end
+        for key, timestamp in pairs(EHR.ServerCommands.ConcussionCandidateTimes) do
+            if type(timestamp) ~= "number" or nowMs < timestamp
+                    or (nowMs - timestamp) > CONCUSSION_CANDIDATE_RETENTION_MS then
+                EHR.ServerCommands.ConcussionCandidateTimes[key] = nil
             end
         end
     end

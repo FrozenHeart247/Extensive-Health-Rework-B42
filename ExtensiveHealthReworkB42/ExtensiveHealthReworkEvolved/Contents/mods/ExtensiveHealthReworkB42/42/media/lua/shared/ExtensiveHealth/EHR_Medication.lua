@@ -86,6 +86,50 @@ function EHR.Medication.GetSideEffectDisplayName(effectId, effectData)
     return effectData.displayName or effectId
 end
 
+local EHR_MEDICATION_TIER_LABELS = {
+    [0] = { key = "UI_EHR_MedAction_Tier_Basic", fallback = "Basic" },
+    [1] = { key = "UI_EHR_MedAction_Tier_OTC", fallback = "OTC" },
+    [2] = { key = "UI_EHR_MedAction_Tier_Prescription", fallback = "Prescription" },
+    [3] = { key = "UI_EHR_MedAction_Tier_Clinical", fallback = "Clinical" },
+}
+
+function EHR.Medication.GetTierDisplayName(tier)
+    local entry = EHR_MEDICATION_TIER_LABELS[tonumber(tier)]
+    if not entry then return "" end
+    if EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text(entry.key, entry.fallback)
+    end
+    return entry.fallback
+end
+
+function EHR.Medication.GetUseOptionText(medId, medData)
+    local displayName = EHR.Medication.GetDisplayName(medId, medData)
+    local tierName = EHR.Medication.GetTierDisplayName(medData and medData.tier)
+    if EHR.Locale and EHR.Locale.Format then
+        return EHR.Locale.Format(
+            "UI_EHR_MedAction_UseWithTier",
+            "Use %1 (%2)",
+            displayName,
+            tierName
+        )
+    end
+    return "Use " .. tostring(displayName) .. " (" .. tostring(tierName) .. ")"
+end
+
+function EHR.Medication.GetCanUseReasonText(reason, reasonKey)
+    local fallback = reason or "Cannot use"
+    if reasonKey and EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_MedReason_" .. tostring(reasonKey), fallback)
+    end
+    if reason and EHR.Locale and EHR.Locale.TextForLine then
+        return EHR.Locale.TextForLine(reason)
+    end
+    if EHR.Locale and EHR.Locale.Text then
+        return EHR.Locale.Text("UI_EHR_MedReason_CannotUse", fallback)
+    end
+    return fallback
+end
+
 -- ============================================
 -- MEDICATION TIER DEFINITIONS
 -- ============================================
@@ -130,6 +174,7 @@ EHR.Medication.Database = {
         icon = "Painkillers",
         useVanillaActionOnly = true,
         skipDrugInteractions = true,
+        countsForPainkillerAddiction = true,
         effectDurationHours = 3,
         analgesic = {
             rampHours = 0.5,
@@ -462,11 +507,13 @@ EHR.Medication.Database = {
         treats = {},
         displayName = "Homemade Painkillers",
         icon = "HomemadePainkillers",
-        usageMessage = "You take homemade painkillers. The pain eases slightly.",
+        usageMessage = "You take homemade painkillers. The pain begins to fade.",
         appliesWithoutDisease = true,
         skipDrugInteractions = true,
-        symptomReduction = {
-            pain = 0.35,
+        countsForPainkillerAddiction = true,
+        effectDurationHours = 3,
+        analgesic = {
+            rampHours = 0.5,
         },
     },
 
@@ -1258,6 +1305,8 @@ end
 local function EHRMedicationIsAuthoritative()
     return not EHRMedicationIsClient()
 end
+
+local EHRMedicationOfflinePreparedSessions = setmetatable({}, { __mode = "k" })
 
 local function EHRMedicationRequestSync(player)
     if not player or not EHRMedicationIsServer() then return end
@@ -2447,7 +2496,7 @@ EHR.Medication.DosingSchedules = {
     -- Tier 0 - Basic (every 4 hours)
     ["Base.Antibiotics"] = { doseInterval = 4, dosesRequired = 6 },
     ["Base.Pills"] = { doseInterval = 3, dosesRequired = 1, activeHours = 3 },
-    ["ExtensiveHealth.HomemadePainkillers"] = { doseInterval = 4, dosesRequired = 3 },
+    ["ExtensiveHealth.HomemadePainkillers"] = { doseInterval = 3, dosesRequired = 1, activeHours = 3 },
     ["Base.PillsVitamins"] = { doseInterval = 12, dosesRequired = 1 },
     ["Base.PillsSleepingTablets"] = { doseInterval = 8, dosesRequired = 1 },
     ["ExtensiveHealth.HomemadeSleepingPills"] = { doseInterval = 8, dosesRequired = 1 },
@@ -3594,7 +3643,7 @@ function EHR.Medication.ShouldConsumeActiveDoseWithoutTreatment(player, medData,
 end
 
 function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
-    if not player or not item then return false, "Invalid parameters" end
+    if not player or not item then return false, "Invalid parameters", "InvalidParameters" end
 
     -- When one player treats another, disease/effect checks belong to the
     -- patient while required supplies belong to the practitioner.
@@ -3604,36 +3653,41 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
     local medData = EHR.Medication.Database[itemFullType]
 
     if not medData then
-        return false, "Not a recognized medication"
+        return false, "Not a recognized medication", "NotRecognized"
     end
 
     if medData.requiresActiveWound and not EHR.Medication.HasActiveWound(player) then
-        return false, "Requires an active wound"
+        return false, "Requires an active wound", "RequiresActiveWound"
     end
 
     if medData.staminaLock and EHR_MedicationHasActiveGeneralEffect(player, "staminaLock") then
-        return false, medData.activeDoseMessage or "The current dose is still active"
+        if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+        return false, "The current dose is still active", "DoseActive"
     end
 
     if medData.fatigueBlock and EHR_MedicationHasActiveGeneralEffect(player, "fatigueBlock") then
-        return false, medData.activeDoseMessage or "The current dose is still active"
+        if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+        return false, "The current dose is still active", "DoseActive"
     end
 
     if medData.combatStimulants and EHR_MedicationHasActiveGeneralEffect(player, "combatStimulants") then
-        return false, medData.activeDoseMessage or "The current dose is still active"
+        if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+        return false, "The current dose is still active", "DoseActive"
     end
 
     if medData.lastChanceEpinephrine then
         if EHR_MedicationHasActiveGeneralEffect(player, "lastChanceEpinephrine") then
-            return false, medData.activeDoseMessage or "The current dose is still active"
+            if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+            return false, "The current dose is still active", "DoseActive"
         end
         if EHR.Medication.GetLastChanceOverallHealth(player) == nil then
-            return false, "Overall health data is unavailable"
+            return false, "Overall health data is unavailable", "HealthUnavailable"
         end
     end
 
     if medData.warmingSupport and EHR_MedicationHasActiveGeneralEffect(player, "warmingPack") then
-        return false, medData.activeDoseMessage or "A warming pack is already active"
+        if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+        return false, "A warming pack is already active", "WarmingPackActive"
     end
 
     if medData.sleepAid and EHR_MedicationHasActiveGeneralEffect(player, "sleepAid")
@@ -3645,7 +3699,8 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
         local doseDue = ok and status and not status.treatmentComplete
             and (status.isOverdue == true or (tonumber(status.hoursUntilNextDose) or 0) <= 0)
         if ok and status and status.isDoseActive and not doseDue then
-            return false, medData.activeDoseMessage or "A sleep-aid dose is still active"
+            if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+            return false, "A sleep-aid dose is still active", "SleepAidActive"
         end
     end
 
@@ -3657,7 +3712,8 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
             if medData.consumeWhileDoseActive == true then
                 return true, nil
             end
-            return false, medData.activeDoseMessage or "The current dose is still active"
+            if medData.activeDoseMessage then return false, medData.activeDoseMessage, nil end
+            return false, "The current dose is still active", "DoseActive"
         end
     end
 
@@ -3665,14 +3721,14 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
     if medData.requiresIVKit then
         local inventory = supplyPlayer:getInventory()
         if not inventory:containsTypeRecurse("ExtensiveHealth.IVKit") then
-            return false, "Requires IV Administration Kit"
+            return false, "Requires IV Administration Kit", "RequiresIVKit"
         end
     end
 
     if medData.requiresSyringe then
         local inventory = supplyPlayer:getInventory()
         if not inventory:containsTypeRecurse("ExtensiveHealth.Syringe") then
-            return false, "Requires Sterile Syringe"
+            return false, "Requires Sterile Syringe", "RequiresSyringe"
         end
     end
 
@@ -3862,10 +3918,10 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
     end
 
     local inventoryOwner = administeringPlayer or player
-    local canUse, reason = EHR.Medication.CanUseMedication(player, item, inventoryOwner)
+    local canUse, reason, reasonKey = EHR.Medication.CanUseMedication(player, item, inventoryOwner)
     if not canUse then
         if player.isLocalPlayer and player:isLocalPlayer() then
-            EHR.Locale.Say(player, reason)
+            EHR.Locale.Say(player, EHR.Medication.GetCanUseReasonText(reason, reasonKey))
         end
         return false
     end
@@ -4181,7 +4237,8 @@ function EHR.Medication.TrackDoseOnly(player, medData, itemFullType)
         end
     end
 
-    if medKey == "Base.Pills" then
+    if EHR.Medication.CountsForPainkillerAddiction
+        and EHR.Medication.CountsForPainkillerAddiction(medKey) then
         if not (EHR.PainkillerAddiction and EHR.PainkillerAddiction.OnPainkillerDose) then
             pcall(function() require "ExtensiveHealth/EHR_PainkillerAddiction" end)
         end
@@ -4211,6 +4268,9 @@ function EHR.Medication.GetTreatmentTimeText(medData)
     if not medData then return nil end
 
     if medData.treatmentTimeText then
+        if EHR.Locale and EHR.Locale.TextForLine then
+            return EHR.Locale.TextForLine(medData.treatmentTimeText)
+        end
         return medData.treatmentTimeText
     end
 
@@ -4221,7 +4281,19 @@ function EHR.Medication.GetTreatmentTimeText(medData)
             if hours then
                 local diseaseDef = EHR.Disease and EHR.Disease.Diseases and EHR.Disease.Diseases[diseaseId]
                 local diseaseName = diseaseDef and diseaseDef.name or diseaseId
-                table.insert(parts, diseaseName .. ": " .. tostring(hours) .. "h")
+                if EHR.DiseaseFlyers and EHR.DiseaseFlyers.GetDiseaseFriendlyName then
+                    diseaseName = EHR.DiseaseFlyers.GetDiseaseFriendlyName(diseaseId)
+                end
+                if EHR.Locale and EHR.Locale.Format then
+                    table.insert(parts, EHR.Locale.Format(
+                        "UI_EHR_MedAction_DiseaseHours",
+                        "%1: %2h",
+                        diseaseName,
+                        tostring(hours)
+                    ))
+                else
+                    table.insert(parts, diseaseName .. ": " .. tostring(hours) .. "h")
+                end
             end
         end
 
@@ -4231,6 +4303,13 @@ function EHR.Medication.GetTreatmentTimeText(medData)
     end
 
     if medData.cureTimeHours then
+        if EHR.Locale and EHR.Locale.Format then
+            return EHR.Locale.Format(
+                "UI_EHR_MedAction_Hours",
+                "%1 hours",
+                tostring(medData.cureTimeHours)
+            )
+        end
         return tostring(medData.cureTimeHours) .. " hours"
     end
 
@@ -4747,11 +4826,38 @@ function EHR.Medication.IsBetaBlockerActive(player)
     return ok and status ~= nil and status.isDoseActive == true
 end
 
-function EHR.Medication.IsAnalgesicActive(player)
+EHR.Medication.AnalgesicMedicationTypes = {
+    "Base.Pills",
+    "ExtensiveHealth.HomemadePainkillers",
+}
+
+function EHR.Medication.IsAnalgesicMedication(medKey)
+    local medData = medKey and EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+    return medData ~= nil and medData.analgesic ~= nil
+end
+
+function EHR.Medication.CountsForPainkillerAddiction(medKey)
+    local medData = medKey and EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+    return medData ~= nil and medData.countsForPainkillerAddiction == true
+end
+
+function EHR.Medication.IsAnalgesicActive(player, medKey)
     if not player or not EHR.Medication.GetDoseStatus then return false end
 
-    local ok, status = pcall(EHR.Medication.GetDoseStatus, player, "Base.Pills")
-    return ok and status ~= nil and status.isDoseActive == true
+    local function isMedicationActive(candidateKey)
+        if not EHR.Medication.IsAnalgesicMedication(candidateKey) then return false end
+        local ok, status = pcall(EHR.Medication.GetDoseStatus, player, candidateKey)
+        return ok and status ~= nil and status.isDoseActive == true
+    end
+
+    if medKey then
+        return isMedicationActive(medKey)
+    end
+
+    for _, candidateKey in ipairs(EHR.Medication.AnalgesicMedicationTypes) do
+        if isMedicationActive(candidateKey) then return true end
+    end
+    return false
 end
 
 -- Pain itself is a 0..100 CharacterStat in B42. Only the final perceived pain
@@ -4772,26 +4878,7 @@ end
 
 local function EHRMedicationUpdateAnalgesic(player, medTracking, currentHour)
     if not player or not medTracking then return end
-
-    local doseData = medTracking.activeDoses and medTracking.activeDoses["Base.Pills"] or nil
-    local medData = EHR.Medication.Database and EHR.Medication.Database["Base.Pills"] or nil
-    local analgesic = medData and medData.analgesic or nil
-    local active = type(doseData) == "table"
-        and analgesic ~= nil
-        and EHR.Medication.IsAnalgesicActive
-        and EHR.Medication.IsAnalgesicActive(player)
     local modData = player:getModData()
-
-    if not active then
-        if modData then
-            modData.EHR_AnalgesicActive = nil
-        end
-        return
-    end
-
-    if modData then
-        modData.EHR_AnalgesicActive = true
-    end
 
     local currentPain = 0
     local hasPain = false
@@ -4804,17 +4891,35 @@ local function EHRMedicationUpdateAnalgesic(player, medTracking, currentHour)
     end)
     if not hasPain then return end
 
-    local initialPain = tonumber(doseData.analgesicInitialPain)
-    if initialPain == nil then
-        initialPain = math.max(0, math.min(100, currentPain))
-        doseData.analgesicInitialPain = initialPain
+    local targetPain = nil
+    for _, medKey in ipairs(EHR.Medication.AnalgesicMedicationTypes) do
+        local doseData = medTracking.activeDoses and medTracking.activeDoses[medKey] or nil
+        local medData = EHR.Medication.Database and EHR.Medication.Database[medKey] or nil
+        local analgesic = medData and medData.analgesic or nil
+        local active = type(doseData) == "table"
+            and analgesic ~= nil
+            and EHR.Medication.IsAnalgesicActive(player, medKey)
+
+        if active then
+            local initialPain = tonumber(doseData.analgesicInitialPain)
+            if initialPain == nil then
+                initialPain = math.max(0, math.min(100, currentPain))
+                doseData.analgesicInitialPain = initialPain
+            end
+
+            local startTime = tonumber(doseData.lastDoseTime) or currentHour
+            local elapsed = math.max(0, currentHour - startTime)
+            local rampHours = math.max(0.01, tonumber(analgesic.rampHours) or 0.5)
+            local progress = math.max(0, math.min(1, elapsed / rampHours))
+            local candidateTarget = math.max(0, initialPain * (1 - progress))
+            targetPain = targetPain == nil and candidateTarget or math.min(targetPain, candidateTarget)
+        end
     end
 
-    local startTime = tonumber(doseData.lastDoseTime) or currentHour
-    local elapsed = math.max(0, currentHour - startTime)
-    local rampHours = math.max(0.01, tonumber(analgesic.rampHours) or 0.5)
-    local progress = math.max(0, math.min(1, elapsed / rampHours))
-    local targetPain = math.max(0, initialPain * (1 - progress))
+    if modData then
+        modData.EHR_AnalgesicActive = targetPain ~= nil and true or nil
+    end
+    if targetPain == nil then return end
 
     -- A new injury may raise pain again while the medicine is active. Capping
     -- the final stat every update keeps that pain masked without erasing its source.
@@ -6321,8 +6426,8 @@ function EHR.Medication.GetDoseStatus(player, medKey)
     local activeHours = doseData.activeHours
     if activeHours == nil then activeHours = doseTiming.activeHours end
     local totalDosesNeeded = doseData.totalDosesNeeded or doseTiming.dosesRequired
-    if medKey == "Base.PillsBeta" or medKey == "Base.Pills" then
-        -- Migrate active vanilla-drug doses saved by older builds to the current
+    if medKey == "Base.PillsBeta" or (medData and medData.analgesic ~= nil) then
+        -- Migrate active vanilla-drug and analgesic doses saved by older builds to the current
         -- EHR duration/course definition instead of retaining stale schedules.
         intervalHours = doseTiming.doseInterval
         activeHours = doseTiming.activeHours
@@ -6572,12 +6677,24 @@ end
 function EHR.Medication.Update(player)
     if not player then return end
 
-    local medTracking = EHR.Medication.GetMedicationData(player)
-    if not medTracking then return end
-
     local gameTime = getGameTime()
+    if not gameTime then return end
     local currentHour = gameTime:getWorldAgeHours()
     local authoritative = EHRMedicationIsAuthoritative()
+
+    -- The dedicated server owns MP medication courses. Prepare persisted clocks
+    -- before the first post-login update can classify a saved dose as overdue.
+    if authoritative and EHRMedicationIsServer()
+            and not EHRMedicationOfflinePreparedSessions[player]
+            and EHR.OfflineProgression
+            and EHR.OfflineProgression.EnsureSessionPrepared then
+        local prepared = EHR.OfflineProgression.EnsureSessionPrepared(player, currentHour)
+        if prepared == false then return end
+        EHRMedicationOfflinePreparedSessions[player] = true
+    end
+
+    local medTracking = EHR.Medication.GetMedicationData(player)
+    if not medTracking then return end
 
     local syncNeeded = false
     if EHR.Medication.UpdateGeneralEffects then
@@ -6588,7 +6705,9 @@ function EHR.Medication.Update(player)
     local treatmentsToRemove = {}
     for diseaseId, treatment in pairs(medTracking.activeTreatments) do
         if type(treatment) ~= "table" then
-            table.insert(treatmentsToRemove, diseaseId)
+            if authoritative then
+                table.insert(treatmentsToRemove, diseaseId)
+            end
         else
             local startTime = tonumber(treatment.startTime)
             local cureTimeHours = EHR.Medication.GetTreatmentCompletionHours(player, treatment)
@@ -6697,52 +6816,58 @@ function EHR.Medication.Update(player)
     if appliedStatEffect then
         EHRMedicationRefreshMoodles(player)
     end
-    if syncNeeded then
-        EHRMedicationRequestSync(player)
-    end
-
     -- Remove completed symptom-only dose entries once their actual effect has ended,
     -- and clear abandoned multi-dose courses so OVERDUE alerts do not live forever.
-    local dosesToRemove = {}
-    local treatmentsToAbandon = {}
-    for medKey, _ in pairs(medTracking.activeDoses) do
-        local status = EHR.Medication.GetDoseStatus(player, medKey)
-        if not status then
-            table.insert(dosesToRemove, medKey)
-        elseif status.isStaleOverdue then
-            table.insert(dosesToRemove, medKey)
-            for diseaseId, treatment in pairs(medTracking.activeTreatments) do
-                if type(treatment) == "table" and treatment.medKey == medKey then
-                    treatmentsToAbandon[diseaseId] = true
-                end
-            end
-            EHR.Log(string.format(
-                "Abandoned stale dose schedule for %s (overdue %.1fh)",
-                tostring(status.medicationName or medKey),
-                tonumber(status.hoursOverdue) or 0
-            ))
-        elseif status.treatmentComplete and not status.isDoseActive and not status.isOverdue then
-            local usedByTreatment = false
-            for _, treatment in pairs(medTracking.activeTreatments) do
-                if type(treatment) == "table" and treatment.medKey == medKey then
-                    usedByTreatment = true
-                    break
-                end
-            end
-
-            if not usedByTreatment then
+    -- Clients only render the server snapshot. Allowing their per-frame update to
+    -- delete dose records can make a persisted 5/10 course disappear after login.
+    if authoritative then
+        local dosesToRemove = {}
+        local treatmentsToAbandon = {}
+        for medKey, _ in pairs(medTracking.activeDoses) do
+            local status = EHR.Medication.GetDoseStatus(player, medKey)
+            if not status then
                 table.insert(dosesToRemove, medKey)
+            elseif status.isStaleOverdue then
+                table.insert(dosesToRemove, medKey)
+                for diseaseId, treatment in pairs(medTracking.activeTreatments) do
+                    if type(treatment) == "table" and treatment.medKey == medKey then
+                        treatmentsToAbandon[diseaseId] = true
+                    end
+                end
+                EHR.Log(string.format(
+                    "Abandoned stale dose schedule for %s (overdue %.1fh)",
+                    tostring(status.medicationName or medKey),
+                    tonumber(status.hoursOverdue) or 0
+                ))
+            elseif status.treatmentComplete and not status.isDoseActive and not status.isOverdue then
+                local usedByTreatment = false
+                for _, treatment in pairs(medTracking.activeTreatments) do
+                    if type(treatment) == "table" and treatment.medKey == medKey then
+                        usedByTreatment = true
+                        break
+                    end
+                end
+
+                if not usedByTreatment then
+                    table.insert(dosesToRemove, medKey)
+                end
             end
+        end
+
+        for _, medKey in ipairs(dosesToRemove) do
+            medTracking.activeDoses[medKey] = nil
+            syncNeeded = true
+        end
+
+        for diseaseId, _ in pairs(treatmentsToAbandon) do
+            medTracking.activeTreatments[diseaseId] = nil
+            syncNeeded = true
+            EHR.Log("Abandoned active treatment after missed dose window: " .. tostring(diseaseId))
         end
     end
 
-    for _, medKey in ipairs(dosesToRemove) do
-        medTracking.activeDoses[medKey] = nil
-    end
-
-    for diseaseId, _ in pairs(treatmentsToAbandon) do
-        medTracking.activeTreatments[diseaseId] = nil
-        EHR.Log("Abandoned active treatment after missed dose window: " .. tostring(diseaseId))
+    if syncNeeded then
+        EHRMedicationRequestSync(player)
     end
 end
 
@@ -6985,15 +7110,9 @@ local function OnMedicationContextMenu(player, context, items)
             local medData = EHR.Medication.Database[itemFullType]
 
             if medData then
-                local canUse, reason = EHR.Medication.CanUseMedication(playerObj, item)
-                local tierName = ""
-                if medData.tier == 0 then tierName = " (Basic)"
-                elseif medData.tier == 1 then tierName = " (OTC)"
-                elseif medData.tier == 2 then tierName = " (Prescription)"
-                elseif medData.tier == 3 then tierName = " (Clinical)"
-                end
-
-                local optionName = "Use " .. medData.displayName .. tierName
+                local canUse, reason, reasonKey = EHR.Medication.CanUseMedication(playerObj, item)
+                local displayName = EHR.Medication.GetDisplayName(itemFullType, medData)
+                local optionName = EHR.Medication.GetUseOptionText(itemFullType, medData)
                 local option = context:addOption(optionName, playerObj, function(plr)
                     EHR.Medication.UseMedication(plr, item)
                 end)
@@ -7002,8 +7121,8 @@ local function OnMedicationContextMenu(player, context, items)
                 if not canUse then
                     option.notAvailable = true
                     local tooltip = ISWorldObjectContextMenu.addToolTip()
-                    tooltip:setName(medData.displayName)
-                    tooltip.description = reason
+                    tooltip:setName(displayName)
+                    tooltip.description = EHR.Medication.GetCanUseReasonText(reason, reasonKey)
                     option.toolTip = tooltip
                 end
             end

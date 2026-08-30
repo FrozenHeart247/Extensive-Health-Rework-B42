@@ -30,6 +30,7 @@ EHR.Keybinds.IDs = {
     TOGGLE_JOURNAL = "ToggleMedicalJournal",
     PRIMARY_HEALTH_PANEL = "PrimaryHealthPanel",
     OPEN_HEALTH_PANEL_COMPACT = "OpenHealthPanelCompact",
+    SHOW_EHR_MOODLES = "ShowEHRMoodles",
 }
 
 -- Default keycodes (Keyboard.KEY_*)
@@ -155,6 +156,14 @@ function EHR.Keybinds.Initialize(forceRefresh)
         "UI_EHR_OpenHealthPanelCompact_tt",
         "When enabled, EHR health panels open in compact mode. Disable to open them expanded."
     )
+    ensureTickBox(
+        EHR.Keybinds.IDs.SHOW_EHR_MOODLES,
+        "UI_EHR_ShowMoodles",
+        "Show EHR moodles",
+        true,
+        "UI_EHR_ShowMoodles_tt",
+        "Show EHR condition and exposure moodles. Disable if another mod's moodles overlap; the EHR monitor and all mechanics remain active."
+    )
 
     EHR.Keybinds.initialized = true
     EHR.Log("Keybinds: Initialization complete")
@@ -253,6 +262,10 @@ end
 
 function EHR.Keybinds.ShouldOpenHealthPanelCompact()
     return EHR.Keybinds.GetOptionBoolean(EHR.Keybinds.IDs.OPEN_HEALTH_PANEL_COMPACT, true)
+end
+
+function EHR.Keybinds.ShouldShowMoodles()
+    return EHR.Keybinds.GetOptionBoolean(EHR.Keybinds.IDs.SHOW_EHR_MOODLES, true)
 end
 
 function EHR.Keybinds.ShouldHotkeyOpenEHR()

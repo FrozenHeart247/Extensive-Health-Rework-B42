@@ -11,6 +11,10 @@ pcall(function() require "ExtensiveHealth/EHR_Localization" end)
 
 EHR = EHR or {}
 EHR.Concussion = EHR.Concussion or {}
+
+local function isPureClient()
+    return isClient and isClient() and not (isServer and isServer())
+end
 EHR.Concussion.State = EHR.Concussion.State or {}
 
 EHR.Concussion.Config = {
@@ -70,6 +74,37 @@ local function playerKey(player)
     return tostring(player)
 end
 
+local function requestServerConcussionCandidate(player, source)
+    if not sendClientCommand then return false end
+
+    local allowedSources = {
+        ["fall"] = true,
+        ["vehicle crash"] = true,
+    }
+    source = tostring(source or "")
+    if not allowedSources[source] then return false end
+
+    -- This is only a network flood guard. The server still owns the actual
+    -- disease/cooldown checks and performs its own concussion roll.
+    local key = playerKey(player)
+    local state = EHR.Concussion.State[key] or {}
+    EHR.Concussion.State[key] = state
+
+    local nowMs = nil
+    if getTimestampMs then
+        local ok, value = pcall(getTimestampMs)
+        if ok then nowMs = tonumber(value) end
+    end
+    local lastMs = tonumber(state.lastCandidateRequestMs)
+    if nowMs and lastMs and nowMs >= lastMs and (nowMs - lastMs) < 750 then
+        return false
+    end
+    if nowMs then state.lastCandidateRequestMs = nowMs end
+
+    sendClientCommand(player, "EHR", "ConcussionCandidate", { source = source })
+    return true
+end
+
 local function playerName(player)
     local name = "unknown"
     pcall(function()
@@ -106,6 +141,16 @@ end
 local function getVehicleChance(cfg)
     local baseChance = tonumber(cfg and cfg.VEHICLE_CHANCE) or 0.45
     return math.max(0, math.min(1, baseChance * getSandboxNumber("ConcussionVehicleChanceMultiplier", 1.0, 0.0, 5.0)))
+end
+
+function EHR.Concussion.GetChanceForSource(source)
+    if source == "fall" then
+        return getFallChance(EHR.Concussion.Config)
+    end
+    if source == "vehicle crash" then
+        return getVehicleChance(EHR.Concussion.Config)
+    end
+    return nil
 end
 
 local function debugConcussion(player, state, reason, detail, force)
@@ -446,6 +491,15 @@ local function roll(chance)
 end
 
 function EHR.Concussion.Start(player, source, force)
+    -- Disease progression is server-authoritative in MP. A pure client used to
+    -- create a local concussion after its own trauma roll, but SafeTransmitModData
+    -- intentionally does not upload client ModData and the client disease tick is
+    -- disabled. That left a visible concussion which could never progress.
+    if isPureClient() then
+        debugConcussion(player, nil, "start-blocked", "server-authoritative MP state", true)
+        return false
+    end
+
     if not isValidPlayer(player) then
         debugConcussion(player, nil, "start-blocked", "invalid/dead player", true)
         return false
@@ -546,6 +600,13 @@ function EHR.Concussion.TryStart(player, source, chance)
             (tonumber(chance) or 0) * 100
         ), true)
         return false
+    end
+
+    if isPureClient() then
+        -- The client has the most reliable short-lived fall/crash evidence, but
+        -- it may only nominate itself. The server validates the source, chooses
+        -- the chance and performs all state mutations.
+        return requestServerConcussionCandidate(player, source)
     end
 
     local success, rollValue = roll(chance)

@@ -262,15 +262,15 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
             local medData = EHR.Medication.Database[itemFullType]
 
             if medData and not medData.useVanillaActionOnly then
-                local canUse, reason = EHR.Medication.CanUseMedication(playerObj, item)
-                local tierName = ""
-                if medData.tier == 0 then tierName = " (Basic)"
-                elseif medData.tier == 1 then tierName = " (OTC)"
-                elseif medData.tier == 2 then tierName = " (Prescription)"
-                elseif medData.tier == 3 then tierName = " (Clinical)"
+                local canUse, reason, reasonKey = EHR.Medication.CanUseMedication(playerObj, item)
+                local displayName = EHR.Medication.GetDisplayName(itemFullType, medData)
+                local optionName
+                if EHR.Medication.GetUseOptionText then
+                    optionName = EHR.Medication.GetUseOptionText(itemFullType, medData)
+                else
+                    local tierName = medActionText("Tier_" .. tostring(medData.tier), tostring(medData.tier))
+                    optionName = medActionFormat("UseWithTier", "Use %1 (%2)", displayName, tierName)
                 end
-
-                local optionName = "Use " .. medData.displayName .. tierName
 
                 -- Use timed action instead of direct call
                 local option = context:addOption(optionName, playerObj, function(plr)
@@ -280,7 +280,7 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
 
                 -- Always add tooltip with medication info
                 local tooltip = ISWorldObjectContextMenu.addToolTip()
-                tooltip:setName(medData.displayName)
+                tooltip:setName(displayName)
 
                 -- Build tooltip description
                 local desc = ""
@@ -344,7 +344,10 @@ local function OnMedicationContextMenuEnhanced(player, context, items)
                 -- If can't use, show why
                 if not canUse then
                     option.notAvailable = true
-                    desc = desc .. " <LINE> <RGB:1,0,0> " .. (reason or "Cannot use")
+                    local reasonText = EHR.Medication.GetCanUseReasonText
+                        and EHR.Medication.GetCanUseReasonText(reason, reasonKey)
+                        or medActionText("CannotUse", reason or "Cannot use")
+                    desc = desc .. " <LINE> <RGB:1,0,0> " .. reasonText
                 end
 
                 tooltip.description = desc

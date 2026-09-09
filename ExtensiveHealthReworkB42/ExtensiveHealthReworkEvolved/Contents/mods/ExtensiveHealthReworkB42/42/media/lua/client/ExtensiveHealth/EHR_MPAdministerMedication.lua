@@ -139,20 +139,6 @@ local function findInventoryItemByID(player, itemID)
     return found
 end
 
-local function inventoryContainsType(player, fullType)
-    local inventory = player and player:getInventory() or nil
-    if not inventory or not fullType then return false end
-    if inventory.containsTypeRecurse then
-        local ok, result = pcall(function() return inventory:containsTypeRecurse(fullType) end)
-        if ok then return result == true end
-    end
-    local found = false
-    visitInventory(inventory, function(item)
-        if not found and item.getFullType and item:getFullType() == fullType then found = true end
-    end)
-    return found
-end
-
 local function localizedText(fullKey, fallback)
     if EHR.Locale and EHR.Locale.Text then
         local ok, value = pcall(EHR.Locale.Text, fullKey, fallback)
@@ -441,12 +427,12 @@ function EHR_AdministerMedicationUI:getSelectedRequirementFailure(entry)
 
     local medData = entry.medData
     if (entry.requiresIVKit or (medData and medData.requiresIVKit))
-            and not inventoryContainsType(self.doctor, "ExtensiveHealth.IVKit") then
+            and not EHR.Medication.FindMedicalSupply(self.doctor, "IVKit") then
         return mpMedText("RequiresIVKit", "Requires IV Administration Kit")
     end
     if medData and medData.requiresSyringe
-            and not inventoryContainsType(self.doctor, "ExtensiveHealth.Syringe") then
-        return mpMedText("RequiresSyringe", "Requires Sterile Syringe")
+            and not EHR.Medication.FindMedicalSupply(self.doctor, "Syringe") then
+        return mpMedText("RequiresSyringe", "Requires a syringe (sterile or homemade)")
     end
     return nil
 end
@@ -623,7 +609,7 @@ function EHR_AdministerMedicationAction:isValid()
     local item = findInventoryItemByID(self.character, self.itemID)
     if not item or not item.getFullType or item:getFullType() ~= self.itemFullType then return false end
     if self.treatmentKind == "blood_transfusion" then
-        if not inventoryContainsType(self.character, "ExtensiveHealth.IVKit") then return false end
+        if not EHR.Medication.FindMedicalSupply(self.character, "IVKit") then return false end
         if getBloodBagSpoilageState(item) == "rotten" then return false end
     end
     self.item = item

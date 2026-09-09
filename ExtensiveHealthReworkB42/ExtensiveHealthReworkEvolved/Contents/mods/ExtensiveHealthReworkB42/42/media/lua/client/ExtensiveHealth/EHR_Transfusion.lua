@@ -104,20 +104,8 @@ function EHR.Transfusion.IsSalineBag(item)
 end
 
 function EHR.Transfusion.GetIVKit(player)
-    local inventory = player and player:getInventory() or nil
-    if not inventory then return nil end
-
-    if inventory.getFirstTypeRecurse then
-        local ok, item = pcall(function()
-            return inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
-        end)
-        if ok and item then return item end
-    end
-    if inventory.getFirstType then
-        local ok, item = pcall(function()
-            return inventory:getFirstType("ExtensiveHealth.IVKit")
-        end)
-        if ok and item then return item end
+    if EHR.Medication and EHR.Medication.FindMedicalSupply then
+        return EHR.Medication.FindMedicalSupply(player, "IVKit")
     end
     return nil
 end
@@ -722,7 +710,7 @@ EHRDrawBloodAction = ISBaseTimedAction:derive("EHRDrawBloodAction")
 function EHRDrawBloodAction:isValid()
     -- Check player is alive and has the empty blood bag
     if not self.character:isAlive() then return false end
-    if not self.emptyBag then return false end
+    if not EHR.Transfusion.IsEmptyBloodBag(self.emptyBag) then return false end
     if not self.character:getInventory():contains(self.emptyBag) then return false end
 
     if isClient and isClient() then
@@ -753,6 +741,12 @@ function EHRDrawBloodAction:stop()
 end
 
 function EHRDrawBloodAction:perform()
+    -- Recheck the exact finished item before sending an MP request or creating a
+    -- filled bag. A prepared crafting intermediate is never a collection bag.
+    if not self:isValid() then
+        ISBaseTimedAction.perform(self)
+        return
+    end
     if isClient and isClient() and sendClientCommand then
         sendClientCommand(self.character, "EHR", "DrawBlood", {
             itemID = self.emptyBag:getID(),
@@ -886,8 +880,8 @@ end
     Check if an item is an empty blood bag
 ]]--
 function EHR.Transfusion.IsEmptyBloodBag(item)
-    if not item then return false end
-    return item:getFullType() == "ExtensiveHealth.EmptyBloodBag"
+    return EHR.Medication and EHR.Medication.IsMedicalSupply
+        and EHR.Medication.IsMedicalSupply(item, "EmptyBloodBag") or false
 end
 
 --[[

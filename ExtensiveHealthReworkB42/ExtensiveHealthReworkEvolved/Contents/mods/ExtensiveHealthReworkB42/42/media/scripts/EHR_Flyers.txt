@@ -341,7 +341,7 @@ module ExtensiveHealth
         Weight = 0.2,
         Icon = EhrRecipeUltimateCraftGuide,
         Tooltip = Tooltip_EhrRecipeUltimateCraftGuide,
-        LearnedRecipes = MakePlantBasedAntibiotics;MakeHomemadeActivatedCharcoal;MakeHomemadeAntisepticCream;MakeHomemadeAntibioticOintment;MakeHomemadeTopicalPermethrin;MakeHomemadeCoughSyrup;MakeHomemadeMuscleRelaxant;MakeHomemadePainkillers;MakeHomemadeSleepingPills;MakeCommonColdTea;MakeAntipyreticTea;MakeRelaxantTea;MakeSpiderwebBandage;MakeHoneyFromHoneycomb;MakeSutureNeedleFromSpiderweb;PrepareTallowMixture;StrainRenderedTallow,
+        LearnedRecipes = MakePlantBasedAntibiotics;MakeHomemadeActivatedCharcoal;MakeHomemadeAntisepticCream;MakeHomemadeAntibioticOintment;MakeHomemadeTopicalPermethrin;MakeHomemadeCoughSyrup;MakeHomemadeMuscleRelaxant;MakeHomemadePainkillers;MakeHomemadeSleepingPills;MakeCommonColdTea;MakeAntipyreticTea;MakeRelaxantTea;MakeSpiderwebBandage;MakeHoneyFromHoneycomb;MakeSutureNeedleFromSpiderweb;PrepareTallowMixture;StrainRenderedTallow;MakeHomemadeSyringes;CutPlasticStripsSmall;CutPlasticStripsBottle;CutPlasticStripsLarge;CutPlasticStripsHeavy;PrepareHomemadeBloodBag;MakeHomemadeIVKit,
         WorldStaticModel = Magazine_Ground,
         NumberOfPages = 24,
         BoredomChange = -15,

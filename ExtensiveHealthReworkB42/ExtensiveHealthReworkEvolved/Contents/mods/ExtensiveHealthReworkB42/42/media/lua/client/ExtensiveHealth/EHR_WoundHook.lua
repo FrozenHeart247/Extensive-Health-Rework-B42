@@ -518,7 +518,8 @@ function EHR.WoundHook.OnFillInventoryObjectContextMenu(playerNum, context, item
             local hasWoundInfection = EHR.WoundHook.HasTreatableWoundInfection(player)
             local hasTreatableCondition = hasSepsis or hasWoundInfection
             local inventory = player:getInventory()
-            local hasIVKit = inventory and inventory:containsTypeRecurse("ExtensiveHealth.IVKit")
+            local hasIVKit = inventory and EHR.Medication and EHR.Medication.FindMedicalSupply
+                and EHR.Medication.FindMedicalSupply(player, "IVKit") ~= nil
 
             if hasTreatableCondition and hasIVKit then
                 -- Add "Administer IV Antibiotics" option
@@ -597,7 +598,8 @@ function EHR.WoundHook.OnAdministerIVAntibiotics(player, item)
     local inventory = player:getInventory()
     if not inventory then return end
 
-    if not inventory:containsTypeRecurse("ExtensiveHealth.IVKit") then
+    if not (EHR.Medication and EHR.Medication.FindMedicalSupply
+            and EHR.Medication.FindMedicalSupply(player, "IVKit")) then
         if player:isLocalPlayer() then
             EHR.Locale.Say(player, "I need an IV administration kit.")
         end
@@ -618,7 +620,7 @@ function EHR.WoundHook.OnAdministerIVAntibiotics(player, item)
 
     -- Remove item from inventory if consumed (with MP sync)
     if consumed then
-        local ivKit = inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
+        local ivKit = EHR.Medication.FindMedicalSupply(player, "IVKit")
         if ivKit and EHR.Medication and EHR.Medication.ConsumeOneDose then
             EHR.Medication.ConsumeOneDose(player, ivKit, inventory)
         end

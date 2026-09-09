@@ -11,6 +11,7 @@ if isServer() and not isClient() then
 end
 
 EHR = EHR or {}
+require "ExtensiveHealth/EHR_MedicalStateSync"
 EHR.ClientCommands = {}
 
 local function isEHRDebug()
@@ -178,6 +179,11 @@ local function OnServerCommand(module, command, args)
             if EHR.Disease and EHR.Disease.IsInDebugGracePeriod then
                 inGracePeriod = EHR.Disease.IsInDebugGracePeriod(player)
             end
+
+            -- A full server snapshot may explicitly clear an absent section.
+            -- Partial blood-only updates have no clear list and leave all other
+            -- data intact. This also clears stale module initialization flags.
+            EHR.MedicalStateSync.ApplyClearedFields(data, args, inGracePeriod)
 
             if args.EHR_Sepsis ~= nil then
                 -- CRITICAL FIX: Respect grace period for sepsis data too
@@ -350,6 +356,12 @@ local function OnServerCommand(module, command, args)
             if args.EHR_Immunity ~= nil then
                 data.EHR_Immunity = args.EHR_Immunity
                 log("[EHR Client] Updated EHR_Immunity")
+            end
+            if args.EHR_OfflineProgression ~= nil then
+                data.EHR_OfflineProgression = args.EHR_OfflineProgression
+            end
+            if args.EHR_FullSnapshot == true and EHR.MarkInitDataReceived then
+                EHR.MarkInitDataReceived(player)
             end
         end
 

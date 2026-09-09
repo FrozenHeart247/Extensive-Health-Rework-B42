@@ -15,7 +15,10 @@ EHR.Concussion = EHR.Concussion or {}
 local function isPureClient()
     return isClient and isClient() and not (isServer and isServer())
 end
-EHR.Concussion.State = EHR.Concussion.State or {}
+-- Trauma samples belong to one live player instance. Online IDs can be reused
+-- after disconnects (and are -1 in SP); they must not link unrelated snapshots.
+-- This is transient detector state, not the saved disease or its cooldown.
+EHR.Concussion.State = setmetatable({}, { __mode = "k" })
 
 EHR.Concussion.Config = {
     FALL_CHANCE = 0.65,
@@ -51,29 +54,6 @@ local function worldHour()
     return 0
 end
 
-local function playerKey(player)
-    if not player then return "unknown" end
-    local okId, onlineId = pcall(function()
-        if player.getOnlineID then return player:getOnlineID() end
-        return nil
-    end)
-    if okId and onlineId then return "id:" .. tostring(onlineId) end
-
-    local okUser, username = pcall(function()
-        if player.getUsername then return player:getUsername() end
-        return nil
-    end)
-    if okUser and username then return "u:" .. tostring(username) end
-
-    local okNum, playerNum = pcall(function()
-        if player.getPlayerNum then return player:getPlayerNum() end
-        return nil
-    end)
-    if okNum and playerNum ~= nil then return "p:" .. tostring(playerNum) end
-
-    return tostring(player)
-end
-
 local function requestServerConcussionCandidate(player, source)
     if not sendClientCommand then return false end
 
@@ -86,9 +66,8 @@ local function requestServerConcussionCandidate(player, source)
 
     -- This is only a network flood guard. The server still owns the actual
     -- disease/cooldown checks and performs its own concussion roll.
-    local key = playerKey(player)
-    local state = EHR.Concussion.State[key] or {}
-    EHR.Concussion.State[key] = state
+    local state = EHR.Concussion.State[player] or {}
+    EHR.Concussion.State[player] = state
 
     local nowMs = nil
     if getTimestampMs then
@@ -274,7 +253,7 @@ function EHR.Concussion.ClearAfterCure(player)
         modData.EHR_Concussion.lastSource = nil
     end
 
-    EHR.Concussion.State[playerKey(player)] = nil
+    if player then EHR.Concussion.State[player] = nil end
 end
 
 local function safePartBool(part, methodName)
@@ -661,6 +640,24 @@ local function resolvePendingTrauma(player, state, key, now, cfg, currentSnapsho
     local pending = state[key]
     if not pending then return end
 
+    local pendingWindow = cfg.TRAUMA_PENDING_HOURS or 0.06
+    if pending.source == "fall" then
+        pendingWindow = cfg.FALL_PENDING_HOURS or pendingWindow
+    elseif pending.source == "vehicle crash" then
+        pendingWindow = cfg.CRASH_PENDING_HOURS or pendingWindow
+    end
+    local elapsed = now - (tonumber(pending.time) or now)
+    -- Expire before comparing injuries: a later, unrelated wound must not be
+    -- interpreted as confirmation of an old fall/crash after a tracking gap.
+    if elapsed < 0 or elapsed > pendingWindow then
+        debugConcussion(player, state, "pending-trauma-expired", string.format(
+            "key=%s source=%s window=%.2fh elapsed=%.2fh",
+            tostring(key), tostring(pending.source or "trauma"), pendingWindow, elapsed
+        ), true)
+        state[key] = nil
+        return
+    end
+
     local delta = getTraumaDelta(pending.before, currentSnapshot)
     if isTraumaticInjury(delta, cfg, pending.source) then
         debugTraumaLog(pending.source or key, pending, delta)
@@ -680,25 +677,6 @@ local function resolvePendingTrauma(player, state, key, now, cfg, currentSnapsho
         return
     end
 
-    local pendingWindow = cfg.TRAUMA_PENDING_HOURS or 0.06
-    if pending.source == "fall" then
-        pendingWindow = cfg.FALL_PENDING_HOURS or pendingWindow
-    elseif pending.source == "vehicle crash" then
-        pendingWindow = cfg.CRASH_PENDING_HOURS or pendingWindow
-    end
-
-    if now - (tonumber(pending.time) or now) > pendingWindow then
-        debugConcussion(player, state, "pending-trauma-expired", string.format(
-            "key=%s source=%s window=%.2fh healthLoss=%.2f headPainGain=%.2f severe+%.0f",
-            tostring(key),
-            tostring(pending.source or "trauma"),
-            pendingWindow,
-            tonumber(delta.overallHealthLoss) or 0,
-            tonumber(delta.headPainGain) or 0,
-            tonumber(delta.severeWoundIncrease) or 0
-        ), true)
-        state[key] = nil
-    end
 end
 
 local function getPlayerZ(player)
@@ -880,9 +858,8 @@ function EHR.Concussion.UpdateTracking(player)
     if not isValidPlayer(player) then return end
 
     local cfg = EHR.Concussion.Config
-    local key = playerKey(player)
-    local state = EHR.Concussion.State[key] or {}
-    EHR.Concussion.State[key] = state
+    local state = EHR.Concussion.State[player] or {}
+    EHR.Concussion.State[player] = state
 
     local now = worldHour()
     if (state.nextCheckHour or 0) > now then return end
@@ -1028,7 +1005,11 @@ function EHR.Concussion.OnPlayerUpdate(player)
 end
 
 function EHR.Concussion.OnPlayerDeath(player)
-    EHR.Concussion.State[playerKey(player)] = nil
+    if player then EHR.Concussion.State[player] = nil end
+end
+
+function EHR.Concussion.OnDisconnect()
+    EHR.Concussion.State = setmetatable({}, { __mode = "k" })
 end
 
 function EHR.Concussion.OnTick()
@@ -1063,6 +1044,14 @@ end
 
 if Events and Events.OnPlayerDeath then
     Events.OnPlayerDeath.Add(EHR.Concussion.OnPlayerDeath)
+end
+
+if Events and Events.OnPlayerDisconnect then
+    Events.OnPlayerDisconnect.Add(EHR.Concussion.OnPlayerDeath)
+end
+
+if Events and Events.OnDisconnect then
+    Events.OnDisconnect.Add(EHR.Concussion.OnDisconnect)
 end
 
 EHR.Log("EHR_Concussion.lua loaded")

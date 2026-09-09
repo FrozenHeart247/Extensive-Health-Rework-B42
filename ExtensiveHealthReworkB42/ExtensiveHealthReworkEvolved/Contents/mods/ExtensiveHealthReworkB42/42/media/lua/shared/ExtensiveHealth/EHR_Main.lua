@@ -10,6 +10,7 @@ if isServer and isServer() then
     pcall(function() require "ExtensiveHealth/EHR_OfflineProgression" end)
 end
 require "ExtensiveHealth/EHR_Localization"
+require "ExtensiveHealth/EHR_MedicalStateSync"
 EHR.VERSION = "2.8.1"  -- Temperature rework, blood spoilage, MP fixes, Lifestyle compat improvements
 
 -- Debug flag - default value (overridden by sandbox setting)
@@ -516,12 +517,14 @@ local tickStateIdByPlayer = setmetatable({}, { __mode = "k" })
 local function cleanupTickState(playerID, player)
     if player then
         local exactID = tickStateIdByPlayer[player]
-        if exactID then
+        if exactID and tickStateByPlayer[exactID]
+                and tickStateByPlayer[exactID].player == player then
             tickStateByPlayer[exactID] = nil
         end
         tickStateIdByPlayer[player] = nil
     end
-    if playerID and tickStateByPlayer[playerID] then
+    if playerID and tickStateByPlayer[playerID]
+            and (not player or tickStateByPlayer[playerID].player == player) then
         tickStateByPlayer[playerID] = nil
         EHR.Log("Cleaned up tickStateByPlayer for: " .. tostring(playerID))
     end
@@ -551,7 +554,7 @@ local function getTickState(player)
         tickStateIdByPlayer[player] = id
     end
     local state = tickStateByPlayer[id]
-    if not state then
+    if not state or state.player ~= player then
         -- Spread periodic server work across frames instead of making every
         -- connected player run blood and full-sync updates on the same tick.
         local phase = 0
@@ -559,6 +562,7 @@ local function getTickState(player)
             phase = ((phase * 33) + string.byte(id, index)) % SYNC_TICK_INTERVAL
         end
         state = {
+            player = player,
             tick = phase % TICK_INTERVAL,
             sync = phase % SYNC_TICK_INTERVAL,
         }
@@ -570,37 +574,25 @@ end
 local function handleInitDataRequest(player, data)
     if not player or not data then return end
     if hasRequestedInitData then return end
-
-    local bloodType = data.EHR_Blood and data.EHR_Blood.bloodType
-    if bloodType == "PENDING" then
-        initDataRequestTick = initDataRequestTick + 1
-        if initDataRequestTick == 1 then
-            EHR.Log("Blood type is PENDING, will request from server in ~3 seconds...")
+    -- A saved blood type does not mean the saved disease/medication clocks
+    -- have been rebased by this server session. Always complete a handshake.
+    initDataRequestTick = initDataRequestTick + 1
+    local interval = initDataRequestAttempts >= MAX_INIT_REQUEST_ATTEMPTS
+        and INIT_REQUEST_INTERVAL_TICKS * 10 or INIT_REQUEST_INTERVAL_TICKS
+    if initDataRequestTick >= interval then
+        initDataRequestTick = 0
+        initDataRequestAttempts = initDataRequestAttempts + 1
+        if sendClientCommand then
+            sendClientCommand(player, "EHR_Debug", "RequestInitData", {})
         end
-        if initDataRequestTick >= INIT_REQUEST_INTERVAL_TICKS then
-            initDataRequestTick = 0
-            initDataRequestAttempts = initDataRequestAttempts + 1
-            if sendClientCommand then
-                EHR.Log("====== Requesting init data from server ======")
-                EHR.Log("Player: " .. tostring(player:getUsername()))
-                EHR.Log("Current blood type: " .. tostring(bloodType))
-                sendClientCommand(player, "EHR_Debug", "RequestInitData", {})
-                EHR.Log("Request sent!")
-                EHR.Log("===============================================")
-            else
-                EHR.Log("ERROR: sendClientCommand not available!")
-            end
-            if initDataRequestAttempts >= MAX_INIT_REQUEST_ATTEMPTS then
-                hasRequestedInitData = true
-                EHR.Log("Init data request attempts exhausted; giving up.")
-            end
-        end
-    elseif bloodType and bloodType ~= "PENDING" then
-        if not hasRequestedInitData then
-            EHR.Log("Already have valid blood type: " .. tostring(bloodType))
-        end
-        hasRequestedInitData = true  -- Already have valid blood type
     end
+end
+
+function EHR.MarkInitDataReceived(player)
+    if not player then return end
+    hasRequestedInitData = true
+    initDataRequestTick = 0
+    initDataRequestAttempts = 0
 end
 
 function EHR.SyncEHRModDataToClient(player)
@@ -609,22 +601,9 @@ function EHR.SyncEHRModDataToClient(player)
     local data = player:getModData()
     if not data then return false end
 
-    sendServerCommand(player, "EHR_Sync", "UpdateModData", {
-        EHR_Sepsis = data.EHR_Sepsis,
-        EHR_Disease = data.EHR_Disease,
-        EHR_Blood = data.EHR_Blood,
-        EHR_WoundInfection = data.EHR_WoundInfection,
-        EHR_WoundInfections = data.EHR_WoundInfections,
-        EHR_Medication = data.EHR_Medication,
-        EHR_MedicalJournal = data.EHR_MedicalJournal,
-        EHR_Temperature = data.EHR_Temperature,
-        EHR_KnownDiseases = data.EHR_KnownDiseases,
-        EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
-        EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
-        EHR_CorpseSickness = data.EHR_CorpseSickness,
-        EHR_KnoxCure = data.EHR_KnoxCure,
-        EHR_Immunity = data.EHR_Immunity,
-    })
+    local packet = EHR.MedicalStateSync.Build(data, player)
+    if not packet then return false end
+    sendServerCommand(player, "EHR_Sync", "UpdateModData", packet)
 
     return true
 end
@@ -647,6 +626,14 @@ local function processPlayerTick(player)
     if not player:isAlive() then return end
 
     local state = getTickState(player)
+
+    -- Dedicated servers do not reliably emit the local OnCreatePlayer event.
+    -- Prepare on the first actual server tick, before any phased medical work.
+    if not state.offlinePrepared and isServer and isServer()
+            and EHR.OfflineProgression and EHR.OfflineProgression.EnsureSessionPrepared then
+        if not EHR.OfflineProgression.EnsureSessionPrepared(player) then return end
+        state.offlinePrepared = true
+    end
 
     state.tick = state.tick + 1
     local bloodUpdateDue = state.tick >= TICK_INTERVAL
@@ -752,6 +739,7 @@ function EHR.OnCreatePlayer(playerIndex, player)
     -- Reset MP request flags for new session
     hasRequestedInitData = false
     initDataRequestTick = 0
+    initDataRequestAttempts = 0
 
     local playerID = tostring(player:getUsername() or player:getPlayerNum())
 

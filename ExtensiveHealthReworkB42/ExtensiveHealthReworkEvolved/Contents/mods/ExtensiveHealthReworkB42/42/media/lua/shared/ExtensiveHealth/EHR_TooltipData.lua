@@ -28,6 +28,57 @@ EHR.Tooltips = EHR.Tooltips or {}
 -- ============================================
 
 EHR.Tooltips.Data = {
+    -- Craft-only supplies. The unfinished bag has a read-only preparation bar
+    -- in the rich tooltip; heating/replacement still belongs to the engine.
+    ["ExtensiveHealth.PreparedHomemadeBloodBag"] = {
+        category = "Crafting Material",
+        description = "Unfinished homemade blood collection bag.",
+        effects = {
+            "Heat in a stove, campfire, or another cooking heat source",
+            "Becomes a Homemade Empty Blood Bag when preparation is complete",
+        },
+        warning = "Cannot be used to draw blood until heating is complete.",
+        preparationProgress = true,
+    },
+    ["ExtensiveHealth.HomemadeSyringe"] = {
+        category = "Medical Supply",
+        description = "A pack of five handmade disposable syringes.",
+        effects = {
+            "Works in place of a Sterile Syringe (Pack) for injections",
+            "Each injection consumes one syringe, not the whole pack",
+            "Can also be used to craft blood bags and IV kits",
+        },
+    },
+    ["ExtensiveHealth.PlasticStrips"] = {
+        category = "Crafting Material",
+        description = "Strips cut from discarded plastic containers.",
+        effects = {
+            "Used to prepare homemade blood bags",
+            "Larger plastic items yield more strips",
+        },
+    },
+    ["ExtensiveHealth.HomemadeEmptyBloodBag"] = {
+        category = "Blood Product",
+        description = "A finished homemade blood collection bag.",
+        effects = {
+            "Used to draw and store your own blood",
+            "Creates a standard filled bag matching the donor's blood type",
+            "Filled bags are perishable",
+        },
+        requirements = {
+            "80%+ blood volume",
+        },
+        warning = "Drawing blood consumes the empty bag and temporarily lowers blood volume.",
+    },
+    ["ExtensiveHealth.HomemadeIVKit"] = {
+        category = "Medical Supply",
+        description = "A handmade IV administration kit.",
+        effects = {
+            "Works in place of an IV Administration Kit",
+            "Required for blood/saline transfusions and IV medications",
+            "Single use - consumed on use",
+        },
+    },
     -- =========================================
     -- BLOOD BAGS
     -- =========================================
@@ -952,6 +1003,7 @@ end
 -- Get category color
 function EHR.Tooltips.GetCategoryColor(category)
     local colors = {
+        ["Crafting Material"] = {r=0.75, g=0.65, b=0.45},
         ["Blood Product"] = {r=0.8, g=0.2, b=0.2},
         ["IV Supply"] = {r=0.2, g=0.7, b=0.9},
         ["Medical Supply"] = {r=0.6, g=0.6, b=0.6},

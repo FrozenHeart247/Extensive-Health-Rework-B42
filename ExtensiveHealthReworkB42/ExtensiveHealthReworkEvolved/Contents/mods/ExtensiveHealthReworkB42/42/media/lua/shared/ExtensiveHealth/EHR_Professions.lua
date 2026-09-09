@@ -158,6 +158,51 @@ local fallbackDiseaseKnowledgeIds = {
     cellulitis = true,
 }
 
+-- Keep this list in step with EHR_Recipes.txt, EHR_SupplyRecipes.txt and GrantedRecipes in the two
+-- profession definitions. Runtime learning also covers characters in old saves;
+-- it only grants knowledge, leaving recipe skills, ingredients and tests intact.
+local medicalCraftRecipes = {
+    "MakePlantBasedAntibiotics",
+    "MakeHomemadeActivatedCharcoal",
+    "MakeHomemadeAntisepticCream",
+    "MakeHomemadeAntibioticOintment",
+    "MakeHomemadeTopicalPermethrin",
+    "MakeHomemadeCoughSyrup",
+    "MakeHomemadeMuscleRelaxant",
+    "MakeHomemadePainkillers",
+    "MakeHomemadeSleepingPills",
+    "MakeCommonColdTea",
+    "MakeAntipyreticTea",
+    "MakeRelaxantTea",
+    "MakeSpiderwebBandage",
+    "MakeHoneyFromHoneycomb",
+    "MakeSutureNeedleFromSpiderweb",
+    "PrepareTallowMixture",
+    "StrainRenderedTallow",
+    "MakeHomemadeSyringes",
+    "CutPlasticStripsSmall",
+    "CutPlasticStripsBottle",
+    "CutPlasticStripsLarge",
+    "CutPlasticStripsHeavy",
+    "PrepareHomemadeBloodBag",
+    "MakeHomemadeIVKit",
+}
+
+function EHR.Professions.GrantAllCraftRecipeKnowledge(player)
+    if not isEHRMedicalProfession(player) then return false end
+    if isClient and isClient() and not (isServer and isServer()) then
+        local ok, localPlayer = safeCall(player, "isLocalPlayer")
+        if not ok or localPlayer ~= true then return false end
+    end
+
+    local changed = false
+    for _, recipeName in ipairs(medicalCraftRecipes) do
+        local ok, learned = safeCall(player, "learnRecipe", recipeName)
+        if ok and learned == true then changed = true end
+    end
+    return changed
+end
+
 function EHR.Professions.GrantAllDiseaseKnowledge(player)
     local isMedicalProfession, professionKey = isEHRMedicalProfession(player)
     if not isMedicalProfession then return false end
@@ -509,8 +554,10 @@ function EHR.Professions.UpdateScalpelMaster(player, scanInventory)
 end
 
 function EHR.Professions.OnCreatePlayer(playerIndex, player)
+    if player then playerTickState[getPlayerKey(player)] = nil end
     EHR.Professions.PatchScalpelScriptTags()
     EHR.Professions.GrantAllDiseaseKnowledge(player)
+    EHR.Professions.GrantAllCraftRecipeKnowledge(player)
     EHR.Professions.ApplyPatientZeroTrait(player)
     EHR.Professions.UpdateScalpelMaster(player, true)
 end
@@ -519,9 +566,19 @@ function EHR.Professions.OnPlayerUpdate(player)
     if not player then return end
 
     local key = getPlayerKey(player)
-    local state = playerTickState[key] or { ticks = 0 }
+    local state = playerTickState[key]
+    if not state or state.player ~= player then
+        state = { ticks = 0, player = player }
+    end
     playerTickState[key] = state
     state.ticks = state.ticks + 1
+
+    -- One check per player instance also covers dedicated-server players, where
+    -- OnCreatePlayer is not the local character-creation event.
+    if not state.recipeKnowledgeChecked then
+        EHR.Professions.GrantAllCraftRecipeKnowledge(player)
+        state.recipeKnowledgeChecked = true
+    end
 
     EHR.Professions.ApplyPatientZeroTrait(player)
 

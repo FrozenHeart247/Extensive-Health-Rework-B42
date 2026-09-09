@@ -12,6 +12,7 @@ if isClient() then
 end
 
 EHR = EHR or {}
+require "ExtensiveHealth/EHR_MedicalStateSync"
 pcall(function() require "ExtensiveHealth/EHR_Blood" end)
 pcall(function() require "ExtensiveHealth/EHR_Disease" end)
 pcall(function() require "ExtensiveHealth/EHR_Medication" end)
@@ -743,22 +744,8 @@ local function syncModDataToClient(player)
     -- Send only EHR-owned data. Full transmitModData can overwrite other mods'
     -- client-side player fields, such as Lifestyle bathroom/hygiene state.
     if sendServerCommand then
-        local ehrData = {
-            EHR_Sepsis = data.EHR_Sepsis,
-            EHR_Disease = data.EHR_Disease,
-            EHR_Blood = data.EHR_Blood,
-            EHR_WoundInfection = data.EHR_WoundInfection,
-            EHR_WoundInfections = data.EHR_WoundInfections,
-            EHR_Medication = data.EHR_Medication,
-            EHR_MedicalJournal = data.EHR_MedicalJournal,
-            EHR_Temperature = data.EHR_Temperature,  -- MP FIX: Include body temperature in sync
-            EHR_KnownDiseases = data.EHR_KnownDiseases,
-            EHR_KnoxHeraldRead = data.EHR_KnoxHeraldRead,
-            EHR_KnoxKnowledgeSource = data.EHR_KnoxKnowledgeSource,
-            EHR_CorpseSickness = data.EHR_CorpseSickness,
-            EHR_KnoxCure = data.EHR_KnoxCure,
-            EHR_Immunity = data.EHR_Immunity,
-        }
+        local ehrData = EHR.MedicalStateSync.Build(data, player)
+        if not ehrData then return end
         sendServerCommand(player, "EHR_Sync", "UpdateModData", ehrData)
         log("[EHR Server] Sent EHR data to client via sendServerCommand")
     end
@@ -2235,12 +2222,11 @@ local function validateRemoteTreatment(doctor, patient, itemID, expectedFullType
         local ivKit = nil
         if expectedIVKitID ~= nil then
             ivKit = findInventoryItemByID(doctor, expectedIVKitID)
-            local ivKitType = ivKit and ivKit.getFullType and ivKit:getFullType() or nil
-            if ivKitType ~= "ExtensiveHealth.IVKit" then
+            if not EHR.Medication.IsMedicalSupply(ivKit, "IVKit") then
                 return nil, nil, nil, nil, nil, "IV Administration Kit is no longer available"
             end
         else
-            ivKit = findInventoryItemByFullType(doctor, "ExtensiveHealth.IVKit")
+            ivKit = EHR.Medication.FindMedicalSupply(doctor, "IVKit")
             if not ivKit then
                 return nil, nil, nil, nil, nil, "Requires IV Administration Kit"
             end
@@ -2956,7 +2942,7 @@ function EHR.ServerCommands.UseTransfusion(player, args)
 
     -- The MP action leaves both supplies for the authoritative server. Resolve
     -- and validate both before applying any patient effect or consuming either.
-    local ivKit, ivKitContainer = findInventoryItemByFullType(player, "ExtensiveHealth.IVKit")
+    local ivKit, ivKitContainer = EHR.Medication.FindMedicalSupply(player, "IVKit")
     if not ivKit then
         log("[EHR Server] UseTransfusion rejected: IV Administration Kit not found")
         serverSay(player, serverText("UI_EHR_MedAction_RequiresIVKit", "Requires: IV Kit"))
@@ -3009,7 +2995,8 @@ function EHR.ServerCommands.DrawBlood(player, args)
         syncModDataToClient(player)
         return
     end
-    if emptyBag:getFullType() ~= "ExtensiveHealth.EmptyBloodBag" then
+    if not EHR.Medication.IsMedicalSupply(emptyBag, "EmptyBloodBag")
+            or (args.itemFullType and emptyBag:getFullType() ~= args.itemFullType) then
         log("[EHR Server] DrawBlood rejected: unsupported item " .. tostring(emptyBag:getFullType()))
         syncModDataToClient(player)
         return
@@ -4576,6 +4563,19 @@ local function OnClientCommand(module, command, player, args)
                 return
             end
 
+            -- Rebase a joining patient's clocks before exam getters evaluate
+            -- treatment deadlines against the current world age.
+            if EHR.OfflineProgression and EHR.OfflineProgression.EnsureSessionPrepared
+                    and not EHR.OfflineProgression.EnsureSessionPrepared(targetPlayer) then
+                sendServerCommand(player, "EHR_Exam", "ExamDataResponse", {
+                    targetUsername = requestKey,
+                    requestId = requestId,
+                    success = false,
+                    error = "Patient data is still initializing",
+                })
+                return
+            end
+
             -- Get target player's EHR data
             local targetData = targetPlayer:getModData()
             if not targetData then
@@ -4813,6 +4813,8 @@ end
 ]]--
 function EHR.ServerCommands.RequestInitData(player, args)
     if not player then return end
+    if EHR.OfflineProgression and EHR.OfflineProgression.EnsureSessionPrepared
+            and not EHR.OfflineProgression.EnsureSessionPrepared(player) then return end
 
     local playerUsername = player:getUsername() or ("Player" .. player:getPlayerNum())
     log("[EHR Server] ====== RequestInitData ======")
@@ -4854,6 +4856,8 @@ end
 ]]--
 local function OnServerCreatePlayer(playerIndex, player)
     if not player then return end
+    if EHR.OfflineProgression and EHR.OfflineProgression.EnsureSessionPrepared
+            and not EHR.OfflineProgression.EnsureSessionPrepared(player) then return end
 
     local playerUsername = player:getUsername() or ("Player" .. player:getPlayerNum())
     log("[EHR Server] ====== OnServerCreatePlayer ======")

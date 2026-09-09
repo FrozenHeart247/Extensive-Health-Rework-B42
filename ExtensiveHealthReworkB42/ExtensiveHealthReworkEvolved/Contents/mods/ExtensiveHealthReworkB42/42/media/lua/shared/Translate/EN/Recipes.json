@@ -1,4 +1,11 @@
 {
+    "MakeHomemadeSyringes": "Make Homemade Syringe Pack",
+    "CutPlasticStripsSmall": "Cut Plastic Strips (Small Items)",
+    "CutPlasticStripsBottle": "Cut Plastic Strips (Bottles)",
+    "CutPlasticStripsLarge": "Cut Plastic Strips (Large Containers)",
+    "CutPlasticStripsHeavy": "Cut Plastic Strips (Heavy Containers)",
+    "PrepareHomemadeBloodBag": "Prepare Homemade Blood Bag",
+    "MakeHomemadeIVKit": "Make Homemade IV Kit",
     "MakePlantBasedAntibiotics": "Prepare Plant-Based Antibiotics",
     "MakeHomemadeActivatedCharcoal": "Prepare Homemade Activated Charcoal",
     "MakeSpiderwebBandage": "Make Spiderweb Bandage",

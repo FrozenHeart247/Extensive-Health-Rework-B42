@@ -3356,13 +3356,15 @@ function EHR.Medication.GetItemDoseInfo(item)
     end
 
     local okDelta, useDelta = pcall(function() return item:getUseDelta() end)
-    if not okDelta or not useDelta or useDelta <= 0 then return nil end
+    useDelta = okDelta and tonumber(useDelta) or nil
+    if not useDelta or useDelta ~= useDelta or useDelta <= 0 or useDelta > 1 then return nil end
 
-    local currentUsesFloat = 1.0
     local okCurrent, value = pcall(function() return item:getCurrentUsesFloat() end)
-    if okCurrent and value then
-        currentUsesFloat = value
-    end
+    local currentUsesFloat = okCurrent and tonumber(value) or nil
+    -- A failed read is not a full or empty package. Callers must reject the
+    -- dose without mutating inventory when the remaining fill is unknown.
+    if not currentUsesFloat or currentUsesFloat ~= currentUsesFloat
+            or currentUsesFloat == math.huge or currentUsesFloat == -math.huge then return nil end
 
     local maxDoses = EHR.Medication.GetDoseCapacityFromDelta(useDelta)
     currentUsesFloat = math.max(0, math.min(1.0, currentUsesFloat))
@@ -3379,6 +3381,50 @@ function EHR.Medication.GetItemDoseInfo(item)
         maxDoses = maxDoses,
         remainingDoses = remaining,
     }
+end
+
+-- Exact equivalence only: the uncured PreparedHomemadeBloodBag is deliberately
+-- absent. These are supplies, not independent medications in the database.
+EHR.Medication.MedicalSupplyTypes = {
+    IVKit = {
+        ["ExtensiveHealth.IVKit"] = true,
+        ["ExtensiveHealth.HomemadeIVKit"] = true,
+    },
+    Syringe = {
+        ["ExtensiveHealth.Syringe"] = true,
+        ["ExtensiveHealth.HomemadeSyringe"] = true,
+    },
+    EmptyBloodBag = {
+        ["ExtensiveHealth.EmptyBloodBag"] = true,
+        ["ExtensiveHealth.HomemadeEmptyBloodBag"] = true,
+    },
+}
+
+function EHR.Medication.IsMedicalSupply(item, kind)
+    local accepted = EHR.Medication.MedicalSupplyTypes[kind]
+    if not item or not accepted then return false end
+    local okType, fullType = pcall(function() return item:getFullType() end)
+    if not okType or not accepted[fullType] then return false end
+    if kind == "EmptyBloodBag" then return true end
+    -- Both syringe packs and IV kits are drainable. An exhausted or unreadable
+    -- supply must not make a treatment appear available or receive effects.
+    local doseInfo = EHR.Medication.GetItemDoseInfo(item)
+    return doseInfo ~= nil and doseInfo.remainingDoses > 0
+end
+
+function EHR.Medication.FindMedicalSupply(player, kind)
+    local inventory = player and player:getInventory() or nil
+    if not inventory or not EHR.Medication.MedicalSupplyTypes[kind] then return nil end
+    -- The engine recursively searches actual player-owned containers. Unlike
+    -- getFirstTypeRecurse, a predicate skips empty packs before finding a usable
+    -- one of either kind. No inventory scan is added to update/tick handlers.
+    local ok, item = pcall(function()
+        return inventory:getFirstEvalRecurse(function(candidate)
+            return EHR.Medication.IsMedicalSupply(candidate, kind)
+        end)
+    end)
+    if not ok or not item then return nil end
+    return item, item:getContainer() or inventory
 end
 
 --[[
@@ -3414,12 +3460,21 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
         end
     end
 
-    -- Drainable medications store remaining fill as current uses / setUsedDelta.
+    -- InventoryItem may expose a positive default UseDelta even for a normal
+    -- single-use item. Prefer the real drainable type when it is available.
     local canUseDose = useDelta > 0 and item.setUsedDelta
+    if instanceof then
+        local okType, drainable = pcall(instanceof, item, "DrainableComboItem")
+        if not okType then return false, "type_unavailable" end
+        canUseDose = drainable == true
+    end
 
     if canUseDose then
         local doseInfo = EHR.Medication.GetItemDoseInfo(item)
-        local remainingDoses = doseInfo and doseInfo.remainingDoses or 0
+        if not doseInfo then return false, "dose_unavailable" end
+        local remainingDoses = doseInfo.remainingDoses
+        if remainingDoses <= 0 then return false, "empty" end
+        useDelta = doseInfo.useDelta
 
         if remainingDoses > 1 then
             local newRemaining = remainingDoses - 1
@@ -3441,6 +3496,8 @@ function EHR.Medication.ConsumeOneDose(player, item, inventory)
                 end
                 return true, "dose", useDelta, newUsed, newRemaining
             end
+            -- A failed drain must never fall through to whole-item removal.
+            return false, "drain_failed"
         end
     end
 
@@ -3656,6 +3713,18 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
         return false, "Not a recognized medication", "NotRecognized"
     end
 
+    -- Reject an empty/unreadable drainable before adding treatment progress or
+    -- consuming any IV supplies. A positive UseDelta alone is not a type check.
+    if instanceof then
+        local okType, drainable = pcall(instanceof, item, "DrainableComboItem")
+        if not okType then return false, "Medication data is unavailable", "DoseUnavailable" end
+        if drainable then
+            local doseInfo = EHR.Medication.GetItemDoseInfo(item)
+            if not doseInfo then return false, "Medication data is unavailable", "DoseUnavailable" end
+            if doseInfo.remainingDoses <= 0 then return false, "The medication package is empty", "EmptyMedication" end
+        end
+    end
+
     if medData.requiresActiveWound and not EHR.Medication.HasActiveWound(player) then
         return false, "Requires an active wound", "RequiresActiveWound"
     end
@@ -3719,16 +3788,14 @@ function EHR.Medication.CanUseMedication(player, item, supplyPlayer)
 
     -- Check for required supplies
     if medData.requiresIVKit then
-        local inventory = supplyPlayer:getInventory()
-        if not inventory:containsTypeRecurse("ExtensiveHealth.IVKit") then
+        if not EHR.Medication.FindMedicalSupply(supplyPlayer, "IVKit") then
             return false, "Requires IV Administration Kit", "RequiresIVKit"
         end
     end
 
     if medData.requiresSyringe then
-        local inventory = supplyPlayer:getInventory()
-        if not inventory:containsTypeRecurse("ExtensiveHealth.Syringe") then
-            return false, "Requires Sterile Syringe", "RequiresSyringe"
+        if not EHR.Medication.FindMedicalSupply(supplyPlayer, "Syringe") then
+            return false, "Requires a syringe (sterile or homemade)", "RequiresSyringe"
         end
     end
 
@@ -3969,19 +4036,15 @@ function EHR.Medication.UseMedication(player, item, administeringPlayer)
         EHR.Locale.Say(player, medData.usageMessage)
     end
 
-    -- Consume required supplies (with MP sync)
-    -- These are now drainable items with multiple uses
+    -- Consume exactly one usable supply unit from the practitioner's inventory.
+    -- A failed supply mutation must stop before treatment effects are applied.
     if medData.requiresIVKit then
-        local ivKit = inventory:getFirstTypeRecurse("ExtensiveHealth.IVKit")
-        if ivKit then
-            EHR.Medication.ConsumeOneDose(inventoryOwner, ivKit, inventory)
-        end
+        local ivKit = EHR.Medication.FindMedicalSupply(inventoryOwner, "IVKit")
+        if not ivKit or not EHR.Medication.ConsumeOneDose(inventoryOwner, ivKit, inventory) then return false end
     end
     if medData.requiresSyringe then
-        local syringe = inventory:getFirstTypeRecurse("ExtensiveHealth.Syringe")
-        if syringe then
-            EHR.Medication.ConsumeOneDose(inventoryOwner, syringe, inventory)
-        end
+        local syringe = EHR.Medication.FindMedicalSupply(inventoryOwner, "Syringe")
+        if not syringe or not EHR.Medication.ConsumeOneDose(inventoryOwner, syringe, inventory) then return false end
     end
 
     -- Strict emergency effects can kill or make a large immediate health change.
@@ -6866,6 +6929,10 @@ function EHR.Medication.Update(player)
         end
     end
 
+    -- Keep an anchor inside the medication snapshot itself. It survives even
+    -- when another mod replaces root ModData and omits our standalone marker.
+    -- The dedicated server executes this path once per second, not per frame.
+    if authoritative then medTracking.offlineLastSeenWorldHour = currentHour end
     if syncNeeded then
         EHRMedicationRequestSync(player)
     end

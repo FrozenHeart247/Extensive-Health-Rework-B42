@@ -1,0 +1,15 @@
+- Post-relog handling: fixed timer recovery and retrieval of current status from the server. Testing confirms that 100 hours of offline time do not alter the 5/6 progression or the time remaining until the next dose.
+- Disease desync: full synchronization now explicitly removes states cleared by the server; previously, they could persist on the client side.
+- "Sudden" concussion: outdated fall/crash data could trigger a concussion upon taking subsequent damage. Fixed.
+- Packaging disappearance: errors in reading or deducting a dose could result in the entire item being deleted. This issue has been resolved.
+- Patient examination: fixed data updates for the legacy backup monitor.
+- Localization: the listed strings have been linked to translations, and formatting is now consistent across all nine languages.
+- Colored tooltips: improved integration with the inventory rendering system. Identified a specific conflict with the "Better Dressed" mod, which overrides the tooltip handler.
+Additional changes:
+- EHR Doctor and EHR Surgeon roles now receive all 17 learnable EHR recipes (this applies to existing characters as well). Skill and material requirements remain unchanged.
+- Spawn rates for the two recipe manuals have been increased by 50%; other loot rates remain unchanged.
+
+Homemade Syringe (Pack) — 5 применений.
+Plastic Strips — выход 2–5 полосок в зависимости от предмета. Заполненные ёмкости и стекло исключены.
+Prepared Homemade Blood Bag — после прогрева в печи/костре превращается в Homemade Empty Blood Bag.
+Homemade IV Kit — расходует три шприца, не три упаковки.

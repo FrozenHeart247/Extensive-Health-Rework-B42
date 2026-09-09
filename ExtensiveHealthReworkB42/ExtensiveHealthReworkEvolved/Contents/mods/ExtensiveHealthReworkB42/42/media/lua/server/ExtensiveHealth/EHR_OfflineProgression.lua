@@ -43,11 +43,11 @@ local DISEASE_TIME_FIELDS = {
 }
 
 local WOUND_PART_TIME_FIELDS = {
-    "startTime", "stageStartTime",
+    "startTime", "stageStartTime", "vanillaClearedTime", "lastSepsisTrigger",
 }
 
 local WOUND_INCUBATION_TIME_FIELDS = {
-    "detectedTime",
+    "detectedTime", "vanillaClearedTime",
 }
 
 local MEDICATION_TREATMENT_TIME_FIELDS = { "startTime" }
@@ -118,7 +118,15 @@ local function queueRecordSet(plan, records, fields)
     for _, record in pairs(records) do queueTimeFields(plan, record, fields) end
 end
 
-local function buildShiftPlan(modData)
+local function queueMedicationClocks(plan, medication)
+    if type(medication) ~= "table" then return end
+    queueRecordSet(plan, medication.activeTreatments, MEDICATION_TREATMENT_TIME_FIELDS)
+    queueRecordSet(plan, medication.activeDoses, MEDICATION_DOSE_TIME_FIELDS)
+    queueRecordSet(plan, medication.activeSideEffects, MEDICATION_SIDE_EFFECT_TIME_FIELDS)
+    queueRecordSet(plan, medication.activeGeneralEffects, MEDICATION_GENERAL_EFFECT_TIME_FIELDS)
+end
+
+local function buildShiftPlan(modData, skipMedication)
     local plan = newShiftPlan()
     if type(modData) ~= "table" then return plan end
 
@@ -137,12 +145,9 @@ local function buildShiftPlan(modData)
     end
 
     local medication = type(modData.EHR_Medication) == "table" and modData.EHR_Medication or nil
-    if medication then
-        queueRecordSet(plan, medication.activeTreatments, MEDICATION_TREATMENT_TIME_FIELDS)
-        queueRecordSet(plan, medication.activeDoses, MEDICATION_DOSE_TIME_FIELDS)
-        queueRecordSet(plan, medication.activeSideEffects, MEDICATION_SIDE_EFFECT_TIME_FIELDS)
-        queueRecordSet(plan, medication.activeGeneralEffects, MEDICATION_GENERAL_EFFECT_TIME_FIELDS)
-    end
+    if not skipMedication then queueMedicationClocks(plan, medication) end
+
+    queueTimeFields(plan, modData.EHR_Concussion, { "cooldownUntil" })
 
     local temperature = type(modData.EHR_Temperature) == "table" and modData.EHR_Temperature or nil
     if temperature then
@@ -183,40 +188,47 @@ function Offline.HandlePlayerConnected(player, currentHour)
     if now == nil then return false, 0, "no_world_time" end
 
     if onlineSessions[player] then
-        local data = player:getModData()
-        local marker = type(data) == "table" and data[Offline.MARKER_KEY] or nil
-        if type(marker) == "table" then marker.lastSeenWorldHour = now end
+        Offline.TouchPlayer(player, now)
         return false, 0, "already_online"
     end
 
     local modData = player:getModData()
     if type(modData) ~= "table" then return false, 0, "no_mod_data" end
     local marker = modData[Offline.MARKER_KEY]
-
-    if type(marker) ~= "table" or tonumber(marker.version) ~= Offline.VERSION
-            or tonumber(marker.lastSeenWorldHour) == nil then
-        setFreshMarker(modData, now)
-        onlineSessions[player] = true
-        log("Offline progression marker initialized; legacy offline time was not guessed")
-        return false, 0, "initialized"
+    local savedHour = type(marker) == "table" and tonumber(marker.version) == Offline.VERSION
+        and tonumber(marker.lastSeenWorldHour) or nil
+    local medication = type(modData.EHR_Medication) == "table" and modData.EHR_Medication or nil
+    local medicationHour = medication and tonumber(medication.offlineLastSeenWorldHour) or savedHour
+    local gap = savedHour and now - savedHour or 0
+    -- The medication anchor travels in the same save/sync table as its clocks.
+    -- Prefer it to a missing/older standalone heartbeat; never infer elapsed
+    -- offline time from firstDoseTime (which includes legitimate online play).
+    local medicationGap = medicationHour and now - medicationHour or 0
+    local shifted = gap > Offline.MIN_GAP_HOURS
+        and applyShiftPlan(buildShiftPlan(modData, true), gap) or 0
+    if medicationGap > Offline.MIN_GAP_HOURS then
+        local medicationPlan = newShiftPlan()
+        queueMedicationClocks(medicationPlan, medication)
+        shifted = shifted + applyShiftPlan(medicationPlan, medicationGap)
     end
-
-    local gap = now - tonumber(marker.lastSeenWorldHour)
-    local shifted = gap > Offline.MIN_GAP_HOURS and Offline.ShiftPlayerState(player, gap) or 0
+    if type(marker) ~= "table" or not savedHour then marker = setFreshMarker(modData, now) end
 
     marker.version = Offline.VERSION
     marker.lastSeenWorldHour = now
-    marker.lastAppliedOfflineHours = math.max(0, gap)
+    marker.lastAppliedOfflineHours = math.max(0, gap, medicationGap)
     marker.lastAppliedWorldHour = now
     marker.lastShiftedFieldCount = shifted
+    if medication then medication.offlineLastSeenWorldHour = now end
     onlineSessions[player] = true
 
-    if gap > Offline.MIN_GAP_HOURS then
-        log(string.format("Offline progression frozen for %.2f world hours (%d medical clocks shifted)", gap, shifted))
+    if math.max(gap, medicationGap) > Offline.MIN_GAP_HOURS then
+        log(string.format("Offline progression frozen for %.2f world hours (%d medical clocks shifted)", math.max(gap, medicationGap), shifted))
     elseif gap < -Offline.MIN_GAP_HOURS then
         log("Offline progression marker was ahead of world time; marker safely reset")
+    elseif not savedHour and not medicationHour then
+        log("Offline progression marker initialized; legacy offline time was not guessed")
     end
-    return shifted > 0, shifted, gap > 0 and "shifted" or "no_gap"
+    return shifted > 0, shifted, shifted > 0 and "shifted" or "no_gap"
 end
 
 function Offline.EnsureSessionPrepared(player, currentHour)
@@ -236,6 +248,9 @@ function Offline.TouchPlayer(player, currentHour)
         marker = setFreshMarker(modData, now)
     else
         marker.lastSeenWorldHour = now
+    end
+    if type(modData.EHR_Medication) == "table" then
+        modData.EHR_Medication.offlineLastSeenWorldHour = now
     end
     return marker ~= nil
 end

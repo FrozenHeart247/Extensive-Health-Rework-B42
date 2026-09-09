@@ -149,3 +149,10 @@ function EHR.Locale.SideEffectName(name)
     local key = "UI_SideEffect_" .. tostring(name):gsub("%s+", ""):gsub("[^A-Za-z0-9_]", "")
     return EHR.Locale.Text(key, tostring(name))
 end
+
+-- Keep the canonical English level in simulation/network data; translate only
+-- where it is displayed so localized words never enter threshold comparisons.
+function EHR.Locale.ExposureLevel(level)
+    level = tostring(level or "None")
+    return EHR.Locale.Text("UI_EHR_ExposureLevel_" .. level, level)
+end

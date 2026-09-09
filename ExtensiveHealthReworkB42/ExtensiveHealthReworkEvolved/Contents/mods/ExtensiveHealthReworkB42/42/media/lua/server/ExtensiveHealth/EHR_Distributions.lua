@@ -568,16 +568,16 @@ local function EHR_InitDistributions()
     end
 
     -- Medicine recipes
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.8)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.6)
-    tryAdd("MedicalCabinet", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.25)
-    tryAdd("StoreShelfMedical", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.15)
-    tryAdd("MagazineRackMixed", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.4)
-    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.35)
-    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.25)
-    tryAdd("MedicalCabinet", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.08)
-    tryAdd("StoreShelfMedical", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.05)
-    tryAdd("MagazineRackMixed", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.18)
+    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 1.2)
+    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.9)
+    tryAdd("MedicalCabinet", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.375)
+    tryAdd("StoreShelfMedical", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.225)
+    tryAdd("MagazineRackMixed", "ExtensiveHealth.EhrRecipePlantBasedAntibiotics", 0.6)
+    tryAdd("MedicalStorageDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.525)
+    tryAdd("MedicalClinicDrugs", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.375)
+    tryAdd("MedicalCabinet", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.12)
+    tryAdd("StoreShelfMedical", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.075)
+    tryAdd("MagazineRackMixed", "ExtensiveHealth.EhrRecipeUltimateCraftGuide", 0.27)
 
     -- =========================================
     -- TIER 1 - OTC (OVER THE COUNTER)

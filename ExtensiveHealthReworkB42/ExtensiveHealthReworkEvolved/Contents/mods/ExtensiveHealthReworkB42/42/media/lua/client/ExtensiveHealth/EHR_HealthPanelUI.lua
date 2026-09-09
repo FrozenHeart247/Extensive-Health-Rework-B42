@@ -2395,7 +2395,7 @@ function EHR_HealthPanelUI:getDiseaseDisplayInfo(diseaseId, disease)
 
     if normalized == "concussion" and canIdentify then
         local stage = type(disease) == "table" and (tonumber(disease.stage) or 1) or 1
-        detailText = safeFormat("UI_EHR_DiseaseDetail_StageTimeRest", "Stage %d   Time and rest", stage)
+        detailText = safeFormat("UI_EHR_DiseaseDetail_StageTimeRest", "Stage %1   Time and rest", stage)
         detailColor = EHR_HealthPanelUI.Colors.green
         statusText = safeText("UI_EHR_Status_Recovering", "RECOVERING")
         statusColor = EHR_HealthPanelUI.Colors.green
@@ -3140,7 +3140,7 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     local diseaseCount = countTable(self.cachedData.diseases)
     local medicationCount = #(self.cachedData.activeMedications or {})
     local watchRequired = self:isMedicalWatchRequired()
-    self:drawPanelFrame(x, y, w, h, "BLOOD COMPOSITION", nil)
+    self:drawPanelFrame(x, y, w, h, safeText("UI_EHR_BloodComposition", "BLOOD COMPOSITION"), nil)
 
     hasWatch = (not watchRequired) or hasWatch
 
@@ -3176,7 +3176,7 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
         if not hasWatch then
             return
         end
-        local compactText = hasWatch and string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)) or "Medical watch required"
+        local compactText = hasWatch and string.format("%dmL / %dmL", math.floor(summary.current + 0.5), math.floor(summary.max + 0.5)) or safeText("UI_EHR_MedicalWatchRequired", "Medical watch required")
         self:drawText(self:truncateText(compactText, math.max(80, barW - 4), stripFont), stripX, stripY, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, stripFont)
         return
     end
@@ -3187,10 +3187,10 @@ function EHR_HealthPanelUI:drawBloodCompositionPanel()
     end
     local cells = {}
     if hasWatch then
-        table.insert(cells, { text = string.format("Saline: %dmL (%d%%)", math.floor(summary.saline + 0.5), math.floor(summary.salinePct + 0.5)), color = c.blue })
+        table.insert(cells, { text = safeFormat("UI_EHR_SalineVolume", "Saline: %1mL (%2%)", math.floor(summary.saline + 0.5), math.floor(summary.salinePct + 0.5)), color = c.blue })
     end
-    table.insert(cells, { text = "Conditions: " .. tostring(diseaseCount), color = c.textDim })
-    table.insert(cells, { text = "Medications: " .. tostring(medicationCount), color = c.textDim })
+    table.insert(cells, { text = safeFormat("UI_EHR_ConditionsCount", "Conditions: %1", diseaseCount), color = c.textDim })
+    table.insert(cells, { text = safeFormat("UI_EHR_MedicationsCount", "Medications: %1", medicationCount), color = c.textDim })
 
         local cursorX = stripX
     for i, cell in ipairs(cells) do
@@ -3218,7 +3218,7 @@ function EHR_HealthPanelUI:drawHeader()
     self:drawRect(0, self.HEADER_HEIGHT - 1, self.width, 1, 0.85, c.border.r, c.border.g, c.border.b)
     self:drawRectBorder(0, 0, self.width, self.height, c.border.a, c.border.r, c.border.g, c.border.b)
     local titleWidth = math.max(90, self.width - (self.isRemoteHealthPanel and 388 or 190))
-    self:drawDockedText(self:truncateText("EHR MEDICAL STATUS", titleWidth, UIFont.Medium), 14, 0, titleWidth, self.HEADER_HEIGHT, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
+    self:drawDockedText(self:truncateText(safeText("UI_EHR_HealthPanelTitle", "EHR MEDICAL STATUS"), titleWidth, UIFont.Medium), 14, 0, titleWidth, self.HEADER_HEIGHT, c.text.r, c.text.g, c.text.b, c.text.a, UIFont.Medium)
     local rightReserve = self.activeTab == "ehr" and 86 or 50
     if self.antibodiesButton and self.antibodiesButton:isVisible() then
         rightReserve = rightReserve + 30
@@ -4810,7 +4810,7 @@ function EHR_HealthPanelUI:drawSelectedBodyPartDetails(x, y, w, h, partName, sta
     local font = self:getCompactFont()
     local rowH = 20
     local textLift = 9
-    local title = partName and partName ~= "None" and partName or "No part selected"
+    local title = partName and partName ~= "None" and partName or safeText("UI_EHR_NoPartSelected", "No part selected")
 
     self:drawRect(x, y, w, h, 0.56, 0.025, 0.025, 0.028)
     self:drawRectBorder(x, y, w, h, 0.62, c.borderDim.r, c.borderDim.g, c.borderDim.b)
@@ -4820,7 +4820,8 @@ function EHR_HealthPanelUI:drawSelectedBodyPartDetails(x, y, w, h, partName, sta
 
     local rowY = y + 33
     if #statuses == 0 then
-        local text = partName == "None" and "Hover a body part" or "No active issues"
+        local text = partName == "None" and safeText("UI_EHR_HoverBodyPart", "Hover a body part")
+            or safeText("UI_EHR_NoActiveIssues", "No active issues")
         self:drawText(self:truncateText(text, w - 16, font), x + 8, rowY - textLift, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, font)
         return
     end
@@ -4830,7 +4831,7 @@ function EHR_HealthPanelUI:drawSelectedBodyPartDetails(x, y, w, h, partName, sta
         if rowY + rowH > y + h - 4 then
             local remaining = #statuses - drawn
             if remaining > 0 then
-                local more = "+" .. tostring(remaining) .. " more"
+                local more = safeFormat("UI_EHR_MoreStatuses", "+%1 more", remaining)
                 self:drawText(more, x + 8, rowY - 1, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, font)
             end
             break
@@ -4838,7 +4839,7 @@ function EHR_HealthPanelUI:drawSelectedBodyPartDetails(x, y, w, h, partName, sta
 
         local color = status.color or c.textDim
         self:drawRect(x + 8, rowY + 4, 8, 8, color.a, color.r, color.g, color.b)
-        self:drawText(self:truncateText(status.label or "Status", w - 30, font), x + 22, rowY - textLift, color.r, color.g, color.b, color.a, font)
+        self:drawText(self:truncateText(status.label or safeText("UI_EHR_GenericStatus", "Status"), w - 30, font), x + 22, rowY - textLift, color.r, color.g, color.b, color.a, font)
         rowY = rowY + rowH
         drawn = drawn + 1
     end
@@ -4848,7 +4849,7 @@ function EHR_HealthPanelUI:drawVanillaBodyPanelFrame(x, y, w, h)
     local c = EHR_HealthPanelUI.Colors
     self.markerBounds = {}
 
-    self:drawPanelFrame(x, y, w, h, "BODY STATUS", "body_status")
+    self:drawPanelFrame(x, y, w, h, safeText("UI_EHR_BodyStatus", "BODY STATUS"), "body_status")
     self:drawOverallHealthBar(x + 16, y + 50, w - 32)
     self:drawSubtleGrid(x + 12, y + 90, w - 24, math.max(40, h - 126), 22)
 
@@ -4880,10 +4881,12 @@ function EHR_HealthPanelUI:drawVanillaBodyPanelFrame(x, y, w, h)
             end
         end
     else
-        self:drawText("Body panel unavailable", x + 10, y + 90, c.orange.r, c.orange.g, c.orange.b, c.orange.a, UIFont.Small)
+        self:drawText(safeText("UI_EHR_BodyPanelUnavailable", "Body panel unavailable"), x + 10, y + 90, c.orange.r, c.orange.g, c.orange.b, c.orange.a, UIFont.Small)
     end
 
-    local selectedText = "Selected: " .. self:getSelectedBodyPartText()
+    local selectedPart = self:getSelectedBodyPartText()
+    local selectedText = safeText("UI_EHR_SelectedPrefix", "Selected: ")
+        .. (selectedPart == "None" and safeText("UI_EHR_NoPartSelected", "No part selected") or selectedPart)
     local statuses = self:getSelectedBodyPartStatuses()
     local statusColor = c.green
     if statuses and statuses[1] then
@@ -4917,18 +4920,18 @@ function EHR_HealthPanelUI:drawLeftPanel()
     self:drawPanelFrame(x, y, w, h, nil, nil)
 
     local overviewH = 112
-    self:drawPanelFrame(x + 10, y + 10, w - 20, overviewH, "OVERVIEW", "overview")
+    self:drawPanelFrame(x + 10, y + 10, w - 20, overviewH, safeText("UI_EHR_Overview", "OVERVIEW"), "overview")
 
-    local healingText = "Healing: Active"
+    local healingText = safeText("UI_EHR_HealingActiveShort", "Healing: Active")
     local healingColor = c.green
     if summary.canHeal == false then
-        healingText = "Healing: Slowed"
+        healingText = safeText("UI_EHR_HealingSlowedShort", "Healing: Slowed")
         healingColor = c.orange
     end
     self:drawText(healingText, x + 22, y + 53, healingColor.r, healingColor.g, healingColor.b, healingColor.a, UIFont.Medium)
 
     if summary.healBlockReason and summary.canHeal == false then
-        self:drawText("Reason: " .. tostring(summary.healBlockReason), x + 22, y + 84, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
+        self:drawText(safeText("UI_EHR_Reason", "Reason: ") .. tostring(summary.healBlockReason), x + 22, y + 84, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     end
 
     local bodyY = y + overviewH + 12
@@ -5125,7 +5128,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
         detailsColor = displayInfo.detailColor or c.red
     elseif type(disease) == "table" and (disease.isCorpseExposure or disease.isExposureCondition) then
         local exposureLevel = tostring(disease.exposureLevel or "Low")
-        detailsText = safeText("UI_EHR_ExposurePrefix", "Exposure: ") .. exposureLevel
+        detailsText = safeText("UI_EHR_ExposurePrefix", "Exposure: ") .. EHR.Locale.ExposureLevel(exposureLevel)
         if type(disease.exposureColor) == "table" then
             detailsColor = {
                 r = tonumber(disease.exposureColor[1]) or accent.r,
@@ -5137,7 +5140,7 @@ function EHR_HealthPanelUI:drawDiseaseRow(diseaseId, disease, x, y, w)
             detailsColor = accent
         end
     elseif displayInfo.showStageSeverity then
-        detailsText = safeFormat("UI_EHR_StageSeverity", "Stage %d   Severity %.1f/5", stage, severity)
+        detailsText = safeFormat("UI_EHR_StageSeverity", "Stage %1   Severity %2/5", stage, string.format("%.1f", severity))
         detailsColor = c.green
     end
     local progressText = displayInfo.progressText
@@ -5227,7 +5230,7 @@ function EHR_HealthPanelUI:drawTreatmentRow(treatment, x, y, w)
         self:drawTextRight(self:truncateText(safeText("UI_EHR_TimeToCure", "Time to cure:"), math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.textDim.r, c.textDim.g, c.textDim.b, c.textDim.a, UIFont.Small)
     elseif activeValue ~= "" then
         local valueW = self:getTextWidth(activeValue, UIFont.Small)
-        local label = tostring(treatment.effectLabel or "Active:")
+        local label = tostring(treatment.effectLabel or safeText("UI_EHR_ActiveLabel", "Active:"))
         self:drawTextRight(activeValue, x + w - 10, y + 7, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Small)
         self:drawTextRight(self:truncateText(label, math.max(80, w - 210), UIFont.Small), x + w - valueW - 18, y + 7, c.green.r, c.green.g, c.green.b, c.green.a, UIFont.Small)
     else

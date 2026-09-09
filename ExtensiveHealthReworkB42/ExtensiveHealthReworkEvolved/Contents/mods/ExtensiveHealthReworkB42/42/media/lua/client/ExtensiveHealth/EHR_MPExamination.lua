@@ -673,6 +673,18 @@ function EHR.MPExamination.OnExamDataReceived(targetUsername, data)
         }
     end
 
+    -- Silent responses must refresh the legacy monitor fallback as well as the
+    -- modern panel, or it keeps its initial disease/medication snapshot.
+    if pending and pending.targetPlayer then
+        local targetID = EHR.MPExamination.GetPlayerID(pending.targetPlayer)
+        local entry = targetID and EHR.MPExamination.ActiveMonitors[targetID]
+        if entry and entry.monitor then
+            entry.monitor.remoteExamData = data
+            entry.monitor.remoteExamStale = false
+            entry.monitor.remoteExamError = nil
+        end
+    end
+
     if EHR.UI and EHR.UI.UpdateRemoteHealthPanelData then
         local updated = EHR.UI.UpdateRemoteHealthPanelData(targetUsername, data)
         if not updated and pending and pending.targetPlayer then

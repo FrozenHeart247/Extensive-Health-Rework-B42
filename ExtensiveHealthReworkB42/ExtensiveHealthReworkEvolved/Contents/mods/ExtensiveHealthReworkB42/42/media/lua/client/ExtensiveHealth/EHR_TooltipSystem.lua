@@ -254,15 +254,14 @@ end
 -- Override vanilla tooltip for EHR items
 -- ============================================
 
--- Store original render function (with safety check)
-local originalDoTooltip = nil
-if ISToolTipInv and ISToolTipInv.render then
-    originalDoTooltip = ISToolTipInv.render
-else
-    -- ISToolTipInv.render not found - log warning
-    if EHR and EHR.Log then
-        EHR.Log("WARNING: ISToolTipInv.render not found - custom tooltips may not work")
-    end
+local renderErrors = {}
+
+local function reportRenderError(itemType, message)
+    -- A broken tooltip is rendered every frame. Report once per item type,
+    -- then keep the previous renderer available without flooding console.txt.
+    if renderErrors[itemType] then return end
+    renderErrors[itemType] = true
+    print("[EHR Tooltip] ERROR rendering " .. tostring(itemType) .. ": " .. tostring(message))
 end
 
 local function watchBatteryText(key, fallback)
@@ -425,10 +424,9 @@ local function renderMedicalWatchTooltip(self, item)
     return true
 end
 
--- Custom tooltip render with safety fallback
-function ISToolTipInv:render()
-    local useVanilla = true
-
+-- Return true only after something was actually drawn. A successful pcall
+-- around a renderer returning false must still allow the previous tooltip.
+function EHR.Tooltips.TryRenderInventoryTooltip(self)
     -- Try EHR custom tooltip first
     local item = self.item
     if item and EHR and EHR.WatchBattery and EHR.WatchBattery.IsMedicalWatch(item) then
@@ -436,35 +434,45 @@ function ISToolTipInv:render()
             return renderMedicalWatchTooltip(self, item)
         end)
         if success and rendered then
-            useVanilla = false
+            return true
         elseif not success then
-            print("[EHR Tooltip] ERROR rendering Medical Monitor Watch: " .. tostring(rendered))
+            reportRenderError("MedicalMonitorWatch", rendered)
         end
     end
 
-    if useVanilla and item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
+    if item and EHR and EHR.Tooltips and EHR.Tooltips.GetData then
         local itemFullType = item.getFullType and item:getFullType() or nil
         local ehrData = itemFullType and EHR.Tooltips.GetData(itemFullType) or nil
 
         if ehrData then
             -- Wrap in pcall to catch any rendering errors
-            local success, err = pcall(function()
-                self:renderEHRTooltip(ehrData, item)
+            local success, rendered = pcall(function()
+                return self:renderEHRTooltip(ehrData, item)
             end)
-            if success then
-                useVanilla = false
-            else
-                print("[EHR Tooltip] ERROR rendering: " .. tostring(err))
-                -- Print stack trace for debugging
-                print(debug.traceback())
+            if success and rendered then
+                return true
+            elseif not success then
+                reportRenderError(itemFullType, rendered)
             end
         end
     end
+    return false
+end
 
-    -- Fall back to vanilla tooltip if needed
-    if useVanilla and originalDoTooltip then
-        originalDoTooltip(self)
+-- Read native cooking state only. Rendering must never advance preparation,
+-- consume ingredients or send inventory packets (especially on an MP client).
+function EHR.Tooltips.GetPreparationProgress(item)
+    if not item then return nil end
+    local ok, elapsed, required = pcall(function()
+        if item:getFullType() ~= "ExtensiveHealth.PreparedHomemadeBloodBag" then return nil end
+        return tonumber(item:getCookingTime()), tonumber(item:getMinutesToCook())
+    end)
+    if not ok or not elapsed or not required or required <= 0
+            or elapsed ~= elapsed or required ~= required
+            or elapsed == math.huge or elapsed == -math.huge or required == math.huge then
+        return nil
     end
+    return math.max(0, math.min(1, elapsed / required))
 end
 
 -- Render custom EHR tooltip (shared implementation for both tooltip classes)
@@ -521,27 +529,71 @@ local function renderEHRTooltipImpl(self, data, item)
         return trimmed .. suffix
     end
 
+    -- Split an overlong word at a complete UTF-8 character. This also handles
+    -- Chinese/Japanese sentences without spaces without discarding their tail.
+    local function splitLongWord(word, maxWidth)
+        local low, high, best = 1, #word, 0
+        while low <= high do
+            local middle = math.floor((low + high) / 2)
+            local cut = middle
+            while cut > 0 do
+                local nextByte = string.byte(word, cut + 1)
+                if not nextByte or nextByte < 128 or nextByte >= 192 then break end
+                cut = cut - 1
+            end
+            if textManager:MeasureStringX(font, word:sub(1, cut)) <= maxWidth then
+                best = cut
+                low = middle + 1
+            else
+                high = middle - 1
+            end
+        end
+        if best == 0 then
+            best = 1
+            while best < #word do
+                local nextByte = string.byte(word, best + 1)
+                if nextByte < 128 or nextByte >= 192 then break end
+                best = best + 1
+            end
+        end
+        return word:sub(1, best), word:sub(best + 1)
+    end
+
     -- Helper function to wrap text
     local function wrapText(text, maxWidth, color)
         local wrappedLines = {}
-        local words = {}
-        for word in text:gmatch("%S+") do
-            table.insert(words, word)
-        end
-
-        local currentLine = ""
-        for i, word in ipairs(words) do
-            local testLine = currentLine == "" and word or (currentLine .. " " .. word)
-            local testWidth = textManager:MeasureStringX(font, testLine)
-            if testWidth > maxWidth and currentLine ~= "" then
-                table.insert(wrappedLines, {text = fitText(currentLine, maxWidth), color = color})
-                currentLine = word
-            else
-                currentLine = testLine
+        -- <LINE> is rich-text markup, not something drawText can interpret.
+        -- Preserve explicit translator line breaks instead of printing the tag.
+        text = tostring(text or ""):gsub("<LINE>", "\n"):gsub("\r\n", "\n")
+        for paragraph in (text .. "\n"):gmatch("(.-)\n") do
+            local currentLine = ""
+            for sourceWord in paragraph:gmatch("%S+") do
+                local word = sourceWord
+                if textManager:MeasureStringX(font, word) > maxWidth then
+                    if currentLine ~= "" then
+                        table.insert(wrappedLines, {text = currentLine, color = color})
+                        currentLine = ""
+                    end
+                    while textManager:MeasureStringX(font, word) > maxWidth do
+                        local chunk, remainder = splitLongWord(word, maxWidth)
+                        table.insert(wrappedLines, {text = chunk, color = color})
+                        word = remainder
+                    end
+                end
+                local testLine = currentLine == "" and word or (currentLine .. " " .. word)
+                local testWidth = textManager:MeasureStringX(font, testLine)
+                if testWidth > maxWidth and currentLine ~= "" then
+                    table.insert(wrappedLines, {text = fitText(currentLine, maxWidth), color = color})
+                    currentLine = word
+                else
+                    currentLine = testLine
+                end
             end
-        end
-        if currentLine ~= "" then
-            table.insert(wrappedLines, {text = fitText(currentLine, maxWidth), color = color})
+            if currentLine ~= "" then
+                table.insert(wrappedLines, {text = fitText(currentLine, maxWidth), color = color})
+            elseif paragraph == "" then
+                table.insert(wrappedLines, {text = " ", color = color})
+            end
         end
         return wrappedLines
     end
@@ -587,6 +639,18 @@ local function renderEHRTooltipImpl(self, data, item)
         end)
         if okDose and doseInfo and doseInfo.maxDoses and doseInfo.maxDoses > 1 then
             addWrappedLines(tooltipFormat("Remaining", "Remaining: %1/%2", doseInfo.remainingDoses or 0, doseInfo.maxDoses), {r=0.45, g=0.9, b=1.0})
+        end
+    end
+
+    if data.preparationProgress then
+        local progress = EHR.Tooltips.GetPreparationProgress(item)
+        if progress ~= nil then
+            table.insert(lines, {
+                text = tooltipFormat("PreparationProgress", "Preparation: %1", tostring(math.floor(progress * 100)) .. "%"),
+                color = {r=0.45, g=0.9, b=1.0},
+                progress = progress,
+            })
+            totalHeight = totalHeight + fontHeight + lineSpacing + 6 + lineSpacing
         end
     end
 
@@ -870,6 +934,12 @@ local function renderEHRTooltipImpl(self, data, item)
             self:drawText(fitText(line.text, boxWidth - padding * 2), padding, y, c.r, c.g, c.b, 1, font)
         end
         y = y + fontHeight + lineSpacing
+        if line.progress ~= nil then
+            local width = boxWidth - padding * 2
+            self:drawRect(padding, y, width, 6, 0.8, 0.15, 0.15, 0.18)
+            self:drawRect(padding, y, width * line.progress, 6, 1.0, c.r, c.g, c.b)
+            y = y + 6 + lineSpacing
+        end
     end
 
     return true -- Signal successful render
@@ -880,11 +950,32 @@ function ISToolTipInv:renderEHRTooltip(data, item)
     return renderEHRTooltipImpl(self, data, item)
 end
 
+function EHR.Tooltips.InstallRenderer()
+    if not ISToolTipInv or not ISToolTipInv.render then return false end
+    if ISToolTipInv.render == EHR.Tooltips._inventoryRenderer then return true end
+
+    -- Some inventory mods replace render() outright later in Lua loading.
+    -- Reattach once on world entry, preserving their renderer for other items.
+    -- Capture each predecessor in its own closure; chained mods may still call
+    -- the earlier EHR wrapper and must never recurse into a mutable fallback.
+    local previous = ISToolTipInv.render
+    local renderer = function(self)
+        if EHR.Tooltips.TryRenderInventoryTooltip(self) then return end
+        return previous(self)
+    end
+    EHR.Tooltips._inventoryRenderer = renderer
+    ISToolTipInv.render = renderer
+    return true
+end
+
+EHR.Tooltips.InstallRenderer()
+
 -- ============================================
 -- INITIALIZATION
 -- ============================================
 
 local function OnGameStart()
+    EHR.Tooltips.InstallRenderer()
     -- Register translations when game starts
     EHR.Tooltips.RegisterTranslations()
 end

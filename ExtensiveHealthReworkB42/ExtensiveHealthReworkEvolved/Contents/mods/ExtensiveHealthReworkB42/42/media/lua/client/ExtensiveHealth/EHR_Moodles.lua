@@ -479,7 +479,7 @@ local function makeExposureAlert(exposureLevel, icon, titleKey, titleFallback)
         exposureLevel = exposureLevel,
         icon = icon,
         title = L(titleKey, titleFallback),
-        description = L("UI_EHR_Moodle_ExposureAlert_Desc", "Exposure level: ") .. tostring(exposureLevel),
+        description = L("UI_EHR_Moodle_ExposureAlert_Desc", "Exposure level: ") .. EHR.Locale.ExposureLevel(exposureLevel),
     }
 end
 

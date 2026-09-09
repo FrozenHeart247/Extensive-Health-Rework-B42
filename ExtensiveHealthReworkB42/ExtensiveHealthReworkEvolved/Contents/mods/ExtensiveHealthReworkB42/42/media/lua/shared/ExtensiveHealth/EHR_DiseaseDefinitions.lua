@@ -80,7 +80,7 @@ EHR.Disease.Diseases["common_cold"] = {
         -- Peak: worst symptoms
         [3] = {
             fatigueDrain = 0.003,
-            fatigueCap = 0.25,
+            fatigueCap = 0.60,
             staminaPenalty = 0.15,
             coldStrength = 65,
             sneezeIntervalHours = 0.5,

@@ -2231,6 +2231,18 @@ local function EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease,
     return math.max(0.02, math.min(1.0, multiplier))
 end
 
+local function EHR_EnvironmentalGetSymptomClock(disease, field, currentHour)
+    local lastHour = tonumber(disease[field])
+    if not lastHour or lastHour > currentHour then
+        -- Natural disease progression does not set stageStartTime (debug does).
+        -- Persist the first anchor so the next update can actually reach the
+        -- interval. These existing fields also participate in MP offline rebasing.
+        lastHour = math.min(tonumber(disease.stageStartTime) or currentHour, currentHour)
+        disease[field] = lastHour
+    end
+    return lastHour
+end
+
 local function EHR_EnvironmentalGetActiveSymptomReduction(player, diseaseId, reductionKey)
     if not (EHR.Disease and EHR.Disease.GetActiveSymptomReduction) then return 0 end
 
@@ -3103,9 +3115,7 @@ local function EHR_EnvironmentalApplyPneumoniaEffects(player, disease, effects)
         else
             local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, "pneumonia", disease, "coughing")
             local effectiveInterval = effects.coughIntervalHours / math.max(0.10, symptomMult)
-            local lastCough = tonumber(disease.lastCoughHour)
-                or tonumber(disease.stageStartTime)
-                or currentHour
+            local lastCough = EHR_EnvironmentalGetSymptomClock(disease, "lastCoughHour", currentHour)
 
             if symptomMult > 0.05 and currentHour - lastCough >= effectiveInterval then
                 EHR.Environmental.TriggerCough(player, effects.severeCough == true)
@@ -3245,9 +3255,7 @@ function EHR.Environmental.ApplyDiseaseEffects(player, diseaseId, disease, def)
             local currentHour = EHR_EnvironmentalGetCurrentHour()
             local symptomMult = EHR_EnvironmentalGetSymptomMultiplier(player, diseaseId, disease, "coughing")
             local effectiveInterval = effects.sneezeIntervalHours / math.max(0.10, symptomMult)
-            local lastSneeze = tonumber(disease.lastSneezeHour)
-                or tonumber(disease.stageStartTime)
-                or currentHour
+            local lastSneeze = EHR_EnvironmentalGetSymptomClock(disease, "lastSneezeHour", currentHour)
 
             if symptomMult > 0.05 and currentHour - lastSneeze >= effectiveInterval then
                 EHR.Environmental.TriggerSneeze(player)
@@ -3487,6 +3495,19 @@ local function EHR_EnvironmentalGetSneezeSfx(player, cfg)
     return cfg.sneezeMaleSfx or cfg.sneezeSfx
 end
 
+local function EHR_EnvironmentalPlayRespiratorySound(player, sfx)
+    if not player or not sfx or sfx == "" then return end
+    pcall(function()
+        if isServer and isServer() and sendPlaySound then
+            -- The server's dummy character emitter does not broadcast playSound.
+            -- Use the same character-bound packet as vanilla timed actions.
+            sendPlaySound(sfx, false, player)
+        elseif player.playSound then
+            player:playSound(sfx)
+        end
+    end)
+end
+
 --[[
     Trigger a sneeze (common cold)
     Creates noise that can attract zombies
@@ -3502,11 +3523,7 @@ function EHR.Environmental.TriggerSneeze(player)
 
     -- Play the audible sneeze SFX at the same moment as the dialogue bark.
     local sfx = EHR_EnvironmentalGetSneezeSfx(player, cfg)
-    if sfx and sfx ~= "" and player.playSound then
-        pcall(function()
-            player:playSound(sfx)
-        end)
-    end
+    EHR_EnvironmentalPlayRespiratorySound(player, sfx)
 
     -- Create noise for zombie attraction
     -- B42: addWorldSoundUnlessInvisible(radius, volume, stressSound)
@@ -3643,11 +3660,7 @@ function EHR.Environmental.TriggerCough(player, severe)
         local sfx = isMuffled
             and EHR_EnvironmentalGetMuffledCoughSfx(player)
             or EHR_EnvironmentalGetCoughSfx(player, severe, cfg)
-        if sfx and sfx ~= "" and player.playSound then
-            pcall(function()
-                player:playSound(sfx)
-            end)
-        end
+        EHR_EnvironmentalPlayRespiratorySound(player, sfx)
     end
 
     -- Create noise for zombie attraction
